@@ -7,9 +7,11 @@ Guidance for Claude Code when working in this repo. Full feature list/roadmap de
 
 - **Phase 0 done**: MEGA SDK (`meganz/sdk` v10.17.0) + `vcpkg` vendored as submodules under
   `third_party/`; `appMegaExplorer` links `MEGA::SDKlib`; CLI login/fetchNodes verified.
-- **Phase 1 next** (bare file listing): `main.cpp`/`Main.qml` are still stock Qt Creator
-  boilerplate — no MEGA UI wiring exists yet. Check current file contents before assuming a
-  feature exists; don't trust the roadmap alone.
+- **Phase 1 in progress** (bare file listing): `IMegaClient`/`MegaSdkClient` (login/fetchNodes/
+  getRootChildren) exist under `src/core`/`src/mega` and build cleanly, but nothing calls them yet —
+  `main.cpp`/`Main.qml` are still stock Qt Creator boilerplate, no MEGA UI wiring exists. Still
+  needed: composition-root wiring in `main.cpp`, GoogleTest + mocks, QML file-list view. Check
+  current file contents before assuming a feature exists; don't trust the roadmap alone.
 - Roadmap (bottom-up, see `MEMO.md` for detail): 0 SDK build → **1 file listing → 2 thumbnails →
   3 search → 4 download/open/upload → 5 local cache + open-folder background refresh (= MVP)** →
   6 realtime remote-change reflection (post-MVP). Full bidirectional local sync is out of scope.
@@ -63,6 +65,26 @@ if the SDK version bumps and defaults change.
 to link (`LNK2019`, unresolved FFmpeg `sws_*`) in this config — unrelated, not yet root-caused.
 Revisit before Phase 2 if isolated GFX processing is needed.
 
+**FFmpeg `swscale` link fix (root CMakeLists.txt)**: `SDKlib`'s own FFmpeg lookup
+(`third_party/sdk/cmake/modules/sdklib_libraries.cmake`) calls `find_package(FFMPEG REQUIRED)` with
+no `COMPONENTS`, which resolves through Qt's `FindFFmpeg.cmake` (found ahead of vcpkg's FFmpeg
+config on the module path) — that module only searches `AVCODEC`/`AVFORMAT`/`AVUTIL` by default, so
+`FFmpeg::swscale` is never created even though vcpkg builds `swscale.lib`. `SDKlib`'s FreeImage
+backend (`GfxProviderFreeImage::readbitmapFfmpeg`) calls `sws_getContext`/`sws_scale`/
+`sws_freeContext` directly, so **without this fix `appMegaExplorer` itself fails at final link**
+(`LNK2019` on the three `sws_*` symbols), not just `gfxworker` — this was found while confirming a
+clean link is achievable for Phase 1's C++ layer. Root CMakeLists.txt re-requests the component and
+links it into `SDKlib` after `add_subdirectory(third_party/sdk)`:
+```cmake
+find_package(FFmpeg COMPONENTS SWSCALE)
+if(TARGET FFmpeg::swscale)
+    target_link_libraries(SDKlib PRIVATE FFmpeg::swscale)
+endif()
+```
+`third_party/sdk` itself is untouched (vendored, do not edit) — this patches the link from our own
+top-level CMakeLists.txt. If the SDK version bumps and `sdklib_libraries.cmake` starts requesting
+`SWSCALE` itself, this block becomes a no-op and can be removed.
+
 Binary: `build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug/Debug/appMegaExplorer.exe`. Needs Qt's `bin`
 and vcpkg's `debug/bin` on `PATH` to run outside Qt Creator:
 ```
@@ -99,11 +121,12 @@ No test target, linter, or CI yet — see "Design" below for the testing plan.
   (typo + predates the SDK/MSVC switch). Not fixed for MSVC either: the VS-generator build can't
   emit `compile_commands.json`. clangd/IntelliSense currently lags for MSVC+SDK code.
 
-The SDK is linked but unused from application code so far. Phase 1 needs a new C++ layer between
-QML and the SDK's C++ API (`megaapi.h`'s `MegaApi`/`MegaListener`/`MegaNode` — see
-`third_party/sdk/examples/simple_client/simple_client.cpp` for the login/fetchNodes pattern already
-validated). That layer must follow the ports-and-adapters design below, not call
-`MegaApi`/`std::filesystem` directly.
+`src/core`/`src/mega` (see Design below) wrap the SDK's C++ API (`megaapi.h`'s
+`MegaApi`/`MegaRequestListener`/`MegaNode` — see
+`third_party/sdk/examples/simple_client/simple_client.cpp` for the login/fetchNodes pattern this
+was validated against), but nothing calls them yet — no composition root wiring in `main.cpp`, no
+QML consumer. Any further MEGA-facing code must go through `IMegaClient`/`FileEntry`, never call
+`MegaApi`/`std::filesystem` directly (ports-and-adapters design below).
 
 ## Design: testability and dependency injection
 
@@ -111,24 +134,38 @@ Decided 2026-07-24, before Phase 1. C++ has no reflection-based DI container in 
 use manual constructor injection against abstract interfaces, wired at a **composition root**.
 Do not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this project's size.
 
-- **Ports**: `IMegaClient` (wraps `mega::MegaApi`), `IFileSystem` (wraps `std::filesystem`).
-  Domain/UI code depends only on these, never on SDK or filesystem types directly.
-- **Adapters**: `MegaSdkClient`, `RealFileSystem` — the only code allowed to include `megaapi.h`
-  or call `std::filesystem` directly.
+- **Ports**: `IMegaClient` (wraps `mega::MegaApi`, `src/core/IMegaClient.h`) — done: `login`,
+  `fetchNodes`, `getRootChildren` (returns `std::vector<FileEntry>`, `src/core/FileEntry.h`).
+  `IFileSystem` (wraps `std::filesystem`) — not yet added, needed once local caching starts
+  (roadmap step 5). Domain/UI code depends only on these, never on SDK or filesystem types
+  directly.
+- **Adapters**: `MegaSdkClient` (`src/mega/MegaSdkClient.h`/`.cpp`) — done, implements
+  `IMegaClient` over `mega::MegaApi` using a per-call, self-deleting `MegaRequestListener`
+  subclass (`new Listener(...)` passed to `login()`/`fetchNodes()`, `delete this` at the end of
+  `onRequestFinish`). `RealFileSystem` — not yet added. `MegaSdkClient.cpp`/`.h` are the only
+  files allowed to include `megaapi.h` or call `std::filesystem` directly.
+- **`Result<T>`** (`src/core/Result.h`): hand-rolled success/failure wrapper (no `std::expected` —
+  `CMAKE_CXX_STANDARD` isn't pinned in this project, so C++23 can't be assumed); has a `Result<void>`
+  specialization for callbacks with no payload (e.g. `login`).
 - **Composition root**: `main.cpp` `make_shared`s the concrete adapters and injects them via
-  constructor (`std::shared_ptr<IPort>`). No service locator, no container.
+  constructor (`std::shared_ptr<IPort>`). No service locator, no container. Not wired yet —
+  `MegaSdkClient` currently has no call site.
 - **Async seam**: `MegaApi` is listener/callback-based (see `MegaListener::onRequestFinish` in
   `simple_client.cpp`) — `IMegaClient` methods take a completion callback
   (`std::function<void(Result<...>)>`), not a synchronous return, so test fakes can simulate
-  success/failure/timeout.
+  success/failure/timeout. Note `login`/`fetchNodes` callbacks fire on an SDK-internal background
+  thread (confirmed by `simple_client.cpp`'s own comment); `getRootChildren` is synchronous
+  under the hood (`MegaApi::getRootNode()`/`getChildren()`, not request/listener-based) but kept
+  callback-shaped for interface consistency — this asymmetry isn't addressed by any Qt-thread
+  marshaling yet, since there's no QML consumer.
 - **Testing**: GoogleTest/GoogleMock (not yet added — pull via vcpkg alongside Phase 1).
   `MOCK_METHOD` fakes for `IMegaClient`/`IFileSystem` let file-listing logic be unit-tested without
   a real MEGA login.
-- **Planned layout** (not yet created):
+- **Layout**:
   ```
-  src/core/      domain logic; depends only on IMegaClient/IFileSystem, never MEGA SDK headers
-  src/mega/      MegaSdkClient adapter; only place allowed to include megaapi.h
-  src/platform/  RealFileSystem adapter
-  src/qml/       C++ types exposed to QML (Q_PROPERTY etc.)
-  tests/         GoogleTest-based unit tests
+  src/core/      IMegaClient.h, FileEntry.h, Result.h — done; domain logic beyond these, not yet written
+  src/mega/      MegaSdkClient adapter — done; only place allowed to include megaapi.h
+  src/platform/  RealFileSystem adapter — not yet created
+  src/qml/       C++ types exposed to QML (Q_PROPERTY etc.) — not yet created
+  tests/         GoogleTest-based unit tests — not yet created
   ```
