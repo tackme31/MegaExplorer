@@ -88,3 +88,9 @@ CMakeLists.txt.user*
 
 # bash stack dump
 bash.exe.stackdump
+
+# local debug credentials (MEGA_EMAIL/MEGA_PWD etc.), never commit
+env.local.ps1
+
+# claude local settings
+.claude/settings.local.json
