@@ -1,0 +1,7 @@
+[submodule "mega-sdk"]
+	path = third_party/sdk
+	url = https://github.com/meganz/sdk.git
+	shallow = true
+[submodule "vcpkg"]
+	path = third_party/vcpkg
+	url = https://github.com/microsoft/vcpkg.git

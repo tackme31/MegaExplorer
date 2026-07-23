@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 
 project(MegaExplorer VERSION 0.1 LANGUAGES CXX)
 
@@ -12,6 +12,10 @@ qt_standard_project_setup(REQUIRES 6.10)
 if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/importedcontent/CMakeLists.txt")
     add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/importedcontent)
 endif()
+
+# MEGA C++ SDK (vendored as a submodule at third_party/sdk); requires vcpkg's
+# toolchain file to be passed via CMAKE_TOOLCHAIN_FILE at configure time.
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/third_party/sdk)
 
 qt_add_executable(appMegaExplorer
     main.cpp
@@ -36,6 +40,7 @@ set_target_properties(appMegaExplorer PROPERTIES
 
 target_link_libraries(appMegaExplorer
     PRIVATE Qt6::Quick
+    PRIVATE MEGA::SDKlib
 )
 
 install(TARGETS appMegaExplorer
