@@ -1,0 +1,10 @@
+MegaExplorer  Copyright (C) 2026  Takumi Yamada
+This program comes with ABSOLUTELY NO WARRANTY.
+This is free software, and you are welcome to redistribute it
+under certain conditions. See the LICENSE file for details.
+
+This application uses Qt, licensed under the GNU General Public
+License version 3. See THIRD-PARTY-NOTICES.txt for details.
+
+This application uses the MEGA C++ SDK, licensed under the
+BSD 2-Clause License. See THIRD-PARTY-NOTICES.txt for details.
