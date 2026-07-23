@@ -31,12 +31,29 @@ refresh when a folder is opened, no continuous watching.
 
 ## Build
 
-Qt 6.10+, CMake 3.20+ (SDK's own minimum). No `CMakePresets.json`.
+Qt 6.10+, CMake 3.20+ (SDK's own minimum).
 
 **MSVC (VS2022) is the toolchain, not MinGW** — the SDK's Windows build is only
 documented/supported for MSVC+vcpkg; MinGW is untested against its vcpkg dependency set. Qt is
 installed at both `C:/Qt/6.11.1/mingw_64` (legacy, pre-SDK, unused) and
 `C:/Qt/6.11.1/msvc2022_64` (current).
+
+**Must use the Visual Studio generator, not Ninja** — regardless of IDE/kit.
+`third_party/sdk/cmake/modules/sdklib_variables.cmake:11` unconditionally sets
+`CMAKE_GENERATOR_TOOLSET "v142"` on Windows, and `CMAKE_GENERATOR_TOOLSET` only has meaning for
+Visual Studio generators; configuring with Ninja fails outright (`Generator Ninja does not support
+toolset specification`) no matter what other variables are set. This is vendored SDK code (do not
+edit) — Qt Creator kits/CMake presets must select `Visual Studio 17 2022` as the generator.
+
+**`CMakePresets.json`** pins the full configure (generator, architecture, vcpkg toolchain file, and
+all `VCPKG_*` variables below) into one named preset, `msvc-debug`. Added because Qt Creator's
+per-row CMake configuration GUI proved unreliable for this many variables — batch-pasted entries
+silently failed to apply, and individually-added entries (specifically `CMAKE_TOOLCHAIN_FILE`) were
+dropped on the next "Run CMake". Qt Creator auto-detects presets from this file and lists them in
+the kit/build configuration picker — select `msvc-debug` there instead of hand-entering variables.
+From the CLI: `cmake --preset msvc-debug` / `cmake --build --preset msvc-debug`. The manual
+`-D`-flag invocation below still works and documents the same variables explicitly; keep both in
+sync if one changes.
 
 Submodules: `third_party/sdk` (pinned `v10.17.0`), `third_party/vcpkg` (**full history — do not
 shallow-clone**, its baseline resolution needs `git show` on historical `versions/baseline.json`
@@ -116,7 +133,9 @@ No test target, linter, or CI yet — see "Design" below for the testing plan.
 - `third_party/sdk` — `meganz/sdk` submodule, exposes `MEGA::SDKlib`. Vendored, do not edit.
 - `third_party/vcpkg` — builds the SDK's third-party deps per `third_party/sdk/vcpkg.json`.
 - `build/` — out-of-source, regeneratable. Multiple dirs exist: stale MinGW one, the current MSVC
-  one, and `sdk-msvc-debug` (standalone SDK validation).
+  one, `msvc-debug` (via `CMakePresets.json`'s `msvc-debug` preset, used by Qt Creator), and
+  `sdk-msvc-debug` (standalone SDK validation).
+- `CMakePresets.json` — the `msvc-debug` preset; see "Build" above for why it exists.
 - `.clangd` — stale, points at a MinGW compile-commands path that doesn't match any real build dir
   (typo + predates the SDK/MSVC switch). Not fixed for MSVC either: the VS-generator build can't
   emit `compile_commands.json`. clangd/IntelliSense currently lags for MSVC+SDK code.
