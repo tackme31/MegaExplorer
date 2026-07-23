@@ -1,11 +1,11 @@
-MegaExplorer
+MEGA Explorer
 Third-Party Software Notices and Information
 
-This application, MegaExplorer, is licensed under the GNU General Public
+This application, MEGA Explorer, is licensed under the GNU General Public
 License version 3 (GPLv3). A copy of that license is included in the file
 named "LICENSE" in the root of this distribution.
 
-MegaExplorer incorporates or links against third-party software components
+MEGA Explorer incorporates or links against third-party software components
 that are subject to separate copyright and license terms, as detailed below.
 Reproducing this file, unmodified, alongside the LICENSE file satisfies the
 attribution requirements of those components.
@@ -18,7 +18,7 @@ The Qt Toolkit is Copyright (C) 2026 The Qt Company Ltd. and other
 contributors.
 Contact: https://www.qt.io/licensing/
 
-MegaExplorer uses the Qt Community Edition under the terms of the GNU
+MEGA Explorer uses the Qt Community Edition under the terms of the GNU
 General Public License, version 3 (GPLv3).
 
 You may use, distribute and copy the Qt libraries used by this application
