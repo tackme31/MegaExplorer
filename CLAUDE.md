@@ -1,65 +1,47 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repo. Full feature list/roadmap detail lives in
+`MEMO.md` (Japanese) — `README.md` is just a one-line title stub, not documentation.
 
 ## Project status
 
-**Phase 0 (MEGA SDK build verification + CLI login/fetchNodes) is complete.** The MEGA C++ SDK
-(`meganz/sdk`, pinned `v10.17.0`) and `vcpkg` are vendored as git submodules under `third_party/`,
-and `appMegaExplorer` links against `MEGA::SDKlib`. `main.cpp` and `Main.qml` are still the stock Qt
-Creator "Hello World" boilerplate, though — no MEGA UI wiring exists yet (Phase 1). Treat the
-feature list and roadmap below (full detail in `MEMO.md`, not `README.md` — `README.md` is just a
-one-line title stub) as the target design for everything past Phase 0, and check current file
-contents before assuming a feature exists.
-
-See "MEGA SDK integration" further down for the toolchain/build details that came out of Phase 0.
+- **Phase 0 done**: MEGA SDK (`meganz/sdk` v10.17.0) + `vcpkg` vendored as submodules under
+  `third_party/`; `appMegaExplorer` links `MEGA::SDKlib`; CLI login/fetchNodes verified.
+- **Phase 1 next** (bare file listing): `main.cpp`/`Main.qml` are still stock Qt Creator
+  boilerplate — no MEGA UI wiring exists yet. Check current file contents before assuming a
+  feature exists; don't trust the roadmap alone.
+- Roadmap (bottom-up, see `MEMO.md` for detail): 0 SDK build → **1 file listing → 2 thumbnails →
+  3 search → 4 download/open/upload → 5 local cache + open-folder background refresh (= MVP)** →
+  6 realtime remote-change reflection (post-MVP). Full bidirectional local sync is out of scope.
 
 ## What this project is
 
-A Windows-Explorer-like desktop client for MEGA cloud storage (Japanese README, translated summary below),
-built to cover gaps in the official MEGAsync app: thumbnail grid view, search, and double-click-to-open.
-It is explicitly **not** a full bidirectional sync client — the only background activity planned is a
-single background refresh when a folder is opened, not continuous watching.
+Windows-Explorer-like desktop client for MEGA cloud storage — thumbnail grid, search,
+double-click-to-open (gaps in official MEGAsync). Not a sync client: only a one-shot background
+refresh when a folder is opened, no continuous watching.
 
-Planned stack (full detail in `MEMO.md`):
-- **MEGA access**: MEGA C++ SDK (`meganz/sdk`, BSD-2-Clause) — vendored as a submodule, see below.
-  No app key is required (MEGA dropped that requirement in 2023; pass `nullptr` to `MegaApi`'s
-  constructor — see `meganz/sdk` issue #2706).
-- **UI**: Qt 6 Quick/QML, Qt Quick Controls 2
-- **Build**: CMake + vcpkg — both vendored/wired as of Phase 0, see "MEGA SDK integration" below
-- **Thumbnails/previews**: FreeImage or Qt's own decoding; FFmpeg for video
-- **Local cache**: SQLite for the node tree and thumbnail cache
-
-Licensing note: the app itself is GPLv3 (via Qt); the MEGA SDK is BSD-2-Clause and MEGAsync's own source
-(`meganz/MEGAsync`) is under a restrictive Code Review Licence — do not copy code from MEGAsync, only use
-it as a reference for SDK usage patterns.
-
-Development roadmap is bottom-up (see `MEMO.md` for full detail): **Phase 0 (SDK build + CLI
-login/fetchNodes) is done** → Phase 1 (bare file listing, next up) → Phase 2 (thumbnails) →
-Phase 3 (search) → Phase 4 (download/open/upload) → Phase 5 (local cache, background refresh on
-folder open) = MVP. Realtime remote-change reflection is a post-MVP Phase 6; full bidirectional
-local mirroring is explicitly out of scope for the foreseeable future.
+- No MEGA app key required (dropped 2023) — pass `nullptr` to `MegaApi`'s constructor
+  (`meganz/sdk` issue #2706).
+- Licensing: app is GPLv3 (via Qt), MEGA SDK is BSD-2-Clause. `meganz/MEGAsync`'s own source is
+  under a restrictive Code Review Licence — never copy code from it, reference only for SDK usage
+  patterns.
+- Stack detail (thumbnail/cache libraries etc.) is in `MEMO.md`, not repeated here.
 
 ## Build
 
-Requires Qt 6.10+ and CMake 3.20+ (bumped from 3.16 in Phase 0 — `meganz/sdk`'s own minimum).
-There is no `CMakePresets.json`.
+Qt 6.10+, CMake 3.20+ (SDK's own minimum). No `CMakePresets.json`.
 
-**As of Phase 0, MSVC is the toolchain going forward**, not MinGW — `meganz/sdk`'s Windows build is
-only documented/supported for MSVC (VS2022) + vcpkg; MinGW is untested against the SDK's vcpkg
-dependency set. Qt 6.11.1 is installed for both `C:/Qt/6.11.1/mingw_64` (legacy, pre-SDK) and
-`C:/Qt/6.11.1/msvc2022_64` (current). The old MinGW build directory
-(`build/Desktop_Qt_6_11_1_MinGW_64_bit_Debug`) is left untouched but is no longer being built against
-— it predates the SDK being linked in and will not have `MEGA::SDKlib`.
+**MSVC (VS2022) is the toolchain, not MinGW** — the SDK's Windows build is only
+documented/supported for MSVC+vcpkg; MinGW is untested against its vcpkg dependency set. Qt is
+installed at both `C:/Qt/6.11.1/mingw_64` (legacy, pre-SDK, unused) and
+`C:/Qt/6.11.1/msvc2022_64` (current).
 
-This repo vendors the MEGA SDK and vcpkg as git submodules (`third_party/sdk` pinned at `v10.17.0`,
-`third_party/vcpkg` at full history — **do not shallow-clone vcpkg**, its manifest/baseline
-resolution needs the full commit history or `cmake` configure fails trying to `git show` historical
-`versions/baseline.json` blobs). On a fresh clone: `git submodule update --init --recursive`, then
+Submodules: `third_party/sdk` (pinned `v10.17.0`), `third_party/vcpkg` (**full history — do not
+shallow-clone**, its baseline resolution needs `git show` on historical `versions/baseline.json`
+blobs). Fresh clone: `git submodule update --init --recursive`, then
 `third_party/vcpkg/bootstrap-vcpkg.bat`.
 
-To reconfigure/build the main project from the command line (MSVC):
-
+Reconfigure/build (MSVC):
 ```
 cmake -S . -B build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug -G "Visual Studio 17 2022" -A x64 ^
     -DCMAKE_PREFIX_PATH=C:/Qt/6.11.1/msvc2022_64 -DCMAKE_BUILD_TYPE=Debug ^
@@ -72,80 +54,81 @@ cmake -S . -B build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug -G "Visual Studio 17 
     -DVCPKG_MANIFEST_FEATURES="use-openssl;use-freeimage;use-ffmpeg;use-pdfium"
 cmake --build build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug --config Debug --target appMegaExplorer
 ```
+The `VCPKG_*` flags exist because the SDK's CMake only auto-configures vcpkg when it's the
+top-level project; embedded via our `add_subdirectory`, we must replicate that manually. Feature
+list mirrors the SDK's own Windows defaults — check `third_party/sdk/cmake/modules/sdklib_options.cmake`
+if the SDK version bumps and defaults change.
 
-Why all the `VCPKG_*` flags: `meganz/sdk`'s own CMake only auto-configures vcpkg (triplet, overlay
-ports/triplets, manifest features) when SDKlib is the *top-level* CMake project (its
-`process_vcpkg_libraries` macro is gated behind `if(NOT PROJECT_NAME)`, and `CMAKE_TOOLCHAIN_FILE`
-must be set before the first `project()` call anyway). Since we `add_subdirectory` it under our own
-`MegaExplorer` project, that auto-configuration never runs — the parent project has to replicate it
-manually, which is what these flags do. The manifest feature list mirrors the SDK's own defaults for
-a Windows desktop build (`USE_OPENSSL`/`USE_FREEIMAGE`/`USE_FFMPEG`/`USE_PDFIUM` = ON by default in
-`third_party/sdk/cmake/modules/sdklib_options.cmake`; `USE_LIBUV`/`USE_READLINE` = OFF on Windows) —
-check that file if the SDK version bumps and defaults change.
+**Build only `appMegaExplorer`, not the full solution**: the SDK's `gfxworker` tool currently fails
+to link (`LNK2019`, unresolved FFmpeg `sws_*`) in this config — unrelated, not yet root-caused.
+Revisit before Phase 2 if isolated GFX processing is needed.
 
-**Build only the `appMegaExplorer` target, not the full solution/`ALL` target**: the SDK's own
-`gfxworker` tool (its out-of-process thumbnail/GFX worker, relevant from Phase 2 on) currently fails
-to link (`LNK2019` unresolved FFmpeg `sws_*` symbols) in this configuration — unrelated to
-`appMegaExplorer` itself, not yet root-caused. Needs revisiting before Phase 2 if isolated GFX
-processing is used.
-
-The resulting binary is `build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug/Debug/appMegaExplorer.exe`. It
-needs Qt's `bin` dir and vcpkg's installed `debug/bin` dir (for FFmpeg etc. DLLs) on `PATH` to run
-outside Qt Creator, e.g.:
+Binary: `build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug/Debug/appMegaExplorer.exe`. Needs Qt's `bin`
+and vcpkg's `debug/bin` on `PATH` to run outside Qt Creator:
 ```
 set PATH=C:\Qt\6.11.1\msvc2022_64\bin;%CD%\build\Desktop_Qt_6_11_1_MSVC2022_64bit_Debug\vcpkg_installed\x64-windows-mega\debug\bin;%PATH%
 ```
 
-To also validate the SDK in isolation (e.g. after bumping the pinned SDK version), the standalone
-build used during Phase 0 still works and is a good first sanity check before touching the main
-project:
+To sanity-check the SDK in isolation (e.g. after bumping the pinned version):
 ```
 cmake -S third_party/sdk -B build/sdk-msvc-debug -G "Visual Studio 17 2022" -A x64 ^
     -DVCPKG_ROOT=third_party/vcpkg -DCMAKE_BUILD_TYPE=Debug -DENABLE_SDKLIB_TESTS=OFF -DENABLE_SDKLIB_WERROR=OFF
 cmake --build build/sdk-msvc-debug --config Debug
 ```
-(`ENABLE_SDKLIB_WERROR=OFF` is needed here specifically because this build's `ENABLE_SDKLIB_WERROR`
-defaults to `ON` when SDKlib is standalone/top-level; it defaults `OFF` — and so isn't needed — when
-embedded via `add_subdirectory` as the main project does. The warning being promoted to an error is
-`C4819`, an MSVC warning about source characters outside the current codepage — harmless, just
-noisy, on a non-English-locale Windows machine.) This produces
-`build/sdk-msvc-debug/examples/simple_client/Debug/simple_client.exe`, a minimal official SDK sample
-that logs in and lists the root folder given `MEGA_EMAIL`/`MEGA_PWD` env vars — useful for isolating
-"is it the SDK/vcpkg build, or our own CMake wiring" if something breaks later.
+(`ENABLE_SDKLIB_WERROR=OFF` avoids `C4819` — a harmless non-English-codepage warning — being
+promoted to an error, which only happens when SDKlib is standalone/top-level.) Produces
+`build/sdk-msvc-debug/examples/simple_client/Debug/simple_client.exe`, which logs in and lists the
+root folder given `MEGA_EMAIL`/`MEGA_PWD` env vars — useful for isolating "SDK/vcpkg build" vs.
+"our CMake wiring" when something breaks.
 
-No test target, linter config, or CI is currently set up in this repo.
+No test target, linter, or CI yet — see "Design" below for the testing plan.
 
 ## Architecture
 
-- `main.cpp` — minimal `QGuiApplication` + `QQmlApplicationEngine` bootstrap; loads the `MegaExplorer`
-  QML module's `Main` component via `loadFromModule`.
-- `Main.qml` — root `ApplicationWindow`. QML sources are registered as a Qt QML module (URI `MegaExplorer`)
-  in `CMakeLists.txt` via `qt_add_qml_module`; new `.qml` files must be added to that `QML_FILES` list.
-- `importedcontent/` — reserved drop-in location for designs exported from Figma to Qt. If
-  `importedcontent/CMakeLists.txt` exists, the root `CMakeLists.txt` automatically `add_subdirectory`s it;
-  currently empty (only a placeholder README).
-- `third_party/sdk` — `meganz/sdk` git submodule (pinned `v10.17.0`), `add_subdirectory`'d from the
-  root `CMakeLists.txt`; exposes the `MEGA::SDKlib` target that `appMegaExplorer` links against.
-  BSD-2-Clause; do not edit files in here directly, it's vendored.
-- `third_party/vcpkg` — `microsoft/vcpkg` git submodule (full history, not shallow — see Build
-  section), used to build the SDK's third-party dependencies (cryptopp, OpenSSL, FreeImage, FFmpeg,
-  pdfium, curl, icu, sqlite3, etc.) per `third_party/sdk/vcpkg.json`'s manifest.
-- `build/` — out-of-source build directories; not source, safe to ignore/regenerate. Multiple exist:
-  the original MinGW one (pre-SDK, stale), `Desktop_Qt_6_11_1_MSVC2022_64bit_Debug` (the main
-  project, current), and `sdk-msvc-debug` (standalone SDK-only validation build from Phase 0).
-- `.clangd` — points clangd at the compilation database in
-  `build/Desktop_Qt_6_11_1_MinGW_64bit_Debug` (note: this differs from the actual build dir name
-  `Desktop_Qt_6_11_1_MinGW_64_bit_Debug` — an underscore is missing before `bit`). Still points at
-  the MinGW build, not MSVC — the `Visual Studio 17 2022` generator used for the MSVC build is a
-  multi-config MSBuild generator and doesn't support `CMAKE_EXPORT_COMPILE_COMMANDS`, so there's no
-  `compile_commands.json` to point clangd at there. Fixing this properly means either configuring an
-  additional Ninja-generator MSVC build just for `compile_commands.json` (needs a
-  vcvars-initialized shell, unlike the VS generator which handles that itself), or switching clangd
-  to a different mechanism entirely. Unresolved — clangd/IntelliSense for the MSVC+SDK code will lag
-  until this is addressed.
+- `main.cpp` — `QGuiApplication`/`QQmlApplicationEngine` bootstrap; loads the `MegaExplorer` QML
+  module's `Main` component via `loadFromModule`.
+- `Main.qml` — root `ApplicationWindow`. QML files are registered in `CMakeLists.txt`'s
+  `qt_add_qml_module(... QML_FILES ...)` — new `.qml` files must be added there.
+- `importedcontent/` — Figma-to-Qt export drop-in; auto-`add_subdirectory`'d if its
+  `CMakeLists.txt` exists. Currently empty.
+- `third_party/sdk` — `meganz/sdk` submodule, exposes `MEGA::SDKlib`. Vendored, do not edit.
+- `third_party/vcpkg` — builds the SDK's third-party deps per `third_party/sdk/vcpkg.json`.
+- `build/` — out-of-source, regeneratable. Multiple dirs exist: stale MinGW one, the current MSVC
+  one, and `sdk-msvc-debug` (standalone SDK validation).
+- `.clangd` — stale, points at a MinGW compile-commands path that doesn't match any real build dir
+  (typo + predates the SDK/MSVC switch). Not fixed for MSVC either: the VS-generator build can't
+  emit `compile_commands.json`. clangd/IntelliSense currently lags for MSVC+SDK code.
 
-The SDK is linked in but not yet used from application code (`main.cpp`/`Main.qml` are still
-Hello-World boilerplate). For Phase 1 (file listing), expect a new C++ layer between the QML UI and
-the SDK's C++ API (`megaapi.h`'s `MegaApi`/`MegaListener`/`MegaNode` etc. — see
-`third_party/sdk/examples/simple_client/simple_client.cpp` for the basic login/fetchNodes call
-pattern already validated in Phase 0), since the SDK is not QML-friendly out of the box.
+The SDK is linked but unused from application code so far. Phase 1 needs a new C++ layer between
+QML and the SDK's C++ API (`megaapi.h`'s `MegaApi`/`MegaListener`/`MegaNode` — see
+`third_party/sdk/examples/simple_client/simple_client.cpp` for the login/fetchNodes pattern already
+validated). That layer must follow the ports-and-adapters design below, not call
+`MegaApi`/`std::filesystem` directly.
+
+## Design: testability and dependency injection
+
+Decided 2026-07-24, before Phase 1. C++ has no reflection-based DI container in mainstream use —
+use manual constructor injection against abstract interfaces, wired at a **composition root**.
+Do not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this project's size.
+
+- **Ports**: `IMegaClient` (wraps `mega::MegaApi`), `IFileSystem` (wraps `std::filesystem`).
+  Domain/UI code depends only on these, never on SDK or filesystem types directly.
+- **Adapters**: `MegaSdkClient`, `RealFileSystem` — the only code allowed to include `megaapi.h`
+  or call `std::filesystem` directly.
+- **Composition root**: `main.cpp` `make_shared`s the concrete adapters and injects them via
+  constructor (`std::shared_ptr<IPort>`). No service locator, no container.
+- **Async seam**: `MegaApi` is listener/callback-based (see `MegaListener::onRequestFinish` in
+  `simple_client.cpp`) — `IMegaClient` methods take a completion callback
+  (`std::function<void(Result<...>)>`), not a synchronous return, so test fakes can simulate
+  success/failure/timeout.
+- **Testing**: GoogleTest/GoogleMock (not yet added — pull via vcpkg alongside Phase 1).
+  `MOCK_METHOD` fakes for `IMegaClient`/`IFileSystem` let file-listing logic be unit-tested without
+  a real MEGA login.
+- **Planned layout** (not yet created):
+  ```
+  src/core/      domain logic; depends only on IMegaClient/IFileSystem, never MEGA SDK headers
+  src/mega/      MegaSdkClient adapter; only place allowed to include megaapi.h
+  src/platform/  RealFileSystem adapter
+  src/qml/       C++ types exposed to QML (Q_PROPERTY etc.)
+  tests/         GoogleTest-based unit tests
+  ```
