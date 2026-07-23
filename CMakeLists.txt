@@ -19,6 +19,11 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/third_party/sdk)
 
 qt_add_executable(appMegaExplorer
     main.cpp
+    src/core/IMegaClient.h
+    src/core/FileEntry.h
+    src/core/Result.h
+    src/mega/MegaSdkClient.h
+    src/mega/MegaSdkClient.cpp
 )
 
 qt_add_qml_module(appMegaExplorer
@@ -36,6 +41,10 @@ set_target_properties(appMegaExplorer PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
+)
+
+target_include_directories(appMegaExplorer
+    PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src
 )
 
 target_link_libraries(appMegaExplorer
