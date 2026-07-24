@@ -44,6 +44,8 @@ qt_add_executable(appMegaExplorer
     main.cpp
     src/mega/MegaSdkClient.h
     src/mega/MegaSdkClient.cpp
+    src/qml/FileListModel.h
+    src/qml/FileListModel.cpp
 )
 
 qt_add_qml_module(appMegaExplorer
@@ -60,11 +62,12 @@ set_target_properties(appMegaExplorer PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE
-    # Temporarily off (Phase 1 step 3): GUI-subsystem processes never attach
-    # to the launching console on Windows, even when run from one, so
-    # qDebug()/qWarning() output from the composition-root smoke test was
-    # going nowhere. Revert to TRUE once QML UI wiring returns in step 4.
-    WIN32_EXECUTABLE FALSE
+    # Back on as of Phase 1 step 5: QML UI wiring returned (QQmlApplicationEngine
+    # in main.cpp), so the app is GUI-subsystem again. While it was step 3's
+    # console-only composition-root smoke test, this was FALSE so qDebug()/
+    # qWarning() output would reach the launching console (GUI-subsystem
+    # processes never attach to it on Windows).
+    WIN32_EXECUTABLE TRUE
 )
 
 target_include_directories(appMegaExplorer
