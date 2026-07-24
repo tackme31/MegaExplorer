@@ -50,7 +50,11 @@ set_target_properties(appMegaExplorer PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE
-    WIN32_EXECUTABLE TRUE
+    # Temporarily off (Phase 1 step 3): GUI-subsystem processes never attach
+    # to the launching console on Windows, even when run from one, so
+    # qDebug()/qWarning() output from the composition-root smoke test was
+    # going nowhere. Revert to TRUE once QML UI wiring returns in step 4.
+    WIN32_EXECUTABLE FALSE
 )
 
 target_include_directories(appMegaExplorer
