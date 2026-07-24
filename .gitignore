@@ -94,3 +94,6 @@ env.local.ps1
 
 # claude local settings
 .claude/settings.local.json
+
+# serena
+.serena/
