@@ -8,10 +8,13 @@ Guidance for Claude Code when working in this repo. Full feature list/roadmap de
 - **Phase 0 done**: MEGA SDK (`meganz/sdk` v10.17.0) + `vcpkg` vendored as submodules under
   `third_party/`; `appMegaExplorer` links `MEGA::SDKlib`; CLI login/fetchNodes verified.
 - **Phase 1 in progress** (bare file listing): `IMegaClient`/`MegaSdkClient` (login/fetchNodes/
-  getRootChildren) exist under `src/core`/`src/mega` and build cleanly, but nothing calls them yet —
-  `main.cpp`/`Main.qml` are still stock Qt Creator boilerplate, no MEGA UI wiring exists. Still
-  needed: composition-root wiring in `main.cpp`, GoogleTest + mocks, QML file-list view. Check
-  current file contents before assuming a feature exists; don't trust the roadmap alone.
+  getRootChildren) exist under `src/core`/`src/mega`; `FileListingService` (`src/core`) chains
+  login→fetchNodes→getRootChildren and is wired into `main.cpp` as the composition root — running
+  `appMegaExplorer` with `MEGA_EMAIL`/`MEGA_PWD` set logs in and lists the root folder via
+  `qDebug()`. GoogleTest/GoogleMock is wired (`tests/`, `MegaExplorerTests` target) with a
+  `MockMegaClient` covering `FileListingService`. `Main.qml` is still stock Qt Creator boilerplate —
+  no QML file-list view yet. Check current file contents before assuming a feature exists; don't
+  trust the roadmap alone.
 - Roadmap (bottom-up, see `MEMO.md` for detail): 0 SDK build → **1 file listing → 2 thumbnails →
   3 search → 4 download/open/upload → 5 local cache + open-folder background refresh (= MVP)** →
   6 realtime remote-change reflection (post-MVP). Full bidirectional local sync is out of scope.
@@ -70,9 +73,12 @@ cmake -S . -B build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug -G "Visual Studio 17 
     -DVCPKG_TARGET_TRIPLET=x64-windows-mega ^
     -DVCPKG_OVERLAY_PORTS=third_party/sdk/cmake/vcpkg_overlay_ports ^
     -DVCPKG_OVERLAY_TRIPLETS=third_party/sdk/cmake/vcpkg_overlay_triplets ^
-    -DVCPKG_MANIFEST_FEATURES="use-openssl;use-freeimage;use-ffmpeg;use-pdfium"
+    -DVCPKG_MANIFEST_FEATURES="use-openssl;use-freeimage;use-ffmpeg;use-pdfium;sdk-tests"
 cmake --build build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug --config Debug --target appMegaExplorer
 ```
+`sdk-tests` is `third_party/sdk/vcpkg.json`'s own feature name for pulling in `gtest` — it only
+affects what vcpkg installs, unrelated to the SDK's own `ENABLE_SDKLIB_TESTS` option (still off).
+Build the test target the same way, with `--target MegaExplorerTests` instead.
 The `VCPKG_*` flags exist because the SDK's CMake only auto-configures vcpkg when it's the
 top-level project; embedded via our `add_subdirectory`, we must replicate that manually. Feature
 list mirrors the SDK's own Windows defaults — check `third_party/sdk/cmake/modules/sdklib_options.cmake`
@@ -141,7 +147,10 @@ C:/Qt/Tools/CMake_64/bin/cmake.exe --build build/msvc-debug --config Debug --tar
 Full path to `cmake.exe` is required — the `cmake` on `PATH` resolves to Strawberry Perl's copy,
 which is unrelated and wrong for this project.
 
-No test target, linter, or CI yet — see "Design" below for the testing plan.
+**Tests**: `MegaExplorerTests` (GoogleTest/GoogleMock, `tests/`) is registered with CTest via
+`gtest_discover_tests`. Run with `ctest --preset msvc-debug` (after building the target) or execute
+`build/msvc-debug/tests/Debug/MegaExplorerTests.exe` directly. No linter or CI yet — see "Design"
+below for what the tests cover.
 
 ## Architecture
 
@@ -164,9 +173,10 @@ No test target, linter, or CI yet — see "Design" below for the testing plan.
 `src/core`/`src/mega` (see Design below) wrap the SDK's C++ API (`megaapi.h`'s
 `MegaApi`/`MegaRequestListener`/`MegaNode` — see
 `third_party/sdk/examples/simple_client/simple_client.cpp` for the login/fetchNodes pattern this
-was validated against), but nothing calls them yet — no composition root wiring in `main.cpp`, no
-QML consumer. Any further MEGA-facing code must go through `IMegaClient`/`FileEntry`, never call
-`MegaApi`/`std::filesystem` directly (ports-and-adapters design below).
+was validated against). `main.cpp` is the composition root: it builds a `MegaSdkClient`, hands it
+to a `FileListingService`, and logs the result via `qDebug()` — still no QML consumer. Any further
+MEGA-facing code must go through `IMegaClient`/`FileEntry`, never call `MegaApi`/`std::filesystem`
+directly (ports-and-adapters design below).
 
 ## Design: testability and dependency injection
 
@@ -188,8 +198,12 @@ Do not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at thi
   `CMAKE_CXX_STANDARD` isn't pinned in this project, so C++23 can't be assumed); has a `Result<void>`
   specialization for callbacks with no payload (e.g. `login`).
 - **Composition root**: `main.cpp` `make_shared`s the concrete adapters and injects them via
-  constructor (`std::shared_ptr<IPort>`). No service locator, no container. Not wired yet —
-  `MegaSdkClient` currently has no call site.
+  constructor (`std::shared_ptr<IPort>`). No service locator, no container. Done: builds a
+  `MegaSdkClient`, injects it into a `FileListingService`, and logs the result.
+- **Domain logic**: `FileListingService` (`src/core/FileListingService.h`/`.cpp`) — first piece of
+  domain logic, depends only on `IMegaClient`. Chains `login`→`fetchNodes`→`getRootChildren`,
+  short-circuiting to a failed `Result<std::vector<FileEntry>>` if any stage fails. SDK-free, so
+  it's unit-testable with a mocked `IMegaClient` (see Testing below).
 - **Async seam**: `MegaApi` is listener/callback-based (see `MegaListener::onRequestFinish` in
   `simple_client.cpp`) — `IMegaClient` methods take a completion callback
   (`std::function<void(Result<...>)>`), not a synchronous return, so test fakes can simulate
@@ -198,14 +212,19 @@ Do not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at thi
   under the hood (`MegaApi::getRootNode()`/`getChildren()`, not request/listener-based) but kept
   callback-shaped for interface consistency — this asymmetry isn't addressed by any Qt-thread
   marshaling yet, since there's no QML consumer.
-- **Testing**: GoogleTest/GoogleMock (not yet added — pull via vcpkg alongside Phase 1).
-  `MOCK_METHOD` fakes for `IMegaClient`/`IFileSystem` let file-listing logic be unit-tested without
-  a real MEGA login.
+- **Testing**: GoogleTest/GoogleMock — done, pulled via vcpkg's `sdk-tests` feature (see Build
+  above). `MockMegaClient` (`tests/FileListingServiceTest.cpp`) `MOCK_METHOD`-fakes `IMegaClient`
+  and drives its callback args with `testing::InvokeArgument`, covering `FileListingService`'s
+  success path and both short-circuit-on-failure paths, without a real MEGA login. `IFileSystem`
+  has no fake yet (not added).
+- **`MegaExplorerCore`**: a static library target (root `CMakeLists.txt`) bundling `src/core`'s
+  SDK-free headers plus `FileListingService.cpp`. Exists so `appMegaExplorer` and
+  `MegaExplorerTests` link the same compiled domain logic instead of each recompiling it standalone.
 - **Layout**:
   ```
-  src/core/      IMegaClient.h, FileEntry.h, Result.h — done; domain logic beyond these, not yet written
+  src/core/      IMegaClient.h, FileEntry.h, Result.h, FileListingService.{h,cpp} — done
   src/mega/      MegaSdkClient adapter — done; only place allowed to include megaapi.h
   src/platform/  RealFileSystem adapter — not yet created
   src/qml/       C++ types exposed to QML (Q_PROPERTY etc.) — not yet created
-  tests/         GoogleTest-based unit tests — not yet created
+  tests/         GoogleTest-based unit tests — done: FileListingServiceTest.cpp
   ```

@@ -19,7 +19,7 @@
         "VCPKG_TARGET_TRIPLET": "x64-windows-mega",
         "VCPKG_OVERLAY_PORTS": "${sourceDir}/third_party/sdk/cmake/vcpkg_overlay_ports",
         "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/third_party/sdk/cmake/vcpkg_overlay_triplets",
-        "VCPKG_MANIFEST_FEATURES": "use-openssl;use-freeimage;use-ffmpeg;use-pdfium"
+        "VCPKG_MANIFEST_FEATURES": "use-openssl;use-freeimage;use-ffmpeg;use-pdfium;sdk-tests"
       }
     }
   ],
@@ -28,7 +28,15 @@
       "name": "msvc-debug",
       "configurePreset": "msvc-debug",
       "configuration": "Debug",
-      "targets": ["appMegaExplorer"]
+      "targets": ["appMegaExplorer", "MegaExplorerTests"]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "msvc-debug",
+      "configurePreset": "msvc-debug",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
     }
   ]
 }

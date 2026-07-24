@@ -1,3 +1,4 @@
+#include "core/FileListingService.h"
 #include "mega/MegaSdkClient.h"
 
 #include <QDebug>
@@ -33,46 +34,24 @@ int main(int argc, char *argv[])
     const std::string password = qEnvironmentVariable("MEGA_PWD").toStdString();
 
     auto client = std::make_shared<MegaSdkClient>();
+    FileListingService service(client);
 
-    client->login(email, password, [client](Result<void> loginResult) {
-        if (!loginResult.success)
+    service.loadRootListing(email, password, [](Result<std::vector<FileEntry>> result) {
+        if (!result.success)
         {
-            qWarning() << "login failed:" << QString::fromStdString(loginResult.errorMessage)
-                       << "code=" << loginResult.errorCode;
+            qWarning() << "loadRootListing failed:" << QString::fromStdString(result.errorMessage)
+                       << "code=" << result.errorCode;
             quitFromAnyThread(1);
             return;
         }
-        qDebug() << "login ok";
 
-        client->fetchNodes([client](Result<void> fetchResult) {
-            if (!fetchResult.success)
-            {
-                qWarning() << "fetchNodes failed:" << QString::fromStdString(fetchResult.errorMessage)
-                           << "code=" << fetchResult.errorCode;
-                quitFromAnyThread(1);
-                return;
-            }
-            qDebug() << "fetchNodes ok";
-
-            client->getRootChildren([](Result<std::vector<FileEntry>> childrenResult) {
-                if (!childrenResult.success)
-                {
-                    qWarning() << "getRootChildren failed:"
-                               << QString::fromStdString(childrenResult.errorMessage)
-                               << "code=" << childrenResult.errorCode;
-                    quitFromAnyThread(1);
-                    return;
-                }
-
-                for (const FileEntry& entry : childrenResult.value)
-                {
-                    qDebug() << (entry.isFolder ? "[dir] " : "[file]")
-                             << QString::fromStdString(entry.name)
-                             << "size=" << entry.sizeBytes;
-                }
-                quitFromAnyThread(0);
-            });
-        });
+        for (const FileEntry& entry : result.value)
+        {
+            qDebug() << (entry.isFolder ? "[dir] " : "[file]")
+                     << QString::fromStdString(entry.name)
+                     << "size=" << entry.sizeBytes;
+        }
+        quitFromAnyThread(0);
     });
 
     return app.exec();

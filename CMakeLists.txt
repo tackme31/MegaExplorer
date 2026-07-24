@@ -27,11 +27,21 @@ if(TARGET FFmpeg::swscale)
     target_link_libraries(SDKlib PRIVATE FFmpeg::swscale)
 endif()
 
-qt_add_executable(appMegaExplorer
-    main.cpp
+# SDK-free domain logic, shared between appMegaExplorer and MegaExplorerTests.
+add_library(MegaExplorerCore STATIC
     src/core/IMegaClient.h
     src/core/FileEntry.h
     src/core/Result.h
+    src/core/FileListingService.h
+    src/core/FileListingService.cpp
+)
+target_include_directories(MegaExplorerCore PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src)
+
+enable_testing()
+add_subdirectory(tests)
+
+qt_add_executable(appMegaExplorer
+    main.cpp
     src/mega/MegaSdkClient.h
     src/mega/MegaSdkClient.cpp
 )
@@ -69,6 +79,7 @@ target_compile_options(appMegaExplorer PRIVATE /W4)
 target_link_libraries(appMegaExplorer
     PRIVATE Qt6::Quick
     PRIVATE MEGA::SDKlib
+    PRIVATE MegaExplorerCore
 )
 
 install(TARGETS appMegaExplorer
