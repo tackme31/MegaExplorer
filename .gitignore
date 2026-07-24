@@ -105,3 +105,6 @@ env.local.ps1
 # appMegaExplorer is actually run (login/fetchNodes local cache)
 megaclient_statecache*.db
 /file-service/
+
+# vscode local folder
+.vscode/
