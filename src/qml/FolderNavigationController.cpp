@@ -21,9 +21,11 @@ void invokeOnGuiThread(std::function<void()> fn)
 } // namespace
 
 FolderNavigationController::FolderNavigationController(
-    std::shared_ptr<FolderNavigationService> service, QObject* parent)
+    std::shared_ptr<FolderNavigationService> navigationService,
+    std::shared_ptr<FileListingService> listingService, QObject* parent)
     : QObject(parent)
-    , mService(std::move(service))
+    , mService(std::move(navigationService))
+    , mListingService(std::move(listingService))
 {
 }
 
@@ -35,6 +37,15 @@ QObject* FolderNavigationController::fileListModel()
 bool FolderNavigationController::canGoBack() const
 {
     return mService->canGoBack();
+}
+
+void FolderNavigationController::loadRoot(const std::string& email, const std::string& password)
+{
+    mListingService->loadRootListing(email, password, [this](Result<std::vector<FileEntry>> result) {
+        invokeOnGuiThread([this, result = std::move(result)]() mutable {
+            applyResult(std::move(result));
+        });
+    });
 }
 
 void FolderNavigationController::openFolder(quint64 handle)
