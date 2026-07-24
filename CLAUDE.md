@@ -15,9 +15,11 @@ Guidance for Claude Code when working in this repo. Full feature list/roadmap de
   `MockMegaClient` covering `FileListingService`. `Main.qml` is still stock Qt Creator boilerplate —
   no QML file-list view yet. Check current file contents before assuming a feature exists; don't
   trust the roadmap alone.
-- Roadmap (bottom-up, see `MEMO.md` for detail): 0 SDK build → **1 file listing → 2 thumbnails →
-  3 search → 4 download/open/upload → 5 local cache + open-folder background refresh (= MVP)** →
-  6 realtime remote-change reflection (post-MVP). Full bidirectional local sync is out of scope.
+- Roadmap (bottom-up, see `MEMO.md` for detail): 0 SDK build → **1 file listing → 2 folder
+  navigation (double-click into subfolders) → 3 search → 4 download/open/upload → 5 thumbnails →
+  6 local cache + open-folder background refresh (= MVP)** → 7 realtime remote-change reflection
+  (post-MVP). Thumbnails/preview deprioritized 2026-07-24 — not required for the app to be usable.
+  Full bidirectional local sync is out of scope.
 
 ## What this project is
 
