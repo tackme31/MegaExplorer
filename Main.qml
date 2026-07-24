@@ -1,5 +1,7 @@
 import QtQuick
-import QtQuick.Controls.Basic
+// Must be imported before any other QtQuick.Controls import (compile-time
+// style selection per Qt docs' "Styling Qt Quick Controls").
+import QtQuick.Controls.FluentWinUI3
 
 ApplicationWindow {
     id: window
