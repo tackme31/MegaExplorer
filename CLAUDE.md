@@ -132,20 +132,13 @@ No test target, linter, or CI yet — see "Design" below for the testing plan.
   `CMakeLists.txt` exists. Currently empty.
 - `third_party/sdk` — `meganz/sdk` submodule, exposes `MEGA::SDKlib`. Vendored, do not edit.
 - `third_party/vcpkg` — builds the SDK's third-party deps per `third_party/sdk/vcpkg.json`.
-- `build/` — out-of-source, regeneratable. The stale MinGW dir and the old manually-configured
-  MSVC dir (`Desktop_Qt_6_11_1_*_Debug`) have been deleted. Current dirs: `msvc-debug` (via
-  `CMakePresets.json`'s `msvc-debug` preset, used by Qt Creator) and `sdk-msvc-debug` (standalone
-  SDK validation).
+- `build/` — out-of-source, regeneratable. Multiple dirs exist: stale MinGW one, the current MSVC
+  one, `msvc-debug` (via `CMakePresets.json`'s `msvc-debug` preset, used by Qt Creator), and
+  `sdk-msvc-debug` (standalone SDK validation).
 - `CMakePresets.json` — the `msvc-debug` preset; see "Build" above for why it exists.
-- `.clangd` / `compile_commands.json` — the VS-generator build can't emit `compile_commands.json`
-  (that flag is silently ignored by non-Makefile/Ninja generators, and Ninja can't be used here —
-  see the `CMAKE_GENERATOR_TOOLSET=v142` note above), so `compile_commands.json` at the repo root
-  is **hand-written**, covering `main.cpp` and `src/mega/MegaSdkClient.cpp` as the two translation
-  units (headers under `src/core`/`src/mega` resolve via clangd's "infer from a TU that includes
-  this header" heuristic — verified with `clangd --check=<file>` for both `.cpp` files and a
-  header). `.clangd` points `CompilationDatabase` at `.`. **Must be updated by hand** whenever a
-  new translation unit (`.cpp` file) is added, or a new top-level include directory is needed —
-  it is not generated, so it will silently go stale otherwise.
+- `.clangd` — stale, points at a MinGW compile-commands path that doesn't match any real build dir
+  (typo + predates the SDK/MSVC switch). Not fixed for MSVC either: the VS-generator build can't
+  emit `compile_commands.json`. clangd/IntelliSense currently lags for MSVC+SDK code.
 
 `src/core`/`src/mega` (see Design below) wrap the SDK's C++ API (`megaapi.h`'s
 `MegaApi`/`MegaRequestListener`/`MegaNode` — see
