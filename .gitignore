@@ -97,3 +97,8 @@ env.local.ps1
 
 # serena
 .serena/
+
+# MEGA SDK runtime state written next to the working directory when
+# appMegaExplorer is actually run (login/fetchNodes local cache)
+megaclient_statecache*.db
+/file-service/
