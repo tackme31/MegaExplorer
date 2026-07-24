@@ -1,8 +1,10 @@
 #pragma once
 #include "core/IMegaClient.h"
+#include <cstdint>
 #include <memory>
 
-namespace mega { class MegaApi; }  // forward declaration; only MegaSdkClient.cpp needs <megaapi.h>
+// forward declarations; only MegaSdkClient.cpp needs <megaapi.h>
+namespace mega { class MegaApi; class MegaNode; }
 
 // Only this class (and its .cpp) may include <megaapi.h> or touch mega::* types.
 class MegaSdkClient : public IMegaClient
@@ -21,6 +23,13 @@ public:
     void getRootChildren(
         std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
+    void getChildren(std::uint64_t handle,
+                      std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
+
 private:
+    void listChildren(std::unique_ptr<mega::MegaNode> node,
+                       const char* notFoundMessage,
+                       std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
     std::unique_ptr<mega::MegaApi> mApi;
 };

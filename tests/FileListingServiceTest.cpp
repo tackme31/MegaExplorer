@@ -15,6 +15,8 @@ public:
     MOCK_METHOD(void, fetchNodes, (std::function<void(Result<void>)>), (override));
     MOCK_METHOD(void, getRootChildren,
                 (std::function<void(Result<std::vector<FileEntry>>)>), (override));
+    MOCK_METHOD(void, getChildren,
+                (std::uint64_t, std::function<void(Result<std::vector<FileEntry>>)>), (override));
 };
 
 struct Captured
@@ -111,4 +113,26 @@ TEST(FileListingServiceTest, FetchNodesFailureShortCircuits)
     EXPECT_FALSE(captured.result.success);
     EXPECT_EQ(captured.result.errorMessage, "network error");
     EXPECT_EQ(captured.result.errorCode, 2);
+}
+
+TEST(FileListingServiceTest, MockGetChildrenForwardsResultToCallback)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> expected{{"nested.txt", 3, 50, false, 0}};
+
+    EXPECT_CALL(*mockClient, getChildren(42, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::ok(expected)));
+
+    Result<std::vector<FileEntry>> captured;
+
+    // Act
+    mockClient->getChildren(42, [&captured](Result<std::vector<FileEntry>> result) {
+        captured = std::move(result);
+    });
+
+    // Assert
+    EXPECT_TRUE(captured.success);
+    ASSERT_EQ(captured.value.size(), 1u);
+    EXPECT_EQ(captured.value[0].name, "nested.txt");
 }

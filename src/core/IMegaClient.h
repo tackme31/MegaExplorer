@@ -1,6 +1,7 @@
 #pragma once
 #include "FileEntry.h"
 #include "Result.h"
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -22,4 +23,9 @@ public:
     // hood, but kept callback-shaped for interface consistency.
     virtual void getRootChildren(
         std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
+
+    // Must be called after a successful fetchNodes(). Synchronous under the
+    // hood, but kept callback-shaped for interface consistency.
+    virtual void getChildren(std::uint64_t handle,
+                              std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 };
