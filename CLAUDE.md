@@ -120,6 +120,27 @@ promoted to an error, which only happens when SDKlib is standalone/top-level.) P
 root folder given `MEGA_EMAIL`/`MEGA_PWD` env vars — useful for isolating "SDK/vcpkg build" vs.
 "our CMake wiring" when something breaks.
 
+**Compiler warnings**: `appMegaExplorer` builds at `/W4` (`target_compile_options(appMegaExplorer
+PRIVATE /W4)` in root CMakeLists.txt, scoped to that target only so `third_party/sdk` isn't
+affected by the stricter level). At the end of any task touching `main.cpp`/`src/`, check for new
+warnings and fix them before considering the task done.
+
+Preferred: the `qtcreator` MCP server (Qt Creator's Extensions > MCP Server, enabled in
+Preferences > AI > Qt Creator MCP Server — must be running, registered locally via
+`claude mcp add --transport http qtcreator http://127.0.0.1:<port>/ --scope local`, not
+committed). Call `mcp__qtcreator__build` (or `list_issues`/`list_file_issues`); its `issues` array
+returns `{file, line, description, type}` per diagnostic with an absolute path, so filtering out
+`third_party/sdk` is a reliable path-prefix check rather than a text-based `grep -v`. Confirmed
+2026-07-24: warnings raised only on the `appMegaExplorer` target (e.g. via its own `/W4`) don't
+leak SDKlib/third_party noise into the array at all, since those are separate CMake targets.
+
+CLI-only fallback (no Qt Creator running, or the MCP port has changed):
+```
+C:/Qt/Tools/CMake_64/bin/cmake.exe --build build/msvc-debug --config Debug --target appMegaExplorer 2>&1 | grep -i "warning C" | grep -v "third_party"
+```
+Full path to `cmake.exe` is required — the `cmake` on `PATH` resolves to Strawberry Perl's copy,
+which is unrelated and wrong for this project.
+
 No test target, linter, or CI yet — see "Design" below for the testing plan.
 
 ## Architecture

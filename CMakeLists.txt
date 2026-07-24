@@ -61,6 +61,11 @@ target_include_directories(appMegaExplorer
     PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src
 )
 
+# MSVC defaults to /W1; raise our own code to /W4 so warning-sweep tooling (see
+# CLAUDE.md's Build section) has something to catch. Scoped to this target only
+# so SDKlib/third_party don't start emitting noise under the stricter level.
+target_compile_options(appMegaExplorer PRIVATE /W4)
+
 target_link_libraries(appMegaExplorer
     PRIVATE Qt6::Quick
     PRIVATE MEGA::SDKlib
