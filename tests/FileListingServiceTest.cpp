@@ -1,23 +1,11 @@
 #include "core/FileListingService.h"
+#include "MockMegaClient.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 namespace
 {
-
-class MockMegaClient : public IMegaClient
-{
-public:
-    MOCK_METHOD(void, login,
-                (const std::string&, const std::string&, std::function<void(Result<void>)>),
-                (override));
-    MOCK_METHOD(void, fetchNodes, (std::function<void(Result<void>)>), (override));
-    MOCK_METHOD(void, getRootChildren,
-                (std::function<void(Result<std::vector<FileEntry>>)>), (override));
-    MOCK_METHOD(void, getChildren,
-                (std::uint64_t, std::function<void(Result<std::vector<FileEntry>>)>), (override));
-};
 
 struct Captured
 {

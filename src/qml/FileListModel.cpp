@@ -26,6 +26,10 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
         return static_cast<qulonglong>(entry.sizeBytes);
     case IsFolderRole:
         return entry.isFolder;
+    case HandleRole:
+        // qulonglong round-trips through QML as a JS double (exact only up to
+        // 2^53), same as SizeRole above; MEGA handles stay well under that.
+        return static_cast<qulonglong>(entry.handle);
     default:
         return {};
     }
@@ -37,6 +41,7 @@ QHash<int, QByteArray> FileListModel::roleNames() const
         {NameRole, "name"},
         {SizeRole, "sizeBytes"},
         {IsFolderRole, "isFolder"},
+        {HandleRole, "handle"},
     };
 }
 

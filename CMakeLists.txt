@@ -34,6 +34,8 @@ add_library(MegaExplorerCore STATIC
     src/core/Result.h
     src/core/FileListingService.h
     src/core/FileListingService.cpp
+    src/core/FolderNavigationService.h
+    src/core/FolderNavigationService.cpp
 )
 target_include_directories(MegaExplorerCore PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src)
 
@@ -46,6 +48,8 @@ qt_add_executable(appMegaExplorer
     src/mega/MegaSdkClient.cpp
     src/qml/FileListModel.h
     src/qml/FileListModel.cpp
+    src/qml/FolderNavigationController.h
+    src/qml/FolderNavigationController.cpp
 )
 
 qt_add_qml_module(appMegaExplorer

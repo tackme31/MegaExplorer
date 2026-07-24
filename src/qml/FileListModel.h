@@ -17,6 +17,7 @@ public:
         NameRole = Qt::UserRole + 1,
         SizeRole,
         IsFolderRole,
+        HandleRole,
     };
 
     explicit FileListModel(QObject* parent = nullptr);
