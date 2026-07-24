@@ -5,7 +5,6 @@
 #include <QMetaObject>
 #include <QString>
 
-#include <cstdlib>
 #include <memory>
 
 namespace
@@ -25,13 +24,13 @@ int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
 
-    const char* email = std::getenv("MEGA_EMAIL");
-    const char* password = std::getenv("MEGA_PWD");
-    if (!email || !password)
+    if (!qEnvironmentVariableIsSet("MEGA_EMAIL") || !qEnvironmentVariableIsSet("MEGA_PWD"))
     {
         qWarning() << "MEGA_EMAIL / MEGA_PWD environment variables must be set";
         return 1;
     }
+    const std::string email = qEnvironmentVariable("MEGA_EMAIL").toStdString();
+    const std::string password = qEnvironmentVariable("MEGA_PWD").toStdString();
 
     auto client = std::make_shared<MegaSdkClient>();
 
