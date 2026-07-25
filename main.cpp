@@ -2,9 +2,11 @@
 #include "core/FileListingService.h"
 #include "core/FolderNavigationService.h"
 #include "core/SearchService.h"
+#include "core/ThumbnailService.h"
 #include "mega/MegaSdkClient.h"
 #include "qml/DownloadController.h"
 #include "qml/FolderNavigationController.h"
+#include "qml/ThumbnailController.h"
 
 #include <QDebug>
 #include <QGuiApplication>
@@ -30,12 +32,16 @@ int main(int argc, char* argv[])
     auto navigationService = std::make_shared<FolderNavigationService>(client);
     auto searchService = std::make_shared<SearchService>(client, navigationService);
     auto downloadService = std::make_shared<DownloadService>(client);
+    auto thumbnailService = std::make_shared<ThumbnailService>(client);
     FolderNavigationController controller(navigationService, listingService, searchService);
     DownloadController downloadController(downloadService);
+    ThumbnailController thumbnailController(thumbnailService,
+                                            controller.fileListModelForThumbnails());
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("controller", &controller);
     engine.rootContext()->setContextProperty("downloadController", &downloadController);
+    engine.rootContext()->setContextProperty("thumbnailController", &thumbnailController);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

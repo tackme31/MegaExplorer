@@ -15,6 +15,12 @@
 // lambda, marshal its result onto the GUI thread, then update the owned
 // FileListModel and canGoBack. Untested by convention: src/qml is GUI glue,
 // and MegaExplorerTests only links MegaExplorerCore.
+//
+// DownloadController deliberately never touches FileListModel (stays
+// decoupled from folder navigation). ThumbnailController is an intentional
+// exception to that: it needs to update visible rows in place, so
+// fileListModelForThumbnails() below hands it a typed pointer to the same
+// FileListModel instance this controller owns.
 class FolderNavigationController : public QObject
 {
     Q_OBJECT
@@ -23,11 +29,18 @@ class FolderNavigationController : public QObject
 
 public:
     explicit FolderNavigationController(std::shared_ptr<FolderNavigationService> navigationService,
-                                         std::shared_ptr<FileListingService> listingService,
-                                         std::shared_ptr<SearchService> searchService,
-                                         QObject* parent = nullptr);
+                                        std::shared_ptr<FileListingService> listingService,
+                                        std::shared_ptr<SearchService> searchService,
+                                        QObject* parent = nullptr);
 
     QObject* fileListModel();
+
+    // Typed accessor to the same FileListModel instance as fileListModel()
+    // above, for main.cpp's composition root to hand to ThumbnailController.
+    // Not Q_INVOKABLE/not QML-facing -- QML only ever needs the QObject*
+    // property for its view's model:.
+    FileListModel* fileListModelForThumbnails();
+
     bool canGoBack() const;
 
     // Not Q_INVOKABLE: called once from main.cpp's composition root before

@@ -1,9 +1,6 @@
 #include "FileListModel.h"
 
-FileListModel::FileListModel(QObject* parent)
-    : QAbstractListModel(parent)
-{
-}
+FileListModel::FileListModel(QObject* parent) : QAbstractListModel(parent) {}
 
 int FileListModel::rowCount(const QModelIndex& parent) const
 {
@@ -20,18 +17,22 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
     const FileEntry& entry = mEntries[static_cast<std::size_t>(index.row())];
     switch (role)
     {
-    case NameRole:
-        return QString::fromStdString(entry.name);
-    case SizeRole:
-        return static_cast<qulonglong>(entry.sizeBytes);
-    case IsFolderRole:
-        return entry.isFolder;
-    case HandleRole:
-        // qulonglong round-trips through QML as a JS double (exact only up to
-        // 2^53), same as SizeRole above; MEGA handles stay well under that.
-        return static_cast<qulonglong>(entry.handle);
-    default:
-        return {};
+        case NameRole:
+            return QString::fromStdString(entry.name);
+        case SizeRole:
+            return static_cast<qulonglong>(entry.sizeBytes);
+        case IsFolderRole:
+            return entry.isFolder;
+        case HandleRole:
+            // qulonglong round-trips through QML as a JS double (exact only up to
+            // 2^53), same as SizeRole above; MEGA handles stay well under that.
+            return static_cast<qulonglong>(entry.handle);
+        case HasThumbnailRole:
+            return entry.hasThumbnail;
+        case ThumbnailPathRole:
+            return mThumbnailPaths[static_cast<std::size_t>(index.row())];
+        default:
+            return {};
     }
 }
 
@@ -42,6 +43,8 @@ QHash<int, QByteArray> FileListModel::roleNames() const
         {SizeRole, "sizeBytes"},
         {IsFolderRole, "isFolder"},
         {HandleRole, "handle"},
+        {HasThumbnailRole, "hasThumbnail"},
+        {ThumbnailPathRole, "thumbnailPath"},
     };
 }
 
@@ -49,5 +52,22 @@ void FileListModel::setEntries(std::vector<FileEntry> entries)
 {
     beginResetModel();
     mEntries = std::move(entries);
+    mThumbnailPaths.assign(mEntries.size(), QString());
     endResetModel();
+}
+
+void FileListModel::setThumbnailPath(quint64 handle, QString path)
+{
+    for (std::size_t i = 0; i < mEntries.size(); ++i)
+    {
+        if (mEntries[i].handle == static_cast<std::uint64_t>(handle))
+        {
+            mThumbnailPaths[i] = std::move(path);
+            QModelIndex idx = index(static_cast<int>(i));
+            emit dataChanged(idx, idx, {ThumbnailPathRole});
+            return;
+        }
+    }
+    // Row no longer present -- stale async result, same "ignore it" handling
+    // as FolderNavigationController::applyResult for other late callbacks.
 }

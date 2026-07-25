@@ -23,15 +23,18 @@ void invokeOnGuiThread(std::function<void()> fn)
 FolderNavigationController::FolderNavigationController(
     std::shared_ptr<FolderNavigationService> navigationService,
     std::shared_ptr<FileListingService> listingService,
-    std::shared_ptr<SearchService> searchService, QObject* parent)
-    : QObject(parent)
-    , mService(std::move(navigationService))
-    , mListingService(std::move(listingService))
-    , mSearchService(std::move(searchService))
-{
-}
+    std::shared_ptr<SearchService> searchService,
+    QObject* parent)
+    : QObject(parent), mService(std::move(navigationService)),
+      mListingService(std::move(listingService)), mSearchService(std::move(searchService))
+{}
 
 QObject* FolderNavigationController::fileListModel()
+{
+    return &mFileListModel;
+}
+
+FileListModel* FolderNavigationController::fileListModelForThumbnails()
 {
     return &mFileListModel;
 }
@@ -43,21 +46,22 @@ bool FolderNavigationController::canGoBack() const
 
 void FolderNavigationController::loadRoot(const std::string& email, const std::string& password)
 {
-    mListingService->loadRootListing(email, password, [this](Result<std::vector<FileEntry>> result) {
-        invokeOnGuiThread([this, result = std::move(result)]() mutable {
-            applyResult(std::move(result));
+    mListingService->loadRootListing(
+        email, password, [this](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread([this, result = std::move(result)]() mutable {
+                applyResult(std::move(result));
+            });
         });
-    });
 }
 
 void FolderNavigationController::openFolder(quint64 handle)
 {
     mService->openFolder(static_cast<std::uint64_t>(handle),
-                          [this](Result<std::vector<FileEntry>> result) {
-                              invokeOnGuiThread([this, result = std::move(result)]() mutable {
-                                  applyResult(std::move(result));
-                              });
-                          });
+                         [this](Result<std::vector<FileEntry>> result) {
+                             invokeOnGuiThread([this, result = std::move(result)]() mutable {
+                                 applyResult(std::move(result));
+                             });
+                         });
 }
 
 void FolderNavigationController::goBack()
