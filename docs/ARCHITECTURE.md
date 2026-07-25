@@ -7,9 +7,20 @@ needs to decide "which layer does this belong in."
 ## Directory overview
 
 - `main.cpp` — `QGuiApplication`/`QQmlApplicationEngine` bootstrap; loads the `MegaExplorer` QML
-  module's `Main` component via `loadFromModule`. Also the **composition root** (see below).
-- `Main.qml` — root `ApplicationWindow`. QML files are registered in `CMakeLists.txt`'s
-  `qt_add_qml_module(... QML_FILES ...)` — new `.qml` files must be added there.
+  module's `Main` component via `loadFromModule` (by type name, not path — unaffected by where the
+  `.qml` file physically lives). Also the **composition root** (see below).
+- `qml/` — all hand-written `.qml` files (as opposed to `src/qml/`, which is the C++ types exposed
+  *to* QML — see below). `appMegaExplorer` is itself the QML module's backing target, so per Qt's
+  `qt_add_qml_module` docs the on-disk layout doesn't need to mirror the module's URI path;
+  subdirectories are free-form and, since Qt 6.8 (`QTP0004`, on by default at this project's
+  required Qt 6.10), each subdirectory gets its own auto-generated `qmldir` that prefers the
+  module's root — so types in different subdirectories resolve each other with no explicit
+  imports. Organized by role, split further only once a subfolder actually earns it:
+  - `qml/Main.qml` — root `ApplicationWindow`.
+  - `qml/views/` — full-screen views (empty until Phase 6+ adds one).
+  - `qml/components/` — reusable, non-modal pieces, e.g. `DownloadSnackbar.qml`.
+  - `qml/dialogs/` — modal popups/dialogs (empty so far).
+  New `.qml` files must also be added to `CMakeLists.txt`'s `qt_add_qml_module(... QML_FILES ...)`.
 - `importedcontent/` — Figma-to-Qt export drop-in; auto-`add_subdirectory`'d if its
   `CMakeLists.txt` exists. Currently empty.
 - `third_party/sdk` — `meganz/sdk` submodule, exposes `MEGA::SDKlib`. Vendored, do not edit.
@@ -38,6 +49,10 @@ src/platform/  RealFileSystem adapter — not yet created (needed once local cac
 src/qml/       C++ types exposed to QML (Q_PROPERTY etc.): FileListModel, controllers
 tests/         GoogleTest-based unit tests, one per src/core service
 ```
+
+Note the split: `src/qml/` is C++ (`.h`/`.cpp`) that QML consumes; `qml/` (project root) is the
+`.qml` files themselves. Don't conflate the two when adding a feature that needs both a controller
+and a view/component.
 
 ## Design: testability and dependency injection
 

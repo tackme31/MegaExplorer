@@ -4,6 +4,11 @@ import QtQuick
 import QtQuick.Controls.FluentWinUI3
 import QtQuick.Layouts
 import QtCore
+// Directory import for DownloadSnackbar.qml -- the CMake-generated qmldir
+// merge (QTP0004) resolves this at build time regardless, but static tooling
+// (Qt Creator's classic QML/JS model, qmllint without the build dir) only
+// knows about the plain-QML directory-import mechanism, not that mechanism.
+import "components"
 
 ApplicationWindow {
     id: window

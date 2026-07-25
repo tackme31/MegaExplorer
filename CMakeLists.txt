@@ -65,8 +65,8 @@ qt_add_executable(appMegaExplorer
 qt_add_qml_module(appMegaExplorer
     URI MegaExplorer
     QML_FILES
-        Main.qml
-        DownloadSnackbar.qml
+        qml/Main.qml
+        qml/components/DownloadSnackbar.qml
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
