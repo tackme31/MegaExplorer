@@ -7,17 +7,33 @@ Guidance for Claude Code when working in this repo. Full feature list/roadmap de
 
 - **Phase 0 done**: MEGA SDK (`meganz/sdk` v10.17.0) + `vcpkg` vendored as submodules under
   `third_party/`; `appMegaExplorer` links `MEGA::SDKlib`; CLI login/fetchNodes verified.
-- **Phase 1 in progress** (bare file listing): `IMegaClient`/`MegaSdkClient` (login/fetchNodes/
-  getRootChildren) exist under `src/core`/`src/mega`; `FileListingService` (`src/core`) chains
-  login→fetchNodes→getRootChildren and is wired into `main.cpp` as the composition root — running
-  `appMegaExplorer` with `MEGA_EMAIL`/`MEGA_PWD` set logs in and lists the root folder via
-  `qDebug()`. GoogleTest/GoogleMock is wired (`tests/`, `MegaExplorerTests` target) with a
-  `MockMegaClient` covering `FileListingService`. `Main.qml` is still stock Qt Creator boilerplate —
-  no QML file-list view yet. Check current file contents before assuming a feature exists; don't
-  trust the roadmap alone.
-- Roadmap (bottom-up, see `MEMO.md` for detail): 0 SDK build → **1 file listing → 2 folder
-  navigation (double-click into subfolders) → 3 search → 4 download/open/upload → 5 thumbnails →
-  6 local cache + open-folder background refresh (= MVP)** → 7 realtime remote-change reflection
+- **Phase 1 done** (bare file listing): `IMegaClient`/`MegaSdkClient` (login/fetchNodes/
+  getRootChildren) under `src/core`/`src/mega`; `FileListingService` (`src/core`) chains
+  login→fetchNodes→getRootChildren; `FileListModel` (`src/qml`) bridges results into QML. Covered
+  by `MockMegaClient`-based tests (`tests/FileListingServiceTest.cpp`).
+- **Phase 2 done** (folder navigation): `FolderNavigationService` (`src/core`) adds
+  `openFolder`/`goBack` over `IMegaClient::getChildren`, back-stack-based, with the root modeled as
+  a sentinel `Location` (no real handle for root). `FolderNavigationController` (`src/qml`) wraps
+  both `FileListingService` (initial root load) and `FolderNavigationService` (subsequent
+  navigation) and is registered as the `controller` context property in `main.cpp`, replacing the
+  standalone `FileListModel` wiring. `Main.qml` has a real `ListView` (delegate shows folder/file
+  icon + name), double-click-to-open on folders via `TapHandler.onDoubleTapped`, and a header
+  `ToolBar` with a Back button gated on `controller.canGoBack`. Covered by
+  `tests/FolderNavigationServiceTest.cpp`. Known rough edges (deferred, not blocking Phase 3):
+  `FolderNavigationController::applyResult` only `qWarning()`s on failure with no UI feedback, and
+  there's no breadcrumb/current-path display.
+- **Phase 3 next** (search): MVP scope decided 2026-07-25 — a search box in the header, default
+  behavior is a **recursive search scoped to the currently open folder** (`MegaSearchFilter::byName`
+  + `byLocationHandle(currentFolderHandle)` via `MegaApi::search()`, which is a synchronous call,
+  not listener/callback-based like login/fetchNodes). A filter button beside the search box,
+  deferred to a later pass, will expose the rest of `MegaSearchFilter` (account-wide search via
+  `byLocation(SEARCH_TARGET_ALL)`, `byCategory`, `byCreationTime`/`byModificationTime`,
+  `byFavourite`, `bySensitivity`, `byTag`/`byDescription`) plus `MegaSearchPage`-based pagination —
+  none of that is needed for the MVP search box itself.
+- Check current file contents before assuming a feature exists; don't trust the roadmap alone.
+- Roadmap (bottom-up, see `MEMO.md` for detail): 0 SDK build → 1 file listing → 2 folder
+  navigation (double-click into subfolders) → **3 search** → 4 download/open/upload → 5 thumbnails →
+  6 local cache + open-folder background refresh (= MVP) → 7 realtime remote-change reflection
   (post-MVP). Thumbnails/preview deprioritized 2026-07-24 — not required for the app to be usable.
   Full bidirectional local sync is out of scope.
 
