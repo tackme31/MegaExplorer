@@ -22,17 +22,28 @@ Guidance for Claude Code when working in this repo. Full feature list/roadmap de
   `tests/FolderNavigationServiceTest.cpp`. Known rough edges (deferred, not blocking Phase 3):
   `FolderNavigationController::applyResult` only `qWarning()`s on failure with no UI feedback, and
   there's no breadcrumb/current-path display.
-- **Phase 3 next** (search): MVP scope decided 2026-07-25 — a search box in the header, default
+- **Phase 3 done** (search): MVP scope decided 2026-07-25 — a search box in the header, default
   behavior is a **recursive search scoped to the currently open folder** (`MegaSearchFilter::byName`
   + `byLocationHandle(currentFolderHandle)` via `MegaApi::search()`, which is a synchronous call,
-  not listener/callback-based like login/fetchNodes). A filter button beside the search box,
-  deferred to a later pass, will expose the rest of `MegaSearchFilter` (account-wide search via
-  `byLocation(SEARCH_TARGET_ALL)`, `byCategory`, `byCreationTime`/`byModificationTime`,
-  `byFavourite`, `bySensitivity`, `byTag`/`byDescription`) plus `MegaSearchPage`-based pagination —
-  none of that is needed for the MVP search box itself.
+  not listener/callback-based like login/fetchNodes). `IMegaClient::search` (`src/core`/`src/mega`)
+  mirrors `FolderNavigationService`'s root-sentinel `Location` convention; `SearchService`
+  (`src/core`) resolves the scope via a new `FolderNavigationService::currentLocation()` getter and
+  is SDK-free/unit-tested like the other core services (`tests/SearchServiceTest.cpp`).
+  `FolderNavigationController::search(QString)` runs it and swaps `FileListModel`'s contents without
+  touching navigation state (back-stack/`canGoBack`); an empty query restores the last folder
+  listing from a cached member instead of re-fetching. `Main.qml` has a `TextField` in the header
+  `ToolBar`, submitting on Enter only (`MegaApi::search()` blocks the GUI thread synchronously).
+  A filter button beside the search box, deferred to a later pass, will expose the rest of
+  `MegaSearchFilter` (account-wide search via `byLocation(SEARCH_TARGET_ALL)`, `byCategory`,
+  `byCreationTime`/`byModificationTime`, `byFavourite`, `bySensitivity`, `byTag`/`byDescription`)
+  plus `MegaSearchPage`-based pagination — none of that was needed for the MVP search box itself.
+  Same known rough edge as Phase 2: search failure only `qWarning()`s, no UI feedback.
+- **Phase 4 next**: not yet scoped — roadmap bullet below is the unsplit description
+  (`MEMO.md`より). Needs an MVP-scope split like Phase 3 got (e.g. download+open-with-default-app
+  first, upload/progress UI later) before implementation starts.
 - Check current file contents before assuming a feature exists; don't trust the roadmap alone.
 - Roadmap (bottom-up, see `MEMO.md` for detail): 0 SDK build → 1 file listing → 2 folder
-  navigation (double-click into subfolders) → **3 search** → 4 download/open/upload → 5 thumbnails →
+  navigation (double-click into subfolders) → 3 search → **4 download/open/upload** → 5 thumbnails →
   6 local cache + open-folder background refresh (= MVP) → 7 realtime remote-change reflection
   (post-MVP). Thumbnails/preview deprioritized 2026-07-24 — not required for the app to be usable.
   Full bidirectional local sync is out of scope.
