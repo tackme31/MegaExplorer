@@ -40,6 +40,8 @@ add_library(MegaExplorerCore STATIC
     src/core/SearchService.cpp
     src/core/DownloadService.h
     src/core/DownloadService.cpp
+    src/core/ThumbnailService.h
+    src/core/ThumbnailService.cpp
 )
 target_include_directories(MegaExplorerCore PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src)
 
