@@ -94,4 +94,16 @@ ApplicationWindow {
             }
         }
     }
+
+    DownloadSnackbar {
+        id: downloadSnackbar
+        parent: Overlay.overlay
+    }
+
+    Connections {
+        target: downloadController
+        function onDownloadFinished(success, fileName, localPath, errorMessage) {
+            downloadSnackbar.show(success, fileName, localPath, errorMessage);
+        }
+    }
 }
