@@ -1,4 +1,5 @@
 #pragma once
+#include "DownloadOutcome.h"
 #include "FileEntry.h"
 #include "Result.h"
 
@@ -50,14 +51,17 @@ public:
     // not MegaRequestListener-based, reporting progress and completion via
     // two separate callbacks. onProgress may fire zero or more times with
     // (transferredBytes, totalBytes) before the transfer finishes; onDone
-    // fires exactly once, terminally, carrying the *actual* final local
-    // path (MegaTransfer::getPath()), which can differ from
-    // destinationPath if a name collision caused the SDK to rename the
-    // saved file. Same background-thread caveat as the rest of this file
-    // applies to both callbacks.
+    // fires exactly once, terminally, carrying a DownloadOutcome whose
+    // localPath is the *actual* final local path (MegaTransfer::getPath()),
+    // which can differ from destinationPath if a name collision caused the
+    // SDK to rename the saved file -- and whose alreadyPresent flag
+    // distinguishes that rename case from the other collision outcome (an
+    // identical file already at destinationPath, which the SDK detects via
+    // fingerprint and skips re-downloading entirely). Same background-thread
+    // caveat as the rest of this file applies to both callbacks.
     virtual void download(
         std::uint64_t handle,
         const std::string& destinationPath,
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
-        std::function<void(Result<std::string>)> onDone) = 0;
+        std::function<void(Result<DownloadOutcome>)> onDone) = 0;
 };

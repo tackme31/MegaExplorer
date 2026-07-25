@@ -21,7 +21,8 @@ TEST(DownloadServiceTest, EnqueueSuccessNotifiesJobFinishedWithCompletedStateAnd
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     EXPECT_CALL(*mockClient, download(5, std::string("/tmp/a.txt"), ::testing::_, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<3>(Result<std::string>::ok("/tmp/a (1).txt")));
+        .WillOnce(::testing::InvokeArgument<3>(
+            Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a (1).txt", false})));
 
     DownloadService service(mockClient);
     bool finishedCalled = false;
@@ -40,7 +41,32 @@ TEST(DownloadServiceTest, EnqueueSuccessNotifiesJobFinishedWithCompletedStateAnd
     EXPECT_EQ(finished.id, id);
     EXPECT_EQ(finished.state, DownloadState::Completed);
     EXPECT_EQ(finished.resolvedLocalPath, "/tmp/a (1).txt");
+    EXPECT_FALSE(finished.alreadyPresent);
     EXPECT_FALSE(service.hasCurrentJob());
+}
+
+TEST(DownloadServiceTest, EnqueueSuccessSurfacesAlreadyPresentWhenSdkSkippedIdenticalFile)
+{
+    // Arrange: an identical (fingerprint-matching) file already exists locally,
+    // so the SDK completes without writing any bytes -- see
+    // MegaApiImpl::CompleteFileDownloadBySkip.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(
+            Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt", true})));
+
+    DownloadService service(mockClient);
+    DownloadJob finished;
+    service.setOnJobFinished([&](DownloadJob job) {
+        finished = std::move(job);
+    });
+
+    // Act
+    service.enqueue(1, "a.txt", "/tmp/a.txt", 100);
+
+    // Assert
+    EXPECT_EQ(finished.state, DownloadState::Completed);
+    EXPECT_TRUE(finished.alreadyPresent);
 }
 
 TEST(DownloadServiceTest, EnqueueFailurePropagatesErrorMessageAndState)
@@ -48,7 +74,7 @@ TEST(DownloadServiceTest, EnqueueFailurePropagatesErrorMessageAndState)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<3>(Result<std::string>::fail("network error", 2)));
+        .WillOnce(::testing::InvokeArgument<3>(Result<DownloadOutcome>::fail("network error", 2)));
 
     DownloadService service(mockClient);
     bool finishedCalled = false;
@@ -75,7 +101,8 @@ TEST(DownloadServiceTest, ProgressCallbackForwardsBytesBeforeCompletion)
     EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(
             ::testing::DoAll(::testing::InvokeArgument<2>(std::uint64_t{50}, std::uint64_t{100}),
-                             ::testing::InvokeArgument<3>(Result<std::string>::ok("/tmp/a.txt"))));
+                             ::testing::InvokeArgument<3>(Result<DownloadOutcome>::ok(
+                                 DownloadOutcome{"/tmp/a.txt", false}))));
 
     DownloadService service(mockClient);
     std::vector<DownloadJob> progressSnapshots;
@@ -114,8 +141,8 @@ TEST(DownloadServiceTest, SecondEnqueueWhileFirstActiveDoesNotStartImmediatelyTh
     // Arrange: capture both calls' callbacks instead of invoking them, so we
     // can control exactly when each transfer "finishes".
     auto mockClient = std::make_shared<MockMegaClient>();
-    std::function<void(Result<std::string>)> onDone1;
-    std::function<void(Result<std::string>)> onDone2;
+    std::function<void(Result<DownloadOutcome>)> onDone1;
+    std::function<void(Result<DownloadOutcome>)> onDone2;
 
     EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::DoAll(::testing::SaveArg<3>(&onDone1)));
@@ -139,7 +166,7 @@ TEST(DownloadServiceTest, SecondEnqueueWhileFirstActiveDoesNotStartImmediatelyTh
     EXPECT_EQ(jobsBefore[1].state, DownloadState::Queued);
 
     // Act: finish job 1
-    onDone1(Result<std::string>::ok("/tmp/a.txt"));
+    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt", false}));
 
     // Assert: job 2 auto-started (download() was called for it, captured via
     // SaveArg above -- onDone2 would still be unset otherwise)

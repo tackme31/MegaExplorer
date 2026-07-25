@@ -83,7 +83,7 @@ class DownloadListener : public mega::MegaTransferListener
 {
 public:
     DownloadListener(std::function<void(std::uint64_t, std::uint64_t)> onProgress,
-                     std::function<void(Result<std::string>)> onDone,
+                     std::function<void(Result<DownloadOutcome>)> onDone,
                      std::unique_ptr<mega::MegaCancelToken> cancelToken)
         : mOnProgress(std::move(onProgress)), mOnDone(std::move(onDone)),
           mCancelToken(std::move(cancelToken))
@@ -103,18 +103,29 @@ public:
         if (code == mega::MegaError::API_OK)
         {
             const char* path = transfer->getPath();
-            mOnDone(Result<std::string>::ok(path ? path : std::string()));
+            DownloadOutcome outcome;
+            outcome.localPath = path ? path : std::string();
+            // The SDK has no public getter for "was this collision-skipped" --
+            // inferred instead from MegaApiImpl::CompleteFileDownloadBySkip
+            // (third_party/sdk/src/megaapi_impl.cpp), which explicitly zeroes
+            // transferredBytes when it completes a transfer by skipping an
+            // identical-fingerprint file already on disk, rather than writing
+            // any bytes. A genuine (possibly renamed-on-collision) download
+            // always has transferredBytes == totalBytes > 0 at this point.
+            outcome.alreadyPresent =
+                transfer->getTransferredBytes() == 0 && transfer->getTotalBytes() > 0;
+            mOnDone(Result<DownloadOutcome>::ok(std::move(outcome)));
         }
         else
         {
-            mOnDone(Result<std::string>::fail(e->getErrorString(), code));
+            mOnDone(Result<DownloadOutcome>::fail(e->getErrorString(), code));
         }
         delete this; // also destroys mCancelToken -- SDK requires it alive until here
     }
 
 private:
     std::function<void(std::uint64_t, std::uint64_t)> mOnProgress;
-    std::function<void(Result<std::string>)> mOnDone;
+    std::function<void(Result<DownloadOutcome>)> mOnDone;
     std::unique_ptr<mega::MegaCancelToken> mCancelToken;
 };
 
@@ -178,12 +189,12 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
 void MegaSdkClient::download(std::uint64_t handle,
                              const std::string& destinationPath,
                              std::function<void(std::uint64_t, std::uint64_t)> onProgress,
-                             std::function<void(Result<std::string>)> onDone)
+                             std::function<void(Result<DownloadOutcome>)> onDone)
 {
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
     {
-        onDone(Result<std::string>::fail(
+        onDone(Result<DownloadOutcome>::fail(
             "No node with the given handle (not logged in / nodes not fetched / invalid handle)"));
         return;
     }

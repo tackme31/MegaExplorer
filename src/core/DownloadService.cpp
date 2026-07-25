@@ -85,7 +85,7 @@ void DownloadService::startNextIfIdle()
             if (onProgress)
                 onProgress(snapshot);
         },
-        [this](Result<std::string> result) {
+        [this](Result<DownloadOutcome> result) {
             std::function<void(DownloadJob)> onJobFinished;
             DownloadJob snapshot;
             {
@@ -95,7 +95,10 @@ void DownloadService::startNextIfIdle()
                 mQueue.front().state =
                     result.success ? DownloadState::Completed : DownloadState::Failed;
                 if (result.success)
-                    mQueue.front().resolvedLocalPath = result.value;
+                {
+                    mQueue.front().resolvedLocalPath = result.value.localPath;
+                    mQueue.front().alreadyPresent = result.value.alreadyPresent;
+                }
                 else
                     mQueue.front().errorMessage = result.errorMessage;
                 snapshot = mQueue.front();

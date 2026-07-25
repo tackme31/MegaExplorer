@@ -38,7 +38,7 @@ public:
         std::uint64_t handle,
         const std::string& destinationPath,
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
-        std::function<void(Result<std::string>)> onDone) override;
+        std::function<void(Result<DownloadOutcome>)> onDone) override;
 
 private:
     // Shared by getRootChildren/getChildren/search: isRoot selects

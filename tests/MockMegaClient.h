@@ -31,6 +31,6 @@ public:
                 (std::uint64_t,
                  const std::string&,
                  std::function<void(std::uint64_t, std::uint64_t)>,
-                 std::function<void(Result<std::string>)>),
+                 std::function<void(Result<DownloadOutcome>)>),
                 (override));
 };
