@@ -22,10 +22,12 @@ void invokeOnGuiThread(std::function<void()> fn)
 
 FolderNavigationController::FolderNavigationController(
     std::shared_ptr<FolderNavigationService> navigationService,
-    std::shared_ptr<FileListingService> listingService, QObject* parent)
+    std::shared_ptr<FileListingService> listingService,
+    std::shared_ptr<SearchService> searchService, QObject* parent)
     : QObject(parent)
     , mService(std::move(navigationService))
     , mListingService(std::move(listingService))
+    , mSearchService(std::move(searchService))
 {
 }
 
@@ -75,6 +77,33 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
                    << "code=" << result.errorCode;
         return;
     }
+    mLastFolderEntries = result.value;
     mFileListModel.setEntries(std::move(result.value));
     emit canGoBackChanged();
+}
+
+void FolderNavigationController::search(QString query)
+{
+    if (query.isEmpty())
+    {
+        mFileListModel.setEntries(mLastFolderEntries);
+        return;
+    }
+
+    mSearchService->search(query.toStdString(), [this](Result<std::vector<FileEntry>> result) {
+        invokeOnGuiThread([this, result = std::move(result)]() mutable {
+            applySearchResult(std::move(result));
+        });
+    });
+}
+
+void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>> result)
+{
+    if (!result.success)
+    {
+        qWarning() << "search failed:" << QString::fromStdString(result.errorMessage)
+                   << "code=" << result.errorCode;
+        return;
+    }
+    mFileListModel.setEntries(std::move(result.value));
 }

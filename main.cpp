@@ -1,5 +1,6 @@
 #include "core/FileListingService.h"
 #include "core/FolderNavigationService.h"
+#include "core/SearchService.h"
 #include "mega/MegaSdkClient.h"
 #include "qml/FolderNavigationController.h"
 
@@ -25,7 +26,8 @@ int main(int argc, char *argv[])
     auto client = std::make_shared<MegaSdkClient>();
     auto listingService = std::make_shared<FileListingService>(client);
     auto navigationService = std::make_shared<FolderNavigationService>(client);
-    FolderNavigationController controller(navigationService, listingService);
+    auto searchService = std::make_shared<SearchService>(client, navigationService);
+    FolderNavigationController controller(navigationService, listingService, searchService);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("controller", &controller);
