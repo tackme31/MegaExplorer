@@ -1,0 +1,74 @@
+# clang-format 18. Applies to src/, tests/, main.cpp, Main.qml's C++ neighbors.
+# third_party/sdk has its own .clang-format (vendored, do not edit) which
+# clang-format picks up instead for files under that tree.
+Language: Cpp
+Standard: Auto
+ColumnLimit: 100
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+AccessModifierOffset: -4
+NamespaceIndentation: None
+
+# Allman braces for classes/functions/control statements, but lambda bodies
+# stay attached (matches this project's existing hand-written style, e.g.
+# FolderNavigationService.cpp's `[this, handle, onDone](...) {`).
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeLambdaBody: false
+  BeforeWhile: true
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+AlignAfterOpenBracket: Align
+AlignOperands: Align
+AlignEscapedNewlines: DontAlign
+AlignTrailingComments: true
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Empty
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Empty
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: false
+BinPackParameters: false
+ConstructorInitializerIndentWidth: 4
+ContinuationIndentWidth: 4
+Cpp11BracedListStyle: true
+IndentCaseLabels: true
+IndentPPDirectives: None
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+SpaceBeforeParens: ControlStatementsExceptControlMacros
+SpaceAfterTemplateKeyword: false
+SpacesInAngles: Never
+SpacesInParens: Never
+SpacesInSquareBrackets: false
+SortUsingDeclarations: LexicographicNumeric
+
+# Matches the observed grouping/order in main.cpp and
+# FolderNavigationController.h: this project's own quoted headers, then Qt
+# angle-bracket headers, then standard-library angle-bracket headers.
+IncludeBlocks: Regroup
+SortIncludes: CaseInsensitive
+IncludeCategories:
+  - Regex: '^"'
+    Priority: 1
+  - Regex: '^<Q[A-Za-z0-9]+>$'
+    Priority: 2
+  - Regex: '^<.*>$'
+    Priority: 3
