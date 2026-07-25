@@ -54,6 +54,8 @@ qt_add_executable(appMegaExplorer
     src/qml/FileListModel.cpp
     src/qml/FolderNavigationController.h
     src/qml/FolderNavigationController.cpp
+    src/qml/DownloadController.h
+    src/qml/DownloadController.cpp
 )
 
 qt_add_qml_module(appMegaExplorer

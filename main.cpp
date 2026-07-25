@@ -1,7 +1,9 @@
+#include "core/DownloadService.h"
 #include "core/FileListingService.h"
 #include "core/FolderNavigationService.h"
 #include "core/SearchService.h"
 #include "mega/MegaSdkClient.h"
+#include "qml/DownloadController.h"
 #include "qml/FolderNavigationController.h"
 
 #include <QDebug>
@@ -11,7 +13,7 @@
 
 #include <memory>
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
 
@@ -27,13 +29,21 @@ int main(int argc, char *argv[])
     auto listingService = std::make_shared<FileListingService>(client);
     auto navigationService = std::make_shared<FolderNavigationService>(client);
     auto searchService = std::make_shared<SearchService>(client, navigationService);
+    auto downloadService = std::make_shared<DownloadService>(client);
     FolderNavigationController controller(navigationService, listingService, searchService);
+    DownloadController downloadController(downloadService);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("controller", &controller);
+    engine.rootContext()->setContextProperty("downloadController", &downloadController);
     QObject::connect(
-        &engine, &QQmlApplicationEngine::objectCreationFailed,
-        &app, [] { QCoreApplication::exit(-1); }, Qt::QueuedConnection);
+        &engine,
+        &QQmlApplicationEngine::objectCreationFailed,
+        &app,
+        [] {
+            QCoreApplication::exit(-1);
+        },
+        Qt::QueuedConnection);
     engine.loadFromModule("MegaExplorer", "Main");
 
     controller.loadRoot(email, password);
