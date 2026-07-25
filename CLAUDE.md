@@ -38,27 +38,46 @@ Guidance for Claude Code when working in this repo. Full feature list/roadmap de
   `byCreationTime`/`byModificationTime`, `byFavourite`, `bySensitivity`, `byTag`/`byDescription`)
   plus `MegaSearchPage`-based pagination — none of that was needed for the MVP search box itself.
   Same known rough edge as Phase 2: search failure only `qWarning()`s, no UI feedback.
-- **Phase 4 next** (download → open): MVP scope decided 2026-07-25 — the "hybrid" option. Both
-  double-click on a file and a context-menu "Download" entry (both still unimplemented — today
-  `TapHandler.onDoubleTapped` only fires for folders, and there's no context menu at all) feed the
-  same download flow rather than diverging. Download starts immediately with progress feedback;
-  on completion a snackbar-style notification offers an **"Open" button — no auto-open**, matching
-  the same "don't surprise the user with something launching mid-interaction" reasoning already
-  used for search-on-Enter (Phase 3). Clicking it opens the temp-downloaded file via the OS default
-  app (`QDesktopServices::openUrl` on a local path, likely — exact placement TBD, `src/platform`
-  doesn't exist yet). Format-specific in-app preview (`MegaApi::getPreview`/`startStreaming`,
-  server-generated static preview images / range-served streaming — considered and explicitly
-  deferred, see `MEMO.md`) and upload are out of this pass's scope. Async seam note: unlike
-  login/fetchNodes/search (`MegaRequestListener`, single callback), `MegaApi::startDownload` is
-  `MegaTransferListener`-based — separate `onTransferUpdate` (progress) and `onTransferFinish`
-  (done) callbacks, so `IMegaClient`'s download method will need a different shape (two callbacks,
-  not `Result<T>`-in-one like the existing methods).
+- **Phase 4 done** (download → open): hybrid flow — file double-click and a new right-click context
+  menu's "ダウンロード" item both call `DownloadController::downloadFile(handle, name, sizeBytes)`
+  (`src/qml`, new `downloadController` context property, separate from `FolderNavigationController`
+  since it's an independent concern), so they funnel into the same flow instead of diverging.
+  `IMegaClient::download` (`src/core`/`src/mega`) diverges from the rest of the interface's single-
+  `Result<T>`-callback shape: `MegaApi::startDownload` is `MegaTransferListener`-based, so it takes a
+  progress callback plus a `Result<std::string>` completion callback (the string is the actual saved
+  local path, since `COLLISION_RESOLUTION_NEW_WITH_N` can rename on a name collision);
+  `MegaSdkClient` implements it with a self-deleting `DownloadListener`, matching the existing
+  `LoginListener`/`FetchNodesListener` idiom. `DownloadService` (`src/core`) serializes downloads one
+  at a time over that port, auto-advancing the queue on completion; built with a per-job id/state
+  (`DownloadJob`, `jobs()` snapshot) from the start so a future progress-list UI and per-job cancel
+  can be added without an API change, even though this pass only surfaces the single active job to
+  QML (`DownloadController`'s `downloadActive`/`activeFileName`/`activeProgress` properties, shown in
+  a footer `ToolBar`). SDK-free/unit-tested like the other core services
+  (`tests/DownloadServiceTest.cpp`); needed its own mutex (unlike the existing services) since
+  `enqueue()` runs on the GUI thread while `IMegaClient::download`'s callbacks may fire on an
+  SDK-internal background thread — `IMegaClient::download()` itself is deliberately called with no
+  lock held, since `MockMegaClient`-based tests invoke its callbacks synchronously from that same
+  call. On completion, `DownloadSnackbar.qml` shows a "開く" button on success
+  (`DownloadController::openFile` → `QDesktopServices::openUrl`, no auto-open — same "don't surprise
+  the user with something launching mid-interaction" reasoning as search-on-Enter) or the error
+  message on failure; unlike Phase 2/3, download failures *do* surface in the UI, since a download is
+  an intentionally-waited-for action rather than a background navigation/search call. Files save to
+  the platform's real Downloads folder (`QStandardPaths::DownloadLocation`, no app-specific
+  subfolder — matches ordinary browser download behavior; revised 2026-07-25 during implementation
+  from an initial temp-folder choice). Gotcha found during manual verification: destination paths
+  must be nativized via `QDir::toNativeSeparators()` before reaching `MegaApi::startDownload` — the
+  SDK's own `LocalPath`/`Path` (`third_party/sdk/src/localpath.cpp`) splits on `\` specifically on
+  Windows, so a `/`-separated path (Qt's own convention) was treated as one giant leaf name including
+  the drive letter, tripping an internal invariant `assert()`. Format-specific in-app preview
+  (`MegaApi::getPreview`/`startStreaming` — considered and explicitly deferred, see `MEMO.md`) and
+  upload remain out of scope.
 - Check current file contents before assuming a feature exists; don't trust the roadmap alone.
 - Roadmap (bottom-up, see `MEMO.md` for detail): 0 SDK build → 1 file listing → 2 folder
-  navigation (double-click into subfolders) → 3 search → **4 download/open/upload** → 5 thumbnails →
+  navigation (double-click into subfolders) → 3 search → 4 download/open → **5 thumbnails** →
   6 local cache + open-folder background refresh (= MVP) → 7 realtime remote-change reflection
   (post-MVP). Thumbnails/preview deprioritized 2026-07-24 — not required for the app to be usable.
-  Full bidirectional local sync is out of scope.
+  Full bidirectional local sync is out of scope; upload has no assigned phase yet (see MEMO.md's
+  feature list).
 
 ## What this project is
 
