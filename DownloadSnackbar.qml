@@ -9,6 +9,10 @@ import QtQuick.Layouts
 // (success or failure -- see show()). Success shows an "開く" button wired to
 // DownloadController::openFile(); failure shows only the error message, no
 // button, mirroring the "no auto-open" rule this feature is built around.
+// When alreadyPresent is true (an identical file already existed locally, so
+// the SDK skipped the transfer instead of downloading/renaming/overwriting),
+// the message says so explicitly -- without this, the generic "completed"
+// message looks indistinguishable from an overwrite from the user's POV.
 Popup {
     id: root
 
@@ -16,12 +20,14 @@ Popup {
     property string fileName: ""
     property string localPath: ""
     property string errorMessage: ""
+    property bool alreadyPresent: false
 
-    function show(ok, name, path, error) {
+    function show(ok, name, path, error, samePresent) {
         success = ok;
         fileName = name;
         localPath = path;
         errorMessage = error;
+        alreadyPresent = samePresent;
         open();
         hideTimer.restart();
     }
@@ -45,9 +51,13 @@ Popup {
             Layout.fillWidth: true
             Layout.maximumWidth: 320
             wrapMode: Text.Wrap
-            text: root.success ? qsTr("%1 のダウンロードが完了しました").arg(root.fileName) : qsTr(
-                                     "%1 のダウンロードに失敗しました: %2").arg(root.fileName).arg(
-                                     root.errorMessage)
+            text: {
+                if (!root.success)
+                    return qsTr("%1 のダウンロードに失敗しました: %2").arg(root.fileName).arg(root.errorMessage);
+                if (root.alreadyPresent)
+                    return qsTr("%1 は既にダウンロード済みです").arg(root.fileName);
+                return qsTr("%1 のダウンロードが完了しました").arg(root.fileName);
+            }
         }
 
         Button {

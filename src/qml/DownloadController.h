@@ -48,9 +48,23 @@ signals:
     void downloadActiveChanged();
 
     // Fired once per finished job, success or failure -- drives the
-    // snackbar. localPath is only meaningful when success is true;
-    // errorMessage is only meaningful when success is false.
-    void downloadFinished(bool success, QString fileName, QString localPath, QString errorMessage);
+    // snackbar. localPath and alreadyPresent are only meaningful when success
+    // is true; errorMessage is only meaningful when success is false.
+    // alreadyPresent is true when an identical (fingerprint-matching) file was
+    // already at the destination and the SDK skipped the transfer instead of
+    // downloading/renaming/overwriting -- lets the snackbar say "already
+    // downloaded" rather than implying a fresh (or overwritten) file. On
+    // success, fileName is the *actual* saved leaf name (localPath's basename),
+    // not necessarily what downloadFile() was originally called with -- a name
+    // collision with different-content local file can make the SDK rename the
+    // saved file (e.g. "photo (1).jpg"), and echoing the pre-rename name here
+    // would read as if the original file got overwritten. On failure, no file
+    // was saved, so fileName is simply what was requested.
+    void downloadFinished(bool success,
+                          QString fileName,
+                          QString localPath,
+                          QString errorMessage,
+                          bool alreadyPresent);
 
 private:
     void refreshActiveJob();

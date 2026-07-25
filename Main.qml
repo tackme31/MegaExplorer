@@ -102,8 +102,8 @@ ApplicationWindow {
 
     Connections {
         target: downloadController
-        function onDownloadFinished(success, fileName, localPath, errorMessage) {
-            downloadSnackbar.show(success, fileName, localPath, errorMessage);
+        function onDownloadFinished(success, fileName, localPath, errorMessage, alreadyPresent) {
+            downloadSnackbar.show(success, fileName, localPath, errorMessage, alreadyPresent);
         }
     }
 }

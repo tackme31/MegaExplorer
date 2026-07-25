@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFileInfo>
 #include <QMetaObject>
 #include <QStandardPaths>
 #include <QUrl>
@@ -34,10 +35,24 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
     });
     mService->setOnJobFinished([this](DownloadJob job) {
         invokeOnGuiThread([this, job = std::move(job)]() mutable {
+            // On success, report the *actual* saved leaf name (from
+            // resolvedLocalPath), not the originally-requested job.name --
+            // they differ when a name collision caused the SDK to rename the
+            // saved file (see IMegaClient::download), and showing the
+            // pre-rename name in the snackbar reads as if the existing file
+            // got overwritten even though a distinct "(1)"-suffixed file was
+            // actually written. Failure has no resolvedLocalPath, so job.name
+            // (what the user asked to download) is still the right thing to
+            // show there.
+            QString displayName =
+                job.state == DownloadState::Completed
+                    ? QFileInfo(QString::fromStdString(job.resolvedLocalPath)).fileName()
+                    : QString::fromStdString(job.name);
             emit downloadFinished(job.state == DownloadState::Completed,
-                                  QString::fromStdString(job.name),
+                                  displayName,
                                   QString::fromStdString(job.resolvedLocalPath),
-                                  QString::fromStdString(job.errorMessage));
+                                  QString::fromStdString(job.errorMessage),
+                                  job.alreadyPresent);
             refreshActiveJob(); // reflect whatever's now at the front (or nothing)
         });
     });
