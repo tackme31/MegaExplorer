@@ -3,6 +3,18 @@
 Guidance for Claude Code when working in this repo. Full feature list/roadmap detail lives in
 `MEMO.md` (Japanese) — `README.md` is just a one-line title stub, not documentation.
 
+## Tooling: use Serena MCP proactively
+
+Serena MCP (`mcp__serena__*`) is available and should be the default way to navigate/edit this
+codebase — prefer it over `Read`ing whole files or shelling out to `grep`/`find`, to keep token
+usage down. Use `get_symbols_overview`/`find_symbol` to locate classes/methods instead of reading
+entire `.h`/`.cpp` files top to bottom, `find_referencing_symbols` instead of a broad text search
+when tracing callers, and `replace_symbol_body`/`insert_after_symbol`/`insert_before_symbol` for
+targeted edits instead of rewriting a whole file. This matters especially around
+`third_party/sdk`/`third_party/vcpkg` — large vendored trees where a naive `Read`/`grep` sweep is
+expensive. Call `initial_instructions` at the start of a session if it hasn't been read yet (per
+Serena's own MCP server instructions).
+
 ## Project status
 
 - **Phase 0 done**: MEGA SDK (`meganz/sdk` v10.17.0) + `vcpkg` vendored as submodules under
