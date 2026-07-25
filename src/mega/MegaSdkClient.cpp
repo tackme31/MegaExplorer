@@ -1,7 +1,6 @@
 #include "MegaSdkClient.h"
 
 #include <megaapi.h>
-
 #include <utility>
 
 namespace
@@ -10,12 +9,11 @@ namespace
 class LoginListener : public mega::MegaRequestListener
 {
 public:
-    explicit LoginListener(std::function<void(Result<void>)> onDone)
-        : mOnDone(std::move(onDone))
-    {
-    }
+    explicit LoginListener(std::function<void(Result<void>)> onDone) : mOnDone(std::move(onDone)) {}
 
-    void onRequestFinish(mega::MegaApi* /*api*/, mega::MegaRequest* /*request*/, mega::MegaError* e) override
+    void onRequestFinish(mega::MegaApi* /*api*/,
+                         mega::MegaRequest* /*request*/,
+                         mega::MegaError* e) override
     {
         int code = e->getErrorCode();
         if (code == mega::MegaError::API_OK)
@@ -38,10 +36,11 @@ class FetchNodesListener : public mega::MegaRequestListener
 public:
     explicit FetchNodesListener(std::function<void(Result<void>)> onDone)
         : mOnDone(std::move(onDone))
-    {
-    }
+    {}
 
-    void onRequestFinish(mega::MegaApi* /*api*/, mega::MegaRequest* /*request*/, mega::MegaError* e) override
+    void onRequestFinish(mega::MegaApi* /*api*/,
+                         mega::MegaRequest* /*request*/,
+                         mega::MegaError* e) override
     {
         int code = e->getErrorCode();
         if (code == mega::MegaError::API_OK)
@@ -80,18 +79,56 @@ std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
     return entries;
 }
 
+class DownloadListener : public mega::MegaTransferListener
+{
+public:
+    DownloadListener(std::function<void(std::uint64_t, std::uint64_t)> onProgress,
+                     std::function<void(Result<std::string>)> onDone,
+                     std::unique_ptr<mega::MegaCancelToken> cancelToken)
+        : mOnProgress(std::move(onProgress)), mOnDone(std::move(onDone)),
+          mCancelToken(std::move(cancelToken))
+    {}
+
+    void onTransferUpdate(mega::MegaApi* /*api*/, mega::MegaTransfer* transfer) override
+    {
+        mOnProgress(static_cast<std::uint64_t>(transfer->getTransferredBytes()),
+                    static_cast<std::uint64_t>(transfer->getTotalBytes()));
+    }
+
+    void onTransferFinish(mega::MegaApi* /*api*/,
+                          mega::MegaTransfer* transfer,
+                          mega::MegaError* e) override
+    {
+        int code = e->getErrorCode();
+        if (code == mega::MegaError::API_OK)
+        {
+            const char* path = transfer->getPath();
+            mOnDone(Result<std::string>::ok(path ? path : std::string()));
+        }
+        else
+        {
+            mOnDone(Result<std::string>::fail(e->getErrorString(), code));
+        }
+        delete this; // also destroys mCancelToken -- SDK requires it alive until here
+    }
+
+private:
+    std::function<void(std::uint64_t, std::uint64_t)> mOnProgress;
+    std::function<void(Result<std::string>)> mOnDone;
+    std::unique_ptr<mega::MegaCancelToken> mCancelToken;
+};
+
 } // namespace
 
 MegaSdkClient::MegaSdkClient(std::string basePath, std::string userAgent)
     : mApi(std::make_unique<mega::MegaApi>(nullptr, basePath.c_str(), userAgent.c_str()))
-{
-}
+{}
 
 MegaSdkClient::~MegaSdkClient() = default;
 
 void MegaSdkClient::login(const std::string& email,
-                           const std::string& password,
-                           std::function<void(Result<void>)> onDone)
+                          const std::string& password,
+                          std::function<void(Result<void>)> onDone)
 {
     mApi->login(email.c_str(), password.c_str(), new LoginListener(std::move(onDone)));
 }
@@ -109,17 +146,18 @@ void MegaSdkClient::getRootChildren(std::function<void(Result<std::vector<FileEn
 }
 
 void MegaSdkClient::getChildren(std::uint64_t handle,
-                                 std::function<void(Result<std::vector<FileEntry>>)> onDone)
+                                std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    listChildren(resolveNode(handle, false),
-                 "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
-                 std::move(onDone));
+    listChildren(
+        resolveNode(handle, false),
+        "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
+        std::move(onDone));
 }
 
 void MegaSdkClient::search(std::uint64_t ancestorHandle,
-                            bool isRoot,
-                            const std::string& query,
-                            std::function<void(Result<std::vector<FileEntry>>)> onDone)
+                           bool isRoot,
+                           const std::string& query,
+                           std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     std::unique_ptr<mega::MegaNode> ancestor = resolveNode(ancestorHandle, isRoot);
     if (!ancestor)
@@ -137,6 +175,36 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
     onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
 }
 
+void MegaSdkClient::download(std::uint64_t handle,
+                             const std::string& destinationPath,
+                             std::function<void(std::uint64_t, std::uint64_t)> onProgress,
+                             std::function<void(Result<std::string>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<std::string>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / invalid handle)"));
+        return;
+    }
+
+    std::unique_ptr<mega::MegaCancelToken> cancelToken(mega::MegaCancelToken::createInstance());
+    mega::MegaCancelToken* cancelTokenRaw = cancelToken.get(); // extract before moving below
+    auto* listener =
+        new DownloadListener(std::move(onProgress), std::move(onDone), std::move(cancelToken));
+
+    mApi->startDownload(node.get(),
+                        destinationPath.c_str(),
+                        /*customName*/ nullptr,
+                        /*appData*/ nullptr,
+                        /*startFirst*/ false,
+                        cancelTokenRaw,
+                        mega::MegaTransfer::COLLISION_CHECK_FINGERPRINT,
+                        mega::MegaTransfer::COLLISION_RESOLUTION_NEW_WITH_N,
+                        /*undelete*/ false,
+                        listener);
+}
+
 std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot)
 {
     if (isRoot)
@@ -146,8 +214,8 @@ std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle,
 }
 
 void MegaSdkClient::listChildren(std::unique_ptr<mega::MegaNode> node,
-                                  const char* notFoundMessage,
-                                  std::function<void(Result<std::vector<FileEntry>>)> onDone)
+                                 const char* notFoundMessage,
+                                 std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     if (!node)
     {
