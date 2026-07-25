@@ -64,4 +64,21 @@ public:
         const std::string& destinationPath,
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<DownloadOutcome>)> onDone) = 0;
+
+    // Fetches the server-side thumbnail of the node identified by handle into
+    // the exact local file path destinationPath, same caller-resolves-the-path
+    // division of responsibility as download() above. Must not end with a path
+    // separator: the SDK would then treat it as a directory and derive the leaf
+    // name itself (megaapi_impl.cpp's getNodeAttribute).
+    //
+    // Unlike download() this is MegaRequestListener-based, so it keeps the
+    // single-Result<T>-callback shape of everything above it. Result value is
+    // the path actually written (MegaRequest::getFile()).
+    //
+    // Fails with the SDK's API_ENOENT when the node has no server-side
+    // thumbnail; callers are expected to gate on FileEntry::hasThumbnail
+    // instead of relying on that, so it is not modeled as a distinct outcome.
+    virtual void getThumbnail(std::uint64_t handle,
+                              const std::string& destinationPath,
+                              std::function<void(Result<std::string>)> onDone) = 0;
 };

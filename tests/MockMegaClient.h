@@ -33,4 +33,8 @@ public:
                  std::function<void(std::uint64_t, std::uint64_t)>,
                  std::function<void(Result<DownloadOutcome>)>),
                 (override));
+    MOCK_METHOD(void,
+                getThumbnail,
+                (std::uint64_t, const std::string&, std::function<void(Result<std::string>)>),
+                (override));
 };

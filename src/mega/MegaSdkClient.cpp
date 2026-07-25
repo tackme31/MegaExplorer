@@ -58,6 +58,33 @@ private:
     std::function<void(Result<void>)> mOnDone;
 };
 
+class ThumbnailListener : public mega::MegaRequestListener
+{
+public:
+    explicit ThumbnailListener(std::function<void(Result<std::string>)> onDone)
+        : mOnDone(std::move(onDone))
+    {}
+
+    void
+    onRequestFinish(mega::MegaApi* /*api*/, mega::MegaRequest* request, mega::MegaError* e) override
+    {
+        int code = e->getErrorCode();
+        if (code == mega::MegaError::API_OK)
+        {
+            const char* path = request->getFile(); // destination path the SDK wrote to
+            mOnDone(Result<std::string>::ok(path ? path : std::string()));
+        }
+        else
+        {
+            mOnDone(Result<std::string>::fail(e->getErrorString(), code));
+        }
+        delete this;
+    }
+
+private:
+    std::function<void(Result<std::string>)> mOnDone;
+};
+
 std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
 {
     std::vector<FileEntry> entries;
@@ -73,6 +100,7 @@ std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
             entry.sizeBytes = node->isFile() ? static_cast<std::uint64_t>(node->getSize()) : 0;
             entry.isFolder = node->isFolder();
             entry.modificationTime = node->getModificationTime();
+            entry.hasThumbnail = node->hasThumbnail();
             entries.push_back(std::move(entry));
         }
     }
@@ -214,6 +242,24 @@ void MegaSdkClient::download(std::uint64_t handle,
                         mega::MegaTransfer::COLLISION_RESOLUTION_NEW_WITH_N,
                         /*undelete*/ false,
                         listener);
+}
+
+void MegaSdkClient::getThumbnail(std::uint64_t handle,
+                                 const std::string& destinationPath,
+                                 std::function<void(Result<std::string>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<std::string>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / invalid handle)"));
+        return;
+    }
+
+    // Safe to let node die on return: getNodeAttribute copies what it needs
+    // into the request before queueing it.
+    mApi->getThumbnail(
+        node.get(), destinationPath.c_str(), new ThumbnailListener(std::move(onDone)));
 }
 
 std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot)
