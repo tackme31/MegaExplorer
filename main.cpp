@@ -18,6 +18,11 @@
 int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
+    // QML Settings (view mode persistence) needs these to resolve a
+    // per-app registry/config location; without them QSettings fails to
+    // initialize (Status code 1) and every read/write silently no-ops.
+    QCoreApplication::setOrganizationName("MegaExplorer");
+    QCoreApplication::setApplicationName("MegaExplorer");
 
     if (!qEnvironmentVariableIsSet("MEGA_EMAIL") || !qEnvironmentVariableIsSet("MEGA_PWD"))
     {
