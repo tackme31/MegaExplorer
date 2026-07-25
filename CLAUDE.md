@@ -38,9 +38,21 @@ Guidance for Claude Code when working in this repo. Full feature list/roadmap de
   `byCreationTime`/`byModificationTime`, `byFavourite`, `bySensitivity`, `byTag`/`byDescription`)
   plus `MegaSearchPage`-based pagination — none of that was needed for the MVP search box itself.
   Same known rough edge as Phase 2: search failure only `qWarning()`s, no UI feedback.
-- **Phase 4 next**: not yet scoped — roadmap bullet below is the unsplit description
-  (`MEMO.md`より). Needs an MVP-scope split like Phase 3 got (e.g. download+open-with-default-app
-  first, upload/progress UI later) before implementation starts.
+- **Phase 4 next** (download → open): MVP scope decided 2026-07-25 — the "hybrid" option. Both
+  double-click on a file and a context-menu "Download" entry (both still unimplemented — today
+  `TapHandler.onDoubleTapped` only fires for folders, and there's no context menu at all) feed the
+  same download flow rather than diverging. Download starts immediately with progress feedback;
+  on completion a snackbar-style notification offers an **"Open" button — no auto-open**, matching
+  the same "don't surprise the user with something launching mid-interaction" reasoning already
+  used for search-on-Enter (Phase 3). Clicking it opens the temp-downloaded file via the OS default
+  app (`QDesktopServices::openUrl` on a local path, likely — exact placement TBD, `src/platform`
+  doesn't exist yet). Format-specific in-app preview (`MegaApi::getPreview`/`startStreaming`,
+  server-generated static preview images / range-served streaming — considered and explicitly
+  deferred, see `MEMO.md`) and upload are out of this pass's scope. Async seam note: unlike
+  login/fetchNodes/search (`MegaRequestListener`, single callback), `MegaApi::startDownload` is
+  `MegaTransferListener`-based — separate `onTransferUpdate` (progress) and `onTransferFinish`
+  (done) callbacks, so `IMegaClient`'s download method will need a different shape (two callbacks,
+  not `Result<T>`-in-one like the existing methods).
 - Check current file contents before assuming a feature exists; don't trust the roadmap alone.
 - Roadmap (bottom-up, see `MEMO.md` for detail): 0 SDK build → 1 file listing → 2 folder
   navigation (double-click into subfolders) → 3 search → **4 download/open/upload** → 5 thumbnails →
