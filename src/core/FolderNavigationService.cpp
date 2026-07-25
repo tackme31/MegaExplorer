@@ -48,3 +48,8 @@ bool FolderNavigationService::canGoBack() const
 {
     return !mBackStack.empty();
 }
+
+FolderNavigationService::CurrentLocation FolderNavigationService::currentLocation() const
+{
+    return CurrentLocation{mCurrent.isRoot, mCurrent.handle};
+}

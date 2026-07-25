@@ -3,6 +3,7 @@ find_package(GTest CONFIG REQUIRED)
 add_executable(MegaExplorerTests
     FileListingServiceTest.cpp
     FolderNavigationServiceTest.cpp
+    SearchServiceTest.cpp
     MockMegaClient.h
 )
 

@@ -34,6 +34,16 @@ public:
 
     bool canGoBack() const;
 
+    // Public mirror of the private Location below, for callers (e.g. search)
+    // that need to scope an operation to "wherever the user currently is"
+    // without exposing Location itself.
+    struct CurrentLocation
+    {
+        bool isRoot;
+        std::uint64_t handle;
+    };
+    CurrentLocation currentLocation() const;
+
 private:
     struct Location
     {
