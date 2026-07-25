@@ -4,6 +4,7 @@ add_executable(MegaExplorerTests
     FileListingServiceTest.cpp
     FolderNavigationServiceTest.cpp
     SearchServiceTest.cpp
+    DownloadServiceTest.cpp
     MockMegaClient.h
 )
 
