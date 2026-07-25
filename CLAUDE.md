@@ -44,9 +44,28 @@ Guidance for Claude Code when working in this repo. Full feature list/roadmap de
   since it's an independent concern), so they funnel into the same flow instead of diverging.
   `IMegaClient::download` (`src/core`/`src/mega`) diverges from the rest of the interface's single-
   `Result<T>`-callback shape: `MegaApi::startDownload` is `MegaTransferListener`-based, so it takes a
-  progress callback plus a `Result<std::string>` completion callback (the string is the actual saved
-  local path, since `COLLISION_RESOLUTION_NEW_WITH_N` can rename on a name collision);
-  `MegaSdkClient` implements it with a self-deleting `DownloadListener`, matching the existing
+  progress callback plus a `Result<DownloadOutcome>` completion callback (`DownloadOutcome`,
+  `src/core/DownloadOutcome.h`: `localPath` is the actual saved path, since
+  `COLLISION_RESOLUTION_NEW_WITH_N` can rename on a name collision; `alreadyPresent` is true when an
+  identical — fingerprint-matching — file already existed at the destination and the SDK skipped the
+  transfer outright rather than writing anything, per `COLLISION_CHECK_FINGERPRINT`). Confirmed by
+  tracing `third_party/sdk`'s collision-resolution path (`megaapi_impl.cpp`'s `CollisionChecker`/
+  `CompleteFileDownloadBySkip`, `filesystem.cpp`'s `FileDistributor::moveToForMethod_RenameWithBracketedNumber`,
+  which calls Win32 `MoveFileExW` *without* `MOVEFILE_REPLACE_EXISTING`) that this combination never
+  actually overwrites a same-named file with different content — it renames the new file with a
+  `(1)`/`(2)`/... suffix instead. `alreadyPresent` is inferred in `MegaSdkClient`'s `DownloadListener`
+  (no public SDK getter exists for the collision-check outcome) from
+  `transfer->getTransferredBytes() == 0 && transfer->getTotalBytes() > 0` at completion, since
+  `CompleteFileDownloadBySkip` explicitly zeroes `transferredBytes` on the skip path. Added
+  2026-07-25 after a user report of "same-name downloads overwrite the existing file" turned out to
+  be this skip case surfacing no visible difference in the UI (`DownloadSnackbar.qml` showed the
+  same generic "ダウンロード完了" message either way) rather than an actual overwrite — the snackbar now
+  shows "既にダウンロード済みです" instead when `alreadyPresent` is true. The renamed-file case (different
+  content, same requested name) is also covered: `DownloadController` reports the *actual* saved leaf
+  name (`QFileInfo(resolvedLocalPath).fileName()`) as the snackbar's `fileName` on success, not the
+  originally-requested `job.name` — so a collision-renamed download reads as e.g. "photo (1).jpg の
+  ダウンロードが完了しました" instead of silently claiming "photo.jpg" completed, which is what read as an
+  overwrite. `MegaSdkClient` implements it with a self-deleting `DownloadListener`, matching the existing
   `LoginListener`/`FetchNodesListener` idiom. `DownloadService` (`src/core`) serializes downloads one
   at a time over that port, auto-advancing the queue on completion; built with a per-job id/state
   (`DownloadJob`, `jobs()` snapshot) from the start so a future progress-list UI and per-job cancel
