@@ -103,7 +103,7 @@ void MegaSdkClient::fetchNodes(std::function<void(Result<void>)> onDone)
 
 void MegaSdkClient::getRootChildren(std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    listChildren(std::unique_ptr<mega::MegaNode>(mApi->getRootNode()),
+    listChildren(resolveNode(0, true),
                  "No root node (not logged in / nodes not fetched)",
                  std::move(onDone));
 }
@@ -111,10 +111,38 @@ void MegaSdkClient::getRootChildren(std::function<void(Result<std::vector<FileEn
 void MegaSdkClient::getChildren(std::uint64_t handle,
                                  std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    listChildren(std::unique_ptr<mega::MegaNode>(
-                     mApi->getNodeByHandle(static_cast<mega::MegaHandle>(handle))),
+    listChildren(resolveNode(handle, false),
                  "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
                  std::move(onDone));
+}
+
+void MegaSdkClient::search(std::uint64_t ancestorHandle,
+                            bool isRoot,
+                            const std::string& query,
+                            std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> ancestor = resolveNode(ancestorHandle, isRoot);
+    if (!ancestor)
+    {
+        onDone(Result<std::vector<FileEntry>>::fail(
+            "No ancestor node for search (not logged in / nodes not fetched / invalid handle)"));
+        return;
+    }
+
+    std::unique_ptr<mega::MegaSearchFilter> filter(mega::MegaSearchFilter::createInstance());
+    filter->byName(query.c_str());
+    filter->byLocationHandle(ancestor->getHandle());
+
+    std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get()));
+    onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
+}
+
+std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot)
+{
+    if (isRoot)
+        return std::unique_ptr<mega::MegaNode>(mApi->getRootNode());
+    return std::unique_ptr<mega::MegaNode>(
+        mApi->getNodeByHandle(static_cast<mega::MegaHandle>(handle)));
 }
 
 void MegaSdkClient::listChildren(std::unique_ptr<mega::MegaNode> node,

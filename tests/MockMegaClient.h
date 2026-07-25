@@ -14,4 +14,8 @@ public:
                 (std::function<void(Result<std::vector<FileEntry>>)>), (override));
     MOCK_METHOD(void, getChildren,
                 (std::uint64_t, std::function<void(Result<std::vector<FileEntry>>)>), (override));
+    MOCK_METHOD(void, search,
+                (std::uint64_t, bool, const std::string&,
+                 std::function<void(Result<std::vector<FileEntry>>)>),
+                (override));
 };

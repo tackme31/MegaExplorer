@@ -28,4 +28,14 @@ public:
     // hood, but kept callback-shaped for interface consistency.
     virtual void getChildren(std::uint64_t handle,
                               std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
+
+    // Recursive name search rooted at ancestorHandle (ignored when isRoot is
+    // true, same isRoot-sentinel convention as FolderNavigationService's
+    // Location). Must be called after a successful fetchNodes(). Synchronous
+    // under the hood (MegaApi::search()), but kept callback-shaped for
+    // interface consistency.
+    virtual void search(std::uint64_t ancestorHandle,
+                         bool isRoot,
+                         const std::string& query,
+                         std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 };

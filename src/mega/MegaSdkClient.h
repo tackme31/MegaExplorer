@@ -26,7 +26,16 @@ public:
     void getChildren(std::uint64_t handle,
                       std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
+    void search(std::uint64_t ancestorHandle,
+                bool isRoot,
+                const std::string& query,
+                std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
+
 private:
+    // Shared by getRootChildren/getChildren/search: isRoot selects
+    // getRootNode(), otherwise looks handle up via getNodeByHandle().
+    std::unique_ptr<mega::MegaNode> resolveNode(std::uint64_t handle, bool isRoot);
+
     void listChildren(std::unique_ptr<mega::MegaNode> node,
                        const char* notFoundMessage,
                        std::function<void(Result<std::vector<FileEntry>>)> onDone);
