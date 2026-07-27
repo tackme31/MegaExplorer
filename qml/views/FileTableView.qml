@@ -44,6 +44,10 @@ ColumnLayout {
         Layout.fillWidth: true
         syncView: tableView
         clip: true
+        // Same rationale as tableView below -- HorizontalHeaderView is also
+        // a Flickable and would otherwise let click-drag pan it independently
+        // of the synced tableView.
+        acceptedButtons: Qt.NoButton
 
         delegate: Rectangle {
             implicitHeight: 32
@@ -74,6 +78,11 @@ ColumnLayout {
         Layout.fillHeight: true
         clip: true
         resizableColumns: true
+        // Flickable (TableView's base) defaults acceptedButtons to
+        // Qt.LeftButton, i.e. click-drag pans the view -- unexpected for an
+        // Explorer-style list. NoButton disables drag/flick while leaving
+        // wheel scrolling untouched (Flickable.acceptedButtons, since 6.9).
+        acceptedButtons: Qt.NoButton
         model: controller.fileListModel
 
         columnWidthProvider: function (column) {
