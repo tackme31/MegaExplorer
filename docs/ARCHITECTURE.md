@@ -40,13 +40,18 @@ was validated against). Any further MEGA-facing code must go through `IMegaClien
 never call `MegaApi`/`std::filesystem` directly.
 
 ```
+src/app/       Cross-cutting Qt-dependent app infrastructure, not QML-facing: Logging.{h,cpp}
+               (categorized QLoggingCategory + qInstallMessageHandler file sink)
 src/core/      IMegaClient.h, FileEntry.h, Result.h, FileListingService.{h,cpp}, and other
                SDK-free domain services (FolderNavigationService, SearchService,
                DownloadService, ThumbnailService, ...)
-src/mega/      MegaSdkClient adapter — the only place allowed to include megaapi.h
+src/mega/      MegaSdkClient adapter and MegaSdkLogger (bridges mega::MegaLogger into
+               src/app/Logging.h's lcSdk category) — the only files allowed to include
+               megaapi.h
 src/platform/  RealFileSystem adapter — not yet created (needed once local caching starts,
                roadmap step 6)
-src/qml/       C++ types exposed to QML (Q_PROPERTY etc.): FileListModel, controllers
+src/qml/       C++ types exposed to QML (Q_PROPERTY etc.): FileListModel, controllers,
+               NotificationController (shared error-toast relay)
 tests/         GoogleTest-based unit tests, one per src/core service
 ```
 
@@ -69,8 +74,10 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
   `mega::MegaApi` using a per-call, self-deleting `MegaRequestListener` subclass (`new
   Listener(...)` passed to `login()`/`fetchNodes()`/etc., `delete this` at the end of
   `onRequestFinish`) — same idiom reused for `DownloadListener`/`ThumbnailListener`.
-  `RealFileSystem` — not yet added. `MegaSdkClient.cpp`/`.h` are the only files allowed to include
-  `megaapi.h` or call `std::filesystem` directly.
+  `RealFileSystem` — not yet added. `MegaSdkClient.cpp`/`.h` and `MegaSdkLogger.cpp`/`.h` (a small
+  `mega::MegaLogger` bridge into `src/app/Logging.h`'s categorized logging, registered/unregistered
+  in `MegaSdkClient`'s constructor/destructor via `MegaApi::addLoggerObject`) are the only files
+  allowed to include `megaapi.h` or call `std::filesystem` directly.
 - **`Result<T>`** (`src/core/Result.h`): hand-rolled success/failure wrapper (no `std::expected` —
   `CMAKE_CXX_STANDARD` isn't pinned in this project, so C++23 can't be assumed); has a
   `Result<void>` specialization for callbacks with no payload (e.g. `login`).

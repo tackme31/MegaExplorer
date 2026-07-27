@@ -1,5 +1,7 @@
 #include "MegaSdkClient.h"
 
+#include "MegaSdkLogger.h"
+
 #include <megaapi.h>
 #include <utility>
 
@@ -160,10 +162,19 @@ private:
 } // namespace
 
 MegaSdkClient::MegaSdkClient(std::string basePath, std::string userAgent)
-    : mApi(std::make_unique<mega::MegaApi>(nullptr, basePath.c_str(), userAgent.c_str()))
-{}
+    : mLogger(std::make_unique<MegaSdkLogger>()),
+      mApi(std::make_unique<mega::MegaApi>(nullptr, basePath.c_str(), userAgent.c_str()))
+{
+    // Static: addLoggerObject/removeLoggerObject register process-wide, not
+    // per-MegaApi-instance. Fine here since the app only ever constructs one
+    // MegaSdkClient.
+    mega::MegaApi::addLoggerObject(mLogger.get());
+}
 
-MegaSdkClient::~MegaSdkClient() = default;
+MegaSdkClient::~MegaSdkClient()
+{
+    mega::MegaApi::removeLoggerObject(mLogger.get());
+}
 
 void MegaSdkClient::login(const std::string& email,
                           const std::string& password,

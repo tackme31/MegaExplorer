@@ -50,8 +50,12 @@ add_subdirectory(tests)
 
 qt_add_executable(appMegaExplorer
     main.cpp
+    src/app/Logging.h
+    src/app/Logging.cpp
     src/mega/MegaSdkClient.h
     src/mega/MegaSdkClient.cpp
+    src/mega/MegaSdkLogger.h
+    src/mega/MegaSdkLogger.cpp
     src/qml/FileListModel.h
     src/qml/FileListModel.cpp
     src/qml/FolderNavigationController.h

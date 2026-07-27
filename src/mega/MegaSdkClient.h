@@ -4,14 +4,17 @@
 #include <cstdint>
 #include <memory>
 
-// forward declarations; only MegaSdkClient.cpp needs <megaapi.h>
+// forward declarations; only files under src/mega need <megaapi.h>
 namespace mega
 {
 class MegaApi;
 class MegaNode;
 } // namespace mega
 
-// Only this class (and its .cpp) may include <megaapi.h> or touch mega::* types.
+class MegaSdkLogger;
+
+// Only files under src/mega (this class and MegaSdkLogger) may include
+// <megaapi.h> or touch mega::* types.
 class MegaSdkClient : public IMegaClient
 {
 public:
@@ -53,5 +56,9 @@ private:
                       const char* notFoundMessage,
                       std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
+    // Declared before mApi: constructed first / destroyed last, so the
+    // logger is registered before mApi can log anything and stays valid
+    // until mApi is gone.
+    std::unique_ptr<MegaSdkLogger> mLogger;
     std::unique_ptr<mega::MegaApi> mApi;
 };

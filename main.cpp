@@ -1,3 +1,4 @@
+#include "app/Logging.h"
 #include "core/DownloadService.h"
 #include "core/FileListingService.h"
 #include "core/FolderNavigationService.h"
@@ -24,9 +25,14 @@ int main(int argc, char* argv[])
     QCoreApplication::setOrganizationName("MegaExplorer");
     QCoreApplication::setApplicationName("MegaExplorer");
 
+    // Must run before any other logging call: appMegaExplorer is
+    // WIN32_EXECUTABLE, so qWarning()/qCWarning() output reaches no visible
+    // destination at all on a normal launch until this installs a file sink.
+    installLogging();
+
     if (!qEnvironmentVariableIsSet("MEGA_EMAIL") || !qEnvironmentVariableIsSet("MEGA_PWD"))
     {
-        qWarning() << "MEGA_EMAIL / MEGA_PWD environment variables must be set";
+        qCWarning(lcApp) << "MEGA_EMAIL / MEGA_PWD environment variables must be set";
         return 1;
     }
     const std::string email = qEnvironmentVariable("MEGA_EMAIL").toStdString();
