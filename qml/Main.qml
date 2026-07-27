@@ -235,10 +235,22 @@ ApplicationWindow {
         parent: Overlay.overlay
     }
 
+    ErrorToast {
+        id: errorToast
+        parent: Overlay.overlay
+    }
+
     Connections {
         target: downloadController
         function onDownloadFinished(success, fileName, localPath, errorMessage, alreadyPresent) {
             downloadSnackbar.show(success, fileName, localPath, errorMessage, alreadyPresent);
+        }
+    }
+
+    Connections {
+        target: notificationController
+        function onErrorOccurred(context, errorMessage) {
+            errorToast.show(context, errorMessage);
         }
     }
 }
