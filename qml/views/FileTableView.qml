@@ -49,6 +49,15 @@ ColumnLayout {
             implicitHeight: 32
             required property int column
 
+            // FluentWinUI3 ships no HorizontalHeaderView delegate of its own
+            // (unlike Basic), so this Rectangle's background is the only one
+            // drawn here -- leaving `color` at Rectangle's default (opaque
+            // white) clashed with the Label's palette-driven (theme-follows-
+            // Windows) foreground, producing invisible white-on-white text.
+            // transparent lets the real themed background show through,
+            // same as the row delegate below.
+            color: "transparent"
+
             Label {
                 anchors.fill: parent
                 anchors.margins: 6
