@@ -9,6 +9,10 @@ import QtCore
 // (Qt Creator's classic QML/JS model, qmllint without the build dir) only
 // knows about the plain-QML directory-import mechanism, not that mechanism.
 import "components"
+// Directory import for FileTableView.qml -- same QTP0004 caveat as the
+// "components" import above (static tooling needs this explicit import even
+// though the CMake-generated qmldir merge resolves it either way).
+import "views"
 
 ApplicationWindow {
     id: window
@@ -23,20 +27,6 @@ ApplicationWindow {
     // change is written through automatically -- a plain property on
     // Settings would only capture the value at startup).
     property int viewMode: 0
-
-    // Shared list/grid right-click menu. Inline components must be declared
-    // inside the root object, not as a top-level sibling before it -- the
-    // latter is a syntax error (qmlcachegen rejects it even though some
-    // examples elsewhere show it at file scope).
-    component FileContextMenu: Menu {
-        required property var delegateItem
-
-        MenuItem {
-            text: qsTr("ダウンロード")
-            onTriggered: downloadController.downloadFile(delegateItem.handle, delegateItem.name,
-                                                         delegateItem.sizeBytes)
-        }
-    }
 
     Settings {
         property alias viewMode: window.viewMode
@@ -113,37 +103,10 @@ ApplicationWindow {
         anchors.fill: parent
         currentIndex: window.viewMode
 
-        ListView {
-            model: controller.fileListModel
-            clip: true
-
-            delegate: ItemDelegate {
-                id: delegateItem
-                required property string name
-                required property bool isFolder
-                required property var handle
-                required property var sizeBytes
-
-                width: ListView.view.width
-                text: (isFolder ? "📁 " : "📄 ") + name
-
-                TapHandler {
-                    acceptedButtons: Qt.LeftButton
-                    onDoubleTapped: window.activateEntry(delegateItem.isFolder, delegateItem.handle,
-                                                         delegateItem.name, delegateItem.sizeBytes)
-                }
-
-                TapHandler {
-                    acceptedButtons: Qt.RightButton
-                    onTapped: if (!delegateItem.isFolder)
-                                  contextMenu.popup()
-                }
-
-                FileContextMenu {
-                    id: contextMenu
-                    delegateItem: delegateItem
-                }
-            }
+        FileTableView {
+            onActivateRequested: (isFolder, handle, name, sizeBytes) => window.activateEntry(
+                                                                            isFolder, handle, name,
+                                                                            sizeBytes)
         }
 
         GridView {

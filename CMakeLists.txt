@@ -76,6 +76,8 @@ qt_add_qml_module(appMegaExplorer
         qml/Main.qml
         qml/components/DownloadSnackbar.qml
         qml/components/ErrorToast.qml
+        qml/components/FileContextMenu.qml
+        qml/views/FileTableView.qml
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

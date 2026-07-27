@@ -1,13 +1,27 @@
 #pragma once
 #include "core/FileEntry.h"
 
-#include <QAbstractListModel>
+#include <QAbstractTableModel>
 
 #include <vector>
 
 // Owned by main.cpp's composition root and exposed to QML via
 // setContextProperty(); not instantiated from QML, so no QML_ELEMENT needed.
-class FileListModel : public QAbstractListModel
+//
+// QAbstractTableModel (not QAbstractListModel) since Phase 6b: columnCount()
+// reports 4 (Name/Modified/Kind/Size) so TableView+HorizontalHeaderView can
+// render an Explorer-style detail view. data(index, role) still dispatches
+// purely on role and ignores index.column() -- ListView/GridView (used by
+// the grid/thumbnail view) only ever query column 0 of a multi-column
+// model, so that view keeps working unmodified off this same instance.
+//
+// No headerData() override: column header text is Japanese, and this
+// codebase's convention is "C++ passes structured fields, QML composes
+// user-facing text" (see NotificationController/ErrorToast.qml) -- also
+// sidesteps an MSVC codepage gotcha with non-ASCII literals in .cpp/.h files
+// (see FileKind.h). FileTableView.qml's header delegate hardcodes the
+// labels instead.
+class FileListModel : public QAbstractTableModel
 {
     Q_OBJECT
 
@@ -20,11 +34,15 @@ public:
         HandleRole,
         HasThumbnailRole,
         ThumbnailPathRole,
+        ModificationTimeRole,
+        FormattedSizeRole,
+        ExtensionRole,
     };
 
     explicit FileListModel(QObject* parent = nullptr);
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
+    int columnCount(const QModelIndex& parent = QModelIndex()) const override;
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
 
