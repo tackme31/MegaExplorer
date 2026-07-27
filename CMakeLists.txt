@@ -64,6 +64,8 @@ qt_add_executable(appMegaExplorer
     src/qml/DownloadController.cpp
     src/qml/ThumbnailController.h
     src/qml/ThumbnailController.cpp
+    src/qml/NotificationController.h
+    src/qml/NotificationController.cpp
 )
 
 qt_add_qml_module(appMegaExplorer

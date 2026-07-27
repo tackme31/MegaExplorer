@@ -9,6 +9,8 @@
 #include <memory>
 #include <string>
 
+class NotificationController;
+
 // QML-facing GUI glue wrapping FolderNavigationService + SearchService +
 // FileListModel. QML can't pass C++ callbacks, so the Q_INVOKABLE entry
 // points below are fire-and-forget: internally they hand the service a bound
@@ -31,6 +33,7 @@ public:
     explicit FolderNavigationController(std::shared_ptr<FolderNavigationService> navigationService,
                                         std::shared_ptr<FileListingService> listingService,
                                         std::shared_ptr<SearchService> searchService,
+                                        NotificationController* notifications,
                                         QObject* parent = nullptr);
 
     QObject* fileListModel();
@@ -68,6 +71,7 @@ private:
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<FileListingService> mListingService;
     std::shared_ptr<SearchService> mSearchService;
+    NotificationController* mNotifications;
     FileListModel mFileListModel;
     std::vector<FileEntry> mLastFolderEntries; // restored when search is cleared
 };

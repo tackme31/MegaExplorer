@@ -1,5 +1,8 @@
 #include "ThumbnailController.h"
 
+#include "app/Logging.h"
+#include "NotificationController.h"
+
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
@@ -23,8 +26,9 @@ void invokeOnGuiThread(std::function<void()> fn)
 
 ThumbnailController::ThumbnailController(std::shared_ptr<ThumbnailService> service,
                                          FileListModel* model,
+                                         NotificationController* notifications,
                                          QObject* parent)
-    : QObject(parent), mService(std::move(service)), mModel(model)
+    : QObject(parent), mService(std::move(service)), mModel(model), mNotifications(notifications)
 {}
 
 void ThumbnailController::requestThumbnail(quint64 handle)
@@ -37,21 +41,23 @@ void ThumbnailController::requestThumbnail(quint64 handle)
     // expected to only invoke this for hasThumbnail == true && isFolder ==
     // false rows.
     QString destinationPath = computeDestinationPath(handle);
-    mService->request(static_cast<std::uint64_t>(handle),
-                      destinationPath.toStdString(),
-                      [this, handle](Result<std::string> result) {
-                          invokeOnGuiThread([this, handle, result = std::move(result)]() mutable {
-                              if (!result.success)
-                              {
-                                  qWarning() << "thumbnail fetch failed for handle" << handle << ":"
-                                             << QString::fromStdString(result.errorMessage)
-                                             << "code=" << result.errorCode;
-                                  return;
-                              }
-                              mModel->setThumbnailPath(handle,
-                                                       QString::fromStdString(result.value));
-                          });
-                      });
+    mService->request(
+        static_cast<std::uint64_t>(handle),
+        destinationPath.toStdString(),
+        [this, handle](Result<std::string> result) {
+            invokeOnGuiThread([this, handle, result = std::move(result)]() mutable {
+                if (!result.success)
+                {
+                    qCWarning(lcThumbnail) << "thumbnail fetch failed for handle" << handle << ":"
+                                           << QString::fromStdString(result.errorMessage)
+                                           << "code=" << result.errorCode;
+                    mNotifications->notifyError(QStringLiteral("thumbnail"),
+                                                QString::fromStdString(result.errorMessage));
+                    return;
+                }
+                mModel->setThumbnailPath(handle, QString::fromStdString(result.value));
+            });
+        });
 }
 
 QString ThumbnailController::computeDestinationPath(quint64 handle) const

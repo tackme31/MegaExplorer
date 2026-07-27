@@ -6,6 +6,8 @@
 
 #include <memory>
 
+class NotificationController;
+
 // QML-facing GUI glue wrapping DownloadService, registered as its own
 // "downloadController" context property (main.cpp) -- deliberately separate
 // from FolderNavigationController since it's an independent concern
@@ -22,6 +24,7 @@ class DownloadController : public QObject
 
 public:
     explicit DownloadController(std::shared_ptr<DownloadService> service,
+                                NotificationController* notifications,
                                 QObject* parent = nullptr);
 
     bool downloadActive() const;
@@ -71,6 +74,7 @@ private:
     QString computeDestinationPath(const QString& fileName) const;
 
     std::shared_ptr<DownloadService> mService;
+    NotificationController* mNotifications;
     DownloadJob mActiveJob;
     bool mHasActiveJob = false;
 };

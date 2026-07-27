@@ -7,6 +7,7 @@
 #include "mega/MegaSdkClient.h"
 #include "qml/DownloadController.h"
 #include "qml/FolderNavigationController.h"
+#include "qml/NotificationController.h"
 #include "qml/ThumbnailController.h"
 
 #include <QDebug>
@@ -44,15 +45,20 @@ int main(int argc, char* argv[])
     auto searchService = std::make_shared<SearchService>(client, navigationService);
     auto downloadService = std::make_shared<DownloadService>(client);
     auto thumbnailService = std::make_shared<ThumbnailService>(client);
-    FolderNavigationController controller(navigationService, listingService, searchService);
-    DownloadController downloadController(downloadService);
-    ThumbnailController thumbnailController(thumbnailService,
-                                            controller.fileListModelForThumbnails());
+    // Declared before the controllers below: they hold a non-owning pointer
+    // to it, and stack locals are destroyed in reverse construction order.
+    NotificationController notifications;
+    FolderNavigationController controller(
+        navigationService, listingService, searchService, &notifications);
+    DownloadController downloadController(downloadService, &notifications);
+    ThumbnailController thumbnailController(
+        thumbnailService, controller.fileListModelForThumbnails(), &notifications);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("controller", &controller);
     engine.rootContext()->setContextProperty("downloadController", &downloadController);
     engine.rootContext()->setContextProperty("thumbnailController", &thumbnailController);
+    engine.rootContext()->setContextProperty("notificationController", &notifications);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

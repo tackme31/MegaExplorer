@@ -7,6 +7,8 @@
 
 #include <memory>
 
+class NotificationController;
+
 // QML-facing GUI glue wrapping ThumbnailService, registered as its own
 // "thumbnailController" context property (main.cpp), separate from
 // FolderNavigationController/DownloadController -- see
@@ -23,6 +25,7 @@ class ThumbnailController : public QObject
 public:
     explicit ThumbnailController(std::shared_ptr<ThumbnailService> service,
                                  FileListModel* model,
+                                 NotificationController* notifications,
                                  QObject* parent = nullptr);
 
     // Resolves a per-handle destination path under a session-cache temp
@@ -31,8 +34,9 @@ public:
     // FileListModel::setThumbnailPath. Caller (QML) is expected to only
     // invoke this for rows with hasThumbnail == true && isFolder == false;
     // this method doesn't re-check those flags itself -- see .cpp for why.
-    // Failures are qWarning()-only, no UI feedback (same as Phase 2/3
-    // navigation/search failures), matching TASKS.md's Phase 5 scope.
+    // Failures are logged (lcThumbnail) and relayed through
+    // NotificationController's generic error toast, same as
+    // FolderNavigationController's navigation/search failures.
     Q_INVOKABLE void requestThumbnail(quint64 handle);
 
 private:
@@ -40,4 +44,5 @@ private:
 
     std::shared_ptr<ThumbnailService> mService;
     FileListModel* mModel;
+    NotificationController* mNotifications;
 };

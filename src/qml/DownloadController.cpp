@@ -1,5 +1,8 @@
 #include "DownloadController.h"
 
+#include "app/Logging.h"
+#include "NotificationController.h"
+
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDesktopServices>
@@ -25,8 +28,10 @@ void invokeOnGuiThread(std::function<void()> fn)
 
 } // namespace
 
-DownloadController::DownloadController(std::shared_ptr<DownloadService> service, QObject* parent)
-    : QObject(parent), mService(std::move(service))
+DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
+                                       NotificationController* notifications,
+                                       QObject* parent)
+    : QObject(parent), mService(std::move(service)), mNotifications(notifications)
 {
     mService->setOnProgress([this](DownloadJob) {
         invokeOnGuiThread([this] {
@@ -48,6 +53,14 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
                 job.state == DownloadState::Completed
                     ? QFileInfo(QString::fromStdString(job.resolvedLocalPath)).fileName()
                     : QString::fromStdString(job.name);
+            if (job.state == DownloadState::Failed)
+            {
+                // Log only -- DownloadSnackbar already surfaces this to the
+                // user via downloadFinished below, so no notifyError() here.
+                qCWarning(lcDownload)
+                    << "download failed for" << displayName << ":"
+                    << QString::fromStdString(job.errorMessage) << "code=" << job.errorCode;
+            }
             emit downloadFinished(job.state == DownloadState::Completed,
                                   displayName,
                                   QString::fromStdString(job.resolvedLocalPath),
@@ -95,7 +108,10 @@ void DownloadController::downloadFile(quint64 handle, QString name, quint64 size
 void DownloadController::openFile(QString localPath)
 {
     if (!QDesktopServices::openUrl(QUrl::fromLocalFile(localPath)))
-        qWarning() << "failed to open downloaded file:" << localPath;
+    {
+        qCWarning(lcDownload) << "failed to open downloaded file:" << localPath;
+        mNotifications->notifyError(QStringLiteral("openFile"), localPath);
+    }
 }
 
 QString DownloadController::computeDestinationPath(const QString& fileName) const

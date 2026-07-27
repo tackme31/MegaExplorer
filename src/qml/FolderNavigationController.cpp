@@ -1,5 +1,8 @@
 #include "FolderNavigationController.h"
 
+#include "app/Logging.h"
+#include "NotificationController.h"
+
 #include <QCoreApplication>
 #include <QDebug>
 #include <QMetaObject>
@@ -24,9 +27,11 @@ FolderNavigationController::FolderNavigationController(
     std::shared_ptr<FolderNavigationService> navigationService,
     std::shared_ptr<FileListingService> listingService,
     std::shared_ptr<SearchService> searchService,
+    NotificationController* notifications,
     QObject* parent)
     : QObject(parent), mService(std::move(navigationService)),
-      mListingService(std::move(listingService)), mSearchService(std::move(searchService))
+      mListingService(std::move(listingService)), mSearchService(std::move(searchService)),
+      mNotifications(notifications)
 {}
 
 QObject* FolderNavigationController::fileListModel()
@@ -77,8 +82,11 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
 {
     if (!result.success)
     {
-        qWarning() << "folder navigation failed:" << QString::fromStdString(result.errorMessage)
-                   << "code=" << result.errorCode;
+        qCWarning(lcNavigation) << "folder navigation failed:"
+                                << QString::fromStdString(result.errorMessage)
+                                << "code=" << result.errorCode;
+        mNotifications->notifyError(QStringLiteral("navigation"),
+                                    QString::fromStdString(result.errorMessage));
         return;
     }
     mLastFolderEntries = result.value;
@@ -105,8 +113,10 @@ void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>
 {
     if (!result.success)
     {
-        qWarning() << "search failed:" << QString::fromStdString(result.errorMessage)
-                   << "code=" << result.errorCode;
+        qCWarning(lcSearch) << "search failed:" << QString::fromStdString(result.errorMessage)
+                            << "code=" << result.errorCode;
+        mNotifications->notifyError(QStringLiteral("search"),
+                                    QString::fromStdString(result.errorMessage));
         return;
     }
     mFileListModel.setEntries(std::move(result.value));
