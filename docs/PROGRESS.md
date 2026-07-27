@@ -106,13 +106,73 @@ the drive letter, tripping an internal invariant `assert()`. Format-specific in-
 (`MegaApi::getPreview`/`startStreaming` — considered and explicitly deferred, see `MEMO.md`) and
 upload remain out of scope.
 
-## Phase 5 — thumbnails (in progress)
+## Phase 5 — thumbnails (done)
 
-See `TASKS.md` for the current task breakdown and progress checklist. Scope agreed 2026-07-25:
-server-generated thumbnails only (`MegaNode::hasThumbnail()` + `MegaApi::getThumbnail()`, no local
-FreeImage/FFmpeg generation for files without one — extension-based fallback icon instead,
-generation deferred to a later phase); in-memory-only cache (no persistence until Phase 6's SQLite
-cache); list/grid view toggle persisted via QML's `Settings` (`import QtCore`, not the deprecated
-`Qt.labs.settings`). This section gets filled in with the full implementation narrative (mirroring
-Phases 0–4 above) after manual verification, as an independent follow-up commit — per `TASKS.md`'s
-own last step. Don't assume it's done without checking `TASKS.md` and current file contents.
+Scope agreed 2026-07-25: server-generated thumbnails only (`MegaNode::hasThumbnail()` +
+`MegaApi::getThumbnail()`); no local FreeImage/FFmpeg generation for files without one —
+extension-based fallback icon (existing 📁/📄 glyphs) instead, generation deferred to a later
+phase; in-memory-only cache (no persistence until Phase 6's SQLite cache); list/grid view toggle
+persisted via `QtCore`'s `Settings` type, not the deprecated `Qt.labs.settings` (Qt 6.5 doc
+explicitly says to use the former).
+
+`FileEntry::hasThumbnail` (`src/core/FileEntry.h`) and `IMegaClient::getThumbnail` (single
+`Result<std::string>`-callback, like `login`/`fetchNodes` — `MegaApi::getThumbnail` is
+`MegaRequestListener`-based, unlike `download`'s two-callback `MegaTransferListener` shape) round
+out the port. `MegaSdkClient::getThumbnail` follows the same self-deleting-listener idiom as
+`LoginListener`/`FetchNodesListener`/`DownloadListener` (new `ThumbnailListener`), reusing
+`resolveNode` to fail fast on an unknown handle; `nodeListToEntries` now also copies
+`node->hasThumbnail()` into `FileEntry`.
+
+`ThumbnailService` (`src/core`, SDK-free like the other core services,
+`tests/ThumbnailServiceTest.cpp`) sits in front of the port with three behaviors `DownloadService`
+doesn't need: a `handle → local path` success cache (thumbnails don't change once fetched, so
+unlike downloads there's no reason to ever re-run a successful job); in-flight de-duplication
+(concurrent requests for the same handle attach to the one job instead of firing the SDK call
+twice — e.g. list/grid toggling back and forth before a fetch completes); and bounded
+*parallel* execution (cap of 4 concurrent jobs, vs. `DownloadService`'s strict one-at-a-time) since
+thumbnails are small enough that serializing them would make grid scrolling feel slow. Failures
+aren't cached, so a later request for the same handle gets a fresh attempt. Same mutex-around-state
+/ lock-free-SDK-call split as `DownloadService`, for the same reason (`MockMegaClient` fires
+callbacks synchronously, so calling `IMegaClient::getThumbnail` while holding the lock would
+self-deadlock).
+
+`FileListModel` (`src/qml`) gained `HasThumbnailRole`/`ThumbnailPathRole` (empty string until
+filled) and `setThumbnailPath(handle, path)`, which does a linear search + per-row `dataChanged()`
+rather than `beginResetModel()`, to avoid flicker while the grid is scrolling as thumbnails stream
+in. Wiring the fetch result back into that same visible model instance is why `ThumbnailController`
+(`src/qml`, new `thumbnailController` context property) is coupled to `FileListModel` in a way
+`DownloadController` deliberately isn't — a download doesn't need to mutate the row it came from,
+a thumbnail display does. `FolderNavigationController` exposes the shared `FileListModel*` via a
+non-`Q_INVOKABLE` typed getter for `main.cpp` to wire the two controllers together at construction
+time. `ThumbnailController::requestThumbnail(handle)` resolves a destination path under
+`QStandardPaths::TempLocation` (app-specific subfolder, `QDir::toNativeSeparators()`d like
+`DownloadController`'s path handling), calls `ThumbnailService::request`, and marshals the
+completion back to the GUI thread before calling `setThumbnailPath`. QML only calls it for rows
+where `hasThumbnail && !isFolder`, to avoid pointless SDK round-trips.
+
+`Main.qml`: `StackLayout { currentIndex: window.viewMode }` holds a `ListView` and `GridView` side
+by side (the inactive one is automatically non-visible/non-interactive); double-click open/download
+dispatch was pulled into a shared `window.activateEntry(...)` function and the right-click menu into
+an inline `component FileContextMenu: Menu {...}` so both delegates share behavior. Gotcha: an
+inline `component` can't be a sibling *before* the root object in a `.qml` file — `qmlcachegen`
+treats that as a syntax error — it has to be declared as a direct child *inside* the root
+(`ApplicationWindow`). The grid delegate's `Image.source` is built from `ThumbnailController`'s
+(Windows-native, backslash-separated) path with `thumbnailPath.replace(/\\/g, "/")` before
+prepending `"file:///"`, since a literal backslash path breaks URL parsing. The footer `ToolBar`
+lost its `visible: downloadController.downloadActive` binding (now always shown, as an
+Explorer-style status bar) — download progress keeps its own `visible` binding on the
+label/progress-bar pair, with an `Item` spacer taking over when it's hidden so the list/grid toggle
+icons (plain `"☰"`/`"⊞"` glyphs, no icon font in this project yet) stay pinned to the right edge.
+`property alias viewMode: window.viewMode` inside a `Settings { }` element persists the toggle
+(an alias auto-persists on every change; a plain property would only load the initial value).
+No `CMakeLists.txt` change was needed for `Settings` — it's part of the built-in `QtCore` QML
+module shipped by qtdeclarative itself, already reachable via `Qt6::Qml` (which `Qt6::Quick`
+already depends on).
+
+Manual verification (2026-07-27): mixed thumbnail/no-thumbnail folders render correctly, list/grid
+toggle survives an app restart, rapid scrolling through a large folder doesn't trip API rate
+limits (the 4-way concurrency cap holds), and the build is clean at `/W4` with zero warnings.
+Known deferred gaps, unchanged from `TASKS.md`'s scope notes: no thumbnail-request cancellation
+(same limitation `DownloadService` has), no richer per-extension icon set, no UI feedback on
+thumbnail fetch failure (falls back to the generic icon silently, same as Phase 2/3's
+navigation/search error handling).
