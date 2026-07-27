@@ -64,8 +64,18 @@ Windowsエクスプローラー風のUIを持つ、MEGA向けの独自デスク�
 8. **フェーズ6b**: 一覧表示時のファイル属性表示(サイズ・更新日時)+ソート機能。フェーズ6aと同様、
    フェーズ6本体(ローカルキャッシュ・バックグラウンド更新)より前に先行着手する差し込み枠 ← **次はここ**。
    仕様決定(2026-07-28):
-   - リスト表示はWindowsエクスプローラーの詳細表示相当に変更 — 名前/サイズ/更新日時のカラムヘッダーを
-     追加し、ヘッダークリックでソート(再クリックで昇順/降順トグル)
+   - リスト表示はWindowsエクスプローラーの詳細表示相当に変更 — カラムヘッダーを追加し、ヘッダークリック
+     でソート(再クリックで昇順/降順トグル)
+   - 表示カラムは以下の4つに決定(2026-07-28):
+     - ファイル名(拡張子含む) — `MegaNode::getName()`、取得済み(`FileEntry::name`)
+     - 更新日時(ローカル日時表示) — `MegaNode::getModificationTime()`、`FileEntry::modificationTime`に
+       取得済みだが`FileListModel::Role`未公開(要追加)。Unix秒なのでQML側は`new Date(t * 1000)`
+     - 種類 — **MegaNodeに直接のgetterなし**。フォルダは「フォルダ」、ファイルは拡張子から表示用の種類
+       文字列を導出する必要がある(Explorerのように拡張子→"〇〇ファイル"のマッピングを持つか、単に拡張子
+       表示にするかは実装時に決める)
+     - ファイルサイズ(人が読みやすい単位に整形。KB/MB等) — `MegaNode::getSize()`、
+       `FileEntry::sizeBytes`/`FileListModel::SizeRole`に取得済みだが現在は生バイト値のまま。整形は
+       QML側かC++ヘルパーのどちらで持つか実装時に決める
    - ソート時はソートキーによらずフォルダを常に先頭に固定し、フォルダ/ファイルそれぞれのグループ内で
      選択中のキーを適用(エクスプローラーの標準動作に合わせる)
    - グリッド(サムネイル)表示側は変更しない — 名前+サムネイルのみのまま
@@ -73,5 +83,25 @@ Windowsエクスプローラー風のUIを持つ、MEGA向けの独自デスク�
    ソートはアプリ側(メモリ上)ではなくMEGA SDKの`MegaApi::getChildren(MegaNode*, order)`の`order`
    引数で行う方針(2026-07-28調査) — 1フォルダ数万ファイル規模でのパフォーマンスを考慮。
    `IMegaClient`/`MegaSdkClient`(`src/core`/`src/mega`)にソート指定を渡す口が無いため、そこの拡張が必要
+
+   テーブル実装方式も決定(2026-07-28、Qt公式ドキュメント調査済み): **`TableView`+`HorizontalHeaderView`
+   への移行**(`import QtQuick.Controls`、`HorizontalHeaderView`はQt Quick Controls所属)。
+   - 現状の一覧表示は`ListView`+`QAbstractListModel`(`FileListModel`、1行=1ファイルでロールが列相当の
+     単一カラムモデル)。`TableView`は行×列の2次元モデルが前提のため、`FileListModel`を
+     `QAbstractTableModel`ベースに書き換え、`columnCount()`を4返すようにして`data(index, role)`が
+     `index.column()`で出し分ける形にする変更が必要(グリッド表示側は`ListView`のままでよく、
+     `FileListModel`を両ビューで共用するなら列に依存しない形を保つか、ビュー別にラッパーを挟むかは
+     実装時に要検討)
+   - カラムのドラッグリサイズは`TableView.resizableColumns: true`(Qt 6.5〜)で標準サポートあり、
+     `HorizontalHeaderView`はデフォルトで`resizableColumns: true`。列の並び替え(`movableColumns`)も
+     Qt 6.8〜標準サポート(今回は使う予定なし)
+   - **ヘッダー境界のダブルクリックでコンテンツ幅へ自動調整する挙動はQt標準コンポーネントに組み込みでは
+     無い**(ドキュメント確認済み、2026-07-28)。自前実装が必要だが材料はQtが提供している:
+     `TableView.implicitColumnWidth(column)`(現在ロード済みの行の中で最大implicitWidthを返す)と
+     `TableView.setColumnWidth(column, size)`を、ヘッダー境界の`TapHandler.onDoubleTapped`
+     (`Main.qml`の他のダブルタップ処理と同じパターン)から呼べば実現可能。ただし
+     `implicitColumnWidth()`は現在ビューにロードされている行のみを見る制約があり、スクロール位置で
+     結果が多少ブレる(数万件フォルダでは特に)。フォルダ全件を見て厳密に幅を決めたい場合は、モデルの
+     文字列長からフォントメトリクスで自前計算する必要がある(文字列測定なのでサムネイル取得ほど重くはない)
 9. **フェーズ7(将来拡張)**: リモート変更のリアルタイム反映(機能一覧 7. を参照)。フォルダオープン時更新の上に追加するだけなので、既存構造への影響は小さい
 10. **フェーズ8以降(未確定)**: 必要になれば都度検討。現時点ではローカルとの双方向フル同期は対象外
