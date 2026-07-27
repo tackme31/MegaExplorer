@@ -30,6 +30,7 @@ struct DownloadJob
     std::uint64_t totalBytes = 0; // seeded from enqueue()'s expectedTotalBytes,
                                   // overwritten once real onProgress data arrives
     std::string errorMessage;     // only meaningful when state == Failed
+    int errorCode = 0; // only meaningful when state == Failed; mirrors Result<T>::errorCode
 };
 
 // Serializes downloads one at a time over IMegaClient::download: enqueue()

@@ -69,7 +69,7 @@ TEST(DownloadServiceTest, EnqueueSuccessSurfacesAlreadyPresentWhenSdkSkippedIden
     EXPECT_TRUE(finished.alreadyPresent);
 }
 
-TEST(DownloadServiceTest, EnqueueFailurePropagatesErrorMessageAndState)
+TEST(DownloadServiceTest, EnqueueFailurePropagatesErrorMessageCodeAndState)
 {
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
@@ -91,6 +91,7 @@ TEST(DownloadServiceTest, EnqueueFailurePropagatesErrorMessageAndState)
     ASSERT_TRUE(finishedCalled);
     EXPECT_EQ(finished.state, DownloadState::Failed);
     EXPECT_EQ(finished.errorMessage, "network error");
+    EXPECT_EQ(finished.errorCode, 2);
     EXPECT_FALSE(service.hasCurrentJob());
 }
 

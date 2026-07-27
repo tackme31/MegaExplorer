@@ -100,7 +100,10 @@ void DownloadService::startNextIfIdle()
                     mQueue.front().alreadyPresent = result.value.alreadyPresent;
                 }
                 else
+                {
                     mQueue.front().errorMessage = result.errorMessage;
+                    mQueue.front().errorCode = result.errorCode;
+                }
                 snapshot = mQueue.front();
                 onJobFinished = mOnJobFinished;
                 mQueue.erase(mQueue.begin());
