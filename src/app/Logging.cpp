@@ -80,7 +80,12 @@ void installLogging()
     qSetMessagePattern(
         "[%{time yyyy-MM-dd HH:mm:ss.zzz}] [%{category}] [%{type}] %{message} (%{file}:%{line})");
 
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    // AppLocalDataLocation, not AppDataLocation: on Windows the latter is the
+    // *roaming* profile path, which would sync this log file over the
+    // network on every logon/logoff in a domain environment for no benefit.
+    // AppLocalDataLocation resolves to the same path as AppDataLocation on
+    // macOS/Linux (Qt docs), so this only changes behavior on Windows.
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(dir);
     const QString path = dir + "/MegaExplorer.log";
 

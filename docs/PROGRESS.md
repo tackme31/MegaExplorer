@@ -208,7 +208,11 @@ types enabled", so no third `QtWarningMsg`-floor argument was needed anywhere, i
 `installLogging()` sets a message pattern via `qSetMessagePattern`, then installs a
 `qInstallMessageHandler` that formats each line with `qFormatLogMessage` and writes it to both
 `stderr` (keeps Qt Creator's Application Output pane working) and a log file under
-`QStandardPaths::AppDataLocation` (`MegaExplorer.log`), guarded by a `QMutex` since the handler can
+`QStandardPaths::AppLocalDataLocation` (`MegaExplorer.log`) — not `AppDataLocation`: on Windows the
+latter is the *roaming* profile path, which would sync a growing log file over the network on every
+logon/logoff in a domain environment for no benefit; `AppLocalDataLocation` resolves to the exact
+same path as `AppDataLocation` on macOS/Linux per Qt's own docs, so this only changes behavior on
+Windows. Guarded by a `QMutex` since the handler can
 be called from MEGA SDK-internal background threads (via the bridge below) as well as the GUI
 thread. Rotation is single-generation: any existing log from a previous run is renamed to
 `MegaExplorer.log.1` on startup, nothing older is kept. Must run before any other logging call —
