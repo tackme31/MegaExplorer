@@ -43,14 +43,17 @@ refresh when a folder is opened, no continuous watching.
 
 Roadmap (bottom-up, see `MEMO.md` for the Japanese feature list and `docs/PROGRESS.md` for the
 full per-phase implementation log): 0 SDK build → 1 file listing → 2 folder navigation
-(double-click into subfolders) → 3 search → 4 download/open → 5 thumbnails → **6 local cache +
-open-folder background refresh (= MVP, next)** → 7 realtime remote-change reflection (post-MVP).
-Full bidirectional local sync is out of scope; upload has no assigned phase yet (see `MEMO.md`'s
-feature list).
+(double-click into subfolders) → 3 search → 4 download/open → 5 thumbnails → 6a categorized
+logging + unified error-toast feedback → **6 local cache + open-folder background refresh
+(= MVP, next)** → 7 realtime remote-change reflection (post-MVP). Full bidirectional local sync
+is out of scope; upload has no assigned phase yet (see `MEMO.md`'s feature list).
 
-Phases 0–5 are done. Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`),
+Phases 0–5 and 6a are done (6a was Phase 6's "エラーハンドリング全般" slice, pulled forward ahead
+of the rest of Phase 6). Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`),
 `FileListingService`/`FolderNavigationService`/`SearchService`/`DownloadService`/`ThumbnailService`
-(`src/core`), and their QML-facing controllers/`FileListModel` (`src/qml`) — see
+(`src/core`), their QML-facing controllers/`FileListModel` (`src/qml`), and cross-cutting app
+infrastructure — categorized logging + a MEGA SDK logger bridge (`src/app`, `src/mega`) and a
+shared `NotificationController`/`ErrorToast.qml` for user-facing failures (`src/qml`, `qml/`) — see
 `docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md` for what each phase actually built
 and why.
 

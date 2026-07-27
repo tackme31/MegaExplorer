@@ -29,7 +29,8 @@ property in `main.cpp`, replacing the standalone `FileListModel` wiring. `Main.q
 `TapHandler.onDoubleTapped`, and a header `ToolBar` with a Back button gated on
 `controller.canGoBack`. Covered by `tests/FolderNavigationServiceTest.cpp`. Known rough edges
 (deferred, not blocking Phase 3): `FolderNavigationController::applyResult` only `qWarning()`s on
-failure with no UI feedback, and there's no breadcrumb/current-path display.
+failure with no UI feedback (fixed in Phase 6a — see below), and there's no breadcrumb/current-path
+display (still open).
 
 ## Phase 3 — search (done)
 
@@ -48,7 +49,8 @@ filter button beside the search box, deferred to a later pass, will expose the r
 `MegaSearchFilter` (account-wide search via `byLocation(SEARCH_TARGET_ALL)`, `byCategory`,
 `byCreationTime`/`byModificationTime`, `byFavourite`, `bySensitivity`, `byTag`/`byDescription`)
 plus `MegaSearchPage`-based pagination — none of that was needed for the MVP search box itself.
-Same known rough edge as Phase 2: search failure only `qWarning()`s, no UI feedback.
+Same known rough edge as Phase 2: search failure only `qWarning()`s, no UI feedback (fixed in
+Phase 6a — see below).
 
 ## Phase 4 — download → open (done)
 
@@ -175,4 +177,84 @@ limits (the 4-way concurrency cap holds), and the build is clean at `/W4` with z
 Known deferred gaps, unchanged from `TASKS.md`'s scope notes: no thumbnail-request cancellation
 (same limitation `DownloadService` has), no richer per-extension icon set, no UI feedback on
 thumbnail fetch failure (falls back to the generic icon silently, same as Phase 2/3's
-navigation/search error handling).
+navigation/search error handling at the time — fixed in Phase 6a below).
+
+## Phase 6a — categorized logging + unified error-toast feedback (done)
+
+A slice of Phase 6's "エラーハンドリング全般" scope, pulled forward and done before the rest of
+Phase 6 (local cache, open-folder background refresh) — decided 2026-07-28. Two independent
+problems prompted it: three of the four failure paths above (`FolderNavigationController`'s
+`applyResult`/`applySearchResult`, `ThumbnailController::requestThumbnail`) and
+`DownloadController::openFile`'s OS-open failure surfaced nothing to the user, only a bare
+`qWarning()`; and `appMegaExplorer` builds `WIN32_EXECUTABLE TRUE`, so that `qWarning()` output
+reached no visible destination at all on a normal launch — there was effectively no record of any
+failure anywhere. A pre-existing bug was also found and fixed in passing:
+`DownloadService.cpp`'s failure branch copied `Result<DownloadOutcome>::errorMessage` into
+`DownloadJob` but silently dropped `errorCode` (no field existed for it).
+
+Scope agreed 2026-07-28: Qt-native logging only (`QLoggingCategory` + `qInstallMessageHandler`), no
+third-party logging library; MEGA SDK's own `MegaLogger` hook included in this pass (previously
+completely unwired, so SDK-internal network/transfer diagnostics went nowhere); simple
+single-generation log rotation, no size cap; a new generic error-toast UI wired only into the three
+previously-silent paths plus `openFile`'s sub-path — `DownloadSnackbar`'s own success/fail flow left
+untouched, not refactored into the same mechanism.
+
+New `src/app/` directory (a new top-level category alongside `src/core`/`src/mega`/`src/qml`/
+`src/platform`) holds `Logging.{h,cpp}`: `Q_DECLARE_LOGGING_CATEGORY`/`Q_LOGGING_CATEGORY` per
+functional area (`lcApp`/`lcNavigation`/`lcSearch`/`lcDownload`/`lcThumbnail`/`lcSdk`), all using the
+plain 2-arg macro form (verified against Qt's own docs: only `qt.`-prefixed categories get a
+debug/info-suppressed default — a custom category name like these already defaults to "all message
+types enabled", so no third `QtWarningMsg`-floor argument was needed anywhere, including `lcSdk`).
+`installLogging()` sets a message pattern via `qSetMessagePattern`, then installs a
+`qInstallMessageHandler` that formats each line with `qFormatLogMessage` and writes it to both
+`stderr` (keeps Qt Creator's Application Output pane working) and a log file under
+`QStandardPaths::AppDataLocation` (`MegaExplorer.log`), guarded by a `QMutex` since the handler can
+be called from MEGA SDK-internal background threads (via the bridge below) as well as the GUI
+thread. Rotation is single-generation: any existing log from a previous run is renamed to
+`MegaExplorer.log.1` on startup, nothing older is kept. Must run before any other logging call —
+installed in `main.cpp` right after `setOrganizationName`/`setApplicationName` (which
+`AppDataLocation` depends on) and before the pre-existing env-var-check `qWarning()`, now
+`qCWarning(lcApp)`. Deliberately kept out of `MegaExplorerCore`/`src/core` to preserve that
+library's Qt-free-ness — it's `appMegaExplorer`-only infrastructure, same as the QML-facing
+controllers.
+
+`MegaSdkLogger` (`src/mega`, not `src/app`, since deriving from `mega::MegaLogger` requires
+including `megaapi.h` — the "only `MegaSdkClient` may touch `megaapi.h`" rule from earlier phases
+widened to "only files under `src/mega`") bridges the SDK's own logger callback into the `lcSdk`
+category (`FATAL`/`ERROR`/`WARNING` → `qCWarning`, `INFO` → `qCInfo`, `DEBUG`/`VERBOSE` →
+`qCDebug`), registered via the static `MegaApi::addLoggerObject`/`removeLoggerObject` in
+`MegaSdkClient`'s constructor/destructor (previously `= default`, now real bodies). No volume
+concern in practice: the SDK's own `MegaApi::setLogLevel` defaults to `LOG_LEVEL_INFO`, so it never
+emits `DEBUG`/`VERBOSE` unless that's explicitly raised.
+
+`NotificationController` (`src/qml`, alongside the other controllers) is the shared UI-facing half:
+one `errorOccurred(QString context, QString errorMessage)` signal, no text formatting of its own —
+`context` (`"navigation"`/`"search"`/`"thumbnail"`/`"openFile"`) plus the raw message let
+`ErrorToast.qml` compose the localized sentence per context, the same "C++ passes structured
+fields, QML composes the text" convention `DownloadSnackbar` already established. Constructed once
+in `main.cpp` (`NotificationController notifications;`, declared *before* the three controllers
+below it since they hold a non-owning raw pointer to it and C++ destroys stack locals in reverse
+construction order) and threaded via constructor injection into `FolderNavigationController`,
+`ThumbnailController`, and `DownloadController` — all three gained a new trailing constructor
+parameter, the only call sites being `main.cpp`'s composition root. Each of the four failure sites
+now does `qCWarning(category) << ...` (replacing the old bare `qWarning()`) followed by
+`notifyError(...)`, except `DownloadController`'s actual download-failure path (inside
+`setOnJobFinished`), which gained a `qCWarning(lcDownload)` log line it never had before (for
+log-file parity with the other three paths) but deliberately no `notifyError()` call —
+`DownloadSnackbar` already surfaces that failure, and touching its flow was explicitly out of
+scope.
+
+`qml/components/ErrorToast.qml` mirrors `DownloadSnackbar.qml`'s existing visual convention exactly
+(bottom-anchored `Popup`, 6s auto-hide `Timer`) rather than inventing a new one, wired into
+`Main.qml` alongside `downloadSnackbar` via one more instance + one more `Connections` block.
+
+`DownloadJob` (`src/core/DownloadService.h`) gained an `errorCode` field alongside the existing
+`errorMessage`, populated in `DownloadService.cpp`'s failure branch the same way; the existing
+`tests/DownloadServiceTest.cpp` failure-path test (renamed
+`EnqueueFailurePropagatesErrorMessageCodeAndState`) now also asserts on it. This is the only change
+inside `MegaExplorerCore` in this whole phase — a plain `int`, no new Qt dependency, so the
+library's Qt-free-ness holds.
+
+Nothing added a new `find_package`/vcpkg dependency (`QLoggingCategory`/`qInstallMessageHandler`/
+`QFile`/`QStandardPaths`/`QMutex` are all already reachable via the existing `Qt6::Quick` link), and
+`tests/CMakeLists.txt` needed no change at all.
