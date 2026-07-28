@@ -68,6 +68,12 @@ ColumnLayout {
         Layout.fillWidth: true
         syncView: tableView
         clip: true
+        // textRole defaults to "display", which FileListModel::roleNames()
+        // doesn't provide (this delegate below builds header text itself
+        // from columnLabels, never via textRole) -- left unset it just spams
+        // a "role doesn't exist" warning on every load. Qt docs: setting
+        // textRole silences that check.
+        textRole: ""
         // Same rationale as tableView below -- HorizontalHeaderView is also
         // a Flickable and would otherwise let click-drag pan it independently
         // of the synced tableView.
