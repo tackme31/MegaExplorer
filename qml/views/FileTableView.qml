@@ -234,8 +234,13 @@ ColumnLayout {
                     case 0:
                         return (cell.isFolder ? "📁 " : "📄 ") + cell.name;
                     case 1:
-                        return Qt.formatDateTime(new Date(cell.modificationTime * 1000),
-                                                 Locale.ShortFormat);
+                        // Folders have no modification time from the SDK
+                        // (MegaNode::getModificationTime() returns 0 for
+                        // them) -- formatting that would show the Epoch
+                        // instead of a blank cell, unlike Explorer.
+                        return cell.isFolder ? "" : Qt.formatDateTime(new Date(
+                                                                          cell.modificationTime
+                                                                          * 1000), Locale.ShortFormat);
                     case 2:
                         return cell.formattedSize;
                     }
