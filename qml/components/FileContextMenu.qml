@@ -10,7 +10,7 @@ Menu {
     required property var delegateItem
 
     MenuItem {
-        text: qsTr("ダウンロード")
+        text: qsTr("Download")
         onTriggered: downloadController.downloadFile(delegateItem.handle, delegateItem.name,
                                                      delegateItem.sizeBytes)
     }

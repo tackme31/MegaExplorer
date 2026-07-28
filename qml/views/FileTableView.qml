@@ -34,7 +34,7 @@ ColumnLayout {
     // tree isn't reachable from a separately-loaded QML file.
     signal activateRequested(bool isFolder, var handle, string name, var sizeBytes)
 
-    readonly property var columnLabels: [qsTr("名前"), qsTr("更新日時"), qsTr("サイズ")]
+    readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size")]
 
     // Arbitrary picks, not derived from any content measurement -- just
     // enough to keep a dragged-in column from shrinking to unreadable/

@@ -44,13 +44,13 @@ Popup {
         text: {
             switch (root.context) {
             case "navigation":
-                return qsTr("フォルダの取得に失敗しました: %1").arg(root.errorMessage);
+                return qsTr("Failed to load folder: %1").arg(root.errorMessage);
             case "search":
-                return qsTr("検索に失敗しました: %1").arg(root.errorMessage);
+                return qsTr("Search failed: %1").arg(root.errorMessage);
             case "thumbnail":
-                return qsTr("サムネイルの取得に失敗しました: %1").arg(root.errorMessage);
+                return qsTr("Failed to load thumbnail: %1").arg(root.errorMessage);
             case "openFile":
-                return qsTr("ファイルを開けませんでした: %1").arg(root.errorMessage);
+                return qsTr("Failed to open file: %1").arg(root.errorMessage);
             default:
                 return root.errorMessage;
             }
