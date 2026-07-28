@@ -1,10 +1,124 @@
 # Project Progress Log
 
-Detailed, phase-by-phase implementation history for MegaExplorer: what was built, why specific
-decisions were made, and gotchas discovered along the way. `MEMO.md` has the high-level feature
-list/roadmap (Japanese); `CLAUDE.md` has just a condensed current-status summary pointing here.
-Read this file when you need the reasoning behind an existing implementation choice, not for
-day-to-day build/edit work.
+The roadmap (what's next, and why in this order) plus a detailed, phase-by-phase implementation
+history for MegaExplorer: what was built, why specific decisions were made, and gotchas discovered
+along the way. This file is now the single source of truth for the roadmap (moved here 2026-07-28
+to end a dual-tracking drift with `docs/MEMO.md` — that file previously carried its own roadmap
+section that kept falling out of sync with what was actually built). `docs/MEMO.md` keeps only
+non-roadmap project notes (scope, tech stack, feature list, licensing, open technical concerns,
+Japanese); `CLAUDE.md` has just a condensed current-status summary pointing here. Read the Roadmap
+section below for what's planned and why it's ordered that way, and the phase sections further down
+for the reasoning behind an already-built feature.
+
+## Roadmap
+
+Bottom-up development: each phase should be independently verifiable before the next one starts.
+MVP = phases 0–6; phases 7+ are post-MVP extensions, sequenced by priority/dependency as reasoned
+per-phase below (decided 2026-07-28, alongside the migration described above).
+
+| # | Phase | Status |
+|---|---|---|
+| 0 | SDK build + CLI login | done |
+| 1 | Bare file listing (root only) | done |
+| 2 | Folder navigation | done |
+| 3 | Search (MVP scope) | done |
+| 4 | Download → open | done |
+| 5 | Thumbnails + grid view | done |
+| 6a | Categorized logging + error-toast feedback | done (pulled forward ahead of 6) |
+| 6b | File-list attribute display + sort | done (pulled forward ahead of 6) |
+| 6 | Local cache + open-folder background refresh | **next** (closes out the MVP) |
+| 7 | Login screen + session persistence | planned |
+| 8 | Breadcrumb trail | planned |
+| 9 | Folder tree navigation (side panel) | planned |
+| 10 | Quick access (pinned folders, side panel) | planned |
+| 11 | Rename / delete (move to rubbish) / move | planned |
+| 12 | Multi-select + bulk operations | planned |
+| 13 | Upload (drag & drop) | planned |
+| 14 | In-app preview (side panel, `getPreview`) | planned |
+| 15 | Real-time remote-change reflection | future, post-MVP |
+| 16+ | Undecided | full bidirectional local sync stays out of scope |
+
+### Phase 6 (body) — local cache + open-folder background refresh
+
+Not started. Closes out the original MVP definition: persist the node tree locally (SQLite, per
+`docs/MEMO.md`'s tech-stack table) and run a one-shot background refresh whenever a folder is
+opened — not continuous watching (see `CLAUDE.md`'s "What this project is"). `src/platform`'s
+`IFileSystem` port (referenced but not yet created, see `docs/ARCHITECTURE.md`) is needed here.
+
+### Phase 7 — login screen + session persistence
+
+Decided 2026-07-28 (roadmap planning session), not yet implemented. Currently `main.cpp` requires
+`MEGA_EMAIL`/`MEGA_PWD` environment variables and has no login UI or session persistence at all —
+effectively a developer-only launch path. Prioritized first among the post-MVP items because it's
+foundational usability, independent of the other new features, and should land before more UI
+surface area (sidebar, preview panel, etc.) gets added on top of a dev-only entry point. Expected to
+use the SDK's `dumpSession()`/`fastLogin(session)` pair to avoid a password prompt on every launch;
+where the session token gets persisted (plain `QSettings` vs. something more guarded) is still an
+open question. `IMegaClient` needs a session-based login variant alongside the existing
+`login(email, password, ...)`.
+
+### Phase 8 — breadcrumb trail
+
+Planned. A known gap since Phase 2 ("no breadcrumb/current-path display", noted in that phase's log
+below) that was never assigned to a phase. Cheapest item on this list: `FolderNavigationService`
+already keeps a back-stack of `Location`s for the Back button, so this is mostly exposing that
+existing state to QML rather than new domain logic.
+
+### Phase 9 — folder tree navigation (side panel)
+
+Planned. The most structurally significant of the new UI asks — a new left side panel. Grouped
+right after the breadcrumb (phase 8) since both are "where am I / where can I go" navigation
+features, and the side panel it introduces becomes the home for quick access (phase 10). Expected
+to reuse `IMegaClient::getChildren` for lazy per-node expansion; no new SDK-facing port anticipated,
+but expansion performance on large folders needs checking.
+
+### Phase 10 — quick access (pinned folders, side panel)
+
+Planned. Builds on phase 9's side panel by adding a pinned-folders section to it. Persisting pins is
+small enough for `Settings` (QtCore), same mechanism as the sort/column-width state from phase 6b.
+Needs to decide what happens to a pin when its target folder is later deleted/moved (phase 11) —
+dangling-pin handling should be designed together with that phase, not bolted on afterward.
+
+### Phase 11 — rename / delete (move to rubbish) / move
+
+Planned. Classic Explorer file operations. Each maps to a single MEGA SDK request
+(`MegaApi::rename`/`moveToRubbish`/`moveNode` equivalents) with no transfer-listener machinery
+needed, unlike download/upload — lower implementation cost than phase 13's upload. Also the
+prerequisite for phase 12: batch operations need something to batch. Mainly `FileContextMenu.qml`
+additions plus the matching new `IMegaClient` methods.
+
+### Phase 12 — multi-select + bulk operations
+
+Planned. Deliberately sequenced after phase 11 — bulk delete/move/download only makes sense once
+the single-item versions exist. Needs a selection model added to both `TableView` (currently only a
+per-row `TapHandler`) and `GridView`. Bulk download can likely reuse `DownloadService`'s existing
+one-at-a-time queue by enqueueing multiple jobs, rather than needing new queueing logic.
+
+### Phase 13 — upload (drag & drop)
+
+Planned. Symmetric to phase 4's download, but needs its own `MegaApi::startUpload`-based transfer
+listener (mirroring `DownloadService`'s design) rather than a single request/response call, so
+higher implementation cost than phase 11's file ops. Was already listed in `docs/MEMO.md`'s feature
+list from the start but never assigned a phase until now. Drag & drop itself via Qt Quick's
+`DropArea`.
+
+### Phase 14 — in-app preview (side panel, `getPreview`/`startStreaming`)
+
+Planned, lowest priority of the new items. Explicitly deferred during Phase 4 ("format-specific
+in-app preview... considered and explicitly deferred", see that phase's log below) since download →
+open in the default app already covers "view the file". Format-specific rendering
+(image/PDF/text/etc.) makes this the highest-effort item on the list too.
+
+### Phase 15 (future, post-MVP) — real-time remote-change reflection
+
+Unchanged from the original roadmap (previously numbered phase 7): reflect other devices' changes
+via the SDK's push-notification mechanism into whatever folder listing is currently open. Additive
+on top of phase 6's open-folder refresh, so expected to have little impact on existing structure.
+
+### Phase 16+ — undecided
+
+Revisit as needed. Full bidirectional local sync (parity with the official desktop app) remains out
+of scope for the foreseeable future.
 
 ## Phase 0 — SDK build & CLI login (done)
 
@@ -262,3 +376,80 @@ library's Qt-free-ness holds.
 Nothing added a new `find_package`/vcpkg dependency (`QLoggingCategory`/`qInstallMessageHandler`/
 `QFile`/`QStandardPaths`/`QMutex` are all already reachable via the existing `Qt6::Quick` link), and
 `tests/CMakeLists.txt` needed no change at all.
+
+## Phase 6b — file-list attribute display + sort (done)
+
+Scope agreed 2026-07-28, done the same day (pulled forward ahead of Phase 6's body, same
+"differential slice" reasoning as Phase 6a above). List-view mode changed from the previous
+single-column name-only `ListView` to an Explorer-style detail view: sortable Name / Date modified /
+Size columns, folders always sorted first — per the SDK's own documented guarantee ("the nodes are
+always sorted by type, being folders always first"), so no client-side folders-first logic was
+needed. A "Kind" column was considered and dropped: it would need extension-based classification
+done client-side, which conflicted with the sort-server-side decision below (`MegaApi::getChildren`/
+`search`'s `order` has no value corresponding to a Kind column) — the `FileKind.h/.cpp` helper and
+`FileListModel::ExtensionRole` built for it were removed again. Grid/thumbnail view (Phase 5) is
+untouched.
+
+Sorting is done server-side via `MegaApi::getChildren`/`search`'s `order` argument, not client-side
+in memory, to hold up under folders with tens of thousands of entries. New `src/core/SortOrder.h`
+(`SortKey::{Name,Size,ModificationTime}` + `ascending`, Qt-free like the rest of `src/core`) is
+threaded through `IMegaClient`/`MegaSdkClient`, which maps it to
+`MegaApi::ORDER_DEFAULT_ASC/DESC`/`ORDER_SIZE_ASC/DESC`/`ORDER_MODIFICATION_ASC/DESC`
+(`MegaSdkClient.cpp`'s `toMegaOrder`). `FolderNavigationController::setSortOrder(column, ascending)`
+is the header-click entry point; it keeps the chosen `SortOrder` as member state and re-fetches
+either the current search results or the current folder listing (`FolderNavigationService::
+refreshCurrent`, back-stack untouched) depending on whether a search is active, so sort stays
+applied to whichever listing is currently shown, search included.
+
+List rendering moved from `ListView`+`QAbstractListModel` to `TableView`+`HorizontalHeaderView`
+(`import QtQuick.Controls`), which required rewriting `FileListModel` from a single-column
+role-per-file model to a `QAbstractTableModel`-shaped one (`columnCount()` returns 3, `data(index,
+role)` switches on `index.column()`). New `qml/views/FileTableView.qml` owns the table; column
+header labels are hardcoded there rather than sourced from `headerData()` — same "C++ passes
+structured fields, QML composes user-facing text" convention `NotificationController`/
+`ErrorToast.qml` established, which also sidesteps an MSVC-codepage gotcha with Japanese literals in
+`.cpp`/`.h` files (moot in the end since the UI strings landed in English — see below — but the
+convention itself predates and is unrelated to that later decision).
+
+A few `FluentWinUI3`-specific gotchas surfaced building this: `HorizontalHeaderView` ships no
+default delegate under `FluentWinUI3` (unlike `Basic`), so its delegate's `Rectangle` needed an
+explicit `color: "transparent"` — left at `Rectangle`'s default opaque white, the Label's
+theme-driven foreground came out white-on-white and invisible. `textRole` needed to be explicitly
+set to `""` since it defaults to `"display"`, which `FileListModel::roleNames()` doesn't provide
+(the header delegate builds its text from a hardcoded `columnLabels` array, never via `textRole`),
+otherwise Qt logs a "role doesn't exist" warning on every load. Both `TableView` and
+`HorizontalHeaderView` are `Flickable`-derived and defaulted to click-drag panning, unexpected for
+an Explorer-style list — fixed with `acceptedButtons: Qt.NoButton` on both (`Flickable.
+acceptedButtons`, since Qt 6.9), which leaves wheel scrolling untouched.
+
+Column resizing uses `TableView.resizableColumns: true` (Qt 6.5+, standard support, no custom drag
+handling needed). Widths and sort column/direction both persist across restarts via `Settings`
+(QtCore), same mechanism as Phase 5's view-mode toggle. Column widths need reapplying not just once
+at `Component.onCompleted` but also on every `TableView.onRowsChanged`: `FileListModel::
+setEntries()` does a full `beginResetModel()`/`endResetModel()` on every folder navigation, and
+`TableView` doesn't guarantee explicitly-set column widths survive a model reset.
+`saveColumnWidths()` is wired to `TableView.onLayoutChanged` (the only official resize-related hook
+`TableView` exposes, despite also firing on scroll — safe here since a same-value QML property
+assignment is a no-op) and clamps to a `minColumnWidths` floor so a dragged-in column can't shrink
+to unreadable/zero width.
+
+The Date modified column matches (English) Windows Explorer's own format — short date + short time,
+e.g. "7/28/2026 3:45 PM" — which isn't reproducible via `Qt.formatDateTime(date,
+Locale.ShortFormat)`: `QLocale`'s `ShortFormat` for en_US uses a 2-digit year (`"M/d/yy h:mm AP"`),
+while Explorer's regional short-date default is 4-digit. The format string is hand-written
+(`"M/d/yyyy h:mm AP"`, wrapped in `qsTr()` so a future Japanese `.ts` file could supply the
+equivalent Explorer format, typically 24-hour with no AM/PM). `AP` is Qt's AM/PM token — easy to
+confuse with `tt`, which is a *timezone* token in Qt's format strings despite meaning AM/PM in
+.NET/Windows format syntax. Folders show a blank Date modified cell rather than the Unix epoch:
+`MegaNode::getModificationTime()` returns 0 for folders, and formatting that verbatim would have
+shown 1970-01-01, unlike real Explorer.
+
+All list/table UI strings (column labels, date format) ended up in English during this phase,
+consistent with the rest of the shipped UI (`Main.qml`'s existing "← Back"/"Search in this folder"
+etc.) — the project has no localization infrastructure yet, so "Japanese-language UI" was never
+actually a hard requirement despite `docs/MEMO.md`/`CLAUDE.md` being written in Japanese/English
+respectively.
+
+Manual verification confirmed sort-direction toggling (re-click the same header), folders staying
+pinned first regardless of sort column, column-width and sort-order persistence across an app
+restart, and a clean `/W4` build.

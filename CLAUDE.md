@@ -3,10 +3,13 @@
 Guidance for Claude Code when working in this repo. Kept compact — detail that isn't needed every
 session lives in companion docs, linked from the relevant section below rather than inlined:
 
-- `MEMO.md` — feature list / roadmap detail (Japanese). `README.md` is just a one-line title
-  stub, not documentation.
+- `docs/MEMO.md` — non-roadmap project notes: scope, tech stack, feature list, licensing, open
+  technical concerns (Japanese). `README.md` is just a one-line title stub, not documentation.
 - `TASKS.md` — current phase's task checklist, present while a phase is in progress.
-- `docs/PROGRESS.md` — full phase-by-phase implementation log (what was built, why, gotchas).
+- `docs/PROGRESS.md` — the roadmap (what's next and why-in-this-order) plus the full phase-by-phase
+  implementation log (what was built, why, gotchas). Single source of truth for both, now that
+  `docs/MEMO.md`'s former roadmap section moved here (2026-07-28, to end dual-tracking drift between
+  the two files).
 - `docs/ARCHITECTURE.md` — directory layout detail + the ports-and-adapters/DI design.
 - `docs/BUILD.md` — rationale behind each build gotcha below (why VS generator, why
   `CMakePresets.json`, the FFmpeg link fix, etc.).
@@ -37,29 +40,25 @@ refresh when a folder is opened, no continuous watching.
 - Licensing: app is GPLv3 (via Qt), MEGA SDK is BSD-2-Clause. `meganz/MEGAsync`'s own source is
   under a restrictive Code Review Licence — never copy code from it, reference only for SDK usage
   patterns.
-- Stack detail (thumbnail/cache libraries etc.) is in `MEMO.md`, not repeated here.
+- Stack detail (thumbnail/cache libraries etc.) is in `docs/MEMO.md`, not repeated here.
 
 ## Project status
 
-Roadmap (bottom-up, see `MEMO.md` for the Japanese feature list and `docs/PROGRESS.md` for the
-full per-phase implementation log): 0 SDK build → 1 file listing → 2 folder navigation
-(double-click into subfolders) → 3 search → 4 download/open → 5 thumbnails → 6a categorized
-logging + unified error-toast feedback → **6b file-list attribute display (size/modified date) +
-sort (next)** → 6 local cache + open-folder background refresh (= MVP) → 7 realtime remote-change
-reflection (post-MVP). Full bidirectional local sync is out of scope; upload has no assigned phase
-yet (see `MEMO.md`'s feature list).
+Phases 0–5, 6a, and 6b are done; Phase 6 (local cache + open-folder background refresh, closing out
+the original MVP) is next. The full roadmap — Phase 6's remaining scope plus the post-MVP phases
+7–16+ (login screen, breadcrumb, sidebar folder tree/quick access, rename/delete/move, multi-select,
+upload, in-app preview, real-time remote-change reflection, ...) — lives in `docs/PROGRESS.md`'s
+Roadmap section now; see the companion-docs list above. `docs/MEMO.md` keeps only non-roadmap notes.
+Full bidirectional local sync stays out of scope.
 
-Phases 0–5 and 6a are done (6a was Phase 6's "エラーハンドリング全般" slice, pulled forward ahead
-of the rest of Phase 6; 6b is the same kind of forward-pulled slice, not yet started — spec agreed
-2026-07-28, see `MEMO.md`'s roadmap section for the decided details: Explorer-style detail list
-view with sortable Name/Size/Modified columns, folders always sorted first, grid/thumbnail view
-left unchanged). Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`),
+Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`),
 `FileListingService`/`FolderNavigationService`/`SearchService`/`DownloadService`/`ThumbnailService`
-(`src/core`), their QML-facing controllers/`FileListModel` (`src/qml`), and cross-cutting app
-infrastructure — categorized logging + a MEGA SDK logger bridge (`src/app`, `src/mega`) and a
-shared `NotificationController`/`ErrorToast.qml` for user-facing failures (`src/qml`, `qml/`) — see
-`docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md` for what each phase actually built
-and why.
+(`src/core`), their QML-facing controllers/`FileListModel` (`src/qml`), an Explorer-style sortable
+detail list view (`qml/views/FileTableView.qml`, Phase 6b) alongside the unchanged thumbnail grid
+view, and cross-cutting app infrastructure — categorized logging + a MEGA SDK logger bridge
+(`src/app`, `src/mega`) and a shared `NotificationController`/`ErrorToast.qml` for user-facing
+failures (`src/qml`, `qml/`) — see `docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md`
+for what each phase actually built and why.
 
 ## Build
 
