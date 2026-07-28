@@ -23,14 +23,15 @@ are post-MVP, sequenced by priority/dependency.
 | 7a | Session storage foundation (`ISessionStore`/`WindowsSessionStore`) | done |
 | 7 | Login screen + session persistence (remaining wiring) | planned |
 | 8 | Breadcrumb trail | planned |
-| 9 | Folder tree navigation (side panel) | planned |
-| 10 | Quick access (pinned folders, side panel) | planned |
-| 11 | Rename / delete (move to rubbish) / move | planned |
-| 12 | Multi-select + bulk operations | planned |
-| 13 | Upload (drag & drop) | planned |
-| 14 | In-app preview (side panel, `getPreview`) | planned |
-| 15 | Real-time remote-change reflection | future, post-MVP |
-| 16+ | Undecided | full bidirectional local sync stays out of scope |
+| 9 | Windows-Explorer-style tabs (multiple folder views) | planned |
+| 10 | Folder tree navigation (side panel) | planned |
+| 11 | Quick access (pinned folders, side panel) | planned |
+| 12 | Rename / delete (move to rubbish) / move | planned |
+| 13 | Multi-select + bulk operations | planned |
+| 14 | Upload (drag & drop) | planned |
+| 15 | In-app preview (side panel, `getPreview`) | planned |
+| 16 | Real-time remote-change reflection | future, post-MVP |
+| 17+ | Undecided | full bidirectional local sync stays out of scope |
 
 ### Phase 6 — local cache + open-folder background refresh
 
@@ -56,43 +57,56 @@ login screen itself (QML) and removing the env-var requirement, and logout/"forg
 Known gap since Phase 2. Cheap: `FolderNavigationService` already keeps a back-stack of
 `Location`s, so mostly exposing existing state to QML.
 
-### Phase 9 — folder tree navigation (side panel)
+### Phase 9 — Windows-Explorer-style tabs (multiple folder views)
+
+Tab strip above the file view, each tab its own independent navigation context (back-stack, current
+folder, search state) rather than one shared `FolderNavigationService` instance. Placed right after
+breadcrumb (phase 8) and before the folder-tree side panel (phase 10) and quick access (phase 11)
+deliberately: those two become shared chrome sitting beside N tabbed content panes, cheaper to design
+that way from the start than retrofitting tab-awareness onto a side panel that was built assuming a
+single pane. Likely needs `FolderNavigationService`/`FolderNavigationController` instantiated per tab
+(or refactored to take a tab id) rather than the current single composition-root instance;
+`SearchService`'s scope-via-`currentLocation()` convention (phase 3) needs the same per-tab
+treatment. New tab defaults to root; closing the last tab closes the window (matching Explorer).
+Persisting the open tab set across restarts is a stretch goal, not required for the phase to be done.
+
+### Phase 10 — folder tree navigation (side panel)
 
 New left side panel; grouped with breadcrumb as "where am I / where can I go" nav, and becomes the
-home for quick access (phase 10). Expected to reuse `IMegaClient::getChildren` for lazy expansion;
-check performance on large folders.
+home for quick access (phase 11). Expected to reuse `IMegaClient::getChildren` for lazy expansion;
+check performance on large folders. Shared across tabs (phase 9), not duplicated per tab.
 
-### Phase 10 — quick access (pinned folders, side panel)
+### Phase 11 — quick access (pinned folders, side panel)
 
-Adds a pinned-folders section to phase 9's panel. Persist via `Settings` (QtCore). Dangling-pin
-handling (target deleted/moved) should be designed together with phase 11, not bolted on after.
+Adds a pinned-folders section to phase 10's panel. Persist via `Settings` (QtCore). Dangling-pin
+handling (target deleted/moved) should be designed together with phase 12, not bolted on after.
 
-### Phase 11 — rename / delete (move to rubbish) / move
+### Phase 12 — rename / delete (move to rubbish) / move
 
 Each maps to a single SDK request (`rename`/`moveToRubbish`/`moveNode`), no transfer-listener
-needed. Prerequisite for phase 12. Mainly `FileContextMenu.qml` + matching `IMegaClient` methods.
+needed. Prerequisite for phase 13. Mainly `FileContextMenu.qml` + matching `IMegaClient` methods.
 
-### Phase 12 — multi-select + bulk operations
+### Phase 13 — multi-select + bulk operations
 
-Sequenced after phase 11 (bulk ops need single-item versions first). Needs a selection model for
+Sequenced after phase 12 (bulk ops need single-item versions first). Needs a selection model for
 both `TableView` and `GridView`. Bulk download can likely reuse `DownloadService`'s existing queue.
 
-### Phase 13 — upload (drag & drop)
+### Phase 14 — upload (drag & drop)
 
 Symmetric to phase 4's download but needs its own `MegaApi::startUpload` transfer listener
-(mirroring `DownloadService`), higher cost than phase 11. Drag & drop via Qt Quick's `DropArea`.
+(mirroring `DownloadService`), higher cost than phase 12. Drag & drop via Qt Quick's `DropArea`.
 
-### Phase 14 — in-app preview (side panel, `getPreview`/`startStreaming`)
+### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
 Lowest priority; explicitly deferred in Phase 4 since download→open already covers "view the file".
 Format-specific rendering (image/PDF/text/...) makes this the highest-effort item on the list.
 
-### Phase 15 (future) — real-time remote-change reflection
+### Phase 16 (future) — real-time remote-change reflection
 
 Reflect other devices' changes via the SDK's push-notification mechanism into whatever listing is
 open. Additive on top of phase 6's refresh.
 
-### Phase 16+ — undecided
+### Phase 17+ — undecided
 
 Full bidirectional local sync stays out of scope for the foreseeable future.
 
