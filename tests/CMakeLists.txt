@@ -6,7 +6,6 @@ add_executable(MegaExplorerTests
     SearchServiceTest.cpp
     DownloadServiceTest.cpp
     ThumbnailServiceTest.cpp
-    FileKindTest.cpp
     MockMegaClient.h
 )
 

@@ -2,6 +2,7 @@
 #include "DownloadOutcome.h"
 #include "FileEntry.h"
 #include "Result.h"
+#include "SortOrder.h"
 
 #include <cstdint>
 #include <functional>
@@ -22,22 +23,30 @@ public:
     virtual void fetchNodes(std::function<void(Result<void>)> onDone) = 0;
 
     // Must be called after a successful fetchNodes(). Synchronous under the
-    // hood, but kept callback-shaped for interface consistency.
-    virtual void getRootChildren(std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
+    // hood, but kept callback-shaped for interface consistency. order is
+    // forwarded to MegaApi::getChildren's own order argument (server-side
+    // sort, see SortOrder.h).
+    virtual void getRootChildren(SortOrder order,
+                                 std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
     // Must be called after a successful fetchNodes(). Synchronous under the
-    // hood, but kept callback-shaped for interface consistency.
+    // hood, but kept callback-shaped for interface consistency. order is
+    // forwarded to MegaApi::getChildren's own order argument (server-side
+    // sort, see SortOrder.h).
     virtual void getChildren(std::uint64_t handle,
+                             SortOrder order,
                              std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
     // Recursive name search rooted at ancestorHandle (ignored when isRoot is
     // true, same isRoot-sentinel convention as FolderNavigationService's
     // Location). Must be called after a successful fetchNodes(). Synchronous
     // under the hood (MegaApi::search()), but kept callback-shaped for
-    // interface consistency.
+    // interface consistency. order is forwarded to MegaApi::search's own
+    // order argument (server-side sort, see SortOrder.h).
     virtual void search(std::uint64_t ancestorHandle,
                         bool isRoot,
                         const std::string& query,
+                        SortOrder order,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
     // Downloads the file identified by handle to the exact local file path

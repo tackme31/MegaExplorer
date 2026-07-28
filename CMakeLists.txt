@@ -32,8 +32,7 @@ add_library(MegaExplorerCore STATIC
     src/core/IMegaClient.h
     src/core/FileEntry.h
     src/core/Result.h
-    src/core/FileKind.h
-    src/core/FileKind.cpp
+    src/core/SortOrder.h
     src/core/FileListingService.h
     src/core/FileListingService.cpp
     src/core/FolderNavigationService.h

@@ -1,5 +1,6 @@
 #pragma once
 #include "IMegaClient.h"
+
 #include <memory>
 #include <vector>
 
@@ -24,13 +25,21 @@ public:
     // the back-stack and makes handle the new current location. On failure,
     // state is unchanged.
     void openFolder(std::uint64_t handle,
-                     std::function<void(Result<std::vector<FileEntry>>)> onDone);
+                    SortOrder order,
+                    std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     // Peeks the most recent back-stack entry and re-fetches it (getChildren
     // if it was a real handle, getRootChildren if it was the root sentinel).
     // Only pops/commits the new current location on a successful re-fetch.
     // Fails immediately without fetching if canGoBack() is false.
-    void goBack(std::function<void(Result<std::vector<FileEntry>>)> onDone);
+    void goBack(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
+    // Re-fetches the current location (mCurrent) with a new order, without
+    // touching the back-stack or mCurrent itself -- used when the user
+    // changes the sort column/direction while staying in the same folder
+    // (see FolderNavigationController::setSortOrder).
+    void refreshCurrent(SortOrder order,
+                        std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     bool canGoBack() const;
 

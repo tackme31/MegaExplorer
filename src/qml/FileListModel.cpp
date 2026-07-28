@@ -1,7 +1,5 @@
 #include "FileListModel.h"
 
-#include "core/FileKind.h"
-
 #include <QLocale>
 
 FileListModel::FileListModel(QObject* parent) : QAbstractTableModel(parent) {}
@@ -17,7 +15,7 @@ int FileListModel::columnCount(const QModelIndex& parent) const
 {
     if (parent.isValid())
         return 0;
-    return 4; // Name, Modified, Kind, Size -- see FileTableView.qml's header labels
+    return 3; // Name, Modified, Size -- see FileTableView.qml's header labels
 }
 
 QVariant FileListModel::data(const QModelIndex& index, int role) const
@@ -53,8 +51,6 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
                        : QLocale::system().formattedDataSize(static_cast<qint64>(entry.sizeBytes),
                                                              1,
                                                              QLocale::DataSizeTraditionalFormat);
-        case ExtensionRole:
-            return QString::fromStdString(fileExtensionUppercased(entry.name));
         default:
             return {};
     }
@@ -71,7 +67,6 @@ QHash<int, QByteArray> FileListModel::roleNames() const
         {ThumbnailPathRole, "thumbnailPath"},
         {ModificationTimeRole, "modificationTime"},
         {FormattedSizeRole, "formattedSize"},
-        {ExtensionRole, "extension"},
     };
 }
 

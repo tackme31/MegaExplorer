@@ -1,4 +1,5 @@
 #include "core/FileListingService.h"
+
 #include "MockMegaClient.h"
 
 #include <gmock/gmock.h>
@@ -28,18 +29,18 @@ TEST(FileListingServiceTest, SuccessChainReturnsChildren)
         .WillOnce(::testing::InvokeArgument<2>(Result<void>::ok()));
     EXPECT_CALL(*mockClient, fetchNodes(::testing::_))
         .WillOnce(::testing::InvokeArgument<0>(Result<void>::ok()));
-    EXPECT_CALL(*mockClient, getRootChildren(::testing::_))
-        .WillOnce(::testing::InvokeArgument<0>(Result<std::vector<FileEntry>>::ok(expected)));
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::ok(expected)));
 
     FileListingService service(mockClient);
     Captured captured;
 
     // Act
-    service.loadRootListing("user@example.com", "pw",
-                             [&captured](Result<std::vector<FileEntry>> result) {
-                                 captured.called = true;
-                                 captured.result = std::move(result);
-                             });
+    service.loadRootListing(
+        "user@example.com", "pw", SortOrder{}, [&captured](Result<std::vector<FileEntry>> result) {
+            captured.called = true;
+            captured.result = std::move(result);
+        });
 
     // Assert
     ASSERT_TRUE(captured.called);
@@ -56,17 +57,19 @@ TEST(FileListingServiceTest, LoginFailureShortCircuits)
     EXPECT_CALL(*mockClient, login(::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<2>(Result<void>::fail("bad credentials", 1)));
     EXPECT_CALL(*mockClient, fetchNodes(::testing::_)).Times(0);
-    EXPECT_CALL(*mockClient, getRootChildren(::testing::_)).Times(0);
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_)).Times(0);
 
     FileListingService service(mockClient);
     Captured captured;
 
     // Act
-    service.loadRootListing("user@example.com", "wrong",
-                             [&captured](Result<std::vector<FileEntry>> result) {
-                                 captured.called = true;
-                                 captured.result = std::move(result);
-                             });
+    service.loadRootListing("user@example.com",
+                            "wrong",
+                            SortOrder{},
+                            [&captured](Result<std::vector<FileEntry>> result) {
+                                captured.called = true;
+                                captured.result = std::move(result);
+                            });
 
     // Assert
     ASSERT_TRUE(captured.called);
@@ -84,17 +87,17 @@ TEST(FileListingServiceTest, FetchNodesFailureShortCircuits)
         .WillOnce(::testing::InvokeArgument<2>(Result<void>::ok()));
     EXPECT_CALL(*mockClient, fetchNodes(::testing::_))
         .WillOnce(::testing::InvokeArgument<0>(Result<void>::fail("network error", 2)));
-    EXPECT_CALL(*mockClient, getRootChildren(::testing::_)).Times(0);
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_)).Times(0);
 
     FileListingService service(mockClient);
     Captured captured;
 
     // Act
-    service.loadRootListing("user@example.com", "pw",
-                             [&captured](Result<std::vector<FileEntry>> result) {
-                                 captured.called = true;
-                                 captured.result = std::move(result);
-                             });
+    service.loadRootListing(
+        "user@example.com", "pw", SortOrder{}, [&captured](Result<std::vector<FileEntry>> result) {
+            captured.called = true;
+            captured.result = std::move(result);
+        });
 
     // Assert
     ASSERT_TRUE(captured.called);
@@ -109,13 +112,13 @@ TEST(FileListingServiceTest, MockGetChildrenForwardsResultToCallback)
     auto mockClient = std::make_shared<MockMegaClient>();
     const std::vector<FileEntry> expected{{"nested.txt", 3, 50, false, 0}};
 
-    EXPECT_CALL(*mockClient, getChildren(42, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::ok(expected)));
+    EXPECT_CALL(*mockClient, getChildren(42, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(expected)));
 
     Result<std::vector<FileEntry>> captured;
 
     // Act
-    mockClient->getChildren(42, [&captured](Result<std::vector<FileEntry>> result) {
+    mockClient->getChildren(42, SortOrder{}, [&captured](Result<std::vector<FileEntry>> result) {
         captured = std::move(result);
     });
 

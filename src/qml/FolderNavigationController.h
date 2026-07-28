@@ -2,6 +2,7 @@
 #include "core/FileListingService.h"
 #include "core/FolderNavigationService.h"
 #include "core/SearchService.h"
+#include "core/SortOrder.h"
 #include "FileListModel.h"
 
 #include <QObject>
@@ -61,12 +62,19 @@ public:
     // the existing openFolder().
     Q_INVOKABLE void search(QString query);
 
+    // column: 0=Name, 1=ModificationTime, 2=Size (FileTableView.qml's 3-column
+    // layout). Called both from the header-click handler and once at startup
+    // with the Settings-restored value (see mHasLoadedOnce below) -- QML's
+    // Component.onCompleted fires before main.cpp's loadRoot().
+    Q_INVOKABLE void setSortOrder(int column, bool ascending);
+
 signals:
     void canGoBackChanged();
 
 private:
     void applyResult(Result<std::vector<FileEntry>> result);
     void applySearchResult(Result<std::vector<FileEntry>> result);
+    void refreshCurrentFolder();
 
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<FileListingService> mListingService;
@@ -74,4 +82,12 @@ private:
     NotificationController* mNotifications;
     FileListModel mFileListModel;
     std::vector<FileEntry> mLastFolderEntries; // restored when search is cleared
+    SortOrder mSortOrder{SortKey::Name, true};
+    std::string mLastSearchQuery; // empty == not currently searching
+    // main.cpp calls loadRoot() only after engine.loadFromModule() has already
+    // run QML's Component.onCompleted, which restores the persisted sort via
+    // setSortOrder() -- guards against that startup call re-fetching (and
+    // erroring out) before login/fetchNodes have ever run. Set true once
+    // applyResult sees its first success.
+    bool mHasLoadedOnce = false;
 };

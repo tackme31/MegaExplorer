@@ -6,17 +6,24 @@ import QtQuick.Controls.FluentWinUI3
 // import comment).
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtCore
 import "../components"
 
-// Explorer-style detail view for the list-view mode (Phase 6b): a 4-column
-// TableView (Name/Modified/Kind/Size). Column header labels are hardcoded
-// here rather than sourced from the model's headerData() -- this codebase's
+// Explorer-style detail view for the list-view mode (Phase 6b/sort): a
+// 3-column TableView (Name/Modified/Size -- a "Kind" column was considered
+// but dropped, see MEMO.md's 2026-07-28 note: MegaApi::getChildren/search
+// has no order value corresponding to it, and sorting here is deliberately
+// server-side, not in-memory). Column header labels are hardcoded here
+// rather than sourced from the model's headerData() -- this codebase's
 // convention is "C++ passes structured fields, QML composes user-facing
 // text" (see NotificationController/ErrorToast.qml), which also sidesteps an
-// MSVC codepage gotcha with Japanese literals in .cpp/.h files (see
-// src/core/FileKind.h). Sorting is NOT implemented here (deferred to a
-// later phase, see MEMO.md) -- the header is a static label row, clicking
-// it does nothing.
+// MSVC codepage gotcha with Japanese literals in .cpp/.h files.
+//
+// Clicking a header sorts by that column (first click ascending, repeat
+// click toggles direction, same as Explorer); the chosen column/direction is
+// persisted via Settings and forwarded to controller.setSortOrder(), which
+// re-fetches from the SDK with the matching order rather than sorting
+// in-memory.
 ColumnLayout {
     id: root
     spacing: 0
@@ -27,17 +34,34 @@ ColumnLayout {
     // tree isn't reachable from a separately-loaded QML file.
     signal activateRequested(bool isFolder, var handle, string name, var sizeBytes)
 
-    // Kind/"種類" display text, composed here from the isFolder/extension
-    // roles rather than in C++ -- see the file-level comment above.
-    function kindText(isFolder, extension) {
-        if (isFolder)
-            return qsTr("ファイル フォルダー");
-        if (extension === "")
-            return qsTr("ファイル");
-        return extension + qsTr(" ファイル");
+    readonly property var columnLabels: [qsTr("名前"), qsTr("更新日時"), qsTr("サイズ")]
+
+    // 0 = Name, 1 = Modified, 2 = Size -- matches FileListModel::columnCount()
+    // and FolderNavigationController::setSortOrder()'s column mapping.
+    property int sortColumn: 0
+    property bool sortAscending: true
+
+    Settings {
+        property alias sortColumn: root.sortColumn
+        property alias sortAscending: root.sortAscending
     }
 
-    readonly property var columnLabels: [qsTr("名前"), qsTr("更新日時"), qsTr("種類"), qsTr("サイズ")]
+    // Same column same click: toggle direction. Different column: switch to
+    // it, reset to ascending (Explorer's convention).
+    function requestSort(column) {
+        if (root.sortColumn === column)
+            root.sortAscending = !root.sortAscending;
+        else {
+            root.sortColumn = column;
+            root.sortAscending = true;
+        }
+        controller.setSortOrder(root.sortColumn, root.sortAscending);
+    }
+
+    // Settings restoration above runs before this fires, so the initial
+    // fetch (once loadRoot() has actually happened -- see
+    // FolderNavigationController::mHasLoadedOnce) uses the persisted order.
+    Component.onCompleted: controller.setSortOrder(root.sortColumn, root.sortAscending)
 
     HorizontalHeaderView {
         id: header
@@ -50,6 +74,7 @@ ColumnLayout {
         acceptedButtons: Qt.NoButton
 
         delegate: Rectangle {
+            id: headerCell
             implicitHeight: 32
             required property int column
 
@@ -67,7 +92,17 @@ ColumnLayout {
                 anchors.margins: 6
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
-                text: root.columnLabels[column]
+                text: root.columnLabels[headerCell.column] + (root.sortColumn === headerCell.column
+                                                              ? (root.sortAscending ? " ▲" : " ▼") :
+                                                                "")
+            }
+
+            // Same TapHandler-on-a-child pattern as the row delegate below --
+            // the Flickable's own acceptedButtons: Qt.NoButton (above) only
+            // suppresses click-drag panning, not delivery to child handlers.
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onTapped: root.requestSort(headerCell.column)
             }
         }
     }
@@ -89,7 +124,7 @@ ColumnLayout {
             const w = explicitColumnWidth(column);
             if (w >= 0)
                 return w;
-            return [220, 150, 130, 100][column];
+            return [220, 150, 100][column];
         }
 
         delegate: Rectangle {
@@ -102,7 +137,6 @@ ColumnLayout {
             required property var sizeBytes
             required property string formattedSize
             required property double modificationTime
-            required property string extension
 
             color: "transparent"
 
@@ -110,7 +144,7 @@ ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 4
                 verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: cell.column === 3 ? Text.AlignRight : Text.AlignLeft
+                horizontalAlignment: cell.column === 2 ? Text.AlignRight : Text.AlignLeft
                 elide: Text.ElideMiddle
                 text: {
                     switch (cell.column) {
@@ -120,8 +154,6 @@ ColumnLayout {
                         return Qt.formatDateTime(new Date(cell.modificationTime * 1000),
                                                  Locale.ShortFormat);
                     case 2:
-                        return root.kindText(cell.isFolder, cell.extension);
-                    case 3:
                         return cell.formattedSize;
                     }
                     return "";

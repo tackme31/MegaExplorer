@@ -1,14 +1,13 @@
 #include "SearchService.h"
 
 SearchService::SearchService(std::shared_ptr<IMegaClient> client,
-                              std::shared_ptr<FolderNavigationService> navigationService)
-    : mClient(std::move(client))
-    , mNavigationService(std::move(navigationService))
-{
-}
+                             std::shared_ptr<FolderNavigationService> navigationService)
+    : mClient(std::move(client)), mNavigationService(std::move(navigationService))
+{}
 
 void SearchService::search(const std::string& query,
-                            std::function<void(Result<std::vector<FileEntry>>)> onDone)
+                           SortOrder order,
+                           std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     if (query.empty())
     {
@@ -17,5 +16,5 @@ void SearchService::search(const std::string& query,
     }
 
     FolderNavigationService::CurrentLocation location = mNavigationService->currentLocation();
-    mClient->search(location.handle, location.isRoot, query, std::move(onDone));
+    mClient->search(location.handle, location.isRoot, query, order, std::move(onDone));
 }

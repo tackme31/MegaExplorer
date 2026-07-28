@@ -27,14 +27,17 @@ public:
 
     void fetchNodes(std::function<void(Result<void>)> onDone) override;
 
-    void getRootChildren(std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
+    void getRootChildren(SortOrder order,
+                         std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
     void getChildren(std::uint64_t handle,
+                     SortOrder order,
                      std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
     void search(std::uint64_t ancestorHandle,
                 bool isRoot,
                 const std::string& query,
+                SortOrder order,
                 std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
     void download(
@@ -54,6 +57,7 @@ private:
 
     void listChildren(std::unique_ptr<mega::MegaNode> node,
                       const char* notFoundMessage,
+                      SortOrder order,
                       std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     // Declared before mApi: constructed first / destroyed last, so the

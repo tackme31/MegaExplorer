@@ -9,7 +9,7 @@
 // setContextProperty(); not instantiated from QML, so no QML_ELEMENT needed.
 //
 // QAbstractTableModel (not QAbstractListModel) since Phase 6b: columnCount()
-// reports 4 (Name/Modified/Kind/Size) so TableView+HorizontalHeaderView can
+// reports 3 (Name/Modified/Size) so TableView+HorizontalHeaderView can
 // render an Explorer-style detail view. data(index, role) still dispatches
 // purely on role and ignores index.column() -- ListView/GridView (used by
 // the grid/thumbnail view) only ever query column 0 of a multi-column
@@ -36,7 +36,6 @@ public:
         ThumbnailPathRole,
         ModificationTimeRole,
         FormattedSizeRole,
-        ExtensionRole,
     };
 
     explicit FileListModel(QObject* parent = nullptr);

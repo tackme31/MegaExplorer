@@ -52,7 +52,7 @@ bool FolderNavigationController::canGoBack() const
 void FolderNavigationController::loadRoot(const std::string& email, const std::string& password)
 {
     mListingService->loadRootListing(
-        email, password, [this](Result<std::vector<FileEntry>> result) {
+        email, password, mSortOrder, [this](Result<std::vector<FileEntry>> result) {
             invokeOnGuiThread([this, result = std::move(result)]() mutable {
                 applyResult(std::move(result));
             });
@@ -62,6 +62,7 @@ void FolderNavigationController::loadRoot(const std::string& email, const std::s
 void FolderNavigationController::openFolder(quint64 handle)
 {
     mService->openFolder(static_cast<std::uint64_t>(handle),
+                         mSortOrder,
                          [this](Result<std::vector<FileEntry>> result) {
                              invokeOnGuiThread([this, result = std::move(result)]() mutable {
                                  applyResult(std::move(result));
@@ -71,7 +72,7 @@ void FolderNavigationController::openFolder(quint64 handle)
 
 void FolderNavigationController::goBack()
 {
-    mService->goBack([this](Result<std::vector<FileEntry>> result) {
+    mService->goBack(mSortOrder, [this](Result<std::vector<FileEntry>> result) {
         invokeOnGuiThread([this, result = std::move(result)]() mutable {
             applyResult(std::move(result));
         });
@@ -89,6 +90,7 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
                                     QString::fromStdString(result.errorMessage));
         return;
     }
+    mHasLoadedOnce = true;
     mLastFolderEntries = result.value;
     mFileListModel.setEntries(std::move(result.value));
     emit canGoBackChanged();
@@ -96,17 +98,20 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
 
 void FolderNavigationController::search(QString query)
 {
+    mLastSearchQuery = query.toStdString();
+
     if (query.isEmpty())
     {
         mFileListModel.setEntries(mLastFolderEntries);
         return;
     }
 
-    mSearchService->search(query.toStdString(), [this](Result<std::vector<FileEntry>> result) {
-        invokeOnGuiThread([this, result = std::move(result)]() mutable {
-            applySearchResult(std::move(result));
+    mSearchService->search(
+        mLastSearchQuery, mSortOrder, [this](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread([this, result = std::move(result)]() mutable {
+                applySearchResult(std::move(result));
+            });
         });
-    });
 }
 
 void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>> result)
@@ -120,4 +125,59 @@ void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>
         return;
     }
     mFileListModel.setEntries(std::move(result.value));
+}
+
+void FolderNavigationController::refreshCurrentFolder()
+{
+    mService->refreshCurrent(mSortOrder, [this](Result<std::vector<FileEntry>> result) {
+        invokeOnGuiThread([this, result = std::move(result)]() mutable {
+            applyResult(std::move(result));
+        });
+    });
+}
+
+void FolderNavigationController::setSortOrder(int column, bool ascending)
+{
+    switch (column)
+    {
+        case 1:
+            mSortOrder.key = SortKey::ModificationTime;
+            break;
+        case 2:
+            mSortOrder.key = SortKey::Size;
+            break;
+        case 0:
+        default:
+            mSortOrder.key = SortKey::Name;
+            break;
+    }
+    mSortOrder.ascending = ascending;
+
+    // Called once at startup with the Settings-restored value, before
+    // loadRoot() has ever run (see mHasLoadedOnce's declaration) -- just
+    // record the order in that case, don't fetch yet.
+    if (!mHasLoadedOnce)
+        return;
+
+    if (!mLastSearchQuery.empty())
+    {
+        // Re-run the visible search under the new order, and separately
+        // refresh the cached folder listing (not the visible model) so that
+        // clearing the search afterwards doesn't show stale ordering.
+        mSearchService->search(
+            mLastSearchQuery, mSortOrder, [this](Result<std::vector<FileEntry>> result) {
+                invokeOnGuiThread([this, result = std::move(result)]() mutable {
+                    applySearchResult(std::move(result));
+                });
+            });
+        mService->refreshCurrent(mSortOrder, [this](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread([this, result = std::move(result)]() mutable {
+                if (result.success)
+                    mLastFolderEntries = std::move(result.value);
+            });
+        });
+        return;
+    }
+
+    refreshCurrentFolder();
 }

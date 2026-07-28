@@ -66,33 +66,41 @@ Windowsエクスプローラー風のUIを持つ、MEGA向けの独自デスク�
    失敗+ダウンロードの「開く」失敗に汎用エラートーストを追加。ローカルキャッシュ・バックグラウンド
    更新は未着手
 8. **フェーズ6b**: 一覧表示時のファイル属性表示(サイズ・更新日時)+ソート機能。フェーズ6aと同様、
-   フェーズ6本体(ローカルキャッシュ・バックグラウンド更新)より前に先行着手する差し込み枠 ← **次はここ**。
+   フェーズ6本体(ローカルキャッシュ・バックグラウンド更新)より前に先行着手する差し込み枠 ← **完了
+   (2026-07-28)**。
    仕様決定(2026-07-28):
    - リスト表示はWindowsエクスプローラーの詳細表示相当に変更 — カラムヘッダーを追加し、ヘッダークリック
      でソート(再クリックで昇順/降順トグル)
-   - 表示カラムは以下の4つに決定(2026-07-28):
-     - ファイル名(拡張子含む) — `MegaNode::getName()`、取得済み(`FileEntry::name`)
-     - 更新日時(ローカル日時表示) — `MegaNode::getModificationTime()`、`FileEntry::modificationTime`に
-       取得済みだが`FileListModel::Role`未公開(要追加)。Unix秒なのでQML側は`new Date(t * 1000)`
-     - 種類 — **MegaNodeに直接のgetterなし**。フォルダは「フォルダ」、ファイルは拡張子から表示用の種類
-       文字列を導出する必要がある(Explorerのように拡張子→"〇〇ファイル"のマッピングを持つか、単に拡張子
-       表示にするかは実装時に決める)
+   - 表示カラムは以下の3つ(2026-07-28、種類列は下記の理由で不採用に変更):
+     - ファイル名(拡張子含む) — `MegaNode::getName()`、`FileEntry::name`
+     - 更新日時(ローカル日時表示) — `MegaNode::getModificationTime()`、`FileEntry::modificationTime`/
+       `FileListModel::ModificationTimeRole`。Unix秒なのでQML側は`new Date(t * 1000)`
      - ファイルサイズ(人が読みやすい単位に整形。KB/MB等) — `MegaNode::getSize()`、
-       `FileEntry::sizeBytes`/`FileListModel::SizeRole`に取得済みだが現在は生バイト値のまま。整形は
-       QML側かC++ヘルパーのどちらで持つか実装時に決める
-   - ソート時はソートキーによらずフォルダを常に先頭に固定し、フォルダ/ファイルそれぞれのグループ内で
-     選択中のキーを適用(エクスプローラーの標準動作に合わせる)
+       `FileEntry::sizeBytes`/`FileListModel::FormattedSizeRole`(`QLocale::formattedDataSize`で整形)
+     - **種類列は不採用**: 当初4列目として検討したが、ソートをSDK委譲する方針(下記)と衝突すると判明
+       (`MegaApi::getChildren`/`search`の`order`に拡張子ベースの種類に対応する値が存在しない)。
+       種類列専用に用意していた`FileKind.h/.cpp`(`fileExtensionUppercased`)と
+       `FileListModel::ExtensionRole`は削除
+   - ソート時はソートキーによらずフォルダを常に先頭に固定 — SDK自身のドキュメントに "the nodes are
+     always sorted by type, being folders always first" と明記されており、クライアント側ロジック不要
+     (2026-07-28確認)
    - グリッド(サムネイル)表示側は変更しない — 名前+サムネイルのみのまま
-   実装はまだ未着手(このコミット時点では仕様決定のみ)。
-   ソートはアプリ側(メモリ上)ではなくMEGA SDKの`MegaApi::getChildren(MegaNode*, order)`の`order`
-   引数で行う方針(2026-07-28調査) — 1フォルダ数万ファイル規模でのパフォーマンスを考慮。
-   `IMegaClient`/`MegaSdkClient`(`src/core`/`src/mega`)にソート指定を渡す口が無いため、そこの拡張が必要
+   - 検索結果一覧にも現在選択中のソート列/方向を適用する(`IMegaClient::search`にも`order`を渡す)
+   ソートはアプリ側(メモリ上)ではなくMEGA SDKの`MegaApi::getChildren`/`search`の`order`引数で行う方針
+   (2026-07-28調査・実装) — 1フォルダ数万ファイル規模でのパフォーマンスを考慮。`IMegaClient`/
+   `MegaSdkClient`(`src/core`/`src/mega`)に`SortOrder`(新規`src/core/SortOrder.h`、`SortKey::
+   {Name,Size,ModificationTime}` + `ascending`)を渡す引数を追加し、`MegaSdkClient`側で
+   `MegaApi::ORDER_DEFAULT_ASC/DESC`・`ORDER_SIZE_ASC/DESC`・`ORDER_MODIFICATION_ASC/DESC`に変換して
+   渡す。`FolderNavigationController::setSortOrder(column, ascending)`がヘッダークリックの入口で、
+   検索中かどうかで検索結果の再取得/現在フォルダの再取得(`FolderNavigationService::refreshCurrent`、
+   back-stackは変更しない)を使い分ける。ソート列/方向は`FileTableView.qml`側で`Settings`(QtCore)に
+   永続化。
 
    テーブル実装方式も決定(2026-07-28、Qt公式ドキュメント調査済み): **`TableView`+`HorizontalHeaderView`
    への移行**(`import QtQuick.Controls`、`HorizontalHeaderView`はQt Quick Controls所属)。
    - 現状の一覧表示は`ListView`+`QAbstractListModel`(`FileListModel`、1行=1ファイルでロールが列相当の
      単一カラムモデル)。`TableView`は行×列の2次元モデルが前提のため、`FileListModel`を
-     `QAbstractTableModel`ベースに書き換え、`columnCount()`を4返すようにして`data(index, role)`が
+     `QAbstractTableModel`ベースに書き換え、`columnCount()`を3返すようにして`data(index, role)`が
      `index.column()`で出し分ける形にする変更が必要(グリッド表示側は`ListView`のままでよく、
      `FileListModel`を両ビューで共用するなら列に依存しない形を保つか、ビュー別にラッパーを挟むかは
      実装時に要検討)

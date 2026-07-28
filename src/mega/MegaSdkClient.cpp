@@ -87,6 +87,22 @@ private:
     std::function<void(Result<std::string>)> mOnDone;
 };
 
+int toMegaOrder(SortOrder order)
+{
+    switch (order.key)
+    {
+        case SortKey::Size:
+            return order.ascending ? mega::MegaApi::ORDER_SIZE_ASC : mega::MegaApi::ORDER_SIZE_DESC;
+        case SortKey::ModificationTime:
+            return order.ascending ? mega::MegaApi::ORDER_MODIFICATION_ASC
+                                   : mega::MegaApi::ORDER_MODIFICATION_DESC;
+        case SortKey::Name:
+        default:
+            return order.ascending ? mega::MegaApi::ORDER_DEFAULT_ASC
+                                   : mega::MegaApi::ORDER_DEFAULT_DESC;
+    }
+}
+
 std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
 {
     std::vector<FileEntry> entries;
@@ -188,25 +204,30 @@ void MegaSdkClient::fetchNodes(std::function<void(Result<void>)> onDone)
     mApi->fetchNodes(new FetchNodesListener(std::move(onDone)));
 }
 
-void MegaSdkClient::getRootChildren(std::function<void(Result<std::vector<FileEntry>>)> onDone)
+void MegaSdkClient::getRootChildren(SortOrder order,
+                                    std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     listChildren(resolveNode(0, true),
                  "No root node (not logged in / nodes not fetched)",
+                 order,
                  std::move(onDone));
 }
 
 void MegaSdkClient::getChildren(std::uint64_t handle,
+                                SortOrder order,
                                 std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     listChildren(
         resolveNode(handle, false),
         "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
+        order,
         std::move(onDone));
 }
 
 void MegaSdkClient::search(std::uint64_t ancestorHandle,
                            bool isRoot,
                            const std::string& query,
+                           SortOrder order,
                            std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     std::unique_ptr<mega::MegaNode> ancestor = resolveNode(ancestorHandle, isRoot);
@@ -221,7 +242,7 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
     filter->byName(query.c_str());
     filter->byLocationHandle(ancestor->getHandle());
 
-    std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get()));
+    std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get(), toMegaOrder(order)));
     onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
 }
 
@@ -283,6 +304,7 @@ std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle,
 
 void MegaSdkClient::listChildren(std::unique_ptr<mega::MegaNode> node,
                                  const char* notFoundMessage,
+                                 SortOrder order,
                                  std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     if (!node)
@@ -291,6 +313,6 @@ void MegaSdkClient::listChildren(std::unique_ptr<mega::MegaNode> node,
         return;
     }
 
-    std::unique_ptr<mega::MegaNodeList> children(mApi->getChildren(node.get()));
+    std::unique_ptr<mega::MegaNodeList> children(mApi->getChildren(node.get(), toMegaOrder(order)));
     onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(children.get())));
 }

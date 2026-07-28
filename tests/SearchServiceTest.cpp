@@ -1,4 +1,5 @@
 #include "core/SearchService.h"
+
 #include "core/FolderNavigationService.h"
 #include "MockMegaClient.h"
 
@@ -30,15 +31,16 @@ TEST(SearchServiceTest, SearchAtRootPassesRootSentinelToClient)
     auto mockClient = std::make_shared<MockMegaClient>();
     const std::vector<FileEntry> expected{{"found.txt", 5, 10, false, 0}};
 
-    EXPECT_CALL(*mockClient, search(::testing::_, true, std::string("query"), ::testing::_))
-        .WillOnce(::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(expected)));
+    EXPECT_CALL(*mockClient,
+                search(::testing::_, true, std::string("query"), ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<4>(Result<std::vector<FileEntry>>::ok(expected)));
 
     auto navigationService = std::make_shared<FolderNavigationService>(mockClient);
     SearchService service(mockClient, navigationService);
     Captured captured;
 
     // Act: no openFolder called, so navigationService is still at root
-    service.search("query", captureInto(captured));
+    service.search("query", SortOrder{}, captureInto(captured));
 
     // Assert
     ASSERT_TRUE(captured.called);
@@ -53,21 +55,21 @@ TEST(SearchServiceTest, SearchInOpenedFolderPassesItsHandleToClient)
     const std::vector<FileEntry> folderChildren{{"sub", 2, 0, true, 0}};
     const std::vector<FileEntry> expected{{"found.txt", 5, 10, false, 0}};
 
-    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::ok(folderChildren)));
-    EXPECT_CALL(*mockClient, search(1, false, std::string("query"), ::testing::_))
-        .WillOnce(::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(expected)));
+    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(folderChildren)));
+    EXPECT_CALL(*mockClient, search(1, false, std::string("query"), ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<4>(Result<std::vector<FileEntry>>::ok(expected)));
 
     auto navigationService = std::make_shared<FolderNavigationService>(mockClient);
     Captured openCaptured;
-    navigationService->openFolder(1, captureInto(openCaptured));
+    navigationService->openFolder(1, SortOrder{}, captureInto(openCaptured));
     ASSERT_TRUE(openCaptured.result.success);
 
     SearchService service(mockClient, navigationService);
     Captured captured;
 
     // Act
-    service.search("query", captureInto(captured));
+    service.search("query", SortOrder{}, captureInto(captured));
 
     // Assert
     ASSERT_TRUE(captured.called);
@@ -80,8 +82,9 @@ TEST(SearchServiceTest, SearchWithNoMatchesSucceedsWithEmptyResult)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
 
-    EXPECT_CALL(*mockClient, search(::testing::_, true, std::string("nomatch"), ::testing::_))
-        .WillOnce(::testing::InvokeArgument<3>(
+    EXPECT_CALL(*mockClient,
+                search(::testing::_, true, std::string("nomatch"), ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<4>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
 
     auto navigationService = std::make_shared<FolderNavigationService>(mockClient);
@@ -89,7 +92,7 @@ TEST(SearchServiceTest, SearchWithNoMatchesSucceedsWithEmptyResult)
     Captured captured;
 
     // Act
-    service.search("nomatch", captureInto(captured));
+    service.search("nomatch", SortOrder{}, captureInto(captured));
 
     // Assert: empty results is still a success, not a failure
     ASSERT_TRUE(captured.called);
@@ -102,16 +105,17 @@ TEST(SearchServiceTest, SearchFailurePropagates)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
 
-    EXPECT_CALL(*mockClient, search(::testing::_, true, std::string("query"), ::testing::_))
-        .WillOnce(::testing::InvokeArgument<3>(
-            Result<std::vector<FileEntry>>::fail("network error", 2)));
+    EXPECT_CALL(*mockClient,
+                search(::testing::_, true, std::string("query"), ::testing::_, ::testing::_))
+        .WillOnce(
+            ::testing::InvokeArgument<4>(Result<std::vector<FileEntry>>::fail("network error", 2)));
 
     auto navigationService = std::make_shared<FolderNavigationService>(mockClient);
     SearchService service(mockClient, navigationService);
     Captured captured;
 
     // Act
-    service.search("query", captureInto(captured));
+    service.search("query", SortOrder{}, captureInto(captured));
 
     // Assert
     ASSERT_TRUE(captured.called);
@@ -122,7 +126,8 @@ TEST(SearchServiceTest, EmptyQueryFailsWithoutCallingClient)
 {
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, search(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(*mockClient,
+                search(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .Times(0);
 
     auto navigationService = std::make_shared<FolderNavigationService>(mockClient);
@@ -130,7 +135,7 @@ TEST(SearchServiceTest, EmptyQueryFailsWithoutCallingClient)
     Captured captured;
 
     // Act
-    service.search("", captureInto(captured));
+    service.search("", SortOrder{}, captureInto(captured));
 
     // Assert
     ASSERT_TRUE(captured.called);
