@@ -41,6 +41,7 @@ endif()
 add_library(MegaExplorerCore STATIC
     src/core/IMegaClient.h
     src/core/INodeCache.h
+    src/core/ISessionStore.h
     src/core/FileEntry.h
     src/core/Result.h
     src/core/SortOrder.h
@@ -70,6 +71,8 @@ qt_add_executable(appMegaExplorer
     src/mega/MegaSdkLogger.cpp
     src/platform/SqliteNodeCache.h
     src/platform/SqliteNodeCache.cpp
+    src/platform/WindowsSessionStore.h
+    src/platform/WindowsSessionStore.cpp
     src/qml/FileListModel.h
     src/qml/FileListModel.cpp
     src/qml/FolderNavigationController.h
@@ -122,6 +125,7 @@ target_link_libraries(appMegaExplorer
     PRIVATE MEGA::SDKlib
     PRIVATE MegaExplorerCore
     PRIVATE unofficial::sqlite3::sqlite3
+    PRIVATE crypt32
 )
 
 install(TARGETS appMegaExplorer

@@ -15,15 +15,19 @@ add_executable(MegaExplorerTests
     DownloadServiceTest.cpp
     ThumbnailServiceTest.cpp
     SqliteNodeCacheTest.cpp
+    WindowsSessionStoreTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/SqliteNodeCache.cpp
+    ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
     MockMegaClient.h
     MockNodeCache.h
+    MockSessionStore.h
 )
 
 target_link_libraries(MegaExplorerTests PRIVATE
     MegaExplorerCore
     unofficial::sqlite3::sqlite3
+    crypt32
     Qt6::Core
     GTest::gtest_main
     GTest::gmock
