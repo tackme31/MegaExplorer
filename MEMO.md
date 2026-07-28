@@ -107,12 +107,14 @@ Windowsエクスプローラー風のUIを持つ、MEGA向けの独自デスク�
    - カラムのドラッグリサイズは`TableView.resizableColumns: true`(Qt 6.5〜)で標準サポートあり、
      `HorizontalHeaderView`はデフォルトで`resizableColumns: true`。列の並び替え(`movableColumns`)も
      Qt 6.8〜標準サポート(今回は使う予定なし)
-   - **ヘッダー境界のダブルクリックでコンテンツ幅へ自動調整する挙動はQt標準コンポーネントに組み込みでは
-     無い**(ドキュメント確認済み、2026-07-28)。自前実装が必要だが材料はQtが提供している:
-     `TableView.implicitColumnWidth(column)`(現在ロード済みの行の中で最大implicitWidthを返す)と
-     `TableView.setColumnWidth(column, size)`を、ヘッダー境界の`TapHandler.onDoubleTapped`
-     (`Main.qml`の他のダブルタップ処理と同じパターン)から呼べば実現可能。ただし
-     `implicitColumnWidth()`は現在ビューにロードされている行のみを見る制約があり、スクロール位置で
+   - **ヘッダーの幅をアプリ終了後も維持する**(2026-07-28追加)。ソート列/方向と同様に`FileTableView.qml`
+     側で`Settings`(QtCore)へ各列幅を保存し、起動時に復元する想定
+   - **ヘッダー境界のダブルクリックでコンテンツ幅へ自動調整する挙動**は上記の幅維持より優先度を下げる
+     (2026-07-28)。Qt標準コンポーネントに組み込みでは無い(ドキュメント確認済み、2026-07-28)。自前実装が
+     必要だが材料はQtが提供している: `TableView.implicitColumnWidth(column)`(現在ロード済みの行の中で
+     最大implicitWidthを返す)と`TableView.setColumnWidth(column, size)`を、ヘッダー境界の
+     `TapHandler.onDoubleTapped`(`Main.qml`の他のダブルタップ処理と同じパターン)から呼べば実現可能。
+     ただし`implicitColumnWidth()`は現在ビューにロードされている行のみを見る制約があり、スクロール位置で
      結果が多少ブレる(数万件フォルダでは特に)。フォルダ全件を見て厳密に幅を決めたい場合は、モデルの
      文字列長からフォントメトリクスで自前計算する必要がある(文字列測定なのでサムネイル取得ほど重くはない)
 9. **フェーズ7(将来拡張)**: リモート変更のリアルタイム反映(機能一覧 7. を参照)。フォルダオープン時更新の上に追加するだけなので、既存構造への影響は小さい
