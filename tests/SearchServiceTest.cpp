@@ -2,6 +2,7 @@
 
 #include "core/FolderNavigationService.h"
 #include "MockMegaClient.h"
+#include "MockNodeCache.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -23,6 +24,24 @@ std::function<void(Result<std::vector<FileEntry>>)> captureInto(Captured& captur
     };
 }
 
+// FolderNavigationService now depends on INodeCache too (Phase 6); these
+// tests aren't about caching, so a NiceMock that always misses/succeeds
+// keeps the pre-Phase-6 test bodies unchanged below.
+std::shared_ptr<::testing::NiceMock<MockNodeCache>> makeNoopCache()
+{
+    auto cache = std::make_shared<::testing::NiceMock<MockNodeCache>>();
+    ON_CALL(*cache, loadChildren(::testing::_))
+        .WillByDefault(::testing::Return(Result<std::vector<FileEntry>>::fail("no cache")));
+    ON_CALL(*cache, saveChildren(::testing::_, ::testing::_))
+        .WillByDefault(::testing::Return(Result<void>::ok()));
+    return cache;
+}
+
+std::function<void(std::vector<FileEntry>)> ignoreCacheHit()
+{
+    return [](std::vector<FileEntry>) {};
+}
+
 } // namespace
 
 TEST(SearchServiceTest, SearchAtRootPassesRootSentinelToClient)
@@ -35,7 +54,7 @@ TEST(SearchServiceTest, SearchAtRootPassesRootSentinelToClient)
                 search(::testing::_, true, std::string("query"), ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<4>(Result<std::vector<FileEntry>>::ok(expected)));
 
-    auto navigationService = std::make_shared<FolderNavigationService>(mockClient);
+    auto navigationService = std::make_shared<FolderNavigationService>(mockClient, makeNoopCache());
     SearchService service(mockClient, navigationService);
     Captured captured;
 
@@ -60,9 +79,9 @@ TEST(SearchServiceTest, SearchInOpenedFolderPassesItsHandleToClient)
     EXPECT_CALL(*mockClient, search(1, false, std::string("query"), ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<4>(Result<std::vector<FileEntry>>::ok(expected)));
 
-    auto navigationService = std::make_shared<FolderNavigationService>(mockClient);
+    auto navigationService = std::make_shared<FolderNavigationService>(mockClient, makeNoopCache());
     Captured openCaptured;
-    navigationService->openFolder(1, SortOrder{}, captureInto(openCaptured));
+    navigationService->openFolder(1, SortOrder{}, ignoreCacheHit(), captureInto(openCaptured));
     ASSERT_TRUE(openCaptured.result.success);
 
     SearchService service(mockClient, navigationService);
@@ -87,7 +106,7 @@ TEST(SearchServiceTest, SearchWithNoMatchesSucceedsWithEmptyResult)
         .WillOnce(::testing::InvokeArgument<4>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
 
-    auto navigationService = std::make_shared<FolderNavigationService>(mockClient);
+    auto navigationService = std::make_shared<FolderNavigationService>(mockClient, makeNoopCache());
     SearchService service(mockClient, navigationService);
     Captured captured;
 
@@ -110,7 +129,7 @@ TEST(SearchServiceTest, SearchFailurePropagates)
         .WillOnce(
             ::testing::InvokeArgument<4>(Result<std::vector<FileEntry>>::fail("network error", 2)));
 
-    auto navigationService = std::make_shared<FolderNavigationService>(mockClient);
+    auto navigationService = std::make_shared<FolderNavigationService>(mockClient, makeNoopCache());
     SearchService service(mockClient, navigationService);
     Captured captured;
 
@@ -130,7 +149,7 @@ TEST(SearchServiceTest, EmptyQueryFailsWithoutCallingClient)
                 search(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .Times(0);
 
-    auto navigationService = std::make_shared<FolderNavigationService>(mockClient);
+    auto navigationService = std::make_shared<FolderNavigationService>(mockClient, makeNoopCache());
     SearchService service(mockClient, navigationService);
     Captured captured;
 

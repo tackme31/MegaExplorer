@@ -5,15 +5,18 @@
 #include "core/SearchService.h"
 #include "core/ThumbnailService.h"
 #include "mega/MegaSdkClient.h"
+#include "platform/SqliteNodeCache.h"
 #include "qml/DownloadController.h"
 #include "qml/FolderNavigationController.h"
 #include "qml/NotificationController.h"
 #include "qml/ThumbnailController.h"
 
 #include <QDebug>
+#include <QDir>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QStandardPaths>
 
 #include <memory>
 
@@ -40,8 +43,20 @@ int main(int argc, char* argv[])
     const std::string password = qEnvironmentVariable("MEGA_PWD").toStdString();
 
     auto client = std::make_shared<MegaSdkClient>();
-    auto listingService = std::make_shared<FileListingService>(client);
-    auto navigationService = std::make_shared<FolderNavigationService>(client);
+
+    // AppLocalDataLocation, not AppDataLocation: same non-roaming rationale
+    // as Logging.cpp's log file (see installLogging()).
+    const QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    QDir().mkpath(cacheDir);
+    auto nodeCache =
+        std::make_shared<SqliteNodeCache>((cacheDir + "/node_cache.sqlite3").toStdString());
+
+    // navigationService must exist before listingService: the latter
+    // delegates its final root-listing step to
+    // FolderNavigationService::openRoot (Phase 6) instead of calling
+    // IMegaClient::getRootChildren directly.
+    auto navigationService = std::make_shared<FolderNavigationService>(client, nodeCache);
+    auto listingService = std::make_shared<FileListingService>(client, navigationService);
     auto searchService = std::make_shared<SearchService>(client, navigationService);
     auto downloadService = std::make_shared<DownloadService>(client);
     auto thumbnailService = std::make_shared<ThumbnailService>(client);

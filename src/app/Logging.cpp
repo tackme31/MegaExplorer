@@ -20,6 +20,7 @@ Q_LOGGING_CATEGORY(lcSearch, "megaexplorer.search")
 Q_LOGGING_CATEGORY(lcDownload, "megaexplorer.download")
 Q_LOGGING_CATEGORY(lcThumbnail, "megaexplorer.thumbnail")
 Q_LOGGING_CATEGORY(lcSdk, "megaexplorer.sdk")
+Q_LOGGING_CATEGORY(lcCache, "megaexplorer.cache")
 
 namespace
 {

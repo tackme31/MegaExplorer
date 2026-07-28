@@ -19,7 +19,7 @@ are post-MVP, sequenced by priority/dependency.
 | 5 | Thumbnails + grid view | done |
 | 6a | Categorized logging + error-toast feedback | done (pulled forward) |
 | 6b | File-list attribute display + sort | done (pulled forward) |
-| 6 | Local cache + open-folder background refresh | **next** (closes out MVP) |
+| 6 | Local cache + open-folder background refresh | done (closes out MVP) |
 | 7 | Login screen + session persistence | planned |
 | 8 | Breadcrumb trail | planned |
 | 9 | Folder tree navigation (side panel) | planned |
@@ -33,8 +33,8 @@ are post-MVP, sequenced by priority/dependency.
 
 ### Phase 6 — local cache + open-folder background refresh
 
-Not started. Persist the node tree locally (SQLite) and run a one-shot background refresh on folder
-open — not continuous watching. Needs `src/platform`'s `IFileSystem` port (not yet created).
+Persist the node tree locally (SQLite) and run a one-shot background refresh on folder open — not
+continuous watching. See the Phase 6 implementation-log entry below for what was built.
 
 ### Phase 7 — login screen + session persistence
 
@@ -202,3 +202,76 @@ Folders show a blank Date modified cell rather than the Unix epoch (`getModifica
 
 All list/table UI strings landed in English, consistent with the rest of the shipped UI — no
 localization infrastructure yet.
+
+## Phase 6 — local cache + open-folder background refresh (done)
+
+Closes out the MVP. Persists the MEGA node tree locally in SQLite (`node_cache.sqlite3` under
+`QStandardPaths::AppLocalDataLocation`, same non-roaming rationale as Phase 6a's log file) and shows
+a cached listing immediately on folder open, replacing it with a one-shot authoritative SDK fetch
+shortly after — not continuous sync/watching (deferred to Phase 15).
+
+New port `INodeCache` (`src/core/INodeCache.h`) rather than the generic `IFileSystem`/
+`std::filesystem` wrapper `docs/ARCHITECTURE.md` had speculatively pre-declared for this phase: the
+actual need turned out to be a structured node-tree cache, and MEGA SDK's own vcpkg manifest already
+builds SQLite (`sqlite3`, importable as `unofficial-sqlite3` → `unofficial::sqlite3::sqlite3`; it's
+linked `PRIVATE` into `SDKlib` so the app has to `find_package` it independently, same fix shape as
+the existing FFmpeg::swscale workaround). `INodeCache` is synchronous (`Result<T>` returned
+directly), deliberately not callback-shaped like `IMegaClient` — it has no genuinely-async sibling
+to stay interface-consistent with, so a callback shape would only add indirection. Adapter
+`SqliteNodeCache` (`src/platform/SqliteNodeCache.h`/`.cpp`, new `src/platform/` directory) is the
+only file allowed to include `sqlite3.h`, using the raw C API directly (prepared statements, no
+ORM/wrapper library). Not part of `MegaExplorerCore` (parallels `src/mega`), but — unlike
+`MegaSdkClient`, which needs a live account — it's fully offline-testable, so it gets its own real
+adapter test (`tests/SqliteNodeCacheTest.cpp`) against a `:memory:` database in addition to the
+`MockNodeCache`-based tests elsewhere.
+
+Schema is one table, `node_cache`, keyed by a composite primary key `(parent_is_root, parent_handle,
+handle)` — the `isRoot` sentinel is threaded through everywhere (same convention as
+`FolderNavigationService::Location`) so a folder with handle 0 and "the root" never collide.
+`saveChildren` is a full delete-then-insert per parent, transactional — no incremental diffing.
+`loadChildren` never distinguishes "never cached" from "cached as empty" (both return `Result::ok`
+with an empty vector); that "empty means nothing to show yet" policy lives one layer up, in
+`FolderNavigationService`, not in the store itself.
+
+`FolderNavigationService::openFolder`/`goBack` (and a new `openRoot`, replacing `FileListingService`
+previously calling `IMegaClient::getRootChildren` directly) each take two callbacks instead of one:
+`onCacheHit` (fires synchronously, at most once, only for a non-empty cache hit) and `onRefreshed`
+(always fires exactly once, with the authoritative network result, which on success is also written
+back to the cache). A shared private `loadWithCache` helper holds the "look up cache → make the
+network call → commit navigation state → write back → onRefreshed" sequence so it isn't duplicated
+three times. `refreshCurrent` (sort-order changes on an already-open folder) deliberately keeps its
+original single-callback shape — nothing useful for a cache read to add when something's already on
+screen — but still writes its result through to the cache. `FileListingService::loadRootListing`
+now delegates its final step to `FolderNavigationService::openRoot` instead of calling
+`IMegaClient::getRootChildren` itself, so the root listing (the very first thing shown after the
+slowest part of startup) gets the same cache-then-refresh treatment as any other folder;
+`FileListingService` gained a `FolderNavigationService` constructor dependency for this (same
+already-established pattern `SearchService` uses, not a new one). `main.cpp`'s composition root
+reorders construction so `navigationService` exists before `listingService`.
+
+`FolderNavigationController` (`src/qml`) gained a thinner `applyCacheHit` alongside the existing
+`applyResult`: no error path (a cache hit is never a failure), doesn't set `mHasLoadedOnce` or
+`mLastFolderEntries` (those must reflect only the authoritative refresh, so a subsequent
+clear-search or reload never shows briefly-stale cached data). Safe to have both fire in quick
+succession because `FileListModel::setEntries()` already does a full reset on every call
+(Phase 6b).
+
+Added `lcCache` logging category (`src/app/Logging.h`/`.cpp`), used only from `SqliteNodeCache.cpp`
+— `FolderNavigationService` (SDK/Qt-free `MegaExplorerCore`) deliberately never logs, it just
+silently discards a failed `saveChildren` `Result<void>`, since `SqliteNodeCache` already logged the
+underlying cause via `lcCache` before returning failure. Cache failures are never surfaced through
+`NotificationController`/`ErrorToast.qml` — a broken cache degrades silently to network-only
+behavior, it's never a user-visible error.
+
+**Gotchas**: `FileEntry` needed an `operator==` added (field-by-field, not `<=>`-defaulted since
+`CMAKE_CXX_STANDARD` isn't pinned to C++20+) — gmock's `EXPECT_CALL(..., someVector)` implicitly
+builds an `Eq()` matcher over `std::vector<FileEntry>`, which needs it. Mixing a catch-all
+`ON_CALL(mock, method(_))` default with a narrower `EXPECT_CALL(mock, method(specificMatcher))` for
+the same mock method doesn't work the way it looks: once *any* `EXPECT_CALL` exists for a method,
+every call to it must match *some* registered `EXPECT_CALL` (checked most-recently-added first) —
+`ON_CALL`'s default action only ever fires for calls gmock has nothing else to check against, not as
+a fallback when a narrower `EXPECT_CALL` merely fails to match. Needed an explicit
+`EXPECT_CALL(mock, method(_)).Times(AnyNumber())` registered *before* the specific one in
+`GoBackCacheHitUsesTargetLocationKeyNotCurrentLocation`. Adding `SqliteNodeCache.cpp` to
+`MegaExplorerTests` (for its own adapter test) pulled `Qt6::Core` and `src/app/Logging.cpp` into an
+otherwise Qt-free test target, since `lcCache`'s actual `Q_LOGGING_CATEGORY` definition lives there.

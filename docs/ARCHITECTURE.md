@@ -42,14 +42,18 @@ never call `MegaApi`/`std::filesystem` directly.
 ```
 src/app/       Cross-cutting Qt-dependent app infrastructure, not QML-facing: Logging.{h,cpp}
                (categorized QLoggingCategory + qInstallMessageHandler file sink)
-src/core/      IMegaClient.h, FileEntry.h, Result.h, FileListingService.{h,cpp}, and other
-               SDK-free domain services (FolderNavigationService, SearchService,
+src/core/      IMegaClient.h, INodeCache.h, FileEntry.h, Result.h, FileListingService.{h,cpp},
+               and other SDK-free domain services (FolderNavigationService, SearchService,
                DownloadService, ThumbnailService, ...)
 src/mega/      MegaSdkClient adapter and MegaSdkLogger (bridges mega::MegaLogger into
                src/app/Logging.h's lcSdk category) — the only files allowed to include
                megaapi.h
-src/platform/  RealFileSystem adapter — not yet created (needed once local caching starts,
-               roadmap step 6)
+src/platform/  SqliteNodeCache adapter (Phase 6) — the only file allowed to include
+               sqlite3.h. Persists the node tree locally so folder navigation can show a
+               cached listing immediately, then replace it with a fresh one-shot SDK fetch.
+               Not part of MegaExplorerCore (parallels src/mega), but does get its own
+               adapter-level test (tests/SqliteNodeCacheTest.cpp) since -- unlike
+               MegaSdkClient -- it needs no live account to test.
 src/qml/       C++ types exposed to QML (Q_PROPERTY etc.): FileListModel, controllers,
                NotificationController (shared error-toast relay)
 tests/         GoogleTest-based unit tests, one per src/core service
@@ -67,26 +71,38 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
 
 - **Ports**: `IMegaClient` (wraps `mega::MegaApi`, `src/core/IMegaClient.h`) — `login`,
   `fetchNodes`, `getRootChildren`/`getChildren` (return `std::vector<FileEntry>`,
-  `src/core/FileEntry.h`), `search`, `download`, `getThumbnail`. `IFileSystem` (wraps
-  `std::filesystem`) — not yet added, needed once local caching starts (roadmap step 6).
-  Domain/UI code depends only on these, never on SDK or filesystem types directly.
+  `src/core/FileEntry.h`), `search`, `download`, `getThumbnail`. `INodeCache` (wraps a local
+  SQLite store, `src/core/INodeCache.h`, added Phase 6) — `loadChildren`/`saveChildren`, keyed
+  by an `isRoot`-sentinel `ParentKey` (same convention as `FolderNavigationService::Location`).
+  Deliberately narrower than the generic `IFileSystem`/`std::filesystem` wrapper originally
+  sketched here pre-Phase-6: the actual need turned out to be a structured node-tree cache, not
+  general file I/O, and MEGA SDK's own vcpkg manifest already builds SQLite (`unofficial-sqlite3`)
+  so there was no reason to reach for `std::filesystem`. Domain/UI code depends only on these,
+  never on SDK, filesystem, or sqlite3 types directly.
 - **Adapters**: `MegaSdkClient` (`src/mega/MegaSdkClient.h`/`.cpp`) implements `IMegaClient` over
   `mega::MegaApi` using a per-call, self-deleting `MegaRequestListener` subclass (`new
   Listener(...)` passed to `login()`/`fetchNodes()`/etc., `delete this` at the end of
   `onRequestFinish`) — same idiom reused for `DownloadListener`/`ThumbnailListener`.
-  `RealFileSystem` — not yet added. `MegaSdkClient.cpp`/`.h` and `MegaSdkLogger.cpp`/`.h` (a small
-  `mega::MegaLogger` bridge into `src/app/Logging.h`'s categorized logging, registered/unregistered
-  in `MegaSdkClient`'s constructor/destructor via `MegaApi::addLoggerObject`) are the only files
-  allowed to include `megaapi.h` or call `std::filesystem` directly.
+  `SqliteNodeCache` (`src/platform/SqliteNodeCache.h`/`.cpp`, added Phase 6) implements
+  `INodeCache` directly over the sqlite3 C API (prepared statements, no ORM) — no listener idiom
+  needed, since local SQLite I/O has no async/callback shape to mirror. `MegaSdkClient.cpp`/`.h`
+  and `MegaSdkLogger.cpp`/`.h` (a small `mega::MegaLogger` bridge into `src/app/Logging.h`'s
+  categorized logging, registered/unregistered in `MegaSdkClient`'s constructor/destructor via
+  `MegaApi::addLoggerObject`) are the only files allowed to include `megaapi.h`;
+  `SqliteNodeCache.cpp` is the only file allowed to include `sqlite3.h`.
 - **`Result<T>`** (`src/core/Result.h`): hand-rolled success/failure wrapper (no `std::expected` —
   `CMAKE_CXX_STANDARD` isn't pinned in this project, so C++23 can't be assumed); has a
   `Result<void>` specialization for callbacks with no payload (e.g. `login`).
 - **Composition root**: `main.cpp` `make_shared`s the concrete adapters and injects them via
   constructor (`std::shared_ptr<IPort>`). No service locator, no container.
 - **Domain logic**: `src/core` services (`FileListingService`, `FolderNavigationService`,
-  `SearchService`, `DownloadService`, `ThumbnailService`) depend only on `IMegaClient`, are
-  SDK-free, and are unit-tested with a mocked `IMegaClient`. E.g. `FileListingService` chains
-  login→fetchNodes→getRootChildren, short-circuiting to a failed `Result<...>` if any stage fails.
+  `SearchService`, `DownloadService`, `ThumbnailService`) depend only on `IMegaClient`
+  (`FolderNavigationService` also on `INodeCache` since Phase 6), are SDK-free, and are
+  unit-tested with mocks. E.g. `FileListingService` chains login→fetchNodes→
+  `FolderNavigationService::openRoot`, short-circuiting to a failed `Result<...>` if login or
+  fetchNodes fails (before Phase 6 the last step was a direct `IMegaClient::getRootChildren`
+  call; it now delegates so the root listing gets the same cache-then-refresh treatment as any
+  other folder — see `FolderNavigationService`'s cache-then-refresh note just below).
 - **Async seam**: `MegaApi` is listener/callback-based (see `MegaListener::onRequestFinish` in
   `simple_client.cpp`) — `IMegaClient` methods take a completion callback
   (`std::function<void(Result<...>)>`), not a synchronous return, so test fakes can simulate
@@ -98,11 +114,25 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
   Services whose callbacks can fire off the GUI thread (`DownloadService`, `ThumbnailService`) take
   their own `std::mutex`; `IMegaClient` calls themselves are made with no lock held, since
   `MockMegaClient`-based tests invoke callbacks synchronously from that same call and a held lock
-  would self-deadlock.
+  would self-deadlock. `INodeCache`, by contrast, is deliberately *not* callback-shaped: it has no
+  async sibling to stay consistent with the way `getRootChildren`/`getChildren`/`search` do, so its
+  methods return `Result<T>` directly. `FolderNavigationService::openRoot`/`openFolder`/`goBack`
+  each take two callbacks instead of one (Phase 6, cache-then-refresh): `onCacheHit` fires
+  synchronously, at most once, only when `INodeCache::loadChildren` finds a non-empty cached row
+  set (a technically-successful-but-empty cache read is treated the same as a miss — the ambiguity
+  between "never cached" and "cached as empty" is intentionally left to this layer rather than
+  `SqliteNodeCache`, which stays a faithful, policy-free store); `onRefreshed` always fires exactly
+  once with the authoritative `IMegaClient` result, which — on success — is also written back into
+  `INodeCache`. `refreshCurrent` (in-place sort-order change on an already-displayed folder) keeps
+  its original single-callback shape: there's nothing useful for a cache read to add when something
+  is already on screen, though it still writes its result through to the cache.
 - **Testing**: GoogleTest/GoogleMock, pulled via vcpkg's `sdk-tests` feature (see `docs/BUILD.md`).
-  `MockMegaClient` (`tests/FileListingServiceTest.cpp`) `MOCK_METHOD`-fakes `IMegaClient` and
-  drives its callback args with `testing::InvokeArgument`. `IFileSystem` has no fake yet (not
-  added).
+  `MockMegaClient` (`tests/MockMegaClient.h`) and `MockNodeCache` (`tests/MockNodeCache.h`)
+  `MOCK_METHOD`-fake `IMegaClient`/`INodeCache`; `IMegaClient` mocks drive callback args with
+  `testing::InvokeArgument`, `INodeCache` mocks just `Return()` a `Result<T>` directly (see the
+  sync-vs-callback note above). `SqliteNodeCache` additionally gets a real adapter-level test
+  (`tests/SqliteNodeCacheTest.cpp`) against a `:memory:` database, unlike `MegaSdkClient` which has
+  no adapter test since it needs a live MEGA account.
 - **`MegaExplorerCore`**: a static library target (root `CMakeLists.txt`) bundling `src/core`'s
   SDK-free headers/`.cpp` files. Exists so `appMegaExplorer` and `MegaExplorerTests` link the same
   compiled domain logic instead of each recompiling it standalone.

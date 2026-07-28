@@ -72,6 +72,16 @@ signals:
     void canGoBackChanged();
 
 private:
+    // Cache-then-refresh (Phase 6): applyCacheHit is deliberately thinner
+    // than applyResult -- no error path (a cache hit is never a failure), no
+    // mHasLoadedOnce (a cache flash alone shouldn't count as "loaded" in
+    // case the subsequent refresh fails), no mLastFolderEntries update (that
+    // must reflect only the authoritative refresh, so clearing a search
+    // afterwards never shows briefly-stale cached data). It only pushes the
+    // rows into the model -- safe to call right before applyResult replaces
+    // them again, since FileListModel::setEntries() always does a full
+    // reset (Phase 6b).
+    void applyCacheHit(std::vector<FileEntry> entries);
     void applyResult(Result<std::vector<FileEntry>> result);
     void applySearchResult(Result<std::vector<FileEntry>> result);
     void refreshCurrentFolder();
