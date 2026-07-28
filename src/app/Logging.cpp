@@ -22,6 +22,7 @@ Q_LOGGING_CATEGORY(lcThumbnail, "megaexplorer.thumbnail")
 Q_LOGGING_CATEGORY(lcSdk, "megaexplorer.sdk")
 Q_LOGGING_CATEGORY(lcCache, "megaexplorer.cache")
 Q_LOGGING_CATEGORY(lcSession, "megaexplorer.session")
+Q_LOGGING_CATEGORY(lcAuth, "megaexplorer.auth")
 
 namespace
 {

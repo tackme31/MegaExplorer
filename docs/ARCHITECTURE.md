@@ -42,9 +42,9 @@ never call `MegaApi`/`std::filesystem` directly.
 ```
 src/app/       Cross-cutting Qt-dependent app infrastructure, not QML-facing: Logging.{h,cpp}
                (categorized QLoggingCategory + qInstallMessageHandler file sink)
-src/core/      IMegaClient.h, INodeCache.h, FileEntry.h, Result.h, FileListingService.{h,cpp},
-               and other SDK-free domain services (FolderNavigationService, SearchService,
-               DownloadService, ThumbnailService, ...)
+src/core/      IMegaClient.h, INodeCache.h, ISessionStore.h, FileEntry.h, Result.h,
+               AuthService.{h,cpp}, and other SDK-free domain services
+               (FolderNavigationService, SearchService, DownloadService, ThumbnailService, ...)
 src/mega/      MegaSdkClient adapter and MegaSdkLogger (bridges mega::MegaLogger into
                src/app/Logging.h's lcSdk category) — the only files allowed to include
                megaapi.h
@@ -95,14 +95,15 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
   `Result<void>` specialization for callbacks with no payload (e.g. `login`).
 - **Composition root**: `main.cpp` `make_shared`s the concrete adapters and injects them via
   constructor (`std::shared_ptr<IPort>`). No service locator, no container.
-- **Domain logic**: `src/core` services (`FileListingService`, `FolderNavigationService`,
-  `SearchService`, `DownloadService`, `ThumbnailService`) depend only on `IMegaClient`
-  (`FolderNavigationService` also on `INodeCache` since Phase 6), are SDK-free, and are
-  unit-tested with mocks. E.g. `FileListingService` chains login→fetchNodes→
-  `FolderNavigationService::openRoot`, short-circuiting to a failed `Result<...>` if login or
-  fetchNodes fails (before Phase 6 the last step was a direct `IMegaClient::getRootChildren`
-  call; it now delegates so the root listing gets the same cache-then-refresh treatment as any
-  other folder — see `FolderNavigationService`'s cache-then-refresh note just below).
+- **Domain logic**: `src/core` services (`AuthService`, `FolderNavigationService`, `SearchService`,
+  `DownloadService`, `ThumbnailService`) depend only on `IMegaClient` (`AuthService` also on
+  `ISessionStore`/`INodeCache`, `FolderNavigationService` also on `INodeCache` since Phase 6), are
+  SDK-free, and are unit-tested with mocks. E.g. `AuthService` chains login/restoreSession→
+  fetchNodes→best-effort session persistence, deliberately not depending on
+  `FolderNavigationService` itself — resetting navigation state on logout/re-login is the QML
+  layer's responsibility (`FolderNavigationController::reset`), not this service's. The root
+  listing (`FolderNavigationService::openRoot`) gets the same cache-then-refresh treatment as any
+  other folder — see `FolderNavigationService`'s cache-then-refresh note just below.
 - **Async seam**: `MegaApi` is listener/callback-based (see `MegaListener::onRequestFinish` in
   `simple_client.cpp`) — `IMegaClient` methods take a completion callback
   (`std::function<void(Result<...>)>`), not a synchronous return, so test fakes can simulate

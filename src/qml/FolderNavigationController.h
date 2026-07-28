@@ -1,5 +1,4 @@
 #pragma once
-#include "core/FileListingService.h"
 #include "core/FolderNavigationService.h"
 #include "core/SearchService.h"
 #include "core/SortOrder.h"
@@ -32,7 +31,6 @@ class FolderNavigationController : public QObject
 
 public:
     explicit FolderNavigationController(std::shared_ptr<FolderNavigationService> navigationService,
-                                        std::shared_ptr<FileListingService> listingService,
                                         std::shared_ptr<SearchService> searchService,
                                         NotificationController* notifications,
                                         QObject* parent = nullptr);
@@ -47,9 +45,9 @@ public:
 
     bool canGoBack() const;
 
-    // Not Q_INVOKABLE: called once from main.cpp's composition root before
-    // app.exec(), not from QML.
-    void loadRoot(const std::string& email, const std::string& password);
+    // Not Q_INVOKABLE: called once from main.cpp's composition root (via
+    // AuthController::authStateChanged reaching LoggedIn), not from QML.
+    Q_INVOKABLE void loadRoot();
 
     Q_INVOKABLE void openFolder(quint64 handle);
     Q_INVOKABLE void goBack();
@@ -65,8 +63,15 @@ public:
     // column: 0=Name, 1=ModificationTime, 2=Size (FileTableView.qml's 3-column
     // layout). Called both from the header-click handler and once at startup
     // with the Settings-restored value (see mHasLoadedOnce below) -- QML's
-    // Component.onCompleted fires before main.cpp's loadRoot().
+    // Component.onCompleted fires before login/loadRoot() have run.
     Q_INVOKABLE void setSortOrder(int column, bool ascending);
+
+    // Clears all navigation/listing state back to a fresh, pre-login state.
+    // Called on AuthController::authStateChanged reaching LoggedOut (sign
+    // out, or a definitively-invalid restored session) so a subsequent
+    // login -- possibly a different account -- never briefly shows the
+    // previous account's cached listing or retains its back-stack handles.
+    Q_INVOKABLE void reset();
 
 signals:
     void canGoBackChanged();
@@ -87,17 +92,16 @@ private:
     void refreshCurrentFolder();
 
     std::shared_ptr<FolderNavigationService> mService;
-    std::shared_ptr<FileListingService> mListingService;
     std::shared_ptr<SearchService> mSearchService;
     NotificationController* mNotifications;
     FileListModel mFileListModel;
     std::vector<FileEntry> mLastFolderEntries; // restored when search is cleared
     SortOrder mSortOrder{SortKey::Name, true};
     std::string mLastSearchQuery; // empty == not currently searching
-    // main.cpp calls loadRoot() only after engine.loadFromModule() has already
+    // loadRoot() is called only after engine.loadFromModule() has already
     // run QML's Component.onCompleted, which restores the persisted sort via
     // setSortOrder() -- guards against that startup call re-fetching (and
     // erroring out) before login/fetchNodes have ever run. Set true once
-    // applyResult sees its first success.
+    // applyResult sees its first success; reset back to false by reset().
     bool mHasLoadedOnce = false;
 };

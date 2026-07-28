@@ -21,7 +21,7 @@ are post-MVP, sequenced by priority/dependency.
 | 6b | File-list attribute display + sort | done (pulled forward) |
 | 6 | Local cache + open-folder background refresh | done (closes out MVP) |
 | 7a | Session storage foundation (`ISessionStore`/`WindowsSessionStore`) | done |
-| 7 | Login screen + session persistence (remaining wiring) | planned |
+| 7 | Login screen + session persistence (remaining wiring) | done |
 | 8 | Breadcrumb trail | planned |
 | 9 | Windows-Explorer-style tabs (multiple folder views) | planned |
 | 10 | Folder tree navigation (side panel) | planned |
@@ -349,3 +349,83 @@ cascading syntax errors deep inside `wincrypt.h` itself, none of which mention t
 include-order cause. Fixed with a `// clang-format off` / `// clang-format on` guard around just
 those two lines — a bare blank line isn't enough to stop this formatter from merging and
 re-sorting the block.
+
+## Phase 7 — login screen + session persistence (done)
+
+Split into two slices, landed as separate commits: a backend slice (`AuthService`, `MegaErrorCodes.h`,
+`IMegaClient`/`INodeCache` extensions, the `MegaSdkClient` adapter work) and this QML/UI wiring
+slice. `AuthService` (`src/core`) coordinates login/restore/logout and session-token persistence
+over `IMegaClient`/`ISessionStore`/`INodeCache` — deliberately not depending on
+`FolderNavigationService` itself, so resetting navigation state on logout/re-login stays the QML
+layer's job (`FolderNavigationController::reset`, see below), not this service's. `MegaSdkClient`
+gained `loginWithSession`/`multiFactorAuthLogin`/`logout`/`currentSessionToken`
+(`fastLogin`/`multiFactorAuthLogin`/`logout(false, ...)`/`dumpSession()`); its near-duplicate
+`LoginListener`/`FetchNodesListener` were merged into one `SimpleResultListener`. `logout`'s
+`false` first argument requires `ENABLE_SYNC` to be defined (already a `PUBLIC` define via the
+vendored SDK's own CMake, so no build-system change needed).
+
+`AuthController` (`src/qml`, new) wraps `AuthService` for QML: a 7-state `AuthState` machine
+(`Restoring`/`LoggedOut`/`LoggingIn`/`NeedsTwoFactor`/`VerifyingTwoFactor`/`LoggedIn`/`LoggingOut`)
+plus an `AuthErrorKind` enum, both `Q_ENUM`. This is the codebase's first `QML_ELEMENT`/
+`QML_UNCREATABLE` type registration — every other controller is exposed purely via
+`setContextProperty`; `AuthController` needs actual QML-visible enum *type names*
+(`AuthController.LoggedIn`), which requires real QML type registration, so it's both a context
+property *and* a registered (but uncreatable — QML never constructs one, main.cpp still owns the
+instance) type. Deliberately has no `NotificationController*` dependency, unlike every other
+controller here: login/2FA failures render inline on `LoginView.qml` via `authErrorKind`/
+`rawErrorMessage` (only populated for the catch-all `UnknownError` case — every other kind maps to
+a fixed, localized sentence composed in QML, same "C++ passes fields, QML composes text"
+convention as `NotificationController`/`ErrorToast.qml`), and `logout()` always succeeds from the
+caller's perspective (`AuthService::logout`'s own contract), so there's no failure path left that
+needs the global toast. A wrong 2FA PIN is folded into `InvalidCredentials` from
+`kENoEnt`/`kEFailed`/`kEExpired` — `megaapi.h` doesn't document a distinct "wrong PIN" code, so this
+is a best guess pending confirmation against a real 2FA account.
+
+`FolderNavigationController` lost its `FileListingService` dependency: `loadRoot()` became
+`Q_INVOKABLE` (called from `Main.qml`'s `Connections` on `authController.authStateChanged` reaching
+`LoggedIn`, rather than once from `main.cpp` before `app.exec()`) and now calls
+`FolderNavigationService::openRoot` directly. Gained `reset()` (also `Q_INVOKABLE`, called on
+`authStateChanged` reaching `LoggedOut`): clears the file list, cached folder entries, search
+query, and `mHasLoadedOnce`, plus `FolderNavigationService::resetToRoot()` (from the backend slice)
+— so a subsequent login, possibly to a different account, never briefly shows the previous
+account's cached listing or retains its back-stack handles. `FileListingService` (`.h`/`.cpp` +
+its test) is deleted outright: `AuthService` now owns the login→fetchNodes chain, and
+`FolderNavigationController::loadRoot` calls `openRoot` itself, so the thin orchestration layer
+`FileListingService` used to provide has no remaining reason to exist.
+
+`main.cpp` drops the `MEGA_EMAIL`/`MEGA_PWD` env-var requirement entirely. Composition root now
+also builds a `WindowsSessionStore` (same `AppLocalDataLocation` cache dir as `node_cache.sqlite3`,
+sibling file `session.dat`) and an `AuthService`, and constructs `AuthController` alongside the
+other controllers. `engine.loadFromModule(...)` still runs before `authController.restoreSession()`
+is called — same deliberate ordering Phase 6 established for `controller.loadRoot()` (QML's
+`Component.onCompleted` runs first), just moved to the new call.
+
+`qml/views/LoginView.qml` (new) switches between an email/password step and a 6-digit 2FA step
+based on `authController.authState`, with a `BusyIndicator` + "Signing you in…" shown only during
+`Restoring` (no dedicated splash screen). `Main.qml`'s header/footer/central content are now
+`Loader`-driven — this codebase's first `Loader` use, chosen over `StackView` because it's an
+exclusive two-state switch, not a multi-step screen flow. `header:`/`footer:` are themselves
+`Loader { active: authController.authState === AuthController.LoggedIn }` (an inactive `Loader` has
+zero size, collapsing the chrome away on the login screen); the central area is a third `Loader`
+alternating between the pre-existing `StackLayout` and `LoginView`. A new header `≡` `ToolButton` →
+`Menu` → "Sign out" `MenuItem` opens a confirmation `Dialog` (also this codebase's first) that
+warns if a download is active (`DownloadService` has no cancel API yet, so `logout()` simply aborts
+it) before calling `authController.logout()`.
+
+**Gotchas**: `qt_add_qml_module`'s generated `<target>_qmltyperegistrations.cpp` `#include`s each
+`QML_ELEMENT` header by *bare filename* with angle brackets (`#if __has_include(<AuthController.h>)`),
+not by the path given in `SOURCES` (`src/qml/AuthController.h`) — since `appMegaExplorer`'s include
+path only had `src/` on it (so existing code spells the include `"qml/AuthController.h"`), the bare
+`<AuthController.h>` failed to resolve and every generated `qmlRegisterTypesAndRevisions`/
+`qmlRegisterEnum` call in that file errored out as referencing an undefined type. Fixed by adding
+`src/qml` itself to `appMegaExplorer`'s `target_include_directories`, alongside the existing `src`.
+Separately, once that resolved, `/W4` started flagging two `C4702` ("unreachable code") warnings
+inside Qt's own `qjsengine.h`/`qvariant.h` — template instantiations pulled in for the first time by
+`qmlRegisterTypesAndRevisions<AuthController>`, not reachable/fixable from application code; left as
+an accepted, vendor-header-only warning pair rather than something to chase.
+
+**Known limitations**: `AuthService::logout` clears `ISessionStore` and the full `INodeCache`
+(`node_cache.sqlite3`), but not the in-memory thumbnail cache (`ThumbnailService`) or
+`DownloadService`'s job queue — neither is exposed to `AuthService`, and both are already
+short-lived/harmless to leave stale across a sign-out in this single-window app. The "wrong 2FA
+PIN" error-code mapping above is unconfirmed against a real account pending manual smoke testing.

@@ -9,7 +9,6 @@ find_package(GTest CONFIG REQUIRED)
 # since SqliteNodeCache.cpp logs through its lcCache category and that
 # category's actual Q_LOGGING_CATEGORY definition lives there.
 add_executable(MegaExplorerTests
-    FileListingServiceTest.cpp
     FolderNavigationServiceTest.cpp
     AuthServiceTest.cpp
     SearchServiceTest.cpp

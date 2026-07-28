@@ -1,0 +1,216 @@
+#include "AuthController.h"
+
+#include "app/Logging.h"
+#include "core/MegaErrorCodes.h"
+
+#include <QCoreApplication>
+#include <QMetaObject>
+#include <QString>
+
+namespace
+{
+
+// Same idiom as FolderNavigationController.cpp's own copy -- AuthService's
+// callbacks may fire on an SDK-internal background thread (see
+// IMegaClient.h), so touching the QML-facing state from there must go
+// through a queued invoke onto the GUI thread. Duplicated rather than shared
+// since it's a trivial 3-line, stateless helper.
+void invokeOnGuiThread(std::function<void()> fn)
+{
+    QMetaObject::invokeMethod(qApp, std::move(fn), Qt::QueuedConnection);
+}
+
+} // namespace
+
+AuthController::AuthController(std::shared_ptr<AuthService> authService, QObject* parent)
+    : QObject(parent), mAuthService(std::move(authService))
+{}
+
+void AuthController::restoreSession()
+{
+    if (mState != Restoring)
+        return;
+
+    mAuthService->restoreSession([this](Result<void> result) {
+        invokeOnGuiThread([this, result = std::move(result)]() mutable {
+            if (result.success)
+            {
+                setState(LoggedIn);
+                return;
+            }
+            if (result.errorCode == kNoStoredSession ||
+                isSessionDefinitivelyInvalid(result.errorCode))
+            {
+                // Not an error -- either nothing was ever saved, or the
+                // stored session was actively (and definitively) rejected
+                // and AuthService already cleared it. Either way, just show
+                // the login screen with no message.
+                setError(NoError);
+                setState(LoggedOut);
+                return;
+            }
+            qCWarning(lcAuth) << "session restore failed transiently:"
+                              << QString::fromStdString(result.errorMessage)
+                              << "code=" << result.errorCode;
+            setError(NetworkError);
+            setState(LoggedOut);
+        });
+    });
+}
+
+void AuthController::login(const QString& email, const QString& password)
+{
+    if (mState != LoggedOut)
+        return;
+
+    setError(NoError);
+    setState(LoggingIn);
+
+    const std::string emailStd = email.toStdString();
+    const std::string passwordStd = password.toStdString();
+
+    mAuthService->login(emailStd, passwordStd, [this, emailStd, passwordStd](Result<void> result) {
+        invokeOnGuiThread([this, result = std::move(result), emailStd, passwordStd]() mutable {
+            if (result.success)
+            {
+                mPendingEmail.clear();
+                mPendingPassword.clear();
+                setState(LoggedIn);
+                return;
+            }
+            if (result.errorCode == MegaErrorCode::kEMfaRequired)
+            {
+                mPendingEmail = emailStd;
+                mPendingPassword = passwordStd;
+                setState(NeedsTwoFactor);
+                return;
+            }
+            qCWarning(lcAuth) << "login failed:" << QString::fromStdString(result.errorMessage)
+                              << "code=" << result.errorCode;
+            const AuthErrorKind kind = classifyError(result.errorCode);
+            setError(kind,
+                     kind == UnknownError ? QString::fromStdString(result.errorMessage)
+                                          : QString());
+            setState(LoggedOut);
+        });
+    });
+}
+
+void AuthController::submitTwoFactorCode(const QString& pin)
+{
+    if (mState != NeedsTwoFactor)
+        return;
+
+    setError(NoError);
+    setState(VerifyingTwoFactor);
+
+    mAuthService->loginWithTwoFactor(
+        mPendingEmail, mPendingPassword, pin.toStdString(), [this](Result<void> result) {
+            invokeOnGuiThread([this, result = std::move(result)]() mutable {
+                if (result.success)
+                {
+                    mPendingEmail.clear();
+                    mPendingPassword.clear();
+                    setState(LoggedIn);
+                    return;
+                }
+                qCWarning(lcAuth) << "2FA verification failed:"
+                                  << QString::fromStdString(result.errorMessage)
+                                  << "code=" << result.errorCode;
+                // megaapi.h doesn't document a distinct error code for "wrong
+                // PIN" -- fold the plausible candidates into
+                // InvalidCredentials here. Confirm/refine against a real 2FA
+                // account during manual smoke testing (see the plan's
+                // verification steps / docs/PROGRESS.md's Phase 7 entry).
+                switch (result.errorCode)
+                {
+                    case MegaErrorCode::kENoEnt:
+                    case MegaErrorCode::kEFailed:
+                    case MegaErrorCode::kEExpired:
+                        setError(InvalidCredentials);
+                        break;
+                    default: {
+                        const AuthErrorKind kind = classifyError(result.errorCode);
+                        setError(kind,
+                                 kind == UnknownError ? QString::fromStdString(result.errorMessage)
+                                                      : QString());
+                        break;
+                    }
+                }
+                setState(NeedsTwoFactor);
+            });
+        });
+}
+
+void AuthController::cancelTwoFactor()
+{
+    if (mState != NeedsTwoFactor)
+        return;
+
+    mPendingEmail.clear();
+    mPendingPassword.clear();
+    setError(NoError);
+    setState(LoggedOut);
+}
+
+void AuthController::logout()
+{
+    if (mState != LoggedIn)
+        return;
+
+    setState(LoggingOut);
+    mAuthService->logout([this](Result<void> result) {
+        invokeOnGuiThread([this, result = std::move(result)]() mutable {
+            (void)result; // AuthService::logout always succeeds -- see its own header comment.
+            setError(NoError);
+            setState(LoggedOut);
+        });
+    });
+}
+
+AuthController::AuthState AuthController::authState() const
+{
+    return mState;
+}
+
+AuthController::AuthErrorKind AuthController::authErrorKind() const
+{
+    return mErrorKind;
+}
+
+QString AuthController::rawErrorMessage() const
+{
+    return mRawErrorMessage;
+}
+
+void AuthController::setState(AuthState state)
+{
+    if (mState == state)
+        return;
+    mState = state;
+    emit authStateChanged();
+}
+
+void AuthController::setError(AuthErrorKind kind, const QString& rawMessage)
+{
+    mErrorKind = kind;
+    mRawErrorMessage = rawMessage;
+    emit authErrorKindChanged();
+}
+
+AuthController::AuthErrorKind AuthController::classifyError(int errorCode) const
+{
+    switch (errorCode)
+    {
+        case MegaErrorCode::kENoEnt:
+            return InvalidCredentials;
+        case MegaErrorCode::kEBlocked:
+            return AccountBlocked;
+        case MegaErrorCode::kETooMany:
+            return TooManyAttempts;
+        case MegaErrorCode::kEAgain:
+            return NetworkError;
+        default:
+            return UnknownError;
+    }
+}

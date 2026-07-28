@@ -46,8 +46,6 @@ add_library(MegaExplorerCore STATIC
     src/core/MegaErrorCodes.h
     src/core/Result.h
     src/core/SortOrder.h
-    src/core/FileListingService.h
-    src/core/FileListingService.cpp
     src/core/FolderNavigationService.h
     src/core/FolderNavigationService.cpp
     src/core/AuthService.h
@@ -96,6 +94,10 @@ qt_add_qml_module(appMegaExplorer
         qml/components/ErrorToast.qml
         qml/components/FileContextMenu.qml
         qml/views/FileTableView.qml
+        qml/views/LoginView.qml
+    SOURCES
+        src/qml/AuthController.h
+        src/qml/AuthController.cpp
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
@@ -116,6 +118,12 @@ set_target_properties(appMegaExplorer PROPERTIES
 
 target_include_directories(appMegaExplorer
     PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src
+    # qt_add_qml_module's generated qmltyperegistrations.cpp #includes
+    # QML_ELEMENT headers by bare filename with angle brackets (e.g.
+    # <AuthController.h>, not <qml/AuthController.h>) -- AuthController is
+    # this project's first QML_ELEMENT type, so src/qml itself needs to be on
+    # the include path too, not just src.
+    PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src/qml
 )
 
 # MSVC defaults to /W1; raise our own code to /W4 so warning-sweep tooling (see

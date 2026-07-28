@@ -44,21 +44,23 @@ refresh when a folder is opened, no continuous watching.
 
 ## Project status
 
-Phases 0–5, 6a, and 6b are done; Phase 6 (local cache + open-folder background refresh, closing out
-the original MVP) is next. The full roadmap — Phase 6's remaining scope plus the post-MVP phases
-7–16+ (login screen, breadcrumb, sidebar folder tree/quick access, rename/delete/move, multi-select,
-upload, in-app preview, real-time remote-change reflection, ...) — lives in `docs/PROGRESS.md`'s
-Roadmap section now; see the companion-docs list above. `docs/MEMO.md` keeps only non-roadmap notes.
-Full bidirectional local sync stays out of scope.
+Phases 0–6, 6a, 6b, 7a, and 7 are done (Phase 7 closes out login screen + session persistence).
+Phase 8 (breadcrumb trail) is next. The full roadmap — phases 8–16+ (breadcrumb, tabs, sidebar
+folder tree/quick access, rename/delete/move, multi-select, upload, in-app preview, real-time
+remote-change reflection, ...) — lives in `docs/PROGRESS.md`'s Roadmap section; see the
+companion-docs list above. `docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional local
+sync stays out of scope.
 
-Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`),
-`FileListingService`/`FolderNavigationService`/`SearchService`/`DownloadService`/`ThumbnailService`
-(`src/core`), their QML-facing controllers/`FileListModel` (`src/qml`), an Explorer-style sortable
-detail list view (`qml/views/FileTableView.qml`, Phase 6b) alongside the unchanged thumbnail grid
-view, and cross-cutting app infrastructure — categorized logging + a MEGA SDK logger bridge
-(`src/app`, `src/mega`) and a shared `NotificationController`/`ErrorToast.qml` for user-facing
-failures (`src/qml`, `qml/`) — see `docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md`
-for what each phase actually built and why.
+Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`), `AuthService`/
+`FolderNavigationService`/`SearchService`/`DownloadService`/`ThumbnailService` (`src/core`) backed
+by `ISessionStore`/`WindowsSessionStore` and `INodeCache`/`SqliteNodeCache` for session/node-tree
+persistence, their QML-facing controllers/`FileListModel` (`src/qml`) — including `AuthController`,
+the codebase's first `QML_ELEMENT`-registered type, driving `qml/views/LoginView.qml` — an
+Explorer-style sortable detail list view (`qml/views/FileTableView.qml`, Phase 6b) alongside the
+unchanged thumbnail grid view, and cross-cutting app infrastructure — categorized logging + a MEGA
+SDK logger bridge (`src/app`, `src/mega`) and a shared `NotificationController`/`ErrorToast.qml` for
+user-facing failures (`src/qml`, `qml/`) — see `docs/ARCHITECTURE.md` for the layering and
+`docs/PROGRESS.md` for what each phase actually built and why.
 
 ## Build
 

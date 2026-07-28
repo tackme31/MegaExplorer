@@ -6,10 +6,11 @@
 #include <vector>
 
 // Post-login folder navigation over an already-fetched node tree. Requires
-// FileListingService::loadRootListing to have already succeeded once (same
-// precondition as IMegaClient::getChildren/getRootChildren themselves).
-// SDK-free by construction (depends only on IMegaClient/INodeCache),
-// unit-testable with mocks of both like FileListingService.
+// AuthService::login/restoreSession (via its internal fetchNodes step) to
+// have already succeeded once (same precondition as
+// IMegaClient::getChildren/getRootChildren themselves). SDK-free by
+// construction (depends only on IMegaClient/INodeCache), unit-testable with
+// mocks of both like AuthService.
 //
 // IMegaClient has no handle for "root" (getRootChildren takes none), so
 // Location::isRoot is used as the "currently at root" / "back-stack entry is
@@ -67,7 +68,6 @@ public:
                         std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     bool canGoBack() const;
-
 
     // Clears the back-stack and returns to the root sentinel, without
     // touching IMegaClient/INodeCache. Used after logout (see

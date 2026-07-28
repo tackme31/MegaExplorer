@@ -25,13 +25,11 @@ void invokeOnGuiThread(std::function<void()> fn)
 
 FolderNavigationController::FolderNavigationController(
     std::shared_ptr<FolderNavigationService> navigationService,
-    std::shared_ptr<FileListingService> listingService,
     std::shared_ptr<SearchService> searchService,
     NotificationController* notifications,
     QObject* parent)
     : QObject(parent), mService(std::move(navigationService)),
-      mListingService(std::move(listingService)), mSearchService(std::move(searchService)),
-      mNotifications(notifications)
+      mSearchService(std::move(searchService)), mNotifications(notifications)
 {}
 
 QObject* FolderNavigationController::fileListModel()
@@ -49,11 +47,9 @@ bool FolderNavigationController::canGoBack() const
     return mService->canGoBack();
 }
 
-void FolderNavigationController::loadRoot(const std::string& email, const std::string& password)
+void FolderNavigationController::loadRoot()
 {
-    mListingService->loadRootListing(
-        email,
-        password,
+    mService->openRoot(
         mSortOrder,
         [this](std::vector<FileEntry> entries) {
             invokeOnGuiThread([this, entries = std::move(entries)]() mutable {
@@ -206,4 +202,14 @@ void FolderNavigationController::setSortOrder(int column, bool ascending)
     }
 
     refreshCurrentFolder();
+}
+
+void FolderNavigationController::reset()
+{
+    mService->resetToRoot();
+    mFileListModel.setEntries({});
+    mLastFolderEntries.clear();
+    mLastSearchQuery.clear();
+    mHasLoadedOnce = false;
+    emit canGoBackChanged();
 }
