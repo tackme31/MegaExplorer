@@ -20,7 +20,8 @@ are post-MVP, sequenced by priority/dependency.
 | 6a | Categorized logging + error-toast feedback | done (pulled forward) |
 | 6b | File-list attribute display + sort | done (pulled forward) |
 | 6 | Local cache + open-folder background refresh | done (closes out MVP) |
-| 7 | Login screen + session persistence | planned |
+| 7a | Session storage foundation (`ISessionStore`/`WindowsSessionStore`) | done |
+| 7 | Login screen + session persistence (remaining wiring) | planned |
 | 8 | Breadcrumb trail | planned |
 | 9 | Folder tree navigation (side panel) | planned |
 | 10 | Quick access (pinned folders, side panel) | planned |
@@ -36,12 +37,19 @@ are post-MVP, sequenced by priority/dependency.
 Persist the node tree locally (SQLite) and run a one-shot background refresh on folder open — not
 continuous watching. See the Phase 6 implementation-log entry below for what was built.
 
+### Phase 7a — session storage foundation
+
+Standalone slice, built and tested ahead of the rest of Phase 7 so it could be validated in
+isolation before anything depends on it. See the Phase 7a implementation-log entry below for what
+was built.
+
 ### Phase 7 — login screen + session persistence
 
-`main.cpp` currently requires `MEGA_EMAIL`/`MEGA_PWD` env vars, no login UI. First post-MVP item:
-foundational, independent of other features. Expected to use `dumpSession()`/`fastLogin(session)`;
-where to persist the token (plain `QSettings` vs. guarded storage) still open. `IMegaClient` needs a
-session-based login variant alongside `login(email, password, ...)`.
+`main.cpp` currently requires `MEGA_EMAIL`/`MEGA_PWD` env vars, no login UI. `ISessionStore`/
+`WindowsSessionStore` (Phase 7a) are ready; remaining scope: `IMegaClient::loginWithSession` (or
+equivalent) wiring `dumpSession()`/`fastLogin()` through `MegaSdkClient`, `main.cpp`
+composition-root changes (constructing `WindowsSessionStore` with a real `session.dat` path), the
+login screen itself (QML) and removing the env-var requirement, and logout/"forget session" UI.
 
 ### Phase 8 — breadcrumb trail
 
@@ -275,3 +283,55 @@ a fallback when a narrower `EXPECT_CALL` merely fails to match. Needed an explic
 `GoBackCacheHitUsesTargetLocationKeyNotCurrentLocation`. Adding `SqliteNodeCache.cpp` to
 `MegaExplorerTests` (for its own adapter test) pulled `Qt6::Core` and `src/app/Logging.cpp` into an
 otherwise Qt-free test target, since `lcCache`'s actual `Q_LOGGING_CATEGORY` definition lives there.
+
+## Phase 7a — session storage foundation (done)
+
+First slice of Phase 7, deliberately decoupled from any actual login/MEGA-SDK wiring (deferred to
+the next task list): `IMegaClient::loginWithSession` or equivalent wiring `dumpSession()`/
+`fastLogin()` through `MegaSdkClient`, `main.cpp` composition-root changes, the login screen
+itself, and logout/"forget session" UI are all still to come.
+
+New port `ISessionStore` (`src/core/ISessionStore.h`) persists a single MEGA session token
+(`MegaApi::dumpSession()`'s return value) across restarts: `loadSession()`/`saveSession()`/
+`clearSession()`, synchronous like `INodeCache` (no async sibling to stay interface-consistent
+with). Unlike `INodeCache::loadChildren`, there's no "never cached vs. cached empty" ambiguity: a
+real session token is never legitimately an empty string, so `loadSession()` returns
+`Result::ok("")` unambiguously for "nothing stored," kept distinguishable from `Result::fail`
+(genuine read/decrypt failure).
+
+Adapter `WindowsSessionStore` (`src/platform/WindowsSessionStore.h`/`.cpp`, alongside
+`SqliteNodeCache`) encrypts the token at rest via Windows DPAPI (`CryptProtectData`/
+`CryptUnprotectData`, current-user scope, `dwFlags=0`) plus a fixed app-specific entropy blob
+passed as `pOptionalEntropy` — a pepper against another same-user process's bare
+`CryptUnprotectData` call, not a secret (it ships in the binary; DPAPI's current-user scope is the
+real security boundary). Simplifies MEGAsync's own `EncryptedSettings` approach (researched
+read-only via `gh`/`curl` against the public repo, no code copied — see `CLAUDE.md`'s licensing
+note): MEGAsync derives its entropy manually from the current user's SID plus extra XOR
+obfuscation, but DPAPI's current-user scope already provides that same "only this Windows account
+can decrypt it" guarantee, so the manual SID/XOR layering was skipped as redundant. Storage is a
+dedicated file under `QStandardPaths::AppLocalDataLocation` (not `QSettings`/registry), same
+non-roaming rationale as `MegaExplorer.log`/`node_cache.sqlite3`; resolving a real path
+(`session.dat`) and constructing `WindowsSessionStore` in `main.cpp` is deferred to the next task
+list along with everything else login-related.
+
+Unlike `SqliteNodeCache`, no `mUsable` flag / permanently-broken-after-construction state: nothing
+about DPAPI can fail at construction time (each `Crypt*` call happens per-operation, no
+open/migrate step up front), so the constructor just stores the resolved path. `clearSession()`
+always returns `Result::ok()` — deletes the file if present, but treats "file didn't exist" and
+"the OS `remove()` call itself failed" identically as success, matching `SqliteNodeCache`'s
+degrade-rather-than-fail ethos. Added `lcSession` logging category (`src/app/Logging.h`/`.cpp`),
+used only from `WindowsSessionStore.cpp`.
+
+Gets its own real adapter-level test (`tests/WindowsSessionStoreTest.cpp`), not just a
+`MockSessionStore`-based one — DPAPI needs no live account/network, only a local Windows user
+context, same reasoning as `SqliteNodeCacheTest.cpp`. Unlike sqlite3's `:memory:`, DPAPI has no
+in-memory equivalent, so each test uses a real temp file under
+`std::filesystem::temp_directory_path()`, cleaned up afterward.
+
+**Gotcha**: a formatter hook silently reordered `<windows.h>`/`<wincrypt.h>` to alphabetical order
+after every `Write`/`Edit` — even across a blank line separating them. `wincrypt.h` depends on
+types (`ULONG_PTR`) declared by `windows.h`, so the reversed order broke the build with ~90
+cascading syntax errors deep inside `wincrypt.h` itself, none of which mention the actual
+include-order cause. Fixed with a `// clang-format off` / `// clang-format on` guard around just
+those two lines — a bare blank line isn't enough to stop this formatter from merging and
+re-sorting the block.
