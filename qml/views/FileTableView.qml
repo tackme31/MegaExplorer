@@ -36,6 +36,20 @@ ColumnLayout {
 
     readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size")]
 
+    // Matches (English) Windows Explorer's Date modified column: short date
+    // + short time, e.g. "7/28/2026 3:45 PM". Not reproducible via
+    // Qt.formatDateTime(date, Locale.ShortFormat) -- QLocale's own
+    // ShortFormat for en_US is "M/d/yy h:mm AP" (2-digit year), while
+    // Explorer's regional short-date default is 4-digit ("M/d/yyyy").
+    // "AP" is Qt's AM/PM token (its "tt" is a timezone token, not AM/PM --
+    // easy mix-up with .NET/Windows format-string syntax, where tt does
+    // mean AM/PM).
+    //
+    // Wrapped in qsTr(), same as columnLabels above, so a Japanese .ts file
+    // can later supply the equivalent Japanese Explorer format (typically
+    // 24-hour, no AM/PM -- e.g. "yyyy/MM/dd H:mm") without any change here.
+    readonly property string modifiedDateFormat: qsTr("M/d/yyyy h:mm AP")
+
     // Arbitrary picks, not derived from any content measurement -- just
     // enough to keep a dragged-in column from shrinking to unreadable/
     // zero-width. Tune by feel later if these turn out wrong.
@@ -240,7 +254,7 @@ ColumnLayout {
                         // instead of a blank cell, unlike Explorer.
                         return cell.isFolder ? "" : Qt.formatDateTime(new Date(
                                                                           cell.modificationTime
-                                                                          * 1000), Locale.ShortFormat);
+                                                                          * 1000), root.modifiedDateFormat);
                     case 2:
                         return cell.formattedSize;
                     }
