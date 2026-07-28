@@ -25,6 +25,19 @@ public:
                const std::string& password,
                std::function<void(Result<void>)> onDone) override;
 
+
+    void loginWithSession(const std::string& sessionToken,
+                          std::function<void(Result<void>)> onDone) override;
+
+    void multiFactorAuthLogin(const std::string& email,
+                              const std::string& password,
+                              const std::string& pin,
+                              std::function<void(Result<void>)> onDone) override;
+
+    void logout(std::function<void(Result<void>)> onDone) override;
+
+    Result<std::string> currentSessionToken() const override;
+
     void fetchNodes(std::function<void(Result<void>)> onDone) override;
 
     void getRootChildren(SortOrder order,

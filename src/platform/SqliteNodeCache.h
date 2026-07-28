@@ -32,6 +32,7 @@ public:
     Result<std::vector<FileEntry>> loadChildren(const ParentKey& parent) const override;
     Result<void> saveChildren(const ParentKey& parent,
                               const std::vector<FileEntry>& entries) override;
+    Result<void> clearAll() override;
 
 private:
     // Runs CREATE TABLE IF NOT EXISTS. Returns false (and leaves mUsable

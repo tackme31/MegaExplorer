@@ -1,0 +1,20 @@
+#pragma once
+
+// src/core and src/qml can't include SDK headers (mega/*.h), so this mirrors
+// just the mega::MegaError values this app's auth/session flow needs to
+// branch on. Kept in sync with the real SDK values via a static_assert block
+// in src/mega/MegaSdkClient.cpp -- the only file allowed to see both this
+// header and megaapi.h.
+namespace MegaErrorCode
+{
+constexpr int kEArgs = -2;         // Invalid argument
+constexpr int kEAgain = -3;        // Request failed, retry recommended (transient)
+constexpr int kEFailed = -5;       // Permanent failure (2FA PIN rejection may land here too)
+constexpr int kETooMany = -6;      // Too many uses for this resource / rate limited
+constexpr int kEExpired = -8;      // Expired
+constexpr int kENoEnt = -9;        // Bad credentials, or bad 2FA pin
+constexpr int kEAccess = -11;      // Access denied
+constexpr int kESid = -15;         // Stored session invalid or expired
+constexpr int kEBlocked = -16;     // Account blocked/suspended
+constexpr int kEMfaRequired = -26; // Two-factor auth required to complete this request
+} // namespace MegaErrorCode

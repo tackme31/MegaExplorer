@@ -11,6 +11,7 @@ find_package(GTest CONFIG REQUIRED)
 add_executable(MegaExplorerTests
     FileListingServiceTest.cpp
     FolderNavigationServiceTest.cpp
+    AuthServiceTest.cpp
     SearchServiceTest.cpp
     DownloadServiceTest.cpp
     ThumbnailServiceTest.cpp

@@ -19,6 +19,28 @@ public:
                        const std::string& password,
                        std::function<void(Result<void>)> onDone) = 0;
 
+
+    // MegaApi::fastLogin equivalent: re-authenticates using a session token
+    // previously obtained from currentSessionToken(), skipping password
+    // verification. Used on startup to restore a persisted session.
+    virtual void loginWithSession(const std::string& sessionToken,
+                                  std::function<void(Result<void>)> onDone) = 0;
+
+    // For accounts with two-factor auth enabled: called after login() has
+    // already failed with MegaErrorCode::kEMfaRequired, resubmitting the same
+    // email/password alongside the 6-digit pin.
+    virtual void multiFactorAuthLogin(const std::string& email,
+                                      const std::string& password,
+                                      const std::string& pin,
+                                      std::function<void(Result<void>)> onDone) = 0;
+
+    virtual void logout(std::function<void(Result<void>)> onDone) = 0;
+
+    // MegaApi::dumpSession equivalent. Synchronous, unlike every other method
+    // here -- it's a local read of already-held session state, no network
+    // round-trip. Fails if not currently logged in.
+    virtual Result<std::string> currentSessionToken() const = 0;
+
     // Must be called after a successful login(), before getRootChildren().
     virtual void fetchNodes(std::function<void(Result<void>)> onDone) = 0;
 

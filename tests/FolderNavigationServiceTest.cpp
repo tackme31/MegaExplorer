@@ -481,3 +481,29 @@ TEST(FolderNavigationServiceTest, OpenRootCacheHitAndWriteThroughDoNotTouchBackS
     EXPECT_TRUE(captured.refreshedResult.success);
     EXPECT_FALSE(service.canGoBack()); // root is never pushed onto the back-stack
 }
+
+TEST(FolderNavigationServiceTest, ResetToRootClearsBackStackAndReturnsToRootLocation)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    auto mockCache = std::make_shared<::testing::NiceMock<MockNodeCache>>();
+    installDefaultCacheBehavior(*mockCache);
+    const std::vector<FileEntry> h1Children{{"sub", 2, 0, true, 0}};
+
+    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(h1Children)));
+
+    FolderNavigationService service(mockClient, mockCache);
+    Captured openCaptured;
+    service.openFolder(1, SortOrder{}, onCacheHitInto(openCaptured), onRefreshedInto(openCaptured));
+    ASSERT_TRUE(openCaptured.refreshedResult.success);
+    ASSERT_TRUE(service.canGoBack());
+
+    // Act
+    service.resetToRoot();
+
+    // Assert
+    EXPECT_FALSE(service.canGoBack());
+    FolderNavigationService::CurrentLocation location = service.currentLocation();
+    EXPECT_TRUE(location.isRoot);
+}

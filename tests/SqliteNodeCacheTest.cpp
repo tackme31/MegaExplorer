@@ -148,3 +148,38 @@ TEST(SqliteNodeCacheTest, UnopenableDbPathDegradesGracefullyWithoutCrashing)
         cache.saveChildren(INodeCache::ParentKey{true, 0}, std::vector<FileEntry>{});
     EXPECT_FALSE(saveResult.success);
 }
+
+TEST(SqliteNodeCacheTest, ClearAllWipesEntriesAcrossAllParentKeys)
+{
+    // Arrange
+    SqliteNodeCache cache(":memory:");
+    const INodeCache::ParentKey rootKey{true, 0};
+    const INodeCache::ParentKey folderKey{false, 1};
+    ASSERT_TRUE(cache.saveChildren(rootKey, {makeEntry("root-child.txt", 1, 10, false)}).success);
+    ASSERT_TRUE(
+        cache.saveChildren(folderKey, {makeEntry("folder-child.txt", 2, 20, false)}).success);
+
+    // Act
+    Result<void> clearResult = cache.clearAll();
+
+    // Assert
+    ASSERT_TRUE(clearResult.success);
+    EXPECT_TRUE(cache.loadChildren(rootKey).value.empty());
+    EXPECT_TRUE(cache.loadChildren(folderKey).value.empty());
+}
+
+TEST(SqliteNodeCacheTest, ClearAllIsIdempotent)
+{
+    // Arrange
+    SqliteNodeCache cache(":memory:");
+    const INodeCache::ParentKey key{false, 1};
+    ASSERT_TRUE(cache.saveChildren(key, {makeEntry("a.txt", 1, 10, false)}).success);
+
+    // Act
+    ASSERT_TRUE(cache.clearAll().success);
+    Result<void> secondClear = cache.clearAll();
+
+    // Assert
+    EXPECT_TRUE(secondClear.success);
+    EXPECT_TRUE(cache.loadChildren(key).value.empty());
+}

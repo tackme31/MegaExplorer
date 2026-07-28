@@ -14,4 +14,5 @@ public:
                 saveChildren,
                 (const ParentKey&, const std::vector<FileEntry>&),
                 (override));
+    MOCK_METHOD(Result<void>, clearAll, (), (override));
 };

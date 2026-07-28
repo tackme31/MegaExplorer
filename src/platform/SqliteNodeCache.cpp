@@ -39,6 +39,8 @@ constexpr const char* kInsertSql =
     "(parent_is_root, parent_handle, handle, name, size_bytes, is_folder, mtime, has_thumbnail) "
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
 
+constexpr const char* kClearAllSql = "DELETE FROM node_cache;";
+
 // MEGA handles are 64-bit and practically never use the sign bit; storing
 // them in SQLite's signed INTEGER column via a bit-reinterpreting cast
 // round-trips losslessly regardless.
@@ -214,5 +216,21 @@ Result<void> SqliteNodeCache::saveChildren(const ParentKey& parent,
     // does a full replace rather than diffing.
     qCInfo(lcCache) << "refreshed and cached" << entries.size() << "entries for"
                     << describeParent(parent);
+    return Result<void>::ok();
+}
+
+
+Result<void> SqliteNodeCache::clearAll()
+{
+    if (!mUsable)
+        return Result<void>::fail("node cache unusable");
+
+    if (sqlite3_exec(mDb, kClearAllSql, nullptr, nullptr, nullptr) != SQLITE_OK)
+    {
+        qCWarning(lcCache) << "cache clearAll failed:" << sqlite3_errmsg(mDb);
+        return Result<void>::fail(sqlite3_errmsg(mDb));
+    }
+
+    qCInfo(lcCache) << "cache cleared (logout)";
     return Result<void>::ok();
 }

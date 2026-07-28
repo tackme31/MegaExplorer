@@ -40,4 +40,10 @@ public:
     // replaces whatever was cached for that folder.
     virtual Result<void> saveChildren(const ParentKey& parent,
                                       const std::vector<FileEntry>& entries) = 0;
+
+    // Unconditional full wipe across all parents -- used on logout so a
+    // subsequent login (possibly a different account) never sees stale
+    // cached entries. No ParentKey: this clears the entire cache, not one
+    // folder's worth.
+    virtual Result<void> clearAll() = 0;
 };

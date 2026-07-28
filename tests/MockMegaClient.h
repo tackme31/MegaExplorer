@@ -12,6 +12,19 @@ public:
                 (override));
     MOCK_METHOD(void, fetchNodes, (std::function<void(Result<void>)>), (override));
     MOCK_METHOD(void,
+                loginWithSession,
+                (const std::string&, std::function<void(Result<void>)>),
+                (override));
+    MOCK_METHOD(void,
+                multiFactorAuthLogin,
+                (const std::string&,
+                 const std::string&,
+                 const std::string&,
+                 std::function<void(Result<void>)>),
+                (override));
+    MOCK_METHOD(void, logout, (std::function<void(Result<void>)>), (override));
+    MOCK_METHOD(Result<std::string>, currentSessionToken, (), (const, override));
+    MOCK_METHOD(void,
                 getRootChildren,
                 (SortOrder, std::function<void(Result<std::vector<FileEntry>>)>),
                 (override));

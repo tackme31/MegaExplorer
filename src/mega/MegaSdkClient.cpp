@@ -1,42 +1,44 @@
 #include "MegaSdkClient.h"
 
+#include "core/MegaErrorCodes.h"
 #include "MegaSdkLogger.h"
 
 #include <megaapi.h>
 #include <utility>
 
+// Keeps MegaErrorCodes.h's mirror in sync with the real SDK values -- this
+// is the only file that can see both headers, since src/core/src/qml can't
+// include megaapi.h.
+static_assert(MegaErrorCode::kEArgs == mega::MegaError::API_EARGS, "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kEAgain == mega::MegaError::API_EAGAIN,
+              "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kEFailed == mega::MegaError::API_EFAILED,
+              "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kETooMany == mega::MegaError::API_ETOOMANY,
+              "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kEExpired == mega::MegaError::API_EEXPIRED,
+              "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kENoEnt == mega::MegaError::API_ENOENT,
+              "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kEAccess == mega::MegaError::API_EACCESS,
+              "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kESid == mega::MegaError::API_ESID, "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kEBlocked == mega::MegaError::API_EBLOCKED,
+              "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kEMfaRequired == mega::MegaError::API_EMFAREQUIRED,
+              "MegaErrorCodes.h out of sync");
+
 namespace
 {
 
-class LoginListener : public mega::MegaRequestListener
+// Shared by every SDK call whose completion is a bare success/failure with
+// no extra payload (login, loginWithSession, multiFactorAuthLogin, logout,
+// fetchNodes) -- LoginListener and FetchNodesListener used to duplicate this
+// verbatim before being merged here.
+class SimpleResultListener : public mega::MegaRequestListener
 {
 public:
-    explicit LoginListener(std::function<void(Result<void>)> onDone) : mOnDone(std::move(onDone)) {}
-
-    void onRequestFinish(mega::MegaApi* /*api*/,
-                         mega::MegaRequest* /*request*/,
-                         mega::MegaError* e) override
-    {
-        int code = e->getErrorCode();
-        if (code == mega::MegaError::API_OK)
-        {
-            mOnDone(Result<void>::ok());
-        }
-        else
-        {
-            mOnDone(Result<void>::fail(e->getErrorString(), code));
-        }
-        delete this;
-    }
-
-private:
-    std::function<void(Result<void>)> mOnDone;
-};
-
-class FetchNodesListener : public mega::MegaRequestListener
-{
-public:
-    explicit FetchNodesListener(std::function<void(Result<void>)> onDone)
+    explicit SimpleResultListener(std::function<void(Result<void>)> onDone)
         : mOnDone(std::move(onDone))
     {}
 
@@ -196,12 +198,47 @@ void MegaSdkClient::login(const std::string& email,
                           const std::string& password,
                           std::function<void(Result<void>)> onDone)
 {
-    mApi->login(email.c_str(), password.c_str(), new LoginListener(std::move(onDone)));
+    mApi->login(email.c_str(), password.c_str(), new SimpleResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::loginWithSession(const std::string& sessionToken,
+                                     std::function<void(Result<void>)> onDone)
+{
+    mApi->fastLogin(sessionToken.c_str(), new SimpleResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::multiFactorAuthLogin(const std::string& email,
+                                         const std::string& password,
+                                         const std::string& pin,
+                                         std::function<void(Result<void>)> onDone)
+{
+    mApi->multiFactorAuthLogin(
+        email.c_str(), password.c_str(), pin.c_str(), new SimpleResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::logout(std::function<void(Result<void>)> onDone)
+{
+    // ENABLE_SYNC is a PUBLIC define from the SDK's own CMake (sdklib_target.cmake),
+    // always on for this project -- the 2-argument overload is the only one
+    // that exists here, so no #ifdef branch is needed.
+    // keepSyncConfigsFile=false -- this app never uses sync.
+    mApi->logout(false, new SimpleResultListener(std::move(onDone)));
+}
+
+Result<std::string> MegaSdkClient::currentSessionToken() const
+{
+    char* session = mApi->dumpSession(); // non-const, but callable from a const member via
+                                         // unique_ptr's operator->
+    if (!session)
+        return Result<std::string>::fail("not logged in");
+    std::string token(session);
+    delete[] session; // megaapi.h: "Use delete[] to release the memory"
+    return Result<std::string>::ok(std::move(token));
 }
 
 void MegaSdkClient::fetchNodes(std::function<void(Result<void>)> onDone)
 {
-    mApi->fetchNodes(new FetchNodesListener(std::move(onDone)));
+    mApi->fetchNodes(new SimpleResultListener(std::move(onDone)));
 }
 
 void MegaSdkClient::getRootChildren(SortOrder order,

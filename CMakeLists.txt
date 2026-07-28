@@ -43,12 +43,15 @@ add_library(MegaExplorerCore STATIC
     src/core/INodeCache.h
     src/core/ISessionStore.h
     src/core/FileEntry.h
+    src/core/MegaErrorCodes.h
     src/core/Result.h
     src/core/SortOrder.h
     src/core/FileListingService.h
     src/core/FileListingService.cpp
     src/core/FolderNavigationService.h
     src/core/FolderNavigationService.cpp
+    src/core/AuthService.h
+    src/core/AuthService.cpp
     src/core/SearchService.h
     src/core/SearchService.cpp
     src/core/DownloadService.h

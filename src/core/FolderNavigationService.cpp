@@ -119,6 +119,12 @@ bool FolderNavigationService::canGoBack() const
     return !mBackStack.empty();
 }
 
+void FolderNavigationService::resetToRoot()
+{
+    mBackStack.clear();
+    mCurrent = Location{};
+}
+
 FolderNavigationService::CurrentLocation FolderNavigationService::currentLocation() const
 {
     return CurrentLocation{mCurrent.isRoot, mCurrent.handle};

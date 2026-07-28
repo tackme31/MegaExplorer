@@ -68,6 +68,14 @@ public:
 
     bool canGoBack() const;
 
+
+    // Clears the back-stack and returns to the root sentinel, without
+    // touching IMegaClient/INodeCache. Used after logout (see
+    // FolderNavigationController::reset) so a subsequent login -- possibly a
+    // different account -- doesn't retain back-stack handles that belong to
+    // the previous session's node tree.
+    void resetToRoot();
+
     // Public mirror of the private Location below, for callers (e.g. search)
     // that need to scope an operation to "wherever the user currently is"
     // without exposing Location itself.
