@@ -28,7 +28,8 @@ are post-MVP, sequenced by priority/dependency.
 | 10 | Folder tree navigation (side panel) | planned |
 | 11 | Quick access (pinned folders, side panel) | planned |
 | 12 | Rename / delete (move to rubbish) / move | planned |
-| 13 | Multi-select + bulk operations | planned |
+| 13a | Selection model (row/cell, keyboard, right-click) | done (pulled forward) |
+| 13 | Multi-select + bulk operations | planned (selection model prerequisite done in 13a) |
 | 14 | Upload (drag & drop) | planned |
 | 15 | In-app preview (side panel, `getPreview`) | planned |
 | 16 | Real-time remote-change reflection | future, post-MVP |
@@ -100,7 +101,10 @@ needed. Prerequisite for phase 13. Mainly `FileContextMenu.qml` + matching `IMeg
 ### Phase 13 — multi-select + bulk operations
 
 Sequenced after phase 12 (bulk ops need single-item versions first). Needs a selection model for
-both `TableView` and `GridView`. Bulk download can likely reuse `DownloadService`'s existing queue.
+both `TableView` and `GridView` — built ahead of schedule as phase 13a (see below and its
+implementation-log entry); remaining scope is the bulk operations themselves (multi-item context
+menu actions, etc.) once phase 12's single-item versions exist. Bulk download can likely reuse
+`DownloadService`'s existing queue.
 
 ### Phase 14 — upload (drag & drop)
 
@@ -218,9 +222,13 @@ Rendering moved to `TableView`+`HorizontalHeaderView`; `FileListModel` rewritten
 
 **Gotchas** (`FluentWinUI3` style): `HorizontalHeaderView` ships no default delegate — its
 `Rectangle` needs explicit `color: "transparent"` or the header text renders white-on-white.
-`textRole` must be set to `""` (defaults to `"display"`, which the model doesn't provide) to avoid a
-role-warning spam. Both `TableView`/`HorizontalHeaderView` default to click-drag panning — fixed
-with `acceptedButtons: Qt.NoButton` (Qt 6.9+), wheel scroll unaffected.
+`textRole` was originally set to `""` here to silence a "role doesn't exist" warning (the header
+delegate builds its text itself from `columnLabels`, never via `textRole`) — **correction**: this
+didn't actually work, `""` doesn't count as "set" for Qt's existence check and it still fell back to
+`"display"` internally; fixed in the phase 13a slice by pointing it at an actual existing role
+(`"name"`) instead, see that implementation-log entry. Both `TableView`/`HorizontalHeaderView`
+default to click-drag panning — fixed with `acceptedButtons: Qt.NoButton` (Qt 6.9+), wheel scroll
+unaffected.
 
 Column widths + sort column/direction persist via `Settings`. Widths must be reapplied on
 `TableView.onRowsChanged` too (not just `Component.onCompleted`) since `FileListModel::setEntries()`
@@ -472,3 +480,68 @@ cache-specific tests in `tests/FolderNavigationServiceTest.cpp` were deleted out
 cache-hit/write-through behavior that no longer exists); the remaining tests, plus all of
 `tests/AuthServiceTest.cpp`, were updated to construct their services without a mock node cache and
 to call the new single-callback `FolderNavigationService` API.
+
+## Phase 13a — selection model: row/cell, keyboard, right-click (done)
+
+Pulled forward out of order: phase 13's roadmap entry already called out needing "a selection model
+for both `TableView` and `GridView`" as a prerequisite for its bulk operations, and that slice is
+self-contained (no dependency on phases 8–12), so it was built now rather than waited on. Bulk
+operations themselves (multi-item context-menu actions, etc.) are still deferred to phase 13.
+
+`FileListModel` gains `selectRow`/`clearSelection`/`selectAll`/`moveCursor`/`cursorRow`, a
+`SelectedRole`, and a `selectedHandles` `Q_PROPERTY` exposing `std::unordered_set<quint64>
+mSelectedHandles` to QML (plus a typed `selectedHandleSet()` accessor for future non-QML consumers,
+e.g. a delete/move controller). Selection tracks three handle-keyed (not row-index-keyed — handles
+are globally unique per MEGA node, survive a same-folder re-sort, and cleanly don't survive
+navigation/search) pieces of state, each `std::optional<quint64>`:
+
+- `mSelectedHandles` — the selected set itself.
+- `mAnchorHandle` — fixed at the last plain/Ctrl click (or the target row on a right-click that
+  changes selection); every Shift-range operation, mouse or keyboard, spans from this anchor rather
+  than from the cursor, so repeated Shift+click/Shift+arrow grows or shrinks the same range instead
+  of chasing the last touched row.
+- `mCursorHandle` — the keyboard-navigable "last touched" row, moved by every operation *including*
+  Shift (unlike the anchor). `cursorRow()` (`Q_INVOKABLE`, deliberately not a `Q_PROPERTY` — nothing
+  binds to it, QML just reads it once right after calling `moveCursor()`) resolves it back to a row
+  index so the view can scroll it into view.
+
+`pruneSelection()` (called from `setEntries()`, i.e. every navigation/search/re-sort) drops handles
+no longer present, but the anchor and cursor prune on different conditions: the anchor drops when
+it's no longer in the *selected set*, while the cursor drops only when its *row* no longer exists —
+so a Ctrl-click that toggles the last selected row off leaves the cursor sitting on that row with an
+empty selection, deliberately surviving rather than resetting.
+
+Click-driven selection (`selectRow`) is handled entirely by one *background* `TapHandler` per view,
+reparented onto the view/`contentItem` itself (`parent: tableView` / `parent: gridView`) rather than
+left inside the delegate — `TableView`'s own delegate area is only as tall as its content
+(`cellAtPosition`, per Qt's docs), so a tap below the last row/tile would otherwise never be seen.
+Per-cell `TapHandler`s in the delegates handle `onDoubleTapped` only, never plain taps: `TapHandler`'s
+default `gesturePolicy` (`DragThreshold`) only takes a *passive* grab, so a per-cell handler would
+still fire alongside the background one and a Ctrl+click would toggle the same row twice, cancelling
+itself back out.
+
+Keyboard (`Ctrl+A` / arrow keys) is wired via `Keys.onPressed` on each view's focus root, not a
+window-level `Shortcut` — a `Shortcut` would steal `Ctrl+A` from the header search field regardless
+of which view has focus. `moveCursor(delta, modifiers)` takes a view-computed signed row offset
+(list: ±1 for Up/Down; grid: ±1 for Left/Right, ±columns for Up/Down — grid geometry is QML-only, so
+the view does that arithmetic, not the model) and clamps, never wraps, to `[0, rowCount()-1]`;
+Ctrl+arrow is deliberately treated identically to a plain arrow, no distinct "move without
+selecting" mode attempted. Because an invisible `StackLayout` child can't hold `activeFocus`, both
+views hand focus back explicitly on `StackLayout` view-switch and on click; toolbar buttons get
+`focusPolicy: Qt.NoFocus` so clicking one doesn't strand focus away from the active view.
+
+Right-click now selects its target row/tile first — replacing any prior selection, ignoring
+Ctrl/Shift, matching Explorer — before opening the context menu, *unless* the target is already part
+of the current selection, in which case that selection is left untouched (needed so a future
+multi-select bulk action in phase 13 can be invoked via right-click on any already-selected item).
+
+New `tests/FileListModelTest.cpp` (14 cases): row-range clamping, anchor/cursor separation, Shift
+range growth/shrink from a fixed anchor, Ctrl-equals-plain-arrow equivalence, `selectAll` semantics,
+and cursor survival across a re-sort vs. across pruning on navigation.
+
+**Gotcha (retroactive fix)**: `HorizontalHeaderView`'s `textRole`, set to `""` in phase 6b to silence
+a "role doesn't exist" warning, turned out not to work — Qt's existence check treats an empty string
+as still-unset and falls back to `"display"` internally regardless, which `FileListModel::roleNames()`
+never provided, so the warning kept firing. Fixed by pointing `textRole` at an actual existing role
+(`"name"`, never read by the header delegate — it builds its text from `columnLabels` instead) to
+satisfy the check. Phase 6b's own gotcha note has been corrected in place to match.
