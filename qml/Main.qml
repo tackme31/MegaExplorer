@@ -348,8 +348,15 @@ ApplicationWindow {
 
                     TapHandler {
                         acceptedButtons: Qt.RightButton
-                        onTapped: if (!gridDelegateItem.isFolder)
-                                      gridContextMenu.popup()
+                        onTapped: {
+                            if (!gridDelegateItem.selected) {
+                                gridView.forceActiveFocus();
+                                controller.fileListModel.selectRow(gridDelegateItem.index,
+                                                                    Qt.NoModifier);
+                            }
+                            if (!gridDelegateItem.isFolder)
+                                gridContextMenu.popup();
+                        }
                     }
 
                     FileContextMenu {

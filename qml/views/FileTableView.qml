@@ -346,8 +346,14 @@ ColumnLayout {
 
             TapHandler {
                 acceptedButtons: Qt.RightButton
-                onTapped: if (!cell.isFolder)
-                              contextMenu.popup()
+                onTapped: {
+                    if (!cell.selected) {
+                        root.forceActiveFocus();
+                        controller.fileListModel.selectRow(cell.row, Qt.NoModifier);
+                    }
+                    if (!cell.isFolder)
+                        contextMenu.popup();
+                }
             }
 
             FileContextMenu {
