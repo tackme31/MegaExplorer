@@ -1,6 +1,7 @@
 #pragma once
 #include "DownloadOutcome.h"
 #include "FileEntry.h"
+#include "PathSegment.h"
 #include "Result.h"
 #include "SortOrder.h"
 
@@ -18,7 +19,6 @@ public:
     virtual void login(const std::string& email,
                        const std::string& password,
                        std::function<void(Result<void>)> onDone) = 0;
-
 
     // MegaApi::fastLogin equivalent: re-authenticates using a session token
     // previously obtained from currentSessionToken(), skipping password
@@ -112,4 +112,14 @@ public:
     virtual void getThumbnail(std::uint64_t handle,
                               const std::string& destinationPath,
                               std::function<void(Result<std::string>)> onDone) = 0;
+
+    // Ancestor chain of the node identified by handle, root-first, always
+    // including the node itself as the last element and the root as the
+    // first (isRoot == true, handle meaningless -- same sentinel convention
+    // as getChildren/search above). Must be called after a successful
+    // fetchNodes(). Synchronous under the hood (in-memory parent walk), but
+    // kept callback-shaped for interface consistency.
+    virtual void getPath(std::uint64_t handle,
+                         bool isRoot,
+                         std::function<void(Result<std::vector<PathSegment>>)> onDone) = 0;
 };

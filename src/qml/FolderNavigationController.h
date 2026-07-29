@@ -5,6 +5,7 @@
 #include "FileListModel.h"
 
 #include <QObject>
+#include <QVariantList>
 
 #include <memory>
 #include <string>
@@ -28,6 +29,10 @@ class FolderNavigationController : public QObject
     Q_OBJECT
     Q_PROPERTY(QObject* fileListModel READ fileListModel CONSTANT)
     Q_PROPERTY(bool canGoBack READ canGoBack NOTIFY canGoBackChanged)
+    // Elements are QVariantMap{"name", "handle", "isRoot"}, root-first,
+    // current folder last -- QML composes display labels itself (e.g. the
+    // root's "Cloud Drive" label), C++ only supplies structured fields.
+    Q_PROPERTY(QVariantList breadcrumb READ breadcrumb NOTIFY breadcrumbChanged)
 
 public:
     explicit FolderNavigationController(std::shared_ptr<FolderNavigationService> navigationService,
@@ -45,12 +50,19 @@ public:
 
     bool canGoBack() const;
 
+    QVariantList breadcrumb() const;
+
     // Not Q_INVOKABLE: called once from main.cpp's composition root (via
     // AuthController::authStateChanged reaching LoggedIn), not from QML.
     Q_INVOKABLE void loadRoot();
 
     Q_INVOKABLE void openFolder(quint64 handle);
     Q_INVOKABLE void goBack();
+
+    // Breadcrumb segment click. isRoot mirrors PathSegment::isRoot -- handle
+    // is meaningless when it's true (same sentinel convention used
+    // throughout, see PathSegment.h).
+    Q_INVOKABLE void navigateTo(quint64 handle, bool isRoot);
 
     // Empty query clears the search and restores the last folder listing
     // (from mLastFolderEntries, no server round-trip). A non-empty query
@@ -75,16 +87,27 @@ public:
 
 signals:
     void canGoBackChanged();
+    void breadcrumbChanged();
 
 private:
     void applyResult(Result<std::vector<FileEntry>> result);
     void applySearchResult(Result<std::vector<FileEntry>> result);
     void refreshCurrentFolder();
 
+    // Resolves the current location's ancestor chain and updates
+    // mBreadcrumb. Called at the end of applyResult's success path (loadRoot
+    // / openFolder / goBack / navigateTo / refreshCurrent all funnel through
+    // it), so the breadcrumb tracks the actual folder hierarchy rather than
+    // navigation history. Only emits breadcrumbChanged if the resolved path
+    // actually differs, so refreshCurrent (e.g. a sort-order change) doesn't
+    // needlessly rebuild the Breadcrumb.qml Repeater.
+    void refreshBreadcrumb();
+
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<SearchService> mSearchService;
     NotificationController* mNotifications;
     FileListModel mFileListModel;
+    QVariantList mBreadcrumb;
     std::vector<FileEntry> mLastFolderEntries; // restored when search is cleared
     SortOrder mSortOrder{SortKey::Name, true};
     std::string mLastSearchQuery; // empty == not currently searching

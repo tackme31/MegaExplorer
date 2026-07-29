@@ -22,6 +22,20 @@ std::function<void(Result<std::vector<FileEntry>>)> onDoneInto(Captured& capture
     };
 }
 
+struct CapturedPath
+{
+    bool doneCalled = false;
+    Result<std::vector<PathSegment>> doneResult;
+};
+
+std::function<void(Result<std::vector<PathSegment>>)> onPathDoneInto(CapturedPath& captured)
+{
+    return [&captured](Result<std::vector<PathSegment>> result) {
+        captured.doneCalled = true;
+        captured.doneResult = std::move(result);
+    };
+}
+
 } // namespace
 
 TEST(FolderNavigationServiceTest, OpenFolderSuccessUpdatesCurrentAndEnablesGoBack)
@@ -275,4 +289,180 @@ TEST(FolderNavigationServiceTest, ResetToRootClearsBackStackAndReturnsToRootLoca
     EXPECT_FALSE(service.canGoBack());
     FolderNavigationService::CurrentLocation location = service.currentLocation();
     EXPECT_TRUE(location.isRoot);
+}
+
+TEST(FolderNavigationServiceTest, NavigateToRootFromFolderUsesGetRootChildrenAndPushesHistory)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> h1Children{{"sub", 2, 0, true, 0}};
+    const std::vector<FileEntry> rootChildren{{"folder", 1, 0, true, 0}};
+
+    // getChildren(1, ...) is expected twice: once for the initial
+    // openFolder(1), once more when goBack() below re-fetches the folder
+    // navigateTo(0, true) pushed onto the back-stack.
+    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_, ::testing::_))
+        .Times(2)
+        .WillRepeatedly(
+            ::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(h1Children)));
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::ok(rootChildren)));
+
+    FolderNavigationService service(mockClient);
+    Captured openCaptured;
+    service.openFolder(1, SortOrder{}, onDoneInto(openCaptured));
+    ASSERT_TRUE(openCaptured.doneResult.success);
+
+    // Act
+    Captured navigateCaptured;
+    service.navigateTo(0, true, SortOrder{}, onDoneInto(navigateCaptured));
+
+    // Assert
+    ASSERT_TRUE(navigateCaptured.doneCalled);
+    EXPECT_TRUE(navigateCaptured.doneResult.success);
+    EXPECT_TRUE(service.canGoBack());
+
+    // A subsequent goBack must return to the folder navigateTo left behind,
+    // proving it pushed history rather than truncating it.
+    Captured backCaptured;
+    service.goBack(SortOrder{}, onDoneInto(backCaptured));
+    ASSERT_TRUE(backCaptured.doneCalled);
+    EXPECT_TRUE(backCaptured.doneResult.success);
+    EXPECT_EQ(backCaptured.doneResult.value.size(), h1Children.size());
+    EXPECT_TRUE(service.canGoBack()); // root is still one entry back
+}
+
+TEST(FolderNavigationServiceTest, NavigateToFolderPushesHistoryLikeOpenFolder)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> expected{{"nested.txt", 10, 50, false, 0}};
+
+    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(expected)));
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    // Act
+    service.navigateTo(1, false, SortOrder{}, onDoneInto(captured));
+
+    // Assert
+    ASSERT_TRUE(captured.doneCalled);
+    EXPECT_TRUE(captured.doneResult.success);
+    EXPECT_EQ(captured.doneResult.value.size(), expected.size());
+    EXPECT_TRUE(service.canGoBack());
+}
+
+TEST(FolderNavigationServiceTest, NavigateToFailureLeavesStateUnchanged)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::fail("invalid handle", 3)));
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    // Act
+    service.navigateTo(1, false, SortOrder{}, onDoneInto(captured));
+
+    // Assert: runAndCommit only commits on success, so a failed navigateTo
+    // must leave canGoBack() (and, transitively, mCurrent) untouched.
+    ASSERT_TRUE(captured.doneCalled);
+    EXPECT_FALSE(captured.doneResult.success);
+    EXPECT_FALSE(service.canGoBack());
+}
+
+TEST(FolderNavigationServiceTest, ResolveCurrentPathAtRootQueriesRootSentinel)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<PathSegment> rootPath{{"", 0, true}};
+
+    EXPECT_CALL(*mockClient, getPath(::testing::_, true, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(rootPath)));
+
+    FolderNavigationService service(mockClient);
+    CapturedPath captured;
+
+    // Act: freshly constructed service is still at the root sentinel.
+    service.resolveCurrentPath(onPathDoneInto(captured));
+
+    // Assert
+    ASSERT_TRUE(captured.doneCalled);
+    EXPECT_TRUE(captured.doneResult.success);
+    ASSERT_EQ(captured.doneResult.value.size(), 1u);
+    EXPECT_TRUE(captured.doneResult.value[0].isRoot);
+}
+
+TEST(FolderNavigationServiceTest, ResolveCurrentPathAfterOpenFolderQueriesCurrentHandle)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> h1Children{{"sub", 2, 0, true, 0}};
+    const std::vector<PathSegment> path{{"", 0, true}, {"folder", 1, false}};
+
+    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(h1Children)));
+    EXPECT_CALL(*mockClient, getPath(1, false, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(path)));
+
+    FolderNavigationService service(mockClient);
+    Captured openCaptured;
+    service.openFolder(1, SortOrder{}, onDoneInto(openCaptured));
+    ASSERT_TRUE(openCaptured.doneResult.success);
+
+    // Act
+    CapturedPath pathCaptured;
+    service.resolveCurrentPath(onPathDoneInto(pathCaptured));
+
+    // Assert
+    ASSERT_TRUE(pathCaptured.doneCalled);
+    EXPECT_TRUE(pathCaptured.doneResult.success);
+    EXPECT_EQ(pathCaptured.doneResult.value, path);
+}
+
+TEST(FolderNavigationServiceTest, ResolveCurrentPathAfterGoBackQueriesRestoredLocation)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> h1Children{{"sub", 2, 0, true, 0}};
+    const std::vector<FileEntry> h2Children{{"b.txt", 3, 1, false, 0}};
+    const std::vector<PathSegment> path{{"", 0, true}, {"folder", 1, false}};
+
+    // getChildren(1, ...) is expected twice: once for the initial
+    // openFolder(1), once more when goBack() below re-fetches the folder
+    // opening handle 2 pushed onto the back-stack.
+    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_, ::testing::_))
+        .Times(2)
+        .WillRepeatedly(
+            ::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(h1Children)));
+    EXPECT_CALL(*mockClient, getChildren(2, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(h2Children)));
+    EXPECT_CALL(*mockClient, getPath(1, false, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(path)));
+
+    FolderNavigationService service(mockClient);
+    Captured c1, c2;
+    service.openFolder(1, SortOrder{}, onDoneInto(c1));
+    ASSERT_TRUE(c1.doneResult.success);
+    service.openFolder(2, SortOrder{}, onDoneInto(c2));
+    ASSERT_TRUE(c2.doneResult.success);
+
+    Captured backCaptured;
+    service.goBack(SortOrder{}, onDoneInto(backCaptured));
+    ASSERT_TRUE(backCaptured.doneResult.success);
+
+    // Act: current location is now back to handle 1, restored via goBack --
+    // not the deeper handle 2 that a naive "last opened" tracker might use.
+    CapturedPath pathCaptured;
+    service.resolveCurrentPath(onPathDoneInto(pathCaptured));
+
+    // Assert
+    ASSERT_TRUE(pathCaptured.doneCalled);
+    EXPECT_TRUE(pathCaptured.doneResult.success);
+    EXPECT_EQ(pathCaptured.doneResult.value, path);
 }

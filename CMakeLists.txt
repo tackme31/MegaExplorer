@@ -35,6 +35,7 @@ add_library(MegaExplorerCore STATIC
     src/core/MegaErrorCodes.h
     src/core/Result.h
     src/core/SortOrder.h
+    src/core/PathSegment.h
     src/core/FolderNavigationService.h
     src/core/FolderNavigationService.cpp
     src/core/AuthService.h
@@ -77,6 +78,7 @@ qt_add_qml_module(appMegaExplorer
     URI MegaExplorer
     QML_FILES
         qml/Main.qml
+        qml/components/Breadcrumb.qml
         qml/components/DownloadSnackbar.qml
         qml/components/ErrorToast.qml
         qml/components/FileContextMenu.qml

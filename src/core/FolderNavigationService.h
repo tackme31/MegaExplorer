@@ -38,6 +38,16 @@ public:
                     SortOrder order,
                     std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
+    // Navigates to an arbitrary location, pushing the previous current
+    // location onto the back-stack (Explorer semantics: a breadcrumb click
+    // is a navigation, Back returns to where you were). Generalizes
+    // openFolder to also cover the root, which openRoot deliberately can't
+    // do -- openRoot is the initial "home" load and never touches history.
+    void navigateTo(std::uint64_t handle,
+                    bool isRoot,
+                    SortOrder order,
+                    std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
     // Peeks the most recent back-stack entry and re-fetches it (getChildren
     // if it was a real handle, getRootChildren if it was the root sentinel).
     // Only pops/commits the new current location on a successful re-fetch.
@@ -69,6 +79,10 @@ public:
         std::uint64_t handle;
     };
     CurrentLocation currentLocation() const;
+
+    // Resolves the ancestor chain of the current location for the breadcrumb.
+    // Read-only: never touches the back-stack or mCurrent.
+    void resolveCurrentPath(std::function<void(Result<std::vector<PathSegment>>)> onDone);
 
 private:
     struct Location

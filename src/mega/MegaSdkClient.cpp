@@ -3,6 +3,7 @@
 #include "core/MegaErrorCodes.h"
 #include "MegaSdkLogger.h"
 
+#include <algorithm>
 #include <megaapi.h>
 #include <utility>
 
@@ -329,6 +330,38 @@ void MegaSdkClient::getThumbnail(std::uint64_t handle,
     // into the request before queueing it.
     mApi->getThumbnail(
         node.get(), destinationPath.c_str(), new ThumbnailListener(std::move(onDone)));
+}
+
+void MegaSdkClient::getPath(std::uint64_t handle,
+                            bool isRoot,
+                            std::function<void(Result<std::vector<PathSegment>>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, isRoot);
+    if (!node)
+    {
+        onDone(Result<std::vector<PathSegment>>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / invalid handle)"));
+        return;
+    }
+
+    std::vector<PathSegment> segments;
+    while (node)
+    {
+        PathSegment segment;
+        segment.name = node->getName() ? node->getName() : "";
+        segment.handle = static_cast<std::uint64_t>(node->getHandle());
+        segments.push_back(std::move(segment));
+        // MegaNode has no getParentNode() of its own -- it's MegaApi's, and
+        // returns NULL both for a not-found node and for an actual root node
+        // (megaapi.h's doc comment on MegaApi::getParentNode).
+        node = std::unique_ptr<mega::MegaNode>(mApi->getParentNode(node.get()));
+    }
+
+    std::reverse(segments.begin(), segments.end());
+    segments.front().isRoot = true;
+    segments.front().handle = 0;
+
+    onDone(Result<std::vector<PathSegment>>::ok(std::move(segments)));
 }
 
 std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot)

@@ -51,4 +51,8 @@ public:
                 getThumbnail,
                 (std::uint64_t, const std::string&, std::function<void(Result<std::string>)>),
                 (override));
+    MOCK_METHOD(void,
+                getPath,
+                (std::uint64_t, bool, std::function<void(Result<std::vector<PathSegment>>)>),
+                (override));
 };

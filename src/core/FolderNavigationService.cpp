@@ -31,13 +31,25 @@ void FolderNavigationService::openFolder(std::uint64_t handle,
                                          SortOrder order,
                                          std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
+    navigateTo(handle, false, order, std::move(onDone));
+}
+
+void FolderNavigationService::navigateTo(std::uint64_t handle,
+                                         bool isRoot,
+                                         SortOrder order,
+                                         std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
     runAndCommit(
-        [this, handle, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
-            mClient->getChildren(handle, order, std::move(onFetched));
+        [this, handle, isRoot, order](
+            std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
+            if (isRoot)
+                mClient->getRootChildren(order, std::move(onFetched));
+            else
+                mClient->getChildren(handle, order, std::move(onFetched));
         },
-        [this, handle] {
+        [this, handle, isRoot] {
             mBackStack.push_back(mCurrent);
-            mCurrent = Location{false, handle};
+            mCurrent = Location{isRoot, handle};
         },
         std::move(onDone));
 }
@@ -89,4 +101,10 @@ void FolderNavigationService::resetToRoot()
 FolderNavigationService::CurrentLocation FolderNavigationService::currentLocation() const
 {
     return CurrentLocation{mCurrent.isRoot, mCurrent.handle};
+}
+
+void FolderNavigationService::resolveCurrentPath(
+    std::function<void(Result<std::vector<PathSegment>>)> onDone)
+{
+    mClient->getPath(mCurrent.handle, mCurrent.isRoot, std::move(onDone));
 }

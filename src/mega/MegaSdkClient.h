@@ -25,7 +25,6 @@ public:
                const std::string& password,
                std::function<void(Result<void>)> onDone) override;
 
-
     void loginWithSession(const std::string& sessionToken,
                           std::function<void(Result<void>)> onDone) override;
 
@@ -62,6 +61,10 @@ public:
     void getThumbnail(std::uint64_t handle,
                       const std::string& destinationPath,
                       std::function<void(Result<std::string>)> onDone) override;
+
+    void getPath(std::uint64_t handle,
+                 bool isRoot,
+                 std::function<void(Result<std::vector<PathSegment>>)> onDone) override;
 
 private:
     // Shared by getRootChildren/getChildren/search: isRoot selects

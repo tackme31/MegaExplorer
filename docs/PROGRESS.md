@@ -23,7 +23,7 @@ are post-MVP, sequenced by priority/dependency.
 | 7a | Session storage foundation (`ISessionStore`/`WindowsSessionStore`) | done |
 | 7 | Login screen + session persistence (remaining wiring) | done |
 | 7b | Remove local node cache (`INodeCache`/`SqliteNodeCache`) | done |
-| 8 | Breadcrumb trail | planned |
+| 8 | Breadcrumb trail | done |
 | 9 | Windows-Explorer-style tabs (multiple folder views) | planned |
 | 10 | Folder tree navigation (side panel) | planned |
 | 11 | Quick access (pinned folders, side panel) | planned |
@@ -66,8 +66,10 @@ for what was built.
 
 ### Phase 8 — breadcrumb trail
 
-Known gap since Phase 2. Cheap: `FolderNavigationService` already keeps a back-stack of
-`Location`s, so mostly exposing existing state to QML.
+Known gap since Phase 2. Note: `mBackStack` is a *history* stack, not an ancestor chain (opening a
+deep folder from search results, which `FolderNavigationController` explicitly allows, makes them
+diverge), so the breadcrumb can't be read off it directly -- it's resolved from the SDK's node tree
+instead. See the Phase 8 implementation-log entry below for what was built.
 
 ### Phase 9 — Windows-Explorer-style tabs (multiple folder views)
 
@@ -545,3 +547,72 @@ as still-unset and falls back to `"display"` internally regardless, which `FileL
 never provided, so the warning kept firing. Fixed by pointing `textRole` at an actual existing role
 (`"name"`, never read by the header delegate — it builds its text from `columnLabels` instead) to
 satisfy the check. Phase 6b's own gotcha note has been corrected in place to match.
+
+## Phase 8 — breadcrumb trail (done)
+
+Added a Windows-Explorer-style breadcrumb between the `← Back` button and the search field, 7:3
+width ratio, left-side (root-first) truncation when it doesn't fit.
+
+Key design decision: `FolderNavigationService::mBackStack` is a *history* stack, not an ancestor
+chain — opening a deep folder from search results (which `FolderNavigationController` explicitly
+allows) makes the two diverge, and phases 9–11 (tabs/folder tree/quick access) will only widen the
+gap. So the breadcrumb path is resolved fresh from the SDK's own node tree (`MegaApi::
+getParentNode(MegaNode*)`, walked to the root, purely in-memory once `fetchNodes` has run) rather
+than read off the back-stack.
+
+New `src/core/PathSegment.h` (`{name, handle, isRoot}`, `isRoot` following `Location`'s root-sentinel
+convention, plus a field-by-field `operator==` for gmock/change-detection — same rationale as
+`FileEntry`'s own). `IMegaClient::getPath(handle, isRoot, onDone)` added; `MegaSdkClient`'s
+implementation reuses the existing private `resolveNode(handle, isRoot)` helper, walks
+`mApi->getParentNode(node.get())` until null (each hop wrapped in `unique_ptr`, ownership
+transferred), reverses the collected chain, and normalizes the first element to the sentinel form
+(`isRoot = true, handle = 0`) — a root node's own parent is already null on the first hop
+(`megaapi.h`'s doc comment on `getParentNode`), so no extra root-only special case was needed.
+
+**Gotcha**: `getParentNode` is a `MegaApi` method, not a `MegaNode` one (`node->getParentNode()`
+doesn't compile, `MegaNode` only has `getParentHandle()`) — caught by the `/W4` build (`C2039`), not
+by planning against the header first.
+
+`FolderNavigationService` gained two entry points: `navigateTo(handle, isRoot, order, onDone)`
+generalizes `openFolder` to also cover the root — needed because a breadcrumb click on the root
+segment must push history (Explorer semantics: Back returns to where you were), which the existing
+`openRoot` deliberately never does (it's the post-login "home" load). `openFolder` now delegates to
+`navigateTo(handle, false, ...)` in one line. `resolveCurrentPath(onDone)` is a thin wrapper over
+`mClient->getPath(mCurrent.handle, mCurrent.isRoot, onDone)` — read-only, never touches
+`mBackStack`/`mCurrent`.
+
+`FolderNavigationController` gained a `breadcrumb` `Q_PROPERTY` (`QVariantList` of
+`{name, handle, isRoot}` — C++ passes structured fields only, QML composes the root's "Cloud Drive"
+label, same convention as `NotificationController`/`ErrorToast.qml`) and `Q_INVOKABLE
+navigateTo(handle, isRoot)`. `refreshBreadcrumb()` runs at the end of `applyResult`'s success path
+— the funnel shared by `loadRoot`/`openFolder`/`goBack`/`navigateTo`/`refreshCurrent` — so the
+breadcrumb always reflects the actual current folder rather than navigation history, and keeps
+showing the open folder's path (unchanged) while a search is active, since `search()` runs through
+`applySearchResult`, not `applyResult`. Because a `QVariantList`-backed `Repeater` has no diffing
+and rebuilds every delegate on each emit, `refreshBreadcrumb` builds the new list and skips the
+assignment/`breadcrumbChanged()` emit entirely when it's equal to the cached one — otherwise
+`refreshCurrentFolder()` (e.g. a sort-order change, same folder) would cause a visible flicker for
+no reason. A `getPath` failure is logged via `lcNavigation` and otherwise ignored (no
+`NotificationController` toast) — the folder listing itself already succeeded, so a stale breadcrumb
+isn't worth an error toast, matching phase 6/7b's "degrade quietly" precedent. `reset()` clears the
+breadcrumb and emits the change signal, so a re-login never briefly shows the previous account's
+path.
+
+`qml/components/Breadcrumb.qml` (new): each `Repeater` delegate is a labeled segment plus its own
+independent ">" separator element — deliberately not merged into the label — so a later phase can
+attach a `TapHandler`/`Menu` to just the separator for an Explorer-style "list this folder's
+subfolders" dropdown without restructuring the delegate (out of scope for this phase, along with
+direct path editing). Left-side overflow uses a two-pass width computation reading each delegate's
+`implicitWidth` directly (stable regardless of `visible`) rather than iteratively toggling `visible`
+and re-reading the `Row`'s own `implicitWidth`, which doesn't converge in one pass; recomputed via
+`Qt.callLater` on width/model/item-count changes. `Main.qml`'s header `RowLayout` gives the
+breadcrumb and the search `TextField` `Layout.preferredWidth: 7`/`3` with `Layout.fillWidth: true`
+on both and `Layout.minimumWidth: 0` explicit on both (Qt Quick Layouts distributes space between
+`fillWidth` items in the ratio of their preferred sizes, confirmed against the Qt 6.11 `Layout` docs)
+— giving the exact 7:3 split with no minimum width, as required.
+
+`tests/MockMegaClient.h` gained a `getPath` `MOCK_METHOD` (required — `IMegaClient` is pure virtual).
+Six new cases in `tests/FolderNavigationServiceTest.cpp`: `navigateTo`'s root/non-root push-history
+behavior and its failure-leaves-state-unchanged case (mirroring the existing `openFolder` tests),
+plus `resolveCurrentPath` at the root sentinel, after `openFolder`, and after a `goBack` restores an
+earlier location (proving the path comes from the live handle, not a stale "last opened" one).

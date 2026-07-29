@@ -7,6 +7,7 @@
 #include <QDebug>
 #include <QMetaObject>
 #include <QString>
+#include <QVariantMap>
 
 namespace
 {
@@ -47,6 +48,11 @@ bool FolderNavigationController::canGoBack() const
     return mService->canGoBack();
 }
 
+QVariantList FolderNavigationController::breadcrumb() const
+{
+    return mBreadcrumb;
+}
+
 void FolderNavigationController::loadRoot()
 {
     mService->openRoot(mSortOrder, [this](Result<std::vector<FileEntry>> result) {
@@ -76,6 +82,18 @@ void FolderNavigationController::goBack()
     });
 }
 
+void FolderNavigationController::navigateTo(quint64 handle, bool isRoot)
+{
+    mService->navigateTo(static_cast<std::uint64_t>(handle),
+                         isRoot,
+                         mSortOrder,
+                         [this](Result<std::vector<FileEntry>> result) {
+                             invokeOnGuiThread([this, result = std::move(result)]() mutable {
+                                 applyResult(std::move(result));
+                             });
+                         });
+}
+
 void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> result)
 {
     if (!result.success)
@@ -91,6 +109,43 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
     mLastFolderEntries = result.value;
     mFileListModel.setEntries(std::move(result.value));
     emit canGoBackChanged();
+    refreshBreadcrumb();
+}
+
+void FolderNavigationController::refreshBreadcrumb()
+{
+    mService->resolveCurrentPath([this](Result<std::vector<PathSegment>> result) {
+        invokeOnGuiThread([this, result = std::move(result)]() mutable {
+            if (!result.success)
+            {
+                qCWarning(lcNavigation)
+                    << "breadcrumb path resolution failed:"
+                    << QString::fromStdString(result.errorMessage) << "code=" << result.errorCode;
+                return;
+            }
+
+            QVariantList breadcrumb;
+            breadcrumb.reserve(static_cast<qsizetype>(result.value.size()));
+            for (const PathSegment& segment : result.value)
+            {
+                QVariantMap entry;
+                entry.insert(QStringLiteral("name"), QString::fromStdString(segment.name));
+                entry.insert(QStringLiteral("handle"), static_cast<qulonglong>(segment.handle));
+                entry.insert(QStringLiteral("isRoot"), segment.isRoot);
+                breadcrumb.append(entry);
+            }
+
+            // A QVariantList model has no diffing on the QML side, so a
+            // Repeater over it rebuilds every delegate on each emit --
+            // skip the (re-)assignment entirely when the resolved path is
+            // unchanged (e.g. refreshCurrentFolder() re-running this after a
+            // sort-order change while staying in the same folder).
+            if (breadcrumb == mBreadcrumb)
+                return;
+            mBreadcrumb = std::move(breadcrumb);
+            emit breadcrumbChanged();
+        });
+    });
 }
 
 void FolderNavigationController::search(QString query)
@@ -186,5 +241,7 @@ void FolderNavigationController::reset()
     mLastFolderEntries.clear();
     mLastSearchQuery.clear();
     mHasLoadedOnce = false;
+    mBreadcrumb.clear();
     emit canGoBackChanged();
+    emit breadcrumbChanged();
 }

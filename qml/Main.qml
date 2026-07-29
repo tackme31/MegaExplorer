@@ -75,8 +75,27 @@ ApplicationWindow {
                     onClicked: controller.goBack()
                 }
 
+                // 7:3 against the search field below. Qt Quick Layouts
+                // distributes space between fillWidth items in the ratio of
+                // their preferred sizes ("If there are multiple items with
+                // fillWidth set to true, the layout will grow or shrink the
+                // items relative to the ratio of their preferred size" --
+                // Qt 6.11 Layout docs), so the literal 7/3 below are that
+                // ratio, not pixel values. minimumWidth: 0 is spelled out
+                // (it's already the default for a non-layout item) because
+                // "no minimum width" is a deliberate requirement here.
+                Breadcrumb {
+                    model: controller.breadcrumb
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 7
+                    Layout.minimumWidth: 0
+                    Layout.fillHeight: true
+                }
+
                 TextField {
                     Layout.fillWidth: true
+                    Layout.preferredWidth: 3
+                    Layout.minimumWidth: 0
                     placeholderText: qsTr("Search in this folder")
                     // MegaApi::search() blocks the GUI thread synchronously, so
                     // search on Enter only rather than on every keystroke.
@@ -192,7 +211,9 @@ ApplicationWindow {
                 // Qt.callLater defers past StackLayout's own visibility
                 // update, which runs after this notification fires.
                 StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
-                                                         Qt.callLater(() => fileTableView.forceActiveFocus())
+                                                        Qt.callLater(()
+                                                                     => fileTableView.forceActiveFocus(
+                                                                            ))
                 onActivateRequested: (isFolder, handle, name, sizeBytes) => window.activateEntry(
                                                                                 isFolder, handle,
                                                                                 name, sizeBytes)
@@ -210,9 +231,10 @@ ApplicationWindow {
                 // below.
                 keyNavigationEnabled: false
                 StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
-                                                         Qt.callLater(() => gridView.forceActiveFocus())
+                                                        Qt.callLater(() => gridView.forceActiveFocus(
+                                                                               ))
 
-                Keys.onPressed: (event) => {
+                Keys.onPressed: event => {
                     if (event.modifiers & Qt.AltModifier)
                         return; // reserved for a future Alt+Left "back" shortcut
 
@@ -352,7 +374,7 @@ ApplicationWindow {
                             if (!gridDelegateItem.selected) {
                                 gridView.forceActiveFocus();
                                 controller.fileListModel.selectRow(gridDelegateItem.index,
-                                                                    Qt.NoModifier);
+                                                                   Qt.NoModifier);
                             }
                             if (!gridDelegateItem.isFolder)
                                 gridContextMenu.popup();
