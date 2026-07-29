@@ -16,8 +16,8 @@ import "views"
 
 ApplicationWindow {
     id: window
-    width: 640
-    height: 480
+    width: 1200
+    height: 800
     minimumWidth: 200
     minimumHeight: 250
     visible: true
@@ -30,6 +30,8 @@ ApplicationWindow {
 
     Settings {
         property alias viewMode: window.viewMode
+        property alias windowWidth: window.width
+        property alias windowHeight: window.height
     }
 
     function activateEntry(isFolder, handle, name, sizeBytes) {
