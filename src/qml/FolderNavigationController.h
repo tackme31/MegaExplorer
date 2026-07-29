@@ -49,6 +49,11 @@ class FolderNavigationController : public QObject,
     // "Cloud Drive" rather than blank.
     Q_PROPERTY(QString currentFolderName READ currentFolderName NOTIFY breadcrumbChanged)
     Q_PROPERTY(bool atRoot READ atRoot NOTIFY breadcrumbChanged)
+    // Same derivation as currentFolderName/atRoot above -- backs
+    // FolderTreePanel.qml's highlight (Phase 10): 0 when the breadcrumb
+    // hasn't resolved yet or the current location is the root (meaningless
+    // sentinel handle, same convention as PathSegment::isRoot).
+    Q_PROPERTY(quint64 currentHandle READ currentHandle NOTIFY breadcrumbChanged)
 
 public:
     explicit FolderNavigationController(std::shared_ptr<FolderNavigationService> navigationService,
@@ -70,6 +75,7 @@ public:
 
     QString currentFolderName() const;
     bool atRoot() const;
+    quint64 currentHandle() const;
 
     // Not Q_INVOKABLE: called once from main.cpp's composition root (via
     // AuthController::authStateChanged reaching LoggedIn), not from QML.

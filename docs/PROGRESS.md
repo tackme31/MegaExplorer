@@ -25,7 +25,7 @@ are post-MVP, sequenced by priority/dependency.
 | 7b | Remove local node cache (`INodeCache`/`SqliteNodeCache`) | done |
 | 8 | Breadcrumb trail | done |
 | 9 | Windows-Explorer-style tabs (multiple folder views) | done |
-| 10 | Folder tree navigation (side panel) | planned |
+| 10 | Folder tree navigation (side panel) | done |
 | 11 | Quick access (pinned folders, side panel) | planned |
 | 12 | Rename / delete (move to rubbish) / move | planned |
 | 13a | Selection model (row/cell, keyboard, right-click) | done (pulled forward) |
@@ -833,3 +833,138 @@ msvc-debug` first) failed at link time with unresolved `QmlCacheGeneratedCode::.
 the AOT-compiled `qmlcache_loader.cpp` aggregator was stale relative to the newly-listed `QML_FILES`.
 Re-running the configure step first fixed it. Worth remembering for any future phase that adds new
 `.qml` files: reconfigure, don't just rebuild.
+
+## Phase 10 — folder tree navigation (side panel) (done)
+
+New left `SplitView` panel next to the tab content, shared across every tab (an app-lifetime
+singleton, not duplicated per tab like `FolderNavigationService`/`FolderNavigationController`) —
+placed right after tabs (phase 9) deliberately, per that phase's own log entry, so this panel could
+be designed from the start as shared chrome beside N tabbed panes.
+
+Three new layers mirror the existing `IMegaClient` → `*Service` → `*Controller`/`*Model` shape:
+`src/core/FolderTreeService.{h,cpp}` (new, `MegaExplorerCore`) resolves the `isRoot`/`getRootChildren`
+vs. `getChildren` split `IMegaClient` exposes (unlike `getPath`/`search`, `getChildren` has no `isRoot`
+overload), filters results down to folders only, and always requests `SortOrder{Name, ascending}` —
+independent of whatever sort order any tab's file-list view currently has, since the tree is a
+navigation aid, not a sortable listing. `src/qml/FolderTreeModel.{h,cpp}` (new) is a
+`QAbstractItemModel` owning a lazily-expanded `TreeNode` tree: `children` is a
+`vector<unique_ptr<TreeNode>>`, not `vector<TreeNode>`, because `QModelIndex::internalPointer` stores
+a raw `TreeNode*` that must never be invalidated by a sibling insertion reallocating the vector. An
+invisible sentinel root owns a single always-present "Cloud Drive" node (`isRoot = true`), so the tree
+shows exactly one visible top-level row that can itself be clicked to navigate to the root — and
+becomes the natural place to add phase 11's pinned folders later. `Qt::DisplayRole` returns the node's
+`name` directly (including the literal, hardcoded `"Cloud Drive"` string for that one sentinel node) —
+a deliberate, narrow exception to this codebase's usual "C++ passes structured fields, QML composes
+text" split (`Breadcrumb.qml`/`TabStrip.qml` compose that same label in QML instead), made here because
+`FolderTreePanel.qml` uses `TreeViewDelegate`'s default `contentItem` unmodified, which reads
+`Qt::DisplayRole` with no isRoot-aware composition step of its own.
+
+**Lazy expansion**: `hasChildren()` returns `true` for any not-yet-`Loaded` node (so the expand arrow
+shows before the first fetch) and falls back to the real child count once `Loaded`; `canFetchMore()`
+is `true` only while `NotLoaded`; `fetchMore()` delegates to `ensureLoaded()`. That
+`canFetchMore`/`fetchMore` path is the *only* fetch trigger, and it is enough on its own — an earlier
+attempt also called `ensureLoaded()` from a QML-side `TreeView.onExpanded` handler as
+belt-and-suspenders, on the theory that Qt's `expandRecursively()` doc note ("this function will not
+try to fetch more data") implied plain `expand()` might not fetch either; expanding an unfetched node
+was measured against Qt 6.11 and does go through `fetchMore()`, so the redundant QML call (and
+`ensureLoaded()`'s `Q_INVOKABLE`) were dropped. A successful load with one or more children
+does a proper `beginInsertRows`/`endInsertRows`; a successful load with *zero* children can't use that
+(`beginInsertRows` with an empty range is invalid) so it just flips the state and emits `dataChanged()`
+— **known limitation**: `TreeView`'s internal proxy isn't guaranteed to re-query `hasChildren()` off a
+plain `dataChanged()`, so an empty folder's expand arrow can linger with nothing to show on click;
+matches (English) Explorer's own long-standing behavior here, accepted rather than worked around. A
+failed load resets the node back to `NotLoaded` (not stuck in `Loading`) so re-expanding retries, logs
+via the existing `lcNavigation` category (no new category added), and never raises a
+`NotificationController` toast — same "degrade quietly, the primary listing is unaffected" precedent as
+phase 8's breadcrumb-resolution failures. Unlike `FolderNavigationController`/`ThumbnailController`
+(phase 9), `FolderTreeModel` does **not** use `enable_shared_from_this`: those two needed it because a
+*tab* (and its controllers) can be destroyed mid-fetch by closing it, but this model is an app-lifetime
+singleton with no such per-tab destruction race, so its `invokeOnGuiThread` targets `qApp` directly
+(same reasoning, and the same target choice, as the pre-existing `DownloadController`). The *nodes*,
+though, are not app-lifetime: `reset()`/`reload()` rebuild the whole `TreeNode` tree, which would leave
+an in-flight load's captured raw `TreeNode*` dangling, so each load captures a `mGeneration` counter
+(bumped by every `resetTree()`) and drops its result if the tree has been rebuilt since.
+
+**Highlight, not auto-expand/auto-scroll** (confirmed with the user before implementation):
+`FolderNavigationController` gained a `currentHandle` `Q_PROPERTY` (`quint64`, `NOTIFY
+breadcrumbChanged`), derived from `mBreadcrumb`'s last element exactly like the pre-existing
+`currentFolderName`/`atRoot`. `FolderTreePanel.qml`'s delegate background compares
+`(isRoot ? navController.atRoot : (!navController.atRoot && handle === navController.currentHandle))`
+to decide whether to paint the translucent highlight (reusing `SystemPalette`/`Qt.rgba(...,0.35)`,
+matching `FileTableView.qml`/`FileGridView.qml`'s own selection-highlight color). `navController` is
+rebound by `Main.qml` to whichever tab is currently active, so switching tabs moves the highlight
+without touching the tree's own expansion state; navigating in the file view (double-click, breadcrumb,
+back) moves the highlight without expanding or scrolling the tree to reveal it, exactly as scoped.
+
+**`FolderTreePanel.qml`** (new): Explorer semantics -- the chevron expands/collapses, the label
+navigates. This is `TreeViewDelegate`'s *stock* pointer behavior and needs no help: its built-in
+handling toggles expansion only for presses that land on the indicator, so a plain `TapHandler` on the
+delegate calling `navController.navigateTo(handle, isRoot)` covers the other half, since it only ever
+receives the clicks the indicator didn't take. **Trap worth remembering** (cost this phase a full
+debugging round): the first implementation read the docs' "you can set `pointerNavigationEnabled` to
+false to disable the default behavior" as an instruction to take expansion over manually --
+`pointerNavigationEnabled: false` on the `TreeView` plus a custom `indicator:` carrying its own
+`TapHandler` calling `toggleExpanded(row)`. The result was a chevron that did nothing at all: the flag
+does kill the built-in indicator toggle, but the replacement `TapHandler` never fires either, because
+the delegate itself consumes the press before a handler on the indicator child sees it (a `MouseArea`
+in the same position *does* receive it -- so the item is hit-tested fine, it's specifically pointer
+handlers there that are starved). Replacing `indicator:` is also what forced the manual
+`leftMargin + (depth * indentation)` indentation and its attendant `implicitHeight` binding loop.
+Verified by rebuilding the panel against a stubbed `IMegaClient` in a throwaway Qt Quick harness and
+driving it with `QTest::mouseClick`. No `selectionModel` is set on the `TreeView` -- the highlight
+follows navigation state (`isCurrent` above), not a click-driven selection, so one was never needed.
+The delegate's `background:` is replaced to paint that highlight, which means restating the style's own
+`implicitHeight: 24`; without it, rows whose indicator is hidden (a folder already known to be empty)
+render shorter than their siblings.
+Middle-click mirrors the file views' existing "open in new tab" convention
+(`tabsController.addTabAt(handle, isRoot)`, background tab, current tab keeps focus). Each
+`TreeViewDelegate` gets `focusPolicy: Qt.NoFocus`, matching `TabStrip.qml`'s `TabButton` precedent --
+without it, clicking a tree row stalls the file view's own arrow-key navigation until it's re-clicked.
+
+**`Main.qml`**: `mainContentComponent`'s root changed from a bare `StackLayout` to a `SplitView`
+containing `FolderTreePanel` (`SplitView.minimumWidth: 120`/`maximumWidth: 500`) and the pre-existing
+`StackLayout` (`SplitView.fillWidth: true`) -- the `paneRepeater`/`window.currentPane` `Binding` pairing
+stayed inside the `StackLayout`, unchanged, per the file's own existing comment on why that pairing must
+stay in one `Component` scope. `treePanel.SplitView.preferredWidth` is read once, imperatively, in
+`Component.onCompleted` from a new `window.treePanelWidth` property (default `240`) rather than bound
+live -- same "one-shot read, not a live binding" convention as `TabContentPane.qml`'s
+`initialViewMode`, needed here because `SplitView` itself writes back to the panel's width as the user
+drags the splitter (`onResizingChanged: if (!resizing) window.treePanelWidth = treePanel.width`), and a
+live binding would fight that write-back. A new header `☰` `ToolButton` (checkable, before the `← Back`
+button) toggles a new `window.treePanelVisible` property (default `true`); both new properties are
+`Settings`-backed aliases alongside the existing `viewMode`/`sortColumn`/etc. ones, so panel width and
+visibility persist across restarts like everything else `window` already owns. The `authStateChanged`
+`Connections` handler now also calls `folderTreeModel.reload()` (`LoggedIn`, alongside
+`tabsController.loadRootAll()`) / `folderTreeModel.reset()` (`LoggedOut`, alongside
+`tabsController.resetAll()`), so a sign-out clears the tree back to a single "Cloud Drive" row and a
+subsequent login (possibly a different account) starts loading fresh rather than showing stale folders.
+
+**`main.cpp`**: `folderTreeService`/`folderTreeModel` are constructed once, at the same app-lifetime
+scope as `thumbnailService`/`notifications` (not inside `tabFactory`, since the panel is shared, not
+per-tab), and `folderTreeModel` is exposed as the `folderTreeModel` context property alongside the
+existing ones. `TabsController`'s factory lambda/`TabContext`/`Roles` were untouched, as scoped.
+
+**Tests**: `tests/FolderTreeServiceTest.cpp` (5 cases, `MegaExplorerCore`, `MockMegaClient`): root vs.
+non-root requests route to `getRootChildren`/`getChildren(handle, ...)` respectively, the fixed
+name-ascending `SortOrder` is passed, files are filtered out of a mixed result, and failure propagates.
+`tests/FolderTreeModelTest.cpp` (7 cases) is a deliberate, narrow exception to "`src/qml` is GUI glue,
+untested by convention" -- same rationale as `FileListModelTest.cpp`/`TabsControllerTest.cpp`:
+`index()`/`parent()` round-tripping and load-state bookkeeping are pure and bug-prone, not rendering
+glue. Builds a real `FolderTreeService` against `MockMegaClient` (same approach as
+`TabsControllerTest`) rather than mocking the service. **Gotcha**: `ensureLoaded()`'s result always
+arrives through a queued `invokeMethod` even when `MockMegaClient`'s `InvokeArgument` action fires
+synchronously, so the test file owns this binary's single `QCoreApplication` (a function-local static,
+not a file-scope global -- it must not be constructed during static initialization, and its `argc`/
+`argv` have to outlive it) and calls `QCoreApplication::processEvents()` after triggering a load, to
+actually flush the queued callback before asserting on the resulting state -- no existing test in this
+codebase needed a `QCoreApplication` before, since every prior `src/qml`-adjacent test
+(`TabsControllerTest`) deliberately avoids ever letting its mocked async callbacks fire. The seventh
+case pins the generation guard described above by holding the load callback (`SaveArg`), calling
+`reset()`, then firing it -- an unguarded model use-after-frees there rather than merely mis-inserting.
+
+**Unrelated fix noticed while running the full suite for this phase**: `tests/TabsControllerTest.cpp`'s
+`AddTabAtIncreasesCountAndSwitchesToNewTab` was left stale by the immediately preceding commit ("Open
+background tabs without switching focus"), which changed `addTabAt` to leave the current tab focused
+but never updated this test's assertion -- renamed to
+`AddTabAtIncreasesCountWithoutSwitchingFocus` and corrected to expect `currentIndex() == 0`, matching
+the now-documented behavior in `TabsController.h`.

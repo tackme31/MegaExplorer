@@ -77,6 +77,13 @@ bool FolderNavigationController::atRoot() const
     return mBreadcrumb.last().toMap().value(QStringLiteral("isRoot")).toBool();
 }
 
+quint64 FolderNavigationController::currentHandle() const
+{
+    if (mBreadcrumb.isEmpty())
+        return 0;
+    return mBreadcrumb.last().toMap().value(QStringLiteral("handle")).toULongLong();
+}
+
 void FolderNavigationController::loadRoot()
 {
     mService->openRoot(mSortOrder,

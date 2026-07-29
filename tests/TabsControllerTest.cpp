@@ -85,14 +85,17 @@ TEST_F(TabsControllerTest, AddTabIncreasesCountAndSwitchesToNewTab)
     EXPECT_NE(tabs->currentNavigation(), firstNavigation);
 }
 
-TEST_F(TabsControllerTest, AddTabAtIncreasesCountAndSwitchesToNewTab)
+TEST_F(TabsControllerTest, AddTabAtIncreasesCountWithoutSwitchingFocus)
 {
     auto tabs = makeController();
 
     tabs->addTabAt(42, false);
 
+    // addTabAt opens the new tab in the background (middle-click/"Open in
+    // new tab" semantics) -- unlike addTab()'s "+" button, it deliberately
+    // leaves currentIndex pointing at the still-focused original tab.
     EXPECT_EQ(tabs->count(), 2);
-    EXPECT_EQ(tabs->currentIndex(), 1);
+    EXPECT_EQ(tabs->currentIndex(), 0);
 }
 
 TEST_F(TabsControllerTest, ClosingTheOnlyTabEmitsLastTabClosed)

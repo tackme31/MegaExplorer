@@ -2,6 +2,7 @@
 #include "core/AuthService.h"
 #include "core/DownloadService.h"
 #include "core/FolderNavigationService.h"
+#include "core/FolderTreeService.h"
 #include "core/SearchService.h"
 #include "core/ThumbnailService.h"
 #include "mega/MegaSdkClient.h"
@@ -9,6 +10,7 @@
 #include "qml/AuthController.h"
 #include "qml/DownloadController.h"
 #include "qml/FolderNavigationController.h"
+#include "qml/FolderTreeModel.h"
 #include "qml/NotificationController.h"
 #include "qml/TabsController.h"
 #include "qml/ThumbnailController.h"
@@ -57,6 +59,12 @@ int main(int argc, char* argv[])
     DownloadController downloadController(downloadService, &notifications);
     AuthController authController(authService);
 
+    // Shared across every tab (Phase 10's side panel is chrome beside the
+    // tab content, not per-tab state), same app-lifetime-singleton shape as
+    // thumbnailService/notifications above rather than tabFactory below.
+    auto folderTreeService = std::make_shared<FolderTreeService>(client);
+    FolderTreeModel folderTreeModel(folderTreeService);
+
     // Wires one tab's worth of navigation/search/thumbnail state: a fresh
     // FolderNavigationService/SearchService/FolderNavigationController/
     // ThumbnailController each, capturing the shared, app-lifetime
@@ -83,6 +91,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("downloadController", &downloadController);
     engine.rootContext()->setContextProperty("notificationController", &notifications);
     engine.rootContext()->setContextProperty("authController", &authController);
+    engine.rootContext()->setContextProperty("folderTreeModel", &folderTreeModel);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

@@ -42,6 +42,15 @@ ApplicationWindow {
     property real columnWidthModified: -1
     property real columnWidthSize: -1
 
+    // Phase 10 side panel: shared chrome beside the tab content, not
+    // per-tab state (unlike viewMode/sortColumn/etc. above, which are each
+    // tab's own last-write-wins starting point). Width is read once,
+    // imperatively, by mainContentComponent's Component.onCompleted below --
+    // same "one-shot read, not a live binding" convention as
+    // TabContentPane.qml's initialViewMode (see its own comment for why).
+    property real treePanelWidth: 240
+    property bool treePanelVisible: true
+
     // The currently active tab's TabContentPane, kept in sync by the Binding
     // inside mainContentComponent below. footerComponent (a sibling nested
     // Component, so it can't see mainContentComponent's internal ids
@@ -58,6 +67,8 @@ ApplicationWindow {
         property alias columnWidthName: window.columnWidthName
         property alias columnWidthModified: window.columnWidthModified
         property alias columnWidthSize: window.columnWidthSize
+        property alias treePanelWidth: window.treePanelWidth
+        property alias treePanelVisible: window.treePanelVisible
     }
 
     // Logged-in chrome (header/footer/central StackLayout) only exists while
@@ -96,6 +107,14 @@ ApplicationWindow {
 
                 RowLayout {
                     anchors.fill: parent
+
+                    ToolButton {
+                        text: "☰"
+                        checkable: true
+                        checked: window.treePanelVisible
+                        focusPolicy: Qt.NoFocus
+                        onClicked: window.treePanelVisible = !window.treePanelVisible
+                    }
 
                     ToolButton {
                         text: qsTr("← Back")
@@ -246,74 +265,99 @@ ApplicationWindow {
     Component {
         id: mainContentComponent
 
-        StackLayout {
+        SplitView {
+            id: splitView
             anchors.fill: parent
-            currentIndex: tabsController.currentIndex
 
-            Repeater {
-                id: paneRepeater
-                model: tabsController
+            FolderTreePanel {
+                id: treePanel
+                visible: window.treePanelVisible
+                navController: tabsController.currentNavigation
+                SplitView.minimumWidth: 120
+                SplitView.maximumWidth: 500
 
-                // navigation/thumbnails below come from
-                // TabsController::roleNames() ("navigation"/"thumbnails",
-                // see TabsController.h's Roles enum) -- required properties
-                // on a Repeater delegate are populated straight from the
-                // model's role data for a QAbstractItemModel-backed model.
-                TabContentPane {
-                    id: pane
-                    required property var navigation
-                    required property var thumbnails
-                    navController: navigation
-                    thumbController: thumbnails
+                // One-shot imperative read of the persisted width, not a
+                // live binding: SplitView itself writes back to
+                // treePanel.width as the user drags the splitter (see
+                // onResizingChanged below), and a live binding here would
+                // fight that write back and forth -- same "read once at
+                // creation" convention as TabContentPane.qml's
+                // initialViewMode.
+                Component.onCompleted: treePanel.SplitView.preferredWidth = window.treePanelWidth
+            }
 
-                    // Read once at this tab's creation (see
-                    // TabContentPane.qml's own comment on why these are
-                    // required properties rather than live bindings) --
-                    // window.* is this file's single Settings-backed,
-                    // last-write-wins copy.
-                    initialViewMode: window.viewMode
-                    initialSortColumn: window.sortColumn
-                    initialSortAscending: window.sortAscending
-                    initialColumnWidthName: window.columnWidthName
-                    initialColumnWidthModified: window.columnWidthModified
-                    initialColumnWidthSize: window.columnWidthSize
+            StackLayout {
+                SplitView.fillWidth: true
+                currentIndex: tabsController.currentIndex
 
-                    onViewModeWriteBack: vm => window.viewMode = vm
-                    onSortOrderWriteBack: (column, ascending) => {
-                        window.sortColumn = column;
-                        window.sortAscending = ascending;
+                Repeater {
+                    id: paneRepeater
+                    model: tabsController
+
+                    // navigation/thumbnails below come from
+                    // TabsController::roleNames() ("navigation"/"thumbnails",
+                    // see TabsController.h's Roles enum) -- required properties
+                    // on a Repeater delegate are populated straight from the
+                    // model's role data for a QAbstractItemModel-backed model.
+                    TabContentPane {
+                        id: pane
+                        required property var navigation
+                        required property var thumbnails
+                        navController: navigation
+                        thumbController: thumbnails
+
+                        // Read once at this tab's creation (see
+                        // TabContentPane.qml's own comment on why these are
+                        // required properties rather than live bindings) --
+                        // window.* is this file's single Settings-backed,
+                        // last-write-wins copy.
+                        initialViewMode: window.viewMode
+                        initialSortColumn: window.sortColumn
+                        initialSortAscending: window.sortAscending
+                        initialColumnWidthName: window.columnWidthName
+                        initialColumnWidthModified: window.columnWidthModified
+                        initialColumnWidthSize: window.columnWidthSize
+
+                        onViewModeWriteBack: vm => window.viewMode = vm
+                        onSortOrderWriteBack: (column, ascending) => {
+                            window.sortColumn = column;
+                            window.sortAscending = ascending;
+                        }
+                        onColumnWidthsWriteBack: (nameWidth, modifiedWidth, sizeWidth) => {
+                            window.columnWidthName = nameWidth;
+                            window.columnWidthModified = modifiedWidth;
+                            window.columnWidthSize = sizeWidth;
+                        }
+
+                        // StackLayout keeps every pane alive and just toggles
+                        // visible, and an invisible item can't hold activeFocus
+                        // -- so focus has to be handed back explicitly on every
+                        // tab switch, or arrow keys go dead until the view is
+                        // re-clicked.
+                        StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
+                                                                Qt.callLater(() => pane.focusActiveView(
+                                                                                       ))
                     }
-                    onColumnWidthsWriteBack: (nameWidth, modifiedWidth, sizeWidth) => {
-                        window.columnWidthName = nameWidth;
-                        window.columnWidthModified = modifiedWidth;
-                        window.columnWidthSize = sizeWidth;
-                    }
+                }
 
-                    // StackLayout keeps every pane alive and just toggles
-                    // visible, and an invisible item can't hold activeFocus
-                    // -- so focus has to be handed back explicitly on every
-                    // tab switch, or arrow keys go dead until the view is
-                    // re-clicked.
-                    StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
-                                                            Qt.callLater(() => pane.focusActiveView(
-                                                                                   ))
+                // Keeps window.currentPane pointing at whichever pane is
+                // actually showing, for footerComponent above (a sibling nested
+                // Component -- it can't see paneRepeater by id directly, only
+                // window's own properties). Re-evaluates whenever
+                // tabsController.currentIndex or paneRepeater.count changes
+                // (both genuine notifying properties read inside the
+                // expression); itemAt() itself is just a plain method call, so
+                // it's read fresh on every such re-evaluation rather than cached.
+                Binding {
+                    target: window
+                    property: "currentPane"
+                    value: paneRepeater.count > 0 ? paneRepeater.itemAt(
+                                                         tabsController.currentIndex) : null
                 }
             }
 
-            // Keeps window.currentPane pointing at whichever pane is
-            // actually showing, for footerComponent above (a sibling nested
-            // Component -- it can't see paneRepeater by id directly, only
-            // window's own properties). Re-evaluates whenever
-            // tabsController.currentIndex or paneRepeater.count changes
-            // (both genuine notifying properties read inside the
-            // expression); itemAt() itself is just a plain method call, so
-            // it's read fresh on every such re-evaluation rather than cached.
-            Binding {
-                target: window
-                property: "currentPane"
-                value: paneRepeater.count > 0 ? paneRepeater.itemAt(tabsController.currentIndex) :
-                                                null
-            }
+            onResizingChanged: if (!resizing)
+                                   window.treePanelWidth = treePanel.width
         }
     }
 
@@ -344,10 +388,13 @@ ApplicationWindow {
     Connections {
         target: authController
         function onAuthStateChanged() {
-            if (authController.authState === AuthController.LoggedIn)
+            if (authController.authState === AuthController.LoggedIn) {
                 tabsController.loadRootAll();
-            else if (authController.authState === AuthController.LoggedOut)
+                folderTreeModel.reload();
+            } else if (authController.authState === AuthController.LoggedOut) {
                 tabsController.resetAll();
+                folderTreeModel.reset();
+            }
         }
     }
 

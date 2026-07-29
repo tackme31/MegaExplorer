@@ -13,10 +13,12 @@ add_executable(MegaExplorerTests
     SearchServiceTest.cpp
     DownloadServiceTest.cpp
     ThumbnailServiceTest.cpp
+    FolderTreeServiceTest.cpp
     WindowsSessionStoreTest.cpp
     FileListModelTest.cpp
     FileActionResolverTest.cpp
     TabsControllerTest.cpp
+    FolderTreeModelTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/FileListModel.h
@@ -29,6 +31,8 @@ add_executable(MegaExplorerTests
     ${CMAKE_SOURCE_DIR}/src/qml/NotificationController.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/TabsController.h
     ${CMAKE_SOURCE_DIR}/src/qml/TabsController.cpp
+    ${CMAKE_SOURCE_DIR}/src/qml/FolderTreeModel.h
+    ${CMAKE_SOURCE_DIR}/src/qml/FolderTreeModel.cpp
     MockMegaClient.h
     MockSessionStore.h
 )
