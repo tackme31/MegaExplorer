@@ -17,9 +17,11 @@ namespace
 // precedent (trivial, 3-line, stateless helper). ThumbnailService's onDone
 // callback may fire on an SDK-internal background thread, so touching
 // mModel from there must go through a queued invoke onto the GUI thread.
-void invokeOnGuiThread(std::function<void()> fn)
+// target is `this`, not qApp -- see FolderNavigationController.cpp's
+// invokeOnGuiThread comment for why.
+void invokeOnGuiThread(QObject* target, std::function<void()> fn)
 {
-    QMetaObject::invokeMethod(qApp, std::move(fn), Qt::QueuedConnection);
+    QMetaObject::invokeMethod(target, std::move(fn), Qt::QueuedConnection);
 }
 
 } // namespace
@@ -44,8 +46,8 @@ void ThumbnailController::requestThumbnail(quint64 handle)
     mService->request(
         static_cast<std::uint64_t>(handle),
         destinationPath.toStdString(),
-        [this, handle](Result<std::string> result) {
-            invokeOnGuiThread([this, handle, result = std::move(result)]() mutable {
+        [this, handle, self = shared_from_this()](Result<std::string> result) {
+            invokeOnGuiThread(this, [this, handle, result = std::move(result)]() mutable {
                 if (!result.success)
                 {
                     qCWarning(lcThumbnail) << "thumbnail fetch failed for handle" << handle << ":"

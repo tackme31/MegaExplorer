@@ -9,8 +9,9 @@
 
 class NotificationController;
 
-// QML-facing GUI glue wrapping ThumbnailService, registered as its own
-// "thumbnailController" context property (main.cpp), separate from
+// QML-facing GUI glue wrapping ThumbnailService, registered per-tab as its
+// own "thumbnailController" context property since Phase 9 (previously a
+// single app-lifetime instance) -- separate from
 // FolderNavigationController/DownloadController -- see
 // FolderNavigationController::fileListModelForThumbnails() for why this
 // class (unlike DownloadController) is allowed to write directly into the
@@ -18,7 +19,16 @@ class NotificationController;
 // visible rows in place. Untested by convention, same as
 // FolderNavigationController/DownloadController: src/qml is GUI glue, and
 // MegaExplorerTests only links MegaExplorerCore.
-class ThumbnailController : public QObject
+//
+// enable_shared_from_this for the same reason as
+// FolderNavigationController: since a tab (and this controller with it) can
+// now be closed while a requestThumbnail() fetch is still in flight, the
+// async callback below captures a shared_from_this() copy to stay alive
+// until it runs, and invokeOnGuiThread posts to `this` rather than qApp so a
+// controller destroyed after the post but before the GUI thread processes it
+// simply drops the queued event (see FolderNavigationController.cpp's
+// invokeOnGuiThread comment for the full mechanism).
+class ThumbnailController : public QObject, public std::enable_shared_from_this<ThumbnailController>
 {
     Q_OBJECT
 

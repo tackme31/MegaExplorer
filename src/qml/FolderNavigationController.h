@@ -12,6 +12,14 @@
 
 class NotificationController;
 
+// Q_INVOKABLE entry points below fire off SDK-thread callbacks that outlive
+// any single call; enable_shared_from_this + shared_from_this() captures in
+// those callbacks keep `this` alive until the callback runs, even if the
+// owning tab is closed mid-fetch (see TabsController.h's lifetime writeup
+// for the full rationale -- Phase 9 introduced per-tab instances of this
+// controller, so it's no longer guaranteed to outlive every in-flight
+// callback the way a single app-lifetime instance was).
+
 // QML-facing GUI glue wrapping FolderNavigationService + SearchService +
 // FileListModel. QML can't pass C++ callbacks, so the Q_INVOKABLE entry
 // points below are fire-and-forget: internally they hand the service a bound
@@ -24,7 +32,8 @@ class NotificationController;
 // exception to that: it needs to update visible rows in place, so
 // fileListModelForThumbnails() below hands it a typed pointer to the same
 // FileListModel instance this controller owns.
-class FolderNavigationController : public QObject
+class FolderNavigationController : public QObject,
+                                   public std::enable_shared_from_this<FolderNavigationController>
 {
     Q_OBJECT
     Q_PROPERTY(QObject* fileListModel READ fileListModel CONSTANT)
@@ -33,6 +42,13 @@ class FolderNavigationController : public QObject
     // current folder last -- QML composes display labels itself (e.g. the
     // root's "Cloud Drive" label), C++ only supplies structured fields.
     Q_PROPERTY(QVariantList breadcrumb READ breadcrumb NOTIFY breadcrumbChanged)
+    // Both derived from mBreadcrumb's last element -- backs TabStrip.qml's
+    // tab titles (TabsController relays this controller's breadcrumbChanged
+    // into a per-row dataChanged()). atRoot is true (and name empty) before
+    // the breadcrumb has ever resolved, so a brand-new tab's title reads as
+    // "Cloud Drive" rather than blank.
+    Q_PROPERTY(QString currentFolderName READ currentFolderName NOTIFY breadcrumbChanged)
+    Q_PROPERTY(bool atRoot READ atRoot NOTIFY breadcrumbChanged)
 
 public:
     explicit FolderNavigationController(std::shared_ptr<FolderNavigationService> navigationService,
@@ -51,6 +67,9 @@ public:
     bool canGoBack() const;
 
     QVariantList breadcrumb() const;
+
+    QString currentFolderName() const;
+    bool atRoot() const;
 
     // Not Q_INVOKABLE: called once from main.cpp's composition root (via
     // AuthController::authStateChanged reaching LoggedIn), not from QML.

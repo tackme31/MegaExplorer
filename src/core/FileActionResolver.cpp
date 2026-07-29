@@ -45,6 +45,7 @@ const std::vector<FileActionSpec>& defaultFileActions()
 {
     static const std::vector<FileActionSpec> actions = {
         {FileAction::Download, ActionTarget::FilesOnly, ActionArity::Any},
+        {FileAction::OpenInNewTab, ActionTarget::FoldersOnly, ActionArity::SingleOnly},
     };
     return actions;
 }
@@ -67,6 +68,8 @@ const char* fileActionId(FileAction action)
     {
         case FileAction::Download:
             return "download";
+        case FileAction::OpenInNewTab:
+            return "openInNewTab";
     }
     return "";
 }

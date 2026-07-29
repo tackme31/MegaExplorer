@@ -17,9 +17,19 @@ namespace
 // go through a queued invoke onto the GUI thread. Same idiom as main.cpp's
 // own invokeOnGuiThread; duplicated here rather than shared since it's a
 // trivial 3-line, stateless helper.
-void invokeOnGuiThread(std::function<void()> fn)
+//
+// target is `this` at every call site below (Phase 9), not qApp: QObject's
+// destructor removes any posted events still queued for it, so a controller
+// destroyed (tab closed) after this call but before the GUI thread processes
+// the queued fn simply drops it instead of running fn against a dangling
+// `this`. Every outer lambda passed to the service methods below also
+// captures a shared_from_this() copy, covering the earlier window (between
+// the SDK background thread invoking that outer lambda and this function
+// actually posting the event) during which the controller must stay alive
+// for `this`/`target` itself to be valid.
+void invokeOnGuiThread(QObject* target, std::function<void()> fn)
 {
-    QMetaObject::invokeMethod(qApp, std::move(fn), Qt::QueuedConnection);
+    QMetaObject::invokeMethod(target, std::move(fn), Qt::QueuedConnection);
 }
 
 } // namespace
@@ -53,21 +63,36 @@ QVariantList FolderNavigationController::breadcrumb() const
     return mBreadcrumb;
 }
 
+QString FolderNavigationController::currentFolderName() const
+{
+    if (mBreadcrumb.isEmpty())
+        return QString();
+    return mBreadcrumb.last().toMap().value(QStringLiteral("name")).toString();
+}
+
+bool FolderNavigationController::atRoot() const
+{
+    if (mBreadcrumb.isEmpty())
+        return true;
+    return mBreadcrumb.last().toMap().value(QStringLiteral("isRoot")).toBool();
+}
+
 void FolderNavigationController::loadRoot()
 {
-    mService->openRoot(mSortOrder, [this](Result<std::vector<FileEntry>> result) {
-        invokeOnGuiThread([this, result = std::move(result)]() mutable {
-            applyResult(std::move(result));
-        });
-    });
+    mService->openRoot(mSortOrder,
+                       [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+                           invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+                               applyResult(std::move(result));
+                           });
+                       });
 }
 
 void FolderNavigationController::openFolder(quint64 handle)
 {
     mService->openFolder(static_cast<std::uint64_t>(handle),
                          mSortOrder,
-                         [this](Result<std::vector<FileEntry>> result) {
-                             invokeOnGuiThread([this, result = std::move(result)]() mutable {
+                         [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+                             invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
                                  applyResult(std::move(result));
                              });
                          });
@@ -75,11 +100,12 @@ void FolderNavigationController::openFolder(quint64 handle)
 
 void FolderNavigationController::goBack()
 {
-    mService->goBack(mSortOrder, [this](Result<std::vector<FileEntry>> result) {
-        invokeOnGuiThread([this, result = std::move(result)]() mutable {
-            applyResult(std::move(result));
-        });
-    });
+    mService->goBack(mSortOrder,
+                     [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+                         invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+                             applyResult(std::move(result));
+                         });
+                     });
 }
 
 void FolderNavigationController::navigateTo(quint64 handle, bool isRoot)
@@ -87,8 +113,8 @@ void FolderNavigationController::navigateTo(quint64 handle, bool isRoot)
     mService->navigateTo(static_cast<std::uint64_t>(handle),
                          isRoot,
                          mSortOrder,
-                         [this](Result<std::vector<FileEntry>> result) {
-                             invokeOnGuiThread([this, result = std::move(result)]() mutable {
+                         [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+                             invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
                                  applyResult(std::move(result));
                              });
                          });
@@ -114,38 +140,39 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
 
 void FolderNavigationController::refreshBreadcrumb()
 {
-    mService->resolveCurrentPath([this](Result<std::vector<PathSegment>> result) {
-        invokeOnGuiThread([this, result = std::move(result)]() mutable {
-            if (!result.success)
-            {
-                qCWarning(lcNavigation)
-                    << "breadcrumb path resolution failed:"
-                    << QString::fromStdString(result.errorMessage) << "code=" << result.errorCode;
-                return;
-            }
+    mService->resolveCurrentPath(
+        [this, self = shared_from_this()](Result<std::vector<PathSegment>> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+                if (!result.success)
+                {
+                    qCWarning(lcNavigation) << "breadcrumb path resolution failed:"
+                                            << QString::fromStdString(result.errorMessage)
+                                            << "code=" << result.errorCode;
+                    return;
+                }
 
-            QVariantList breadcrumb;
-            breadcrumb.reserve(static_cast<qsizetype>(result.value.size()));
-            for (const PathSegment& segment : result.value)
-            {
-                QVariantMap entry;
-                entry.insert(QStringLiteral("name"), QString::fromStdString(segment.name));
-                entry.insert(QStringLiteral("handle"), static_cast<qulonglong>(segment.handle));
-                entry.insert(QStringLiteral("isRoot"), segment.isRoot);
-                breadcrumb.append(entry);
-            }
+                QVariantList breadcrumb;
+                breadcrumb.reserve(static_cast<qsizetype>(result.value.size()));
+                for (const PathSegment& segment : result.value)
+                {
+                    QVariantMap entry;
+                    entry.insert(QStringLiteral("name"), QString::fromStdString(segment.name));
+                    entry.insert(QStringLiteral("handle"), static_cast<qulonglong>(segment.handle));
+                    entry.insert(QStringLiteral("isRoot"), segment.isRoot);
+                    breadcrumb.append(entry);
+                }
 
-            // A QVariantList model has no diffing on the QML side, so a
-            // Repeater over it rebuilds every delegate on each emit --
-            // skip the (re-)assignment entirely when the resolved path is
-            // unchanged (e.g. refreshCurrentFolder() re-running this after a
-            // sort-order change while staying in the same folder).
-            if (breadcrumb == mBreadcrumb)
-                return;
-            mBreadcrumb = std::move(breadcrumb);
-            emit breadcrumbChanged();
+                // A QVariantList model has no diffing on the QML side, so a
+                // Repeater over it rebuilds every delegate on each emit --
+                // skip the (re-)assignment entirely when the resolved path is
+                // unchanged (e.g. refreshCurrentFolder() re-running this after a
+                // sort-order change while staying in the same folder).
+                if (breadcrumb == mBreadcrumb)
+                    return;
+                mBreadcrumb = std::move(breadcrumb);
+                emit breadcrumbChanged();
+            });
         });
-    });
 }
 
 void FolderNavigationController::search(QString query)
@@ -159,8 +186,10 @@ void FolderNavigationController::search(QString query)
     }
 
     mSearchService->search(
-        mLastSearchQuery, mSortOrder, [this](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread([this, result = std::move(result)]() mutable {
+        mLastSearchQuery,
+        mSortOrder,
+        [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
                 applySearchResult(std::move(result));
             });
         });
@@ -181,11 +210,12 @@ void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>
 
 void FolderNavigationController::refreshCurrentFolder()
 {
-    mService->refreshCurrent(mSortOrder, [this](Result<std::vector<FileEntry>> result) {
-        invokeOnGuiThread([this, result = std::move(result)]() mutable {
-            applyResult(std::move(result));
+    mService->refreshCurrent(
+        mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+                applyResult(std::move(result));
+            });
         });
-    });
 }
 
 void FolderNavigationController::setSortOrder(int column, bool ascending)
@@ -217,17 +247,20 @@ void FolderNavigationController::setSortOrder(int column, bool ascending)
         // refresh the cached folder listing (not the visible model) so that
         // clearing the search afterwards doesn't show stale ordering.
         mSearchService->search(
-            mLastSearchQuery, mSortOrder, [this](Result<std::vector<FileEntry>> result) {
-                invokeOnGuiThread([this, result = std::move(result)]() mutable {
+            mLastSearchQuery,
+            mSortOrder,
+            [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+                invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
                     applySearchResult(std::move(result));
                 });
             });
-        mService->refreshCurrent(mSortOrder, [this](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread([this, result = std::move(result)]() mutable {
-                if (result.success)
-                    mLastFolderEntries = std::move(result.value);
+        mService->refreshCurrent(
+            mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+                invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+                    if (result.success)
+                        mLastFolderEntries = std::move(result.value);
+                });
             });
-        });
         return;
     }
 

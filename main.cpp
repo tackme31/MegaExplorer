@@ -10,6 +10,7 @@
 #include "qml/DownloadController.h"
 #include "qml/FolderNavigationController.h"
 #include "qml/NotificationController.h"
+#include "qml/TabsController.h"
 #include "qml/ThumbnailController.h"
 
 #include <QDebug>
@@ -44,24 +45,42 @@ int main(int argc, char* argv[])
     auto sessionStore =
         std::make_shared<WindowsSessionStore>((cacheDir + "/session.dat").toStdString());
 
-    auto navigationService = std::make_shared<FolderNavigationService>(client);
-    auto searchService = std::make_shared<SearchService>(client, navigationService);
     auto downloadService = std::make_shared<DownloadService>(client);
+    // Shared across every tab (handle-keyed cache, no per-tab state) --
+    // unlike FolderNavigationService/SearchService/FolderNavigationController
+    // below, which are inherently per-tab and so live in tabFactory instead.
     auto thumbnailService = std::make_shared<ThumbnailService>(client);
     auto authService = std::make_shared<AuthService>(client, sessionStore);
     // Declared before the controllers below: they hold a non-owning pointer
     // to it, and stack locals are destroyed in reverse construction order.
     NotificationController notifications;
-    FolderNavigationController controller(navigationService, searchService, &notifications);
     DownloadController downloadController(downloadService, &notifications);
-    ThumbnailController thumbnailController(
-        thumbnailService, controller.fileListModelForThumbnails(), &notifications);
     AuthController authController(authService);
 
+    // Wires one tab's worth of navigation/search/thumbnail state: a fresh
+    // FolderNavigationService/SearchService/FolderNavigationController/
+    // ThumbnailController each, capturing the shared, app-lifetime
+    // client/thumbnailService/&notifications above. TabsController calls
+    // this whenever a new tab is needed (initial tab, "+", middle-click-open,
+    // "Open in new tab") -- it has no wiring knowledge of its own, per
+    // docs/ARCHITECTURE.md's composition-root convention.
+    auto tabFactory = [client, thumbnailService, &notifications]() -> TabContext {
+        auto navigationService = std::make_shared<FolderNavigationService>(client);
+        auto searchService = std::make_shared<SearchService>(client, navigationService);
+        auto navigation = std::make_shared<FolderNavigationController>(
+            navigationService, searchService, &notifications);
+        auto thumbnails = std::make_shared<ThumbnailController>(
+            thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
+        return TabContext{std::move(navigationService),
+                          std::move(searchService),
+                          std::move(navigation),
+                          std::move(thumbnails)};
+    };
+    TabsController tabs(tabFactory);
+
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty("controller", &controller);
+    engine.rootContext()->setContextProperty("tabsController", &tabs);
     engine.rootContext()->setContextProperty("downloadController", &downloadController);
-    engine.rootContext()->setContextProperty("thumbnailController", &thumbnailController);
     engine.rootContext()->setContextProperty("notificationController", &notifications);
     engine.rootContext()->setContextProperty("authController", &authController);
     QObject::connect(

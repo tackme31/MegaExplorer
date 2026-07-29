@@ -4,12 +4,13 @@ import QtQuick
 import QtQuick.Controls.FluentWinUI3
 import QtQuick.Layouts
 import QtCore
-// Directory import for DownloadSnackbar.qml -- the CMake-generated qmldir
-// merge (QTP0004) resolves this at build time regardless, but static tooling
-// (Qt Creator's classic QML/JS model, qmllint without the build dir) only
-// knows about the plain-QML directory-import mechanism, not that mechanism.
+// Directory import for DownloadSnackbar.qml/TabStrip.qml -- the CMake-generated
+// qmldir merge (QTP0004) resolves this at build time regardless, but static
+// tooling (Qt Creator's classic QML/JS model, qmllint without the build dir)
+// only knows about the plain-QML directory-import mechanism, not that
+// mechanism.
 import "components"
-// Directory import for FileTableView.qml -- same QTP0004 caveat as the
+// Directory import for TabContentPane.qml -- same QTP0004 caveat as the
 // "components" import above (static tooling needs this explicit import even
 // though the CMake-generated qmldir merge resolves it either way).
 import "views"
@@ -25,20 +26,38 @@ ApplicationWindow {
 
     // 0 = list, 1 = grid. Persisted below via Settings (alias, so every
     // change is written through automatically -- a plain property on
-    // Settings would only capture the value at startup).
+    // Settings would only capture the value at startup). This -- together
+    // with sortColumn/sortAscending/columnWidth* below -- is the single
+    // app-wide last-write-wins value: any tab's TabContentPane writes here
+    // the moment it changes (see TabContentPane.qml's viewModeWriteBack),
+    // and a brand-new tab reads it back as its own starting point (see the
+    // Repeater delegate's initialViewMode below). N tabs each owning their
+    // own Settings item would instead fight over the same registry keys, so
+    // this single copy lives here, not per-view (see
+    // FileTableView.qml/TabContentPane.qml's own comments on this).
     property int viewMode: 0
+    property int sortColumn: 0
+    property bool sortAscending: true
+    property real columnWidthName: -1
+    property real columnWidthModified: -1
+    property real columnWidthSize: -1
+
+    // The currently active tab's TabContentPane, kept in sync by the Binding
+    // inside mainContentComponent below. footerComponent (a sibling nested
+    // Component, so it can't see mainContentComponent's internal ids
+    // directly) reads/writes this to drive the view-mode toggle buttons
+    // against whichever tab is actually showing.
+    property var currentPane: null
 
     Settings {
         property alias viewMode: window.viewMode
         property alias windowWidth: window.width
         property alias windowHeight: window.height
-    }
-
-    function activateEntry(isFolder, handle, name, sizeBytes) {
-        if (isFolder)
-            controller.openFolder(handle);
-        else
-            downloadController.downloadFile(handle, name, sizeBytes);
+        property alias sortColumn: window.sortColumn
+        property alias sortAscending: window.sortAscending
+        property alias columnWidthName: window.columnWidthName
+        property alias columnWidthModified: window.columnWidthModified
+        property alias columnWidthSize: window.columnWidthSize
     }
 
     // Logged-in chrome (header/footer/central StackLayout) only exists while
@@ -62,58 +81,76 @@ ApplicationWindow {
     Component {
         id: headerComponent
 
-        ToolBar {
-            RowLayout {
-                anchors.fill: parent
+        // TabStrip above the address bar/breadcrumb ToolBar, Explorer-11
+        // style (Phase 9) -- previously this Loader's sourceComponent was
+        // just the ToolBar directly.
+        ColumnLayout {
+            spacing: 0
 
-                ToolButton {
-                    text: qsTr("← Back")
-                    enabled: controller.canGoBack
-                    // Without this, clicking here while the grid is showing
-                    // (view mode doesn't change, so no StackLayout focus
-                    // handoff fires) leaves focus on the button and arrow
-                    // keys dead until the view is re-clicked.
-                    focusPolicy: Qt.NoFocus
-                    onClicked: controller.goBack()
-                }
+            TabStrip {
+                Layout.fillWidth: true
+            }
 
-                // 7:3 against the search field below. Qt Quick Layouts
-                // distributes space between fillWidth items in the ratio of
-                // their preferred sizes ("If there are multiple items with
-                // fillWidth set to true, the layout will grow or shrink the
-                // items relative to the ratio of their preferred size" --
-                // Qt 6.11 Layout docs), so the literal 7/3 below are that
-                // ratio, not pixel values. minimumWidth: 0 is spelled out
-                // (it's already the default for a non-layout item) because
-                // "no minimum width" is a deliberate requirement here.
-                Breadcrumb {
-                    model: controller.breadcrumb
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 7
-                    Layout.minimumWidth: 0
-                    Layout.fillHeight: true
-                }
+            ToolBar {
+                Layout.fillWidth: true
 
-                TextField {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 3
-                    Layout.minimumWidth: 0
-                    placeholderText: qsTr("Search in this folder")
-                    // MegaApi::search() blocks the GUI thread synchronously, so
-                    // search on Enter only rather than on every keystroke.
-                    onAccepted: controller.search(text)
-                }
+                RowLayout {
+                    anchors.fill: parent
 
-                ToolButton {
-                    text: "≡"
-                    focusPolicy: Qt.NoFocus
-                    onClicked: signOutMenu.popup()
+                    ToolButton {
+                        text: qsTr("← Back")
+                        // tabsController.currentNavigation is only null
+                        // during the brief login/logout state transition
+                        // (see AuthController.authState's Connections below)
+                        // -- ?./?? guard against that window.
+                        enabled: tabsController.currentNavigation?.canGoBack ?? false
+                        // Without this, clicking here while the grid is showing
+                        // (view mode doesn't change, so no StackLayout focus
+                        // handoff fires) leaves focus on the button and arrow
+                        // keys dead until the view is re-clicked.
+                        focusPolicy: Qt.NoFocus
+                        onClicked: tabsController.currentNavigation?.goBack()
+                    }
 
-                    Menu {
-                        id: signOutMenu
-                        MenuItem {
-                            text: qsTr("Sign out")
-                            onTriggered: signOutConfirmDialog.open()
+                    // 7:3 against the search field below. Qt Quick Layouts
+                    // distributes space between fillWidth items in the ratio of
+                    // their preferred sizes ("If there are multiple items with
+                    // fillWidth set to true, the layout will grow or shrink the
+                    // items relative to the ratio of their preferred size" --
+                    // Qt 6.11 Layout docs), so the literal 7/3 below are that
+                    // ratio, not pixel values. minimumWidth: 0 is spelled out
+                    // (it's already the default for a non-layout item) because
+                    // "no minimum width" is a deliberate requirement here.
+                    Breadcrumb {
+                        navController: tabsController.currentNavigation
+                        model: tabsController.currentNavigation?.breadcrumb ?? []
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 7
+                        Layout.minimumWidth: 0
+                        Layout.fillHeight: true
+                    }
+
+                    TextField {
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 3
+                        Layout.minimumWidth: 0
+                        placeholderText: qsTr("Search in this folder")
+                        // MegaApi::search() blocks the GUI thread synchronously, so
+                        // search on Enter only rather than on every keystroke.
+                        onAccepted: tabsController.currentNavigation?.search(text)
+                    }
+
+                    ToolButton {
+                        text: "≡"
+                        focusPolicy: Qt.NoFocus
+                        onClicked: signOutMenu.popup()
+
+                        Menu {
+                            id: signOutMenu
+                            MenuItem {
+                                text: qsTr("Sign out")
+                                onTriggered: signOutConfirmDialog.open()
+                            }
                         }
                     }
                 }
@@ -149,24 +186,33 @@ ApplicationWindow {
                     visible: !downloadController.downloadActive
                 }
 
+                // Reads/writes window.currentPane (the active tab's pane),
+                // not window.viewMode directly -- each tab has its own
+                // independent view mode since Phase 9; window.viewMode below
+                // is only the last-write-wins *persisted default*, updated
+                // via TabContentPane's viewModeWriteBack (see
+                // mainContentComponent below), not the on-screen state of
+                // any particular tab.
                 ToolButton {
                     text: "☰"
                     checkable: true
-                    checked: window.viewMode === 0
+                    checked: (window.currentPane?.viewMode ?? 0) === 0
                     // Clicking ⊞->☰ while already on the grid changes
                     // viewMode, which does trigger the StackLayout focus
                     // handoff -- but the symmetric case (clicking ☰ while
                     // already on the list) doesn't, so both buttons need
                     // this for consistency.
                     focusPolicy: Qt.NoFocus
-                    onClicked: window.viewMode = 0
+                    onClicked: if (window.currentPane)
+                                   window.currentPane.viewMode = 0
                 }
                 ToolButton {
                     text: "⊞"
                     checkable: true
-                    checked: window.viewMode === 1
+                    checked: (window.currentPane?.viewMode ?? 0) === 1
                     focusPolicy: Qt.NoFocus
-                    onClicked: window.viewMode = 1
+                    onClicked: if (window.currentPane)
+                                   window.currentPane.viewMode = 1
                 }
             }
         }
@@ -202,199 +248,74 @@ ApplicationWindow {
 
         StackLayout {
             anchors.fill: parent
-            currentIndex: window.viewMode
+            currentIndex: tabsController.currentIndex
 
-            FileTableView {
-                id: fileTableView
-                // StackLayout keeps both children alive and just toggles
-                // visible, and an invisible item can't hold activeFocus -- so
-                // focus has to be handed back explicitly on every switch, or
-                // arrow keys go dead until the view is re-clicked.
-                // Qt.callLater defers past StackLayout's own visibility
-                // update, which runs after this notification fires.
-                StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
-                                                        Qt.callLater(()
-                                                                     => fileTableView.forceActiveFocus(
-                                                                            ))
-                onActivateRequested: (isFolder, handle, name, sizeBytes) => window.activateEntry(
-                                                                                isFolder, handle,
-                                                                                name, sizeBytes)
-            }
+            Repeater {
+                id: paneRepeater
+                model: tabsController
 
-            GridView {
-                id: gridView
-                model: controller.fileListModel
-                clip: true
-                cellWidth: 120
-                cellHeight: 120
-                // GridView has its own built-in arrow-key handling
-                // (currentIndex movement + auto-scroll) that would otherwise
-                // fight with the selection model driven by Keys.onPressed
-                // below.
-                keyNavigationEnabled: false
-                StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
-                                                        Qt.callLater(() => gridView.forceActiveFocus(
-                                                                               ))
+                // navigation/thumbnails below come from
+                // TabsController::roleNames() ("navigation"/"thumbnails",
+                // see TabsController.h's Roles enum) -- required properties
+                // on a Repeater delegate are populated straight from the
+                // model's role data for a QAbstractItemModel-backed model.
+                TabContentPane {
+                    id: pane
+                    required property var navigation
+                    required property var thumbnails
+                    navController: navigation
+                    thumbController: thumbnails
 
-                Keys.onPressed: event => {
-                    if (event.modifiers & Qt.AltModifier)
-                        return; // reserved for a future Alt+Left "back" shortcut
+                    // Read once at this tab's creation (see
+                    // TabContentPane.qml's own comment on why these are
+                    // required properties rather than live bindings) --
+                    // window.* is this file's single Settings-backed,
+                    // last-write-wins copy.
+                    initialViewMode: window.viewMode
+                    initialSortColumn: window.sortColumn
+                    initialSortAscending: window.sortAscending
+                    initialColumnWidthName: window.columnWidthName
+                    initialColumnWidthModified: window.columnWidthModified
+                    initialColumnWidthSize: window.columnWidthSize
 
-                    if (event.matches(StandardKey.SelectAll)) {
-                        controller.fileListModel.selectAll();
-                        event.accepted = true;
-                        return;
+                    onViewModeWriteBack: vm => window.viewMode = vm
+                    onSortOrderWriteBack: (column, ascending) => {
+                        window.sortColumn = column;
+                        window.sortAscending = ascending;
+                    }
+                    onColumnWidthsWriteBack: (nameWidth, modifiedWidth, sizeWidth) => {
+                        window.columnWidthName = nameWidth;
+                        window.columnWidthModified = modifiedWidth;
+                        window.columnWidthSize = sizeWidth;
                     }
 
-                    // Matches GridView's own FlowLeftToRight layout math; no
-                    // ScrollBar is attached, so width is the full viewport
-                    // width. Recomputed per key press rather than cached, so
-                    // a window resize doesn't need separate handling.
-                    const columns = Math.max(1, Math.floor(gridView.width / gridView.cellWidth));
-                    let delta = 0;
-                    if (event.key === Qt.Key_Left)
-                        delta = -1;
-                    else if (event.key === Qt.Key_Right)
-                        delta = 1;
-                    else if (event.key === Qt.Key_Up)
-                        delta = -columns;
-                    else if (event.key === Qt.Key_Down)
-                        delta = columns;
-                    else
-                        return;
-
-                    controller.fileListModel.moveCursor(delta, event.modifiers);
-                    const row = controller.fileListModel.cursorRow();
-                    if (row >= 0)
-                        gridView.positionViewAtIndex(row, GridView.Contain);
-                    event.accepted = true;
-                }
-
-                SystemPalette {
-                    id: sysPalette
-                }
-
-                // Selection-driven, one instance for the whole view rather
-                // than one per delegate item (see FileContextMenu.qml's own
-                // comment) -- Menu is a Popup, not an Item, so it's neither
-                // laid out by GridView nor clipped by its Flickable
-                // viewport; a parentless popup() opens at the mouse cursor
-                // regardless.
-                FileContextMenu {
-                    id: gridContextMenu
-                }
-
-                // Same rationale as FileTableView.qml's -- see the comment there for why
-                // this handler is re-parented to the view and why it owns the selection.
-                TapHandler {
-                    parent: gridView
-                    acceptedButtons: Qt.LeftButton
-                    onTapped: {
-                        gridView.forceActiveFocus();
-                        const pos = gridView.contentItem.mapFromItem(gridView, point.position);
-                        const idx = gridView.indexAt(pos.x, pos.y);
-                        if (idx < 0)
-                            controller.fileListModel.clearSelection();
-                        else
-                            controller.fileListModel.selectRow(idx, point.modifiers);
-                    }
-                }
-
-                delegate: Item {
-                    id: gridDelegateItem
-                    required property int index
-                    required property string name
-                    required property bool isFolder
-                    required property var handle
-                    required property var sizeBytes
-                    required property bool hasThumbnail
-                    required property string thumbnailPath
-                    required property bool selected
-
-                    width: GridView.view.cellWidth
-                    height: GridView.view.cellHeight
-
-                    Component.onCompleted: {
-                        if (gridDelegateItem.hasThumbnail && !gridDelegateItem.isFolder)
-                            thumbnailController.requestThumbnail(gridDelegateItem.handle);
-                    }
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 4
-                        color: gridDelegateItem.selected ? Qt.rgba(sysPalette.highlight.r,
-                                                                   sysPalette.highlight.g,
-                                                                   sysPalette.highlight.b, 0.35) :
-                                                           "transparent"
-                    }
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 4
-                        spacing: 2
-
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-
-                            Image {
-                                anchors.fill: parent
-                                visible: gridDelegateItem.hasThumbnail &&
-                                         !gridDelegateItem.isFolder
-                                         && gridDelegateItem.thumbnailPath !== ""
-                                // thumbnailPath uses native (backslash-on-Windows)
-                                // separators -- normalize before building a URL.
-                                source: gridDelegateItem.thumbnailPath ? ("file:///"
-                                                                          + gridDelegateItem.thumbnailPath.replace(
-                                                                              /\\/g, "/")) : ""
-                                fillMode: Image.PreserveAspectFit
-                                asynchronous: true
-                            }
-
-                            Label {
-                                anchors.centerIn: parent
-                                visible: !gridDelegateItem.hasThumbnail
-                                         || gridDelegateItem.isFolder
-                                         || gridDelegateItem.thumbnailPath === ""
-                                text: gridDelegateItem.isFolder ? "📁" : "📄"
-                                font.pixelSize: 32
-                            }
-                        }
-
-                        Label {
-                            Layout.fillWidth: true
-                            horizontalAlignment: Text.AlignHCenter
-                            elide: Text.ElideMiddle
-                            text: gridDelegateItem.name
-                        }
-                    }
-
-                    // Left-click selection is handled entirely by the view-level
-                    // background TapHandler above (see its comment) -- this one is
-                    // double-click-only.
-                    TapHandler {
-                        acceptedButtons: Qt.LeftButton
-                        onDoubleTapped: window.activateEntry(gridDelegateItem.isFolder,
-                                                             gridDelegateItem.handle,
-                                                             gridDelegateItem.name,
-                                                             gridDelegateItem.sizeBytes)
-                    }
-
-                    TapHandler {
-                        acceptedButtons: Qt.RightButton
-                        onTapped: {
-                            if (!gridDelegateItem.selected) {
-                                gridView.forceActiveFocus();
-                                controller.fileListModel.selectRow(gridDelegateItem.index,
-                                                                   Qt.NoModifier);
-                            }
-                            gridContextMenu.popup();
-                        }
-                    }
+                    // StackLayout keeps every pane alive and just toggles
+                    // visible, and an invisible item can't hold activeFocus
+                    // -- so focus has to be handed back explicitly on every
+                    // tab switch, or arrow keys go dead until the view is
+                    // re-clicked.
+                    StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
+                                                            Qt.callLater(() => pane.focusActiveView(
+                                                                                   ))
                 }
             }
-        } // StackLayout
-    } // mainContentComponent
+
+            // Keeps window.currentPane pointing at whichever pane is
+            // actually showing, for footerComponent above (a sibling nested
+            // Component -- it can't see paneRepeater by id directly, only
+            // window's own properties). Re-evaluates whenever
+            // tabsController.currentIndex or paneRepeater.count changes
+            // (both genuine notifying properties read inside the
+            // expression); itemAt() itself is just a plain method call, so
+            // it's read fresh on every such re-evaluation rather than cached.
+            Binding {
+                target: window
+                property: "currentPane"
+                value: paneRepeater.count > 0 ? paneRepeater.itemAt(tabsController.currentIndex) :
+                                                null
+            }
+        }
+    }
 
     DownloadSnackbar {
         id: downloadSnackbar
@@ -424,9 +345,16 @@ ApplicationWindow {
         target: authController
         function onAuthStateChanged() {
             if (authController.authState === AuthController.LoggedIn)
-                controller.loadRoot();
+                tabsController.loadRootAll();
             else if (authController.authState === AuthController.LoggedOut)
-                controller.reset();
+                tabsController.resetAll();
+        }
+    }
+
+    Connections {
+        target: tabsController
+        function onLastTabClosed() {
+            window.close();
         }
     }
 }

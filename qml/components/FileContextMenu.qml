@@ -10,12 +10,15 @@ import QtQuick.Controls.FluentWinUI3
 Menu {
     id: root
 
+    required property var navController
+
     // Display text for each stable action ID from
     // FileListModel::availableActions (see FileActionResolver::fileActionId).
     // C++ passes structured IDs, QML supplies user-facing text -- same split
     // as NotificationController/ErrorToast.qml.
     readonly property var actionLabels: ({
-                                             "download": qsTr("Download")
+                                             "download": qsTr("Download"),
+                                             "openInNewTab": qsTr("Open in new tab")
                                          })
 
     // Instantiator (Qt's "Dynamically Generating Menu Items" pattern) rather
@@ -29,8 +32,8 @@ Menu {
         // one disabled "None" row rather than an empty, unopenable menu --
         // [""] guarantees that, and also covers an unrecognized future
         // action ID that this map hasn't been updated for yet.
-        model: controller.fileListModel.availableActions.length > 0
-               ? controller.fileListModel.availableActions : [""]
+        model: root.navController.fileListModel.availableActions.length > 0
+               ? root.navController.fileListModel.availableActions : [""]
 
         delegate: MenuItem {
             required property string modelData
@@ -45,11 +48,15 @@ Menu {
 
             onTriggered: {
                 if (modelData === "download") {
-                    const entries = controller.fileListModel.selectedEntries();
+                    const entries = root.navController.fileListModel.selectedEntries();
                     for (let i = 0; i < entries.length; ++i) {
                         downloadController.downloadFile(entries[i].handle, entries[i].name,
                                                         entries[i].sizeBytes);
                     }
+                } else if (modelData === "openInNewTab") {
+                    const entries = root.navController.fileListModel.selectedEntries();
+                    if (entries.length > 0)
+                        tabsController.addTabAt(entries[0].handle, false);
                 }
             }
         }

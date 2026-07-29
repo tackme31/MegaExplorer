@@ -75,6 +75,8 @@ qt_add_executable(appMegaExplorer
     src/qml/ThumbnailController.cpp
     src/qml/NotificationController.h
     src/qml/NotificationController.cpp
+    src/qml/TabsController.h
+    src/qml/TabsController.cpp
 )
 
 qt_add_qml_module(appMegaExplorer
@@ -85,8 +87,11 @@ qt_add_qml_module(appMegaExplorer
         qml/components/DownloadSnackbar.qml
         qml/components/ErrorToast.qml
         qml/components/FileContextMenu.qml
+        qml/components/TabStrip.qml
+        qml/views/FileGridView.qml
         qml/views/FileTableView.qml
         qml/views/LoginView.qml
+        qml/views/TabContentPane.qml
     SOURCES
         src/qml/AuthController.h
         src/qml/AuthController.cpp

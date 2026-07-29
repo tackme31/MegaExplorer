@@ -6,7 +6,8 @@
 enum class FileAction
 {
     Download,
-    // Future: Rename, Delete, OpenInNewTab, ...
+    OpenInNewTab,
+    // Future: Rename, Delete, ...
 };
 
 // The two axes a menu action can be restricted along. Orthogonal by design:

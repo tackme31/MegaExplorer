@@ -21,6 +21,8 @@ Item {
     id: root
     clip: true
 
+    required property var navController
+
     property alias model: repeater.model
 
     implicitHeight: row.implicitHeight
@@ -93,8 +95,8 @@ Item {
                         // The last segment is the current folder -- nothing
                         // to navigate to.
                         enabled: delegateRoot.index < repeater.count - 1
-                        onTapped: controller.navigateTo(delegateRoot.modelData.handle,
-                                                        delegateRoot.modelData.isRoot)
+                        onTapped: root.navController.navigateTo(delegateRoot.modelData.handle,
+                                                                delegateRoot.modelData.isRoot)
                     }
                 }
 

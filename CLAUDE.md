@@ -44,13 +44,14 @@ refresh when a folder is opened, no continuous watching.
 
 ## Project status
 
-Phases 0–6, 6a, 6b, 7a, 7, 7b, and 8 are done (Phase 7 closes out login screen + session
-persistence; Phase 7b removes Phase 6's local node cache; Phase 8 adds the breadcrumb trail).
+Phases 0–6, 6a, 6b, 7a, 7, 7b, 8, and 9 are done (Phase 7 closes out login screen + session
+persistence; Phase 7b removes Phase 6's local node cache; Phase 8 adds the breadcrumb trail; Phase 9
+adds Explorer-style tabs, each with its own independent navigation/search/sort/view-mode state).
 Phases 13a (selection model) and 13b (multi-select context menu + declarative action-resolution
 logic) were pulled forward out of numeric order — both are self-contained and didn't need phases
 9–12 first — and are also done; phase 13's remaining scope (rename/delete/move as multi-item
-actions) still needs phase 12's single-item versions. Phase 9 (tabs) is next in roadmap order. The
-full roadmap — phases 9–16+ (tabs, sidebar
+actions) still needs phase 12's single-item versions. Phase 10 (sidebar folder tree) is next in
+roadmap order. The full roadmap — phases 10–16+ (sidebar
 folder tree/quick access, rename/delete/move, remaining multi-select bulk ops, upload, in-app
 preview, real-time remote-change reflection, ...) — lives in `docs/PROGRESS.md`'s Roadmap section;
 see the companion-docs list above. `docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional
@@ -63,10 +64,15 @@ fetched live from the network, no local cache), their QML-facing controllers/`Fi
 (`src/qml`) — including `AuthController`,
 the codebase's first `QML_ELEMENT`-registered type, driving `qml/views/LoginView.qml` — an
 Explorer-style sortable detail list view (`qml/views/FileTableView.qml`, Phase 6b) alongside the
-unchanged thumbnail grid view, and cross-cutting app infrastructure — categorized logging + a MEGA
-SDK logger bridge (`src/app`, `src/mega`) and a shared `NotificationController`/`ErrorToast.qml` for
-user-facing failures (`src/qml`, `qml/`) — see `docs/ARCHITECTURE.md` for the layering and
-`docs/PROGRESS.md` for what each phase actually built and why.
+thumbnail grid view (`qml/views/FileGridView.qml`, split out of `Main.qml` in Phase 9), both now
+instantiated per-tab by `qml/views/TabContentPane.qml` and driven by `src/qml/TabsController` (a
+`QAbstractListModel` owning N independent `FolderNavigationController`/`ThumbnailController`
+instances, Phase 9 — see its `docs/ARCHITECTURE.md`-style lifetime notes in `docs/PROGRESS.md`'s
+Phase 9 log for why those two classes now use `enable_shared_from_this`), and cross-cutting app
+infrastructure — categorized logging + a MEGA SDK logger bridge (`src/app`, `src/mega`) and a shared
+`NotificationController`/`ErrorToast.qml` for user-facing failures (`src/qml`, `qml/`) — see
+`docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md` for what each phase actually built
+and why.
 
 ## Build
 
@@ -121,6 +127,11 @@ C:/Qt/Tools/CMake_64/bin/cmake.exe --build build/msvc-debug --config Debug --tar
 
 Full path to `cmake.exe` is required — the `cmake` on `PATH` resolves to Strawberry Perl's copy,
 which is unrelated and wrong for this project.
+
+After adding/removing a `.qml` file from `qt_add_qml_module`'s `QML_FILES`, **reconfigure** (`cmake
+--preset msvc-debug`) before rebuilding — an incremental `cmake --build` alone leaves the AOT
+`qmlcache_loader.cpp` aggregator stale and the link fails with unresolved
+`QmlCacheGeneratedCode::...` symbols (hit during Phase 9, see its `docs/PROGRESS.md` log entry).
 
 No linter or CI yet.
 

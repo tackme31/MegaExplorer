@@ -6,7 +6,6 @@ import QtQuick.Controls.FluentWinUI3
 // import comment).
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtCore
 import "../components"
 
 // Explorer-style detail view for the list-view mode (Phase 6b/sort): a
@@ -21,18 +20,44 @@ import "../components"
 //
 // Clicking a header sorts by that column (first click ascending, repeat
 // click toggles direction, same as Explorer); the chosen column/direction is
-// persisted via Settings and forwarded to controller.setSortOrder(), which
-// re-fetches from the SDK with the matching order rather than sorting
-// in-memory.
+// forwarded to navController.setSortOrder(), which re-fetches from the SDK
+// with the matching order rather than sorting in-memory.
+//
+// Sort order and column widths are persisted app-wide (last-write-wins
+// across tabs, see TabContentPane.qml) rather than via a Settings item in
+// this file directly -- Phase 9 made this a per-tab view (one live instance
+// per open tab), and N tabs each owning a Settings item would fight over the
+// same keys. initialSortColumn/initialSortAscending/initialColumnWidth*
+// (required properties, set by TabContentPane from its own initial* values)
+// seed this tab's starting point; sortOrderChanged/columnWidthsChanged relay
+// this tab's own changes back out so TabContentPane can write them through
+// to the single Settings instance (Main.qml).
 ColumnLayout {
     id: root
     spacing: 0
 
-    // Re-exposed so Main.qml (which owns `window.activateEntry`) can wire
-    // this file's double-click/download-open dispatch without this file
-    // needing to know about `window` -- a plain `id` from Main.qml's object
-    // tree isn't reachable from a separately-loaded QML file.
+    required property var navController
+
+    // Re-exposed so TabContentPane (which owns activation/download dispatch)
+    // can wire this file's double-click/download-open dispatch without this
+    // file needing to know about that -- a plain `id` from a separately-
+    // loaded QML file's object tree isn't reachable from here.
     signal activateRequested(bool isFolder, var handle, string name, var sizeBytes)
+    // Middle-click on a folder row below -- ignored for files, same
+    // restriction as the "Open in new tab" context-menu action
+    // (FileActionResolver's FoldersOnly/SingleOnly spec).
+    signal openInNewTabRequested(var handle)
+
+    // See this file's own top comment: relayed up to TabContentPane/Main.qml
+    // rather than written to a local Settings item.
+    signal sortOrderChanged(int column, bool ascending)
+    signal columnWidthsChanged(real nameWidth, real modifiedWidth, real sizeWidth)
+
+    required property int initialSortColumn
+    required property bool initialSortAscending
+    required property real initialColumnWidthName
+    required property real initialColumnWidthModified
+    required property real initialColumnWidthSize
 
     readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size")]
 
@@ -61,6 +86,12 @@ ColumnLayout {
 
     // 0 = Name, 1 = Modified, 2 = Size -- matches FileListModel::columnCount()
     // and FolderNavigationController::setSortOrder()'s column mapping.
+    // Plain literal defaults (not bound to initialSortColumn/initialColumnWidth*
+    // below) -- Component.onCompleted assigns the real starting value exactly
+    // once, deliberately as a one-time imperative copy rather than a live
+    // binding, so this tab's value doesn't keep tracking a sibling tab's
+    // later changes to the shared Settings-backed value (see this file's top
+    // comment and TabContentPane.qml's matching viewMode comment).
     property int sortColumn: 0
     property bool sortAscending: true
 
@@ -72,13 +103,21 @@ ColumnLayout {
     property real columnWidthModified: -1
     property real columnWidthSize: -1
 
-    Settings {
-        property alias sortColumn: root.sortColumn
-        property alias sortAscending: root.sortAscending
-        property alias columnWidthName: root.columnWidthName
-        property alias columnWidthModified: root.columnWidthModified
-        property alias columnWidthSize: root.columnWidthSize
-    }
+    // Relays this tab's own sort-order/column-width changes back out (see
+    // this file's top comment). Also fires once during Component.onCompleted
+    // below when the initial* values differ from the literal defaults above
+    // -- a harmless, idempotent echo of the value this tab just read.
+    onSortColumnChanged: root.sortOrderChanged(root.sortColumn, root.sortAscending)
+    onSortAscendingChanged: root.sortOrderChanged(root.sortColumn, root.sortAscending)
+    onColumnWidthNameChanged: root.columnWidthsChanged(root.columnWidthName,
+                                                       root.columnWidthModified,
+                                                       root.columnWidthSize)
+    onColumnWidthModifiedChanged: root.columnWidthsChanged(root.columnWidthName,
+                                                           root.columnWidthModified,
+                                                           root.columnWidthSize)
+    onColumnWidthSizeChanged: root.columnWidthsChanged(root.columnWidthName,
+                                                       root.columnWidthModified,
+                                                       root.columnWidthSize)
 
     // Same column same click: toggle direction. Different column: switch to
     // it, reset to ascending (Explorer's convention).
@@ -89,7 +128,7 @@ ColumnLayout {
             root.sortColumn = column;
             root.sortAscending = true;
         }
-        controller.setSortOrder(root.sortColumn, root.sortAscending);
+        root.navController.setSortOrder(root.sortColumn, root.sortAscending);
     }
 
     // requestSort()'s counterpart for column widths. TableView has no
@@ -97,11 +136,11 @@ ColumnLayout {
     // TableView below) is the only official hook -- but it also fires on
     // scrolling, unrelated to width. Safe to call unconditionally: a QML
     // property assignment that doesn't change the value is a no-op, so no
-    // spurious Settings writes happen. The >= 0 guard (explicitColumnWidth
-    // returns -1 when unset) also protects against a layoutChanged firing
-    // before Component.onCompleted has restored persisted widths from
-    // clobbering them with -1 -- nothing in this UI ever explicitly resets a
-    // column back to unset.
+    // spurious writes happen. The >= 0 guard (explicitColumnWidth returns -1
+    // when unset) also protects against a layoutChanged firing before
+    // Component.onCompleted has restored persisted widths from clobbering
+    // them with -1 -- nothing in this UI ever explicitly resets a column
+    // back to unset.
     function saveColumnWidths() {
         const w0 = tableView.explicitColumnWidth(0);
         const w1 = tableView.explicitColumnWidth(1);
@@ -141,11 +180,18 @@ ColumnLayout {
             tableView.setColumnWidth(2, root.columnWidthSize);
     }
 
-    // Settings restoration above runs before this fires, so the initial
-    // fetch (once loadRoot() has actually happened -- see
-    // FolderNavigationController::mHasLoadedOnce) uses the persisted order.
+    // The initial* required properties (set by TabContentPane from the
+    // single shared Settings instance) are copied in here -- assignment
+    // first, then navController.setSortOrder()/restoreColumnWidths() so the
+    // initial fetch (once loadRoot() has actually happened -- see
+    // FolderNavigationController::mHasLoadedOnce) uses the restored order.
     Component.onCompleted: {
-        controller.setSortOrder(root.sortColumn, root.sortAscending);
+        root.sortColumn = root.initialSortColumn;
+        root.sortAscending = root.initialSortAscending;
+        root.columnWidthName = root.initialColumnWidthName;
+        root.columnWidthModified = root.initialColumnWidthModified;
+        root.columnWidthSize = root.initialColumnWidthSize;
+        root.navController.setSortOrder(root.sortColumn, root.sortAscending);
         root.restoreColumnWidths();
     }
 
@@ -160,7 +206,7 @@ ColumnLayout {
             return; // reserved for a future Alt+Left "back" shortcut
 
         if (event.matches(StandardKey.SelectAll)) {
-            controller.fileListModel.selectAll();
+            root.navController.fileListModel.selectAll();
             event.accepted = true;
             return;
         }
@@ -173,8 +219,8 @@ ColumnLayout {
         else
             return;
 
-        controller.fileListModel.moveCursor(delta, event.modifiers);
-        const row = controller.fileListModel.cursorRow();
+        root.navController.fileListModel.moveCursor(delta, event.modifiers);
+        const row = root.navController.fileListModel.cursorRow();
         if (row >= 0)
             tableView.positionViewAtRow(row, TableView.Contain);
         event.accepted = true;
@@ -249,7 +295,7 @@ ColumnLayout {
         // selectionModel to do anything, which this view doesn't set, so
         // this is currently a no-op -- but explicit in case that changes.
         keyNavigationEnabled: false
-        model: controller.fileListModel
+        model: root.navController.fileListModel
         onLayoutChanged: root.saveColumnWidths()
         // rows changes on every FileListModel::setEntries() reset (initial
         // post-login load and folder navigation) -- see
@@ -288,9 +334,9 @@ ColumnLayout {
                 const hit = tableView.cellAtPosition(Qt.point(Math.min(pos.x, tableView.contentWidth
                                                                        - 1), pos.y), false);
                 if (hit.y < 0)
-                    controller.fileListModel.clearSelection();
+                    root.navController.fileListModel.clearSelection();
                 else
-                    controller.fileListModel.selectRow(hit.y, point.modifiers);
+                    root.navController.fileListModel.selectRow(hit.y, point.modifiers);
             }
         }
 
@@ -344,12 +390,20 @@ ColumnLayout {
                                                        cell.sizeBytes)
             }
 
+            // Folder-only, mirrors FileGridView.qml's delegate -- a file has
+            // nothing sensible to open "in a new tab".
+            TapHandler {
+                acceptedButtons: Qt.MiddleButton
+                onTapped: if (cell.isFolder)
+                              root.openInNewTabRequested(cell.handle)
+            }
+
             TapHandler {
                 acceptedButtons: Qt.RightButton
                 onTapped: {
                     if (!cell.selected) {
                         root.forceActiveFocus();
-                        controller.fileListModel.selectRow(cell.row, Qt.NoModifier);
+                        root.navController.fileListModel.selectRow(cell.row, Qt.NoModifier);
                     }
                     contextMenu.popup();
                 }
@@ -364,5 +418,6 @@ ColumnLayout {
     // at the mouse cursor regardless.
     FileContextMenu {
         id: contextMenu
+        navController: root.navController
     }
 }

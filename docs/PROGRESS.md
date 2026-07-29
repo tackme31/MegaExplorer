@@ -24,7 +24,7 @@ are post-MVP, sequenced by priority/dependency.
 | 7 | Login screen + session persistence (remaining wiring) | done |
 | 7b | Remove local node cache (`INodeCache`/`SqliteNodeCache`) | done |
 | 8 | Breadcrumb trail | done |
-| 9 | Windows-Explorer-style tabs (multiple folder views) | planned |
+| 9 | Windows-Explorer-style tabs (multiple folder views) | done |
 | 10 | Folder tree navigation (side panel) | planned |
 | 11 | Quick access (pinned folders, side panel) | planned |
 | 12 | Rename / delete (move to rubbish) / move | planned |
@@ -73,16 +73,14 @@ instead. See the Phase 8 implementation-log entry below for what was built.
 
 ### Phase 9 — Windows-Explorer-style tabs (multiple folder views)
 
-Tab strip above the file view, each tab its own independent navigation context (back-stack, current
-folder, search state) rather than one shared `FolderNavigationService` instance. Placed right after
-breadcrumb (phase 8) and before the folder-tree side panel (phase 10) and quick access (phase 11)
-deliberately: those two become shared chrome sitting beside N tabbed content panes, cheaper to design
-that way from the start than retrofitting tab-awareness onto a side panel that was built assuming a
-single pane. Likely needs `FolderNavigationService`/`FolderNavigationController` instantiated per tab
-(or refactored to take a tab id) rather than the current single composition-root instance;
-`SearchService`'s scope-via-`currentLocation()` convention (phase 3) needs the same per-tab
-treatment. New tab defaults to root; closing the last tab closes the window (matching Explorer).
-Persisting the open tab set across restarts is a stretch goal, not required for the phase to be done.
+Tab strip above the breadcrumb (phase 8), each tab its own independent navigation context
+(back-stack, current folder, search state, sort order, view mode) rather than one shared
+`FolderNavigationService` instance. Placed right after breadcrumb and before the folder-tree side
+panel (phase 10) and quick access (phase 11) deliberately: those two become shared chrome sitting
+beside N tabbed content panes, cheaper to design that way from the start than retrofitting
+tab-awareness onto a side panel that was built assuming a single pane. Persisting the open tab set
+across restarts remains a stretch goal, not required for the phase to be done (a fresh launch always
+starts with one tab at the root). See the Phase 9 implementation-log entry below for what was built.
 
 ### Phase 10 — folder tree navigation (side panel)
 
@@ -708,3 +706,130 @@ single `Popup` for whichever job is currently active, so a fast sequence of smal
 flash through without every individual failure/already-present notice being visible. The queue
 itself is correct (each job still runs and finishes), just not all individually surfaced;
 aggregate/count progress display is left for a later phase.
+
+## Phase 9 — Windows-Explorer-style tabs (done)
+
+Replaced the single app-lifetime `FolderNavigationController`/`ThumbnailController` composition-root
+instances with N per-tab instances managed by a new `src/qml/TabsController` (`QAbstractListModel`).
+`TabsController` doubles as both `TabStrip.qml`'s model and the app's tab-management command surface
+(`addTab()`/`addTabAt(handle, isRoot)`/`closeTab(index)`/`loadRootAll()`/`resetAll()`,
+`currentIndex`/`currentNavigation`/`count` properties, `lastTabClosed` signal) — a `QAbstractListModel`
+was chosen over a `QVariantList` (the `Breadcrumb.qml` precedent) specifically because a
+`QVariantList` has no row-level diffing and would rebuild every delegate on each emit, which is fatal
+for tabs: the entire point is that each pane's scroll position/selection/focus survives a tab switch,
+which needs `beginInsertRows`/`beginRemoveRows` so `Main.qml`'s `Repeater` only adds/removes the panes
+that actually changed.
+
+Each tab is a `TabContext` (`src/qml/TabsController.h`): its own `FolderNavigationService` +
+`SearchService` + `FolderNavigationController` + `ThumbnailController`, built by a factory
+(`std::function<TabContext()>`) that `main.cpp`'s composition root hands to `TabsController`'s
+constructor — tabs are created dynamically, unlike every other controller `main.cpp` can construct
+once up front, but only `main.cpp` is allowed to know the wiring (`docs/ARCHITECTURE.md`'s
+composition-root convention), so `TabsController` never constructs a `FolderNavigationService` etc.
+itself. `ThumbnailService`/`DownloadService`/`AuthService`/`NotificationController` all stay
+app-lifetime singletons shared across every tab — only the pieces that are inherently
+per-navigation-scope (back-stack, current folder, last search query, and `ThumbnailController`'s
+handle to that tab's own `FileListModel`) are duplicated per tab.
+
+**Lifetime — the phase's sharpest edge**: `FolderNavigationController`/`ThumbnailController` had
+always lived for the app's whole lifetime before this phase, so their SDK-thread async callbacks
+capturing `this` were always safe. Once a tab (and its controllers) can be destroyed mid-fetch by
+closing it, that stopped being true. Fixed by making both classes inherit
+`std::enable_shared_from_this`, having every async callback lambda capture a `self = shared_from_this()`
+copy (keeping the controller alive for that callback's duration), and changing the existing
+`invokeOnGuiThread` helper's queued-invoke target from `qApp` to `this` — `QObject`'s destructor
+removes any of its own still-queued posted events, so a controller destroyed after the post but before
+the GUI thread processes it now just drops the stale event instead of running against a dangling
+pointer, closing the second half of the race the `self` capture alone doesn't cover. `TabContext`'s
+`navigation`/`thumbnails` are deliberately `shared_ptr`, not raw pointers with a `QObject` parent, so
+this reference-counted lifetime holds; `TabsController::createTab()` calls
+`QQmlEngine::setObjectOwnership(..., QQmlEngine::CppOwnership)` on both before ever handing them to
+QML, since a parentless `QObject*` handed across the engine boundary would otherwise default to
+`JavaScriptOwnership` and the QML GC could delete a controller out from under the `shared_ptr`s still
+holding it.
+
+**Tab titles**: `FolderNavigationController` gained `currentFolderName`/`atRoot` `Q_PROPERTY`s,
+both derived from `mBreadcrumb`'s last element and sharing its `breadcrumbChanged` `NOTIFY` — same
+"C++ passes structured fields, QML composes the string" split as `NotificationController`/
+`ErrorToast.qml`. `TabsController::createTab()` connects each tab's `breadcrumbChanged` to a lambda
+that looks up that tab's *current* row by pointer (not a captured index, which insert/remove would
+make stale) and emits a per-row `dataChanged({TitleRole, AtRootRole})`, so `TabStrip.qml`'s
+`TabButton` delegates update without their own `Connections`.
+
+**`FileAction::OpenInNewTab`**: one enum value + one `defaultFileActions()` row
+(`{OpenInNewTab, FoldersOnly, SingleOnly}`), no `FileActionResolver` changes needed — the enum
+comment already flagged this as a Phase 13b future case. Wired into `FileContextMenu.qml`'s
+`actionLabels` map and `onTriggered` (`tabsController.addTabAt(entries[0].handle, false)`).
+
+**QML**: `qml/views/FileGridView.qml` is the old inline `GridView` from `Main.qml` (~170 lines)
+extracted verbatim into its own file, matching `FileTableView.qml`'s existing shape
+(`navController`/`thumbController` required properties, `activateRequested`/`openInNewTabRequested`
+signals in place of the old `controller`/`thumbnailController`/`window.activateEntry()` references).
+Both grid and table delegates gained a `TapHandler { acceptedButtons: Qt.MiddleButton }` that emits
+`openInNewTabRequested` for folder rows only (files have nothing sensible to open in a new tab, same
+restriction as the context-menu action). `qml/views/TabContentPane.qml` is one tab's content: a
+`StackLayout` between `FileTableView`/`FileGridView` plus that tab's own `viewMode` and (via
+`FileTableView`'s `initialSortColumn`/etc.) sort order/column widths. `qml/components/TabStrip.qml` is
+a `TabBar` + `Repeater` over `tabsController` + a trailing "+" `ToolButton`; each `TabButton` sets
+`checkable: false` and drives its own `checked`/`onClicked` explicitly rather than relying on
+`TabBar`'s built-in click-driven exclusive-group bookkeeping — `TabBar` normally reacts to a
+`TabButton.checked` becoming `true` by writing its own `currentIndex`, and any such external write
+(from anywhere, QML or C++) permanently tears off a previously-declared QML binding on that property;
+since `tabsController.currentIndex` has to stay the single source of truth (`Main.qml`'s central
+`StackLayout.currentIndex` is bound to it too), letting `TabBar` fight over ownership of its own
+`currentIndex` would have desynced the two. `checkable: false` sidesteps the whole problem by never
+letting `TabBar`'s internal mechanism touch it.
+
+**Settings, centralized and made last-write-wins**: previously `FileTableView.qml` owned its own
+`Settings` item for sort column/column widths, and `Main.qml` owned one for `viewMode` — both assumed
+exactly one live view instance. With N tabs each running their own `FileTableView`, N `Settings` items
+would fight over the same registry keys. Fixed by moving `viewMode`/`sortColumn`/`sortAscending`/
+`columnWidthName`/`columnWidthModified`/`columnWidthSize` onto `window` in `Main.qml` as the single
+`Settings`-backed copy, and threading them through explicitly: `Main.qml`'s `Repeater` delegate passes
+`window.*` in as `TabContentPane`'s `initial*` required properties (a brand-new tab's starting point);
+`TabContentPane`/`FileTableView` copy those into their own plain properties exactly once, imperatively,
+in `Component.onCompleted` — deliberately *not* a live QML binding (`property int viewMode:
+initialViewMode` would keep tracking `initialViewMode`/`window.viewMode` forever), since a live
+binding would mean every already-open, untouched tab keeps jumping to match whichever tab wrote last,
+which is the opposite of "only *new* tabs pick up the latest value". Each tab's own subsequent changes
+fire `viewModeWriteBack`/`sortOrderWriteBack`/`columnWidthsWriteBack` signals that bubble
+`FileTableView` → `TabContentPane` → `Main.qml`'s `Repeater` delegate, which writes them into
+`window.*` (and so into `Settings`) immediately — this is the "last write wins" half of the spec.
+Neither `TabContentPane.qml` nor `FileTableView.qml` can reference `window` by id directly since
+they're separately-loaded QML files (documented precedent already existed in `FileTableView.qml` for
+why `activateRequested` has to be a signal rather than a direct `window.activateEntry()` call), hence
+the explicit required-property/signal plumbing instead of relying on that id.
+
+The footer's `☰`/`⊞` toggle now reads/writes `window.currentPane.viewMode` (the *active* tab's own view
+mode) rather than a single `window.viewMode`. `window.currentPane` is kept in sync by a `Binding`
+element inside `mainContentComponent` (`value: paneRepeater.itemAt(tabsController.currentIndex)`,
+re-evaluated whenever `tabsController.currentIndex`/`paneRepeater.count` change) — needed because
+`footerComponent` is a sibling nested `Component`, so it can't see `mainContentComponent`'s internal
+`paneRepeater` id, only `window`'s own properties (same file-vs-nested-`Component` id-scoping rule as
+above, just at the `Component`-sibling granularity instead of the separate-file granularity).
+
+**Tests**: `tests/FileActionResolverTest.cpp` gained `OpenInNewTab` cases (`fileActionId` stability,
+`defaultFileActions()` offering it only for a single-folder selection, never for
+multiple-folders/single-file/mixed). New `tests/TabsControllerTest.cpp` (12 cases) is a deliberate,
+narrow exception to "`src/qml` is GUI glue, untested by convention" — same rationale as
+`FileListModelTest.cpp`: `TabsController`'s row/`currentIndex` bookkeeping is pure and genuinely
+bug-prone (the `closeTab` clamping arithmetic in particular), unlike view/rendering glue. Covers
+`addTab`/`addTabAt` row-count and `currentIndex` bookkeeping, `closeTab`'s three
+index-relative-to-the-closed-tab cases (before/at/after the active tab) including the
+last-tab-closed → `lastTabClosed` signal path, and `loadRootAll`/`resetAll` collapsing back to one
+tab. Builds real controllers against `MockMegaClient` (no `EXPECT_CALL`s set up — the resulting
+"uninteresting mock call" `GMOCK WARNING`s on stderr are expected and harmless) rather than mocking
+`TabsController`'s own dependencies, since the point is exercising the real bookkeeping, not the
+network calls; no assertion depends on an async fetch actually completing.
+`tests/CMakeLists.txt` needed `Qt6::Qml` added (previously just `Qt6::Core` sufficed) solely for
+`TabsController.cpp`'s `QQmlEngine::setObjectOwnership` call — resolved via the same
+`find_package(Qt6 COMPONENTS Quick)` the root `CMakeLists.txt` already runs, no separate
+`find_package` needed in the test target.
+
+**Build gotcha hit during this phase**: after adding the three new QML files to `qt_add_qml_module`'s
+`QML_FILES` in `CMakeLists.txt`, an incremental `cmake --build` (without re-running `cmake --preset
+msvc-debug` first) failed at link time with unresolved `QmlCacheGeneratedCode::...::qmlData`/
+`aotBuiltFunctions` symbols for every new file (and, oddly, for the pre-existing `LoginView.qml` too) —
+the AOT-compiled `qmlcache_loader.cpp` aggregator was stale relative to the newly-listed `QML_FILES`.
+Re-running the configure step first fixed it. Worth remembering for any future phase that adds new
+`.qml` files: reconfigure, don't just rebuild.

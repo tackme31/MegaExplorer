@@ -26,6 +26,16 @@ const ActionTarget kAllTargets[] = {
 const ActionArity kAllArities[] = {
     ActionArity::Any, ActionArity::SingleOnly, ActionArity::MultiOnly};
 
+bool contains(const std::vector<FileAction>& actions, FileAction action)
+{
+    for (FileAction a : actions)
+    {
+        if (a == action)
+            return true;
+    }
+    return false;
+}
+
 } // namespace
 
 TEST(FileActionResolverTest, EverySpecRejectsEmptySelection)
@@ -169,4 +179,33 @@ TEST(FileActionResolverTest, DefaultTableOffersNothingForEmptySelection)
 TEST(FileActionResolverTest, DownloadIdIsStable)
 {
     EXPECT_STREQ(fileActionId(FileAction::Download), "download");
+}
+
+TEST(FileActionResolverTest, OpenInNewTabIdIsStable)
+{
+    EXPECT_STREQ(fileActionId(FileAction::OpenInNewTab), "openInNewTab");
+}
+
+TEST(FileActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
+{
+    std::vector<FileAction> result = resolveFileActions(summary(0, 1));
+    ASSERT_EQ(result.size(), 1u);
+    EXPECT_EQ(result[0], FileAction::OpenInNewTab);
+}
+
+TEST(FileActionResolverTest, DefaultTableNeverOffersOpenInNewTabForMultipleFolders)
+{
+    EXPECT_FALSE(contains(resolveFileActions(summary(0, 2)), FileAction::OpenInNewTab));
+}
+
+TEST(FileActionResolverTest, DefaultTableNeverOffersOpenInNewTabForASingleFile)
+{
+    // Single file: Download applies (FilesOnly), OpenInNewTab doesn't
+    // (FoldersOnly).
+    EXPECT_FALSE(contains(resolveFileActions(summary(1, 0)), FileAction::OpenInNewTab));
+}
+
+TEST(FileActionResolverTest, DefaultTableNeverOffersOpenInNewTabForAMixedSelection)
+{
+    EXPECT_FALSE(contains(resolveFileActions(summary(1, 1)), FileAction::OpenInNewTab));
 }
