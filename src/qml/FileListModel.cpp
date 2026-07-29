@@ -111,15 +111,7 @@ void FileListModel::selectRow(int row, int modifiers)
 
     if (mods.testFlag(Qt::ShiftModifier) && mAnchorHandle)
     {
-        int anchorRow = -1;
-        for (std::size_t i = 0; i < mEntries.size(); ++i)
-        {
-            if (mEntries[i].handle == static_cast<std::uint64_t>(*mAnchorHandle))
-            {
-                anchorRow = static_cast<int>(i);
-                break;
-            }
-        }
+        int anchorRow = rowForHandle(*mAnchorHandle);
         if (anchorRow < 0)
             anchorRow = row; // anchor's row is gone -- fall back to just this row
 
@@ -145,9 +137,10 @@ void FileListModel::selectRow(int row, int modifiers)
         mAnchorHandle = handle;
     }
 
-    emit selectionChanged();
-    if (!mEntries.empty())
-        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {SelectedRole});
+    // Shift-click moves the cursor too, unlike the anchor.
+    mCursorHandle = handle;
+
+    notifySelectionChanged();
 }
 
 void FileListModel::clearSelection()
@@ -157,10 +150,9 @@ void FileListModel::clearSelection()
 
     mSelectedHandles.clear();
     mAnchorHandle.reset();
+    mCursorHandle.reset();
 
-    emit selectionChanged();
-    if (!mEntries.empty())
-        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {SelectedRole});
+    notifySelectionChanged();
 }
 
 QVariantList FileListModel::selectedHandlesVariant() const
@@ -193,4 +185,106 @@ void FileListModel::pruneSelection()
 
     if (mAnchorHandle && !mSelectedHandles.count(*mAnchorHandle))
         mAnchorHandle.reset();
+
+    // Cursor prunes on row existence, not selection membership: a Ctrl-click
+    // toggling the last selected row off leaves the cursor on that row with
+    // an empty selection, and that's meant to survive.
+    if (mCursorHandle && rowForHandle(*mCursorHandle) < 0)
+        mCursorHandle.reset();
+}
+
+
+void FileListModel::selectAll()
+{
+    if (mEntries.empty())
+        return;
+
+    mSelectedHandles.clear();
+    for (const FileEntry& entry : mEntries)
+        mSelectedHandles.insert(static_cast<quint64>(entry.handle));
+
+    // Ctrl+A doesn't move Explorer's focus rectangle -- keep the anchor/
+    // cursor where they are if they still point at a live row, else seed
+    // both from row 0.
+    const bool anchorValid = mAnchorHandle && rowForHandle(*mAnchorHandle) >= 0;
+    const bool cursorValid = mCursorHandle && rowForHandle(*mCursorHandle) >= 0;
+    if (!anchorValid || !cursorValid)
+    {
+        const quint64 firstHandle = static_cast<quint64>(mEntries.front().handle);
+        if (!anchorValid)
+            mAnchorHandle = firstHandle;
+        if (!cursorValid)
+            mCursorHandle = firstHandle;
+    }
+
+    notifySelectionChanged();
+}
+
+void FileListModel::moveCursor(int delta, int modifiers)
+{
+    // Nothing selected -- arrow keys stay inert (rather than resurrecting a
+    // stale cursor onto a selection nobody asked for).
+    if (mSelectedHandles.empty() || !mCursorHandle)
+        return;
+
+    const int from = rowForHandle(*mCursorHandle);
+    if (from < 0)
+        return;
+
+    const int lastRow = static_cast<int>(mEntries.size()) - 1;
+    const int target = std::clamp(from + delta, 0, lastRow);
+    const quint64 targetHandle =
+        static_cast<quint64>(mEntries[static_cast<std::size_t>(target)].handle);
+
+    const auto mods = static_cast<Qt::KeyboardModifiers>(modifiers);
+    if (mods.testFlag(Qt::ShiftModifier))
+    {
+        // Range from the anchor (not from), so repeated Shift+arrow grows/
+        // shrinks the same range instead of chasing the cursor.
+        int anchorRow = mAnchorHandle ? rowForHandle(*mAnchorHandle) : -1;
+        if (anchorRow < 0)
+            anchorRow = from;
+
+        const int lo = std::min(anchorRow, target);
+        const int hi = std::max(anchorRow, target);
+        mSelectedHandles.clear();
+        for (int i = lo; i <= hi; ++i)
+            mSelectedHandles.insert(
+                static_cast<quint64>(mEntries[static_cast<std::size_t>(i)].handle));
+    }
+    else
+    {
+        // Ctrl is intentionally not inspected here -- Ctrl+arrow behaves
+        // like a plain arrow.
+        mSelectedHandles.clear();
+        mSelectedHandles.insert(targetHandle);
+        mAnchorHandle = targetHandle;
+    }
+
+    mCursorHandle = targetHandle;
+    notifySelectionChanged();
+}
+
+int FileListModel::cursorRow() const
+{
+    if (!mCursorHandle)
+        return -1;
+    return rowForHandle(*mCursorHandle);
+}
+
+int FileListModel::rowForHandle(quint64 handle) const
+{
+    for (std::size_t i = 0; i < mEntries.size(); ++i)
+    {
+        if (mEntries[i].handle == static_cast<std::uint64_t>(handle))
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+void FileListModel::notifySelectionChanged()
+{
+    emit selectionChanged();
+    if (!mEntries.empty())
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {SelectedRole});
 }

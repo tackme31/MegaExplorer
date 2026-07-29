@@ -67,6 +67,11 @@ ApplicationWindow {
                 ToolButton {
                     text: qsTr("← Back")
                     enabled: controller.canGoBack
+                    // Without this, clicking here while the grid is showing
+                    // (view mode doesn't change, so no StackLayout focus
+                    // handoff fires) leaves focus on the button and arrow
+                    // keys dead until the view is re-clicked.
+                    focusPolicy: Qt.NoFocus
                     onClicked: controller.goBack()
                 }
 
@@ -80,6 +85,7 @@ ApplicationWindow {
 
                 ToolButton {
                     text: "≡"
+                    focusPolicy: Qt.NoFocus
                     onClicked: signOutMenu.popup()
 
                     Menu {
@@ -126,12 +132,19 @@ ApplicationWindow {
                     text: "☰"
                     checkable: true
                     checked: window.viewMode === 0
+                    // Clicking ⊞->☰ while already on the grid changes
+                    // viewMode, which does trigger the StackLayout focus
+                    // handoff -- but the symmetric case (clicking ☰ while
+                    // already on the list) doesn't, so both buttons need
+                    // this for consistency.
+                    focusPolicy: Qt.NoFocus
                     onClicked: window.viewMode = 0
                 }
                 ToolButton {
                     text: "⊞"
                     checkable: true
                     checked: window.viewMode === 1
+                    focusPolicy: Qt.NoFocus
                     onClicked: window.viewMode = 1
                 }
             }
@@ -171,6 +184,15 @@ ApplicationWindow {
             currentIndex: window.viewMode
 
             FileTableView {
+                id: fileTableView
+                // StackLayout keeps both children alive and just toggles
+                // visible, and an invisible item can't hold activeFocus -- so
+                // focus has to be handed back explicitly on every switch, or
+                // arrow keys go dead until the view is re-clicked.
+                // Qt.callLater defers past StackLayout's own visibility
+                // update, which runs after this notification fires.
+                StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
+                                                         Qt.callLater(() => fileTableView.forceActiveFocus())
                 onActivateRequested: (isFolder, handle, name, sizeBytes) => window.activateEntry(
                                                                                 isFolder, handle,
                                                                                 name, sizeBytes)
@@ -182,6 +204,47 @@ ApplicationWindow {
                 clip: true
                 cellWidth: 120
                 cellHeight: 120
+                // GridView has its own built-in arrow-key handling
+                // (currentIndex movement + auto-scroll) that would otherwise
+                // fight with the selection model driven by Keys.onPressed
+                // below.
+                keyNavigationEnabled: false
+                StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
+                                                         Qt.callLater(() => gridView.forceActiveFocus())
+
+                Keys.onPressed: (event) => {
+                    if (event.modifiers & Qt.AltModifier)
+                        return; // reserved for a future Alt+Left "back" shortcut
+
+                    if (event.matches(StandardKey.SelectAll)) {
+                        controller.fileListModel.selectAll();
+                        event.accepted = true;
+                        return;
+                    }
+
+                    // Matches GridView's own FlowLeftToRight layout math; no
+                    // ScrollBar is attached, so width is the full viewport
+                    // width. Recomputed per key press rather than cached, so
+                    // a window resize doesn't need separate handling.
+                    const columns = Math.max(1, Math.floor(gridView.width / gridView.cellWidth));
+                    let delta = 0;
+                    if (event.key === Qt.Key_Left)
+                        delta = -1;
+                    else if (event.key === Qt.Key_Right)
+                        delta = 1;
+                    else if (event.key === Qt.Key_Up)
+                        delta = -columns;
+                    else if (event.key === Qt.Key_Down)
+                        delta = columns;
+                    else
+                        return;
+
+                    controller.fileListModel.moveCursor(delta, event.modifiers);
+                    const row = controller.fileListModel.cursorRow();
+                    if (row >= 0)
+                        gridView.positionViewAtIndex(row, GridView.Contain);
+                    event.accepted = true;
+                }
 
                 SystemPalette {
                     id: sysPalette
@@ -193,6 +256,7 @@ ApplicationWindow {
                     parent: gridView
                     acceptedButtons: Qt.LeftButton
                     onTapped: {
+                        gridView.forceActiveFocus();
                         const pos = gridView.contentItem.mapFromItem(gridView, point.position);
                         const idx = gridView.indexAt(pos.x, pos.y);
                         if (idx < 0)

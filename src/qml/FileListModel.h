@@ -69,6 +69,28 @@ public:
     Q_INVOKABLE void selectRow(int row, int modifiers);
     Q_INVOKABLE void clearSelection();
 
+    // Selects every row. Anchor/cursor are kept if currently valid, else
+    // seeded to row 0 -- mirrors Explorer's Ctrl+A not moving the focus
+    // rectangle.
+    Q_INVOKABLE void selectAll();
+
+    // Keyboard-driven cursor movement. delta is a view-computed signed row
+    // offset (list: +-1 for Up/Down; grid: +-1 for Left/Right, +-columns for
+    // Up/Down -- grid geometry is QML-only, so the view does that math).
+    // modifiers is a Qt::KeyboardModifiers value, passed through as int like
+    // selectRow()'s. No-op if nothing is selected. Target is clamped (not
+    // wrapped) to [0, rowCount()-1]. Shift extends the selection from the
+    // anchor to the target without moving the anchor; otherwise (Ctrl or no
+    // modifier -- Ctrl is treated the same as a plain arrow) the selection
+    // collapses to just the target and the anchor moves there too.
+    Q_INVOKABLE void moveCursor(int delta, int modifiers);
+
+    // Row of the last-touched item (selectRow/moveCursor/selectAll), or -1
+    // if unset. Not a Q_PROPERTY: it changes on every server-side re-sort
+    // (setEntries) and nothing binds to it -- QML reads it once, right after
+    // calling moveCursor().
+    Q_INVOKABLE int cursorRow() const;
+
     QVariantList selectedHandlesVariant() const;
 
     // Typed accessor for future non-QML consumers (e.g. a delete/move
@@ -90,6 +112,13 @@ private:
     // handles, different order) -- no caller-side special-casing needed.
     void pruneSelection();
 
+    // Row index for handle within mEntries, or -1 if not present.
+    int rowForHandle(quint64 handle) const;
+
+    // Common tail of every selection mutator: emit selectionChanged() plus
+    // a full-table dataChanged(SelectedRole) so both views repaint.
+    void notifySelectionChanged();
+
     std::vector<FileEntry> mEntries;
     // Parallel to mEntries (same index, resized alongside it in setEntries).
     // Kept out of FileEntry itself since it's a session-local, GUI-populated
@@ -97,4 +126,5 @@ private:
     std::vector<QString> mThumbnailPaths;
     std::unordered_set<quint64> mSelectedHandles;
     std::optional<quint64> mAnchorHandle; // last click anchor, for Shift-range
+    std::optional<quint64> mCursorHandle; // last-touched row, for keyboard nav
 };

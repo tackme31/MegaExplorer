@@ -149,6 +149,37 @@ ColumnLayout {
         root.restoreColumnWidths();
     }
 
+    // Placed on root (not tableView) so Main.qml has a single forceActiveFocus()
+    // target per view, regardless of which child actually holds activeFocus.
+    // Ctrl+A is handled here rather than via a window-level Shortcut so it
+    // doesn't fire while the header search TextField has focus (Shortcut
+    // ignores focus entirely and would steal Ctrl+A from text selection);
+    // Keys.onPressed only fires for the item that currently has activeFocus.
+    Keys.onPressed: (event) => {
+        if (event.modifiers & Qt.AltModifier)
+            return; // reserved for a future Alt+Left "back" shortcut
+
+        if (event.matches(StandardKey.SelectAll)) {
+            controller.fileListModel.selectAll();
+            event.accepted = true;
+            return;
+        }
+
+        let delta = 0;
+        if (event.key === Qt.Key_Up)
+            delta = -1;
+        else if (event.key === Qt.Key_Down)
+            delta = 1;
+        else
+            return;
+
+        controller.fileListModel.moveCursor(delta, event.modifiers);
+        const row = controller.fileListModel.cursorRow();
+        if (row >= 0)
+            tableView.positionViewAtRow(row, TableView.Contain);
+        event.accepted = true;
+    }
+
     HorizontalHeaderView {
         id: header
         Layout.fillWidth: true
@@ -214,6 +245,10 @@ ColumnLayout {
         // Explorer-style list. NoButton disables drag/flick while leaving
         // wheel scrolling untouched (Flickable.acceptedButtons, since 6.9).
         acceptedButtons: Qt.NoButton
+        // Defensive: TableView's built-in key navigation needs a
+        // selectionModel to do anything, which this view doesn't set, so
+        // this is currently a no-op -- but explicit in case that changes.
+        keyNavigationEnabled: false
         model: controller.fileListModel
         onLayoutChanged: root.saveColumnWidths()
         // rows changes on every FileListModel::setEntries() reset (initial
@@ -246,6 +281,7 @@ ColumnLayout {
             parent: tableView
             acceptedButtons: Qt.LeftButton
             onTapped: {
+                root.forceActiveFocus();
                 const pos = tableView.contentItem.mapFromItem(tableView, point.position);
                 // x clamped inside the last column so a tap to its right still hits
                 // the row, matching Explorer's full-row selection.

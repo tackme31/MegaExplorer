@@ -14,8 +14,11 @@ add_executable(MegaExplorerTests
     DownloadServiceTest.cpp
     ThumbnailServiceTest.cpp
     WindowsSessionStoreTest.cpp
+    FileListModelTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
+    ${CMAKE_SOURCE_DIR}/src/qml/FileListModel.h
+    ${CMAKE_SOURCE_DIR}/src/qml/FileListModel.cpp
     MockMegaClient.h
     MockSessionStore.h
 )
