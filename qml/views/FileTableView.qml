@@ -354,11 +354,15 @@ ColumnLayout {
                     contextMenu.popup();
                 }
             }
-
-            FileContextMenu {
-                id: contextMenu
-                delegateItem: cell
-            }
         }
+    }
+
+    // Selection-driven, one instance for the whole view rather than one per
+    // delegate cell (see FileContextMenu.qml's own comment) -- Menu is a
+    // Popup, not an Item, so it's neither laid out by this ColumnLayout nor
+    // clipped by TableView's Flickable viewport; a parentless popup() opens
+    // at the mouse cursor regardless.
+    FileContextMenu {
+        id: contextMenu
     }
 }

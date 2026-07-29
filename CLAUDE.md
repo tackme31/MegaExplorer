@@ -44,13 +44,17 @@ refresh when a folder is opened, no continuous watching.
 
 ## Project status
 
-Phases 0–6, 6a, 6b, 7a, 7, and 7b are done (Phase 7 closes out login screen + session persistence;
-Phase 7b removes Phase 6's local node cache). Phase 8 (breadcrumb trail) is next. The full roadmap
-— phases 8–16+ (breadcrumb, tabs, sidebar
-folder tree/quick access, rename/delete/move, multi-select, upload, in-app preview, real-time
-remote-change reflection, ...) — lives in `docs/PROGRESS.md`'s Roadmap section; see the
-companion-docs list above. `docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional local
-sync stays out of scope.
+Phases 0–6, 6a, 6b, 7a, 7, 7b, and 8 are done (Phase 7 closes out login screen + session
+persistence; Phase 7b removes Phase 6's local node cache; Phase 8 adds the breadcrumb trail).
+Phases 13a (selection model) and 13b (multi-select context menu + declarative action-resolution
+logic) were pulled forward out of numeric order — both are self-contained and didn't need phases
+9–12 first — and are also done; phase 13's remaining scope (rename/delete/move as multi-item
+actions) still needs phase 12's single-item versions. Phase 9 (tabs) is next in roadmap order. The
+full roadmap — phases 9–16+ (tabs, sidebar
+folder tree/quick access, rename/delete/move, remaining multi-select bulk ops, upload, in-app
+preview, real-time remote-change reflection, ...) — lives in `docs/PROGRESS.md`'s Roadmap section;
+see the companion-docs list above. `docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional
+local sync stays out of scope.
 
 Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`), `AuthService`/
 `FolderNavigationService`/`SearchService`/`DownloadService`/`ThumbnailService` (`src/core`) backed

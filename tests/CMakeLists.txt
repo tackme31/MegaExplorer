@@ -15,6 +15,7 @@ add_executable(MegaExplorerTests
     ThumbnailServiceTest.cpp
     WindowsSessionStoreTest.cpp
     FileListModelTest.cpp
+    FileActionResolverTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/FileListModel.h

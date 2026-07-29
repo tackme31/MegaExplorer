@@ -274,6 +274,16 @@ ApplicationWindow {
                     id: sysPalette
                 }
 
+                // Selection-driven, one instance for the whole view rather
+                // than one per delegate item (see FileContextMenu.qml's own
+                // comment) -- Menu is a Popup, not an Item, so it's neither
+                // laid out by GridView nor clipped by its Flickable
+                // viewport; a parentless popup() opens at the mouse cursor
+                // regardless.
+                FileContextMenu {
+                    id: gridContextMenu
+                }
+
                 // Same rationale as FileTableView.qml's -- see the comment there for why
                 // this handler is re-parented to the view and why it owns the selection.
                 TapHandler {
@@ -380,11 +390,6 @@ ApplicationWindow {
                             }
                             gridContextMenu.popup();
                         }
-                    }
-
-                    FileContextMenu {
-                        id: gridContextMenu
-                        delegateItem: gridDelegateItem
                     }
                 }
             }

@@ -84,6 +84,13 @@ public:
     // API change.
     std::vector<DownloadJob> jobs() const;
 
+    // Cheap membership check for DownloadController::downloadFile's
+    // already-queued guard -- jobs() above copies the whole queue, which is
+    // O(N) per call and thus O(N^2) when a caller loops it once per handle
+    // to bulk-enqueue a multi-selection. Linear scan under the same mutex,
+    // no copy.
+    bool hasJobForHandle(std::uint64_t handle) const;
+
     // Observer registration: DownloadService is a persistent, multi-call
     // service (unlike the one-shot request/response services above), so a
     // single Result<T> callback per call isn't enough -- callers need

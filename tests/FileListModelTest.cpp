@@ -1,5 +1,7 @@
 #include "qml/FileListModel.h"
 
+#include <QVariantMap>
+
 #include <algorithm>
 #include <gtest/gtest.h>
 #include <vector>
@@ -13,6 +15,11 @@ FileEntry makeEntry(const std::string& name, std::uint64_t handle)
     // hasThumbnail} -- only name/handle matter for these selection/cursor
     // tests.
     return FileEntry{name, handle, 0, false, 0, false};
+}
+
+FileEntry makeFolderEntry(const std::string& name, std::uint64_t handle)
+{
+    return FileEntry{name, handle, 0, true, 0, false};
 }
 
 std::vector<FileEntry> makeEntries(int count)
@@ -227,4 +234,112 @@ TEST(FileListModelTest, CursorIsPrunedOnNavigationToDifferentHandles)
     model.setEntries(std::move(unrelated)); // no shared handles
 
     EXPECT_EQ(model.cursorRow(), -1);
+}
+
+TEST(FileListModelTest, SelectionSummaryCountsFilesAndFolders)
+{
+    FileListModel model;
+    model.setEntries(
+        std::vector<FileEntry>{makeEntry("a", 0), makeEntry("b", 1), makeFolderEntry("c", 2)});
+    model.selectRow(0, 0);
+    model.selectRow(1, kCtrl);
+    model.selectRow(2, kCtrl);
+
+    SelectionSummary summary = model.selectionSummary();
+    EXPECT_EQ(summary.fileCount, 2);
+    EXPECT_EQ(summary.folderCount, 1);
+}
+
+TEST(FileListModelTest, AvailableActionsIsEmptyWithNoSelection)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(3));
+
+    EXPECT_TRUE(model.availableActions().isEmpty());
+}
+
+TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
+{
+    FileListModel modelSingle;
+    modelSingle.setEntries(makeEntries(3));
+    modelSingle.selectRow(0, 0);
+    EXPECT_EQ(modelSingle.availableActions(), (QStringList{"download"}));
+
+    FileListModel modelMulti;
+    modelMulti.setEntries(makeEntries(3));
+    modelMulti.selectRow(0, 0);
+    modelMulti.selectRow(1, kCtrl);
+    EXPECT_EQ(modelMulti.availableActions(), (QStringList{"download"}));
+}
+
+TEST(FileListModelTest, AvailableActionsIsEmptyWhenSelectionContainsAFolder)
+{
+    FileListModel model;
+    model.setEntries(std::vector<FileEntry>{makeEntry("a", 0), makeFolderEntry("b", 1)});
+    model.selectRow(0, 0);
+    model.selectRow(1, kCtrl);
+
+    EXPECT_TRUE(model.availableActions().isEmpty());
+}
+
+TEST(FileListModelTest, AvailableActionsClearedAfterNavigation)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(3));
+    model.selectRow(0, 0);
+    ASSERT_FALSE(model.availableActions().isEmpty());
+
+    model.setEntries(std::vector<FileEntry>{makeEntry("x", 100), makeEntry("y", 101)});
+
+    EXPECT_TRUE(model.availableActions().isEmpty());
+}
+
+TEST(FileListModelTest, SelectedEntriesAreReturnedInRowOrder)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(5)); // handles 0..4, row == handle
+
+    // Select via Ctrl-click in reverse row order so insertion order into the
+    // underlying unordered_set doesn't happen to match row order --
+    // selectedEntries() must still come back in row order regardless.
+    model.selectRow(4, 0);
+    model.selectRow(2, kCtrl);
+    model.selectRow(0, kCtrl);
+
+    QVariantList entries = model.selectedEntries();
+    ASSERT_EQ(entries.size(), 3);
+    EXPECT_EQ(entries[0].toMap()["handle"].toULongLong(), 0u);
+    EXPECT_EQ(entries[1].toMap()["handle"].toULongLong(), 2u);
+    EXPECT_EQ(entries[2].toMap()["handle"].toULongLong(), 4u);
+}
+
+TEST(FileListModelTest, SelectedEntriesCarryNameSizeAndIsFolder)
+{
+    FileListModel model;
+    model.setEntries(std::vector<FileEntry>{
+        FileEntry{"file.txt", 1, 12345, false, 0, false},
+        FileEntry{"folder", 2, 0, true, 0, false},
+    });
+    model.selectRow(0, 0);
+    model.selectRow(1, kCtrl);
+
+    QVariantList selected = model.selectedEntries();
+    ASSERT_EQ(selected.size(), 2);
+
+    QVariantMap file = selected[0].toMap();
+    EXPECT_EQ(file["name"].toString(), QStringLiteral("file.txt"));
+    EXPECT_EQ(file["sizeBytes"].toULongLong(), 12345u);
+    EXPECT_FALSE(file["isFolder"].toBool());
+
+    QVariantMap folder = selected[1].toMap();
+    EXPECT_EQ(folder["name"].toString(), QStringLiteral("folder"));
+    EXPECT_TRUE(folder["isFolder"].toBool());
+}
+
+TEST(FileListModelTest, SelectedEntriesIsEmptyWithNoSelection)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(3));
+
+    EXPECT_TRUE(model.selectedEntries().isEmpty());
 }

@@ -91,11 +91,8 @@ qreal DownloadController::activeProgress() const
 
 void DownloadController::downloadFile(quint64 handle, QString name, quint64 sizeBytes)
 {
-    for (const DownloadJob& job : mService->jobs())
-    {
-        if (job.handle == static_cast<std::uint64_t>(handle))
-            return; // already queued/active, don't double-enqueue
-    }
+    if (mService->hasJobForHandle(static_cast<std::uint64_t>(handle)))
+        return; // already queued/active, don't double-enqueue
 
     QString destinationPath = computeDestinationPath(name);
     mService->enqueue(static_cast<std::uint64_t>(handle),

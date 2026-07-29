@@ -104,9 +104,12 @@ needed. Prerequisite for phase 13. Mainly `FileContextMenu.qml` + matching `IMeg
 
 Sequenced after phase 12 (bulk ops need single-item versions first). Needs a selection model for
 both `TableView` and `GridView` — built ahead of schedule as phase 13a (see below and its
-implementation-log entry); remaining scope is the bulk operations themselves (multi-item context
-menu actions, etc.) once phase 12's single-item versions exist. Bulk download can likely reuse
-`DownloadService`'s existing queue.
+implementation-log entry). The selection-driven context menu plus a declarative
+target/arity action-resolution table were also pulled forward as phase 13b (see its
+implementation-log entry) since bulk download doesn't actually depend on phase 12 — it reuses
+`DownloadService`'s existing queue directly. Remaining scope: rename/delete/move as multi-item
+context-menu actions, which do need phase 12's single-item versions first (they slot into 13b's
+resolver table as new `FileActionSpec` rows, no resolver redesign needed).
 
 ### Phase 14 — upload (drag & drop)
 
@@ -616,3 +619,92 @@ Six new cases in `tests/FolderNavigationServiceTest.cpp`: `navigateTo`'s root/no
 behavior and its failure-leaves-state-unchanged case (mirroring the existing `openFolder` tests),
 plus `resolveCurrentPath` at the root sentinel, after `openFolder`, and after a `goBack` restores an
 earlier location (proving the path comes from the live handle, not a stale "last opened" one).
+
+## Phase 13b — multi-select context menu + action resolution (done)
+
+Pulled forward out of order, same rationale as phase 13a: bulk download doesn't need phase 12's
+single-item rename/delete/move first, it just reuses `DownloadService`'s existing queue, so it
+didn't need to wait. What was actually built is a declarative resolver, not a one-off "download
+button": `src/core/FileAction.h` defines `ActionTarget` (`Any`/`FilesOnly`/`FoldersOnly`) x
+`ActionArity` (`Any`/`SingleOnly`/`MultiOnly`) as two orthogonal axes, and `FileActionSpec` pairs a
+`FileAction` with one point on that grid. `FileActionResolver.{h,cpp}` (Qt-free, in
+`MegaExplorerCore`) resolves a `SelectionSummary` (`{fileCount, folderCount}`) against a
+`std::vector<FileActionSpec>` table — `defaultFileActions()` currently holds a single row,
+`{Download, FilesOnly, Any}`. Adding rename (`SingleOnly`), delete (`Any`/`Any`), or "open in new
+tab" (`FoldersOnly`/`SingleOnly`) once phase 12 lands is a one-line table addition, no resolver
+change. `fileActionApplies` rejects every spec outright for an empty selection (so `{Any, Any}`
+can't leak an action through when nothing is selected) before checking target/arity.
+
+**C++14 constraint**: confirmed via `docs/BUILD.md`/`CLAUDE.md` that `MegaExplorerCore` compiles at
+MSVC's default (C++14) — no `CMAKE_CXX_STANDARD` reaches it since it links no Qt. `FileActionResolver.h`
+therefore takes `const std::vector<FileActionSpec>&` and returns `const char*` rather than
+`std::span`/`std::string_view`, matching `Result.h`/`FileEntry.h`'s existing workarounds. Verified by
+the fact that the build didn't fail on this — a `std::span` mistake would have.
+
+`FileListModel` stays a thin delegator: `selectionSummary()` (typed accessor, counts by walking
+`mEntries`+`mSelectedHandles`) feeds `resolveFileActions()`; the new `availableActions`
+`Q_PROPERTY` (`QStringList`, sharing `selectionChanged`'s `NOTIFY` with `selectedHandles`) maps the
+resolved `FileAction`s through `fileActionId()` to stable string IDs ("download") for QML — a
+`Q_ENUM` wasn't used since `FileAction` lives in Qt-free `src/core`, and `Q_ENUM` would need a
+`Q_NAMESPACE` wrapper in `src/qml` just for this, more machinery than this codebase's
+context-property controllers otherwise carry. New `selectedEntries()` (`Q_INVOKABLE`) returns
+`{handle, name, sizeBytes, isFolder}` maps in **row order**, walking `mEntries` rather than
+`mSelectedHandles` — the existing `selectedHandleSet()`/`selectedHandlesVariant()` are backed by an
+`unordered_set` with no defined order, which is fine for membership checks but wrong for "download
+these in a sensible sequence". Neither new accessor caches: `notifySelectionChanged()` already
+emits a full-table `dataChanged()` on every selection change (same cost order), and
+`pruneSelection()` has a code path (only when the selection actually shrinks) that emits
+`selectionChanged()` directly rather than through `notifySelectionChanged()` — an easy spot to leak
+a stale cache through, so on-demand computation was simpler than keeping a cache in sync with two
+emission paths.
+
+`qml/components/FileContextMenu.qml` rewritten from a `delegateItem`-scoped, `isFolder`-only menu to
+a selection-driven one: it now reads `controller.fileListModel.availableActions` and has no
+knowledge of which item was right-clicked (safe because both right-click handlers already call
+`selectRow()` before `popup()` when the clicked row isn't already selected). Rows are generated with
+Qt's documented `Instantiator` + `insertItem`/`removeItem` pattern rather than a `Repeater` — `Menu`'s
+`contentItem` isn't a plain `Item` container a `Repeater` can target. This also fixes a real visual
+bug, not just a code-quality one: the old menu always instantiated both `MenuItem`s and hid the
+inapplicable one via `visible: false` + `height: 0`, but FluentWinUI3's `Menu.contentItem` is a
+`ListView` with `spacing: 4` — a zero-height item still consumes its 4px of spacing, so every
+folder right-click showed a slightly-too-tall menu with a blank gap above "None". An `Instantiator`
+item that was never created reserves no spacing at all. Zero applicable actions (mixed or
+folders-only selection) still shows one disabled "None" row rather than an unopenable empty
+menu — driven by feeding `[""]` through when `availableActions` is empty; the same fallback also
+catches a future action ID this file's `actionLabels` map hasn't been updated for yet (`label`
+is deliberately `property var`, not `property string` — a string-typed property coerces a missing
+map lookup to `""` instead of preserving `undefined`, which would have silently defeated the
+`enabled: label !== undefined` check).
+
+Both call sites (`qml/views/FileTableView.qml`, `qml/Main.qml`) moved their `FileContextMenu` out of
+the per-cell/per-tile delegate and up to one instance per view (`ColumnLayout`/`GridView` level,
+alongside `SystemPalette`) — the old placement meant one live `Menu` per delegate instance (up to
+3000 for a 1000-row x 3-column `TableView`). `Menu` is a `Popup`, not an `Item`: it isn't laid out
+by `ColumnLayout` and isn't clipped by `TableView`/`GridView`'s `Flickable` viewport, and a
+parentless `popup()` opens at the mouse cursor regardless of where the `Menu` object lives in the
+tree — so this move needed no changes to either right-click `TapHandler`, which stayed in the
+delegates.
+
+`DownloadService` gained `hasJobForHandle(handle)` (mutex-guarded linear scan, no copy) alongside
+the existing `jobs()` (which copies the whole queue). `DownloadController::downloadFile`'s
+already-queued guard now calls it instead of copying `jobs()` into a range-for — `jobs()` was
+already fine for a single download, but the new bulk-download path calls `downloadFile()` once per
+selected file, which made the old copy-per-call O(N^2) over the selection size.
+
+New `tests/FileActionResolverTest.cpp` (21 cases, Qt-free): full 3x3 `ActionTarget`x`ActionArity`
+grid rejecting an empty selection, each target/arity value in isolation, a combined-constraint case,
+`resolveFileActions`'s order-preservation and empty-selection short circuit, the real
+`defaultFileActions()` table's behavior across single/multiple-file/folder/mixed/empty selections,
+and `fileActionId(Download) == "download"` pinned as a stability regression test (it's the only
+contract linking the C++ enum to the QML `actionLabels` map's keys). New cases in
+`tests/FileListModelTest.cpp` (8): `selectionSummary()` counting, `availableActions()` across
+file/folder/mixed/empty/post-navigation selections, and `selectedEntries()` returning row order
+(not insertion order) with correct name/size/isFolder fields. New cases in
+`tests/DownloadServiceTest.cpp` (2): `hasJobForHandle` true for both an active and a queued job,
+false for an unrelated handle.
+
+**Scope note**: progress UI for a bulk download is unchanged — `DownloadSnackbar` still reuses a
+single `Popup` for whichever job is currently active, so a fast sequence of small downloads can
+flash through without every individual failure/already-present notice being visible. The queue
+itself is correct (each job still runs and finishes), just not all individually surfaced;
+aggregate/count progress display is left for a later phase.

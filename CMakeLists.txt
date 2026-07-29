@@ -36,6 +36,9 @@ add_library(MegaExplorerCore STATIC
     src/core/Result.h
     src/core/SortOrder.h
     src/core/PathSegment.h
+    src/core/FileAction.h
+    src/core/FileActionResolver.h
+    src/core/FileActionResolver.cpp
     src/core/FolderNavigationService.h
     src/core/FolderNavigationService.cpp
     src/core/AuthService.h

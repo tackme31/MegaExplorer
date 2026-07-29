@@ -178,6 +178,33 @@ TEST(DownloadServiceTest, SecondEnqueueWhileFirstActiveDoesNotStartImmediatelyTh
     EXPECT_EQ(jobsAfter[0].state, DownloadState::Active);
 }
 
+TEST(DownloadServiceTest, HasJobForHandleFindsQueuedJob)
+{
+    // Arrange: never invoke the download() callback, so both jobs stay put
+    // (one active, one queued) -- hasJobForHandle must find either.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(1);
+
+    DownloadService service(mockClient);
+    service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
+    service.enqueue(2, "b.txt", "/tmp/b.txt", 0);
+
+    EXPECT_TRUE(service.hasJobForHandle(1));
+    EXPECT_TRUE(service.hasJobForHandle(2));
+}
+
+TEST(DownloadServiceTest, HasJobForHandleReturnsFalseForUnknownHandle)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_));
+
+    DownloadService service(mockClient);
+    service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
+
+    EXPECT_FALSE(service.hasJobForHandle(999));
+}
+
 TEST(DownloadServiceTest, JobsReturnsActiveJobFirstThenQueuedJobsInOrder)
 {
     // Arrange: never invoke the download() callback, so all 3 jobs stay put.

@@ -42,6 +42,17 @@ std::vector<DownloadJob> DownloadService::jobs() const
     return mQueue;
 }
 
+bool DownloadService::hasJobForHandle(std::uint64_t handle) const
+{
+    std::lock_guard<std::mutex> lock(mMutex);
+    for (const DownloadJob& job : mQueue)
+    {
+        if (job.handle == handle)
+            return true;
+    }
+    return false;
+}
+
 void DownloadService::setOnProgress(std::function<void(DownloadJob)> onProgress)
 {
     std::lock_guard<std::mutex> lock(mMutex);

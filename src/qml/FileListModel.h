@@ -1,7 +1,9 @@
 #pragma once
+#include "core/FileAction.h"
 #include "core/FileEntry.h"
 
 #include <QAbstractTableModel>
+#include <QStringList>
 #include <QVariantList>
 
 #include <optional>
@@ -28,6 +30,7 @@ class FileListModel : public QAbstractTableModel
 {
     Q_OBJECT
     Q_PROPERTY(QVariantList selectedHandles READ selectedHandlesVariant NOTIFY selectionChanged)
+    Q_PROPERTY(QStringList availableActions READ availableActions NOTIFY selectionChanged)
 
 public:
     enum Role
@@ -100,6 +103,22 @@ public:
     {
         return mSelectedHandles;
     }
+
+    // Typed accessor feeding FileActionResolver -- counts, doesn't collect,
+    // since the resolver only needs file/folder tallies.
+    SelectionSummary selectionSummary() const;
+
+    // Stable action IDs (see FileActionResolver::fileActionId) for the
+    // current selection, in menu display order. Backs the availableActions
+    // Q_PROPERTY that FileContextMenu.qml drives its Instantiator off.
+    QStringList availableActions() const;
+
+    // Row-ordered {handle, name, sizeBytes, isFolder} maps for every
+    // selected row -- unlike mSelectedHandles (an unordered_set), callers
+    // that act on the selection (e.g. bulk download) need a stable,
+    // predictable order. Walks mEntries rather than mSelectedHandles for
+    // that reason.
+    Q_INVOKABLE QVariantList selectedEntries() const;
 
 signals:
     void selectionChanged();

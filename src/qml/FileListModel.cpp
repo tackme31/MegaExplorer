@@ -1,6 +1,9 @@
 #include "FileListModel.h"
 
+#include "core/FileActionResolver.h"
+
 #include <QLocale>
+#include <QVariantMap>
 
 #include <algorithm>
 
@@ -164,6 +167,46 @@ QVariantList FileListModel::selectedHandlesVariant() const
     return result;
 }
 
+SelectionSummary FileListModel::selectionSummary() const
+{
+    SelectionSummary summary;
+    for (const FileEntry& entry : mEntries)
+    {
+        if (!mSelectedHandles.count(static_cast<quint64>(entry.handle)))
+            continue;
+        if (entry.isFolder)
+            ++summary.folderCount;
+        else
+            ++summary.fileCount;
+    }
+    return summary;
+}
+
+QStringList FileListModel::availableActions() const
+{
+    QStringList actions;
+    for (FileAction action : resolveFileActions(selectionSummary()))
+        actions.append(QString::fromLatin1(fileActionId(action)));
+    return actions;
+}
+
+QVariantList FileListModel::selectedEntries() const
+{
+    QVariantList result;
+    for (const FileEntry& entry : mEntries)
+    {
+        if (!mSelectedHandles.count(static_cast<quint64>(entry.handle)))
+            continue;
+        QVariantMap map;
+        map.insert(QStringLiteral("handle"), static_cast<qulonglong>(entry.handle));
+        map.insert(QStringLiteral("name"), QString::fromStdString(entry.name));
+        map.insert(QStringLiteral("sizeBytes"), static_cast<qulonglong>(entry.sizeBytes));
+        map.insert(QStringLiteral("isFolder"), entry.isFolder);
+        result.append(map);
+    }
+    return result;
+}
+
 void FileListModel::pruneSelection()
 {
     if (mSelectedHandles.empty())
@@ -192,7 +235,6 @@ void FileListModel::pruneSelection()
     if (mCursorHandle && rowForHandle(*mCursorHandle) < 0)
         mCursorHandle.reset();
 }
-
 
 void FileListModel::selectAll()
 {
