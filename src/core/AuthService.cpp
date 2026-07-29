@@ -19,10 +19,8 @@ bool isSessionDefinitivelyInvalid(int errorCode)
 }
 
 AuthService::AuthService(std::shared_ptr<IMegaClient> client,
-                         std::shared_ptr<ISessionStore> sessionStore,
-                         std::shared_ptr<INodeCache> nodeCache)
-    : mClient(std::move(client)), mSessionStore(std::move(sessionStore)),
-      mNodeCache(std::move(nodeCache))
+                         std::shared_ptr<ISessionStore> sessionStore)
+    : mClient(std::move(client)), mSessionStore(std::move(sessionStore))
 {}
 
 void AuthService::restoreSession(std::function<void(Result<void>)> onDone)
@@ -90,7 +88,6 @@ void AuthService::logout(std::function<void(Result<void>)> onDone)
         // Result deliberately ignored -- see the header comment: logout
         // always succeeds from the caller's perspective.
         (void)mSessionStore->clearSession();
-        (void)mNodeCache->clearAll();
         onDone(Result<void>::ok());
     });
 }

@@ -5,7 +5,6 @@
 #include "core/SearchService.h"
 #include "core/ThumbnailService.h"
 #include "mega/MegaSdkClient.h"
-#include "platform/SqliteNodeCache.h"
 #include "platform/WindowsSessionStore.h"
 #include "qml/AuthController.h"
 #include "qml/DownloadController.h"
@@ -42,16 +41,14 @@ int main(int argc, char* argv[])
     // as Logging.cpp's log file (see installLogging()).
     const QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(cacheDir);
-    auto nodeCache =
-        std::make_shared<SqliteNodeCache>((cacheDir + "/node_cache.sqlite3").toStdString());
     auto sessionStore =
         std::make_shared<WindowsSessionStore>((cacheDir + "/session.dat").toStdString());
 
-    auto navigationService = std::make_shared<FolderNavigationService>(client, nodeCache);
+    auto navigationService = std::make_shared<FolderNavigationService>(client);
     auto searchService = std::make_shared<SearchService>(client, navigationService);
     auto downloadService = std::make_shared<DownloadService>(client);
     auto thumbnailService = std::make_shared<ThumbnailService>(client);
-    auto authService = std::make_shared<AuthService>(client, sessionStore, nodeCache);
+    auto authService = std::make_shared<AuthService>(client, sessionStore);
     // Declared before the controllers below: they hold a non-owning pointer
     // to it, and stack locals are destroyed in reverse construction order.
     NotificationController notifications;

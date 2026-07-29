@@ -49,56 +49,31 @@ bool FolderNavigationController::canGoBack() const
 
 void FolderNavigationController::loadRoot()
 {
-    mService->openRoot(
-        mSortOrder,
-        [this](std::vector<FileEntry> entries) {
-            invokeOnGuiThread([this, entries = std::move(entries)]() mutable {
-                applyCacheHit(std::move(entries));
-            });
-        },
-        [this](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread([this, result = std::move(result)]() mutable {
-                applyResult(std::move(result));
-            });
+    mService->openRoot(mSortOrder, [this](Result<std::vector<FileEntry>> result) {
+        invokeOnGuiThread([this, result = std::move(result)]() mutable {
+            applyResult(std::move(result));
         });
+    });
 }
 
 void FolderNavigationController::openFolder(quint64 handle)
 {
-    mService->openFolder(
-        static_cast<std::uint64_t>(handle),
-        mSortOrder,
-        [this](std::vector<FileEntry> entries) {
-            invokeOnGuiThread([this, entries = std::move(entries)]() mutable {
-                applyCacheHit(std::move(entries));
-            });
-        },
-        [this](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread([this, result = std::move(result)]() mutable {
-                applyResult(std::move(result));
-            });
-        });
+    mService->openFolder(static_cast<std::uint64_t>(handle),
+                         mSortOrder,
+                         [this](Result<std::vector<FileEntry>> result) {
+                             invokeOnGuiThread([this, result = std::move(result)]() mutable {
+                                 applyResult(std::move(result));
+                             });
+                         });
 }
 
 void FolderNavigationController::goBack()
 {
-    mService->goBack(
-        mSortOrder,
-        [this](std::vector<FileEntry> entries) {
-            invokeOnGuiThread([this, entries = std::move(entries)]() mutable {
-                applyCacheHit(std::move(entries));
-            });
-        },
-        [this](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread([this, result = std::move(result)]() mutable {
-                applyResult(std::move(result));
-            });
+    mService->goBack(mSortOrder, [this](Result<std::vector<FileEntry>> result) {
+        invokeOnGuiThread([this, result = std::move(result)]() mutable {
+            applyResult(std::move(result));
         });
-}
-
-void FolderNavigationController::applyCacheHit(std::vector<FileEntry> entries)
-{
-    mFileListModel.setEntries(std::move(entries));
+    });
 }
 
 void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> result)

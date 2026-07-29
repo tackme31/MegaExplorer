@@ -8,16 +8,6 @@ find_package(Qt6 REQUIRED COMPONENTS Quick)
 
 qt_standard_project_setup(REQUIRES 6.10)
 
-# SQLite (Phase 6 local node cache, src/platform/SqliteNodeCache). MEGA SDK's
-# own vcpkg manifest (third_party/sdk/vcpkg.json) already lists sqlite3 as an
-# unconditional dependency and it's already built by the time this runs, but
-# SDKlib links it PRIVATE, so it isn't visible to us transitively via
-# MEGA::SDKlib -- find it ourselves, same fix shape as the FFmpeg::swscale
-# workaround below. Placed before add_subdirectory(tests) further down: that
-# subdirectory's CMakeLists.txt also needs the unofficial::sqlite3::sqlite3
-# target (SqliteNodeCacheTest exercises the real adapter).
-find_package(unofficial-sqlite3 CONFIG REQUIRED)
-
 # Content of downloaded design from Figma to Qt or similar
 if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/importedcontent/CMakeLists.txt")
     add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/importedcontent)
@@ -40,7 +30,6 @@ endif()
 # SDK-free domain logic, shared between appMegaExplorer and MegaExplorerTests.
 add_library(MegaExplorerCore STATIC
     src/core/IMegaClient.h
-    src/core/INodeCache.h
     src/core/ISessionStore.h
     src/core/FileEntry.h
     src/core/MegaErrorCodes.h
@@ -70,8 +59,6 @@ qt_add_executable(appMegaExplorer
     src/mega/MegaSdkClient.cpp
     src/mega/MegaSdkLogger.h
     src/mega/MegaSdkLogger.cpp
-    src/platform/SqliteNodeCache.h
-    src/platform/SqliteNodeCache.cpp
     src/platform/WindowsSessionStore.h
     src/platform/WindowsSessionStore.cpp
     src/qml/FileListModel.h
@@ -135,7 +122,6 @@ target_link_libraries(appMegaExplorer
     PRIVATE Qt6::Quick
     PRIVATE MEGA::SDKlib
     PRIVATE MegaExplorerCore
-    PRIVATE unofficial::sqlite3::sqlite3
     PRIVATE crypt32
 )
 

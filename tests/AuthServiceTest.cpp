@@ -2,7 +2,6 @@
 
 #include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
-#include "MockNodeCache.h"
 #include "MockSessionStore.h"
 
 #include <gmock/gmock.h>
@@ -13,13 +12,12 @@ TEST(AuthServiceTest, RestoreSessionWithNothingStoredSkipsLoginWithSession)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockSessionStore, loadSession())
         .WillOnce(::testing::Return(Result<std::string>::ok("")));
     EXPECT_CALL(*mockClient, loginWithSession(::testing::_, ::testing::_)).Times(0);
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -37,7 +35,6 @@ TEST(AuthServiceTest, RestoreSessionWithStoredTokenSucceedsAndSavesToken)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockSessionStore, loadSession())
         .WillOnce(::testing::Return(Result<std::string>::ok("stored-token")));
@@ -50,7 +47,7 @@ TEST(AuthServiceTest, RestoreSessionWithStoredTokenSucceedsAndSavesToken)
     EXPECT_CALL(*mockSessionStore, saveSession("stored-token"))
         .WillOnce(::testing::Return(Result<void>::ok()));
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -67,7 +64,6 @@ TEST(AuthServiceTest, RestoreSessionDefinitivelyInvalidClearsStoredSession)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockSessionStore, loadSession())
         .WillOnce(::testing::Return(Result<std::string>::ok("stored-token")));
@@ -77,7 +73,7 @@ TEST(AuthServiceTest, RestoreSessionDefinitivelyInvalidClearsStoredSession)
     EXPECT_CALL(*mockSessionStore, clearSession()).WillOnce(::testing::Return(Result<void>::ok()));
     EXPECT_CALL(*mockClient, fetchNodes(::testing::_)).Times(0);
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -95,7 +91,6 @@ TEST(AuthServiceTest, RestoreSessionTransientFailureLeavesStoredSessionUntouched
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockSessionStore, loadSession())
         .WillOnce(::testing::Return(Result<std::string>::ok("stored-token")));
@@ -104,7 +99,7 @@ TEST(AuthServiceTest, RestoreSessionTransientFailureLeavesStoredSessionUntouched
             ::testing::InvokeArgument<1>(Result<void>::fail("offline", MegaErrorCode::kEAgain)));
     EXPECT_CALL(*mockSessionStore, clearSession()).Times(0);
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -122,14 +117,13 @@ TEST(AuthServiceTest, RestoreSessionCorruptSessionFileSelfHealsByClearing)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockSessionStore, loadSession())
         .WillOnce(::testing::Return(Result<std::string>::fail("decrypt failed")));
     EXPECT_CALL(*mockSessionStore, clearSession()).WillOnce(::testing::Return(Result<void>::ok()));
     EXPECT_CALL(*mockClient, loginWithSession(::testing::_, ::testing::_)).Times(0);
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -146,7 +140,6 @@ TEST(AuthServiceTest, LoginSuccessCallsFetchNodesThenCurrentSessionTokenThenSave
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockClient, login("user@example.com", "pw", ::testing::_))
         .WillOnce(::testing::InvokeArgument<2>(Result<void>::ok()));
@@ -162,7 +155,7 @@ TEST(AuthServiceTest, LoginSuccessCallsFetchNodesThenCurrentSessionTokenThenSave
         .InSequence(seq)
         .WillOnce(::testing::Return(Result<void>::ok()));
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -179,7 +172,6 @@ TEST(AuthServiceTest, LoginFetchNodesFailureSkipsSaveSession)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockClient, login(::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<2>(Result<void>::ok()));
@@ -188,7 +180,7 @@ TEST(AuthServiceTest, LoginFetchNodesFailureSkipsSaveSession)
             Result<void>::fail("network error", MegaErrorCode::kEAgain)));
     EXPECT_CALL(*mockSessionStore, saveSession(::testing::_)).Times(0);
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -205,14 +197,13 @@ TEST(AuthServiceTest, LoginMfaRequiredPropagatesErrorCodeUnmodified)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockClient, login(::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<2>(
             Result<void>::fail("2fa required", MegaErrorCode::kEMfaRequired)));
     EXPECT_CALL(*mockClient, fetchNodes(::testing::_)).Times(0);
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -230,7 +221,6 @@ TEST(AuthServiceTest, LoginWithTwoFactorSuccessCompletesLikeLogin)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<::testing::NiceMock<MockSessionStore>>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
     ON_CALL(*mockSessionStore, saveSession(::testing::_))
         .WillByDefault(::testing::Return(Result<void>::ok()));
 
@@ -241,7 +231,7 @@ TEST(AuthServiceTest, LoginWithTwoFactorSuccessCompletesLikeLogin)
     EXPECT_CALL(*mockClient, currentSessionToken())
         .WillOnce(::testing::Return(Result<std::string>::ok("token")));
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -258,7 +248,6 @@ TEST(AuthServiceTest, LoginWithTwoFactorFailurePropagates)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockClient,
                 multiFactorAuthLogin(::testing::_, ::testing::_, ::testing::_, ::testing::_))
@@ -266,7 +255,7 @@ TEST(AuthServiceTest, LoginWithTwoFactorFailurePropagates)
             ::testing::InvokeArgument<3>(Result<void>::fail("bad pin", MegaErrorCode::kENoEnt)));
     EXPECT_CALL(*mockClient, fetchNodes(::testing::_)).Times(0);
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -284,14 +273,12 @@ TEST(AuthServiceTest, LogoutClearsStateWhenClientLogoutSucceeds)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockClient, logout(::testing::_))
         .WillOnce(::testing::InvokeArgument<0>(Result<void>::ok()));
     EXPECT_CALL(*mockSessionStore, clearSession()).WillOnce(::testing::Return(Result<void>::ok()));
-    EXPECT_CALL(*mockNodeCache, clearAll()).WillOnce(::testing::Return(Result<void>::ok()));
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
@@ -308,15 +295,13 @@ TEST(AuthServiceTest, LogoutClearsStateEvenWhenClientLogoutFails)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     auto mockSessionStore = std::make_shared<MockSessionStore>();
-    auto mockNodeCache = std::make_shared<MockNodeCache>();
 
     EXPECT_CALL(*mockClient, logout(::testing::_))
         .WillOnce(::testing::InvokeArgument<0>(
             Result<void>::fail("network error", MegaErrorCode::kEAgain)));
     EXPECT_CALL(*mockSessionStore, clearSession()).WillOnce(::testing::Return(Result<void>::ok()));
-    EXPECT_CALL(*mockNodeCache, clearAll()).WillOnce(::testing::Return(Result<void>::ok()));
 
-    AuthService service(mockClient, mockSessionStore, mockNodeCache);
+    AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act

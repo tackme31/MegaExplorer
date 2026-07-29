@@ -19,9 +19,10 @@ are post-MVP, sequenced by priority/dependency.
 | 5 | Thumbnails + grid view | done |
 | 6a | Categorized logging + error-toast feedback | done (pulled forward) |
 | 6b | File-list attribute display + sort | done (pulled forward) |
-| 6 | Local cache + open-folder background refresh | done (closes out MVP) |
+| 6 | Local cache + open-folder background refresh | done (closes out MVP); cache removed in 7b |
 | 7a | Session storage foundation (`ISessionStore`/`WindowsSessionStore`) | done |
 | 7 | Login screen + session persistence (remaining wiring) | done |
+| 7b | Remove local node cache (`INodeCache`/`SqliteNodeCache`) | done |
 | 8 | Breadcrumb trail | planned |
 | 9 | Windows-Explorer-style tabs (multiple folder views) | planned |
 | 10 | Folder tree navigation (side panel) | planned |
@@ -51,6 +52,16 @@ was built.
 equivalent) wiring `dumpSession()`/`fastLogin()` through `MegaSdkClient`, `main.cpp`
 composition-root changes (constructing `WindowsSessionStore` with a real `session.dat` path), the
 login screen itself (QML) and removing the env-var requirement, and logout/"forget session" UI.
+
+### Phase 7b — remove local node cache
+
+`INodeCache`/`SqliteNodeCache` (Phase 6) proved buggy in practice and not worth the debugging cost,
+so it was removed entirely: `FolderNavigationService`/`AuthService` go back to network-only
+behavior, and `FolderNavigationService::openRoot`/`openFolder`/`goBack` collapse from a two-callback
+cache-then-refresh shape back to the same single-callback shape `refreshCurrent` already had. A
+loading/busy indicator to cover the resulting per-navigation network latency is deliberately out of
+scope here — tracked as a separate follow-up task. See the Phase 7b implementation-log entry below
+for what was built.
 
 ### Phase 8 — breadcrumb trail
 
@@ -226,6 +237,10 @@ All list/table UI strings landed in English, consistent with the rest of the shi
 localization infrastructure yet.
 
 ## Phase 6 — local cache + open-folder background refresh (done)
+
+**Superseded by Phase 7b** (below): this cache proved buggy in practice and was removed entirely;
+kept here as a historical record of what Phase 6 built and why, not as a description of current
+behavior.
 
 Closes out the MVP. Persists the MEGA node tree locally in SQLite (`node_cache.sqlite3` under
 `QStandardPaths::AppLocalDataLocation`, same non-roaming rationale as Phase 6a's log file) and shows
@@ -424,8 +439,36 @@ inside Qt's own `qjsengine.h`/`qvariant.h` — template instantiations pulled in
 `qmlRegisterTypesAndRevisions<AuthController>`, not reachable/fixable from application code; left as
 an accepted, vendor-header-only warning pair rather than something to chase.
 
-**Known limitations**: `AuthService::logout` clears `ISessionStore` and the full `INodeCache`
-(`node_cache.sqlite3`), but not the in-memory thumbnail cache (`ThumbnailService`) or
-`DownloadService`'s job queue — neither is exposed to `AuthService`, and both are already
-short-lived/harmless to leave stale across a sign-out in this single-window app. The "wrong 2FA
-PIN" error-code mapping above is unconfirmed against a real account pending manual smoke testing.
+**Known limitations**: `AuthService::logout` clears `ISessionStore`, but not the in-memory
+thumbnail cache (`ThumbnailService`) or `DownloadService`'s job queue — neither is exposed to
+`AuthService`, and both are already short-lived/harmless to leave stale across a sign-out in this
+single-window app. The "wrong 2FA PIN" error-code mapping above is unconfirmed against a real
+account pending manual smoke testing.
+
+## Phase 7b — remove local node cache (done)
+
+The Phase 6 SQLite node-tree cache (`INodeCache`/`SqliteNodeCache`) proved buggy in practice and not
+worth the debugging cost, so it was removed entirely rather than fixed. A loading/busy indicator to
+cover the resulting per-navigation network latency is a deliberate follow-up, out of scope here.
+
+Deleted outright: `src/core/INodeCache.h`, `src/platform/SqliteNodeCache.h`/`.cpp`,
+`tests/MockNodeCache.h`, `tests/SqliteNodeCacheTest.cpp`. `FolderNavigationService` lost its `mCache`
+member/constructor parameter; `openRoot`/`openFolder`/`goBack` collapsed from a two-callback
+(`onCacheHit`/`onRefreshed`) shape back to the single-callback `onDone` shape `refreshCurrent` always
+had, and the private `loadWithCache` helper was trimmed to `runAndCommit` (network call → commit
+state on success → `onDone`, no cache read/write-through). `AuthService::logout` no longer clears a
+node cache — just `ISessionStore::clearSession()`. `FolderNavigationController` (`src/qml`) lost
+`applyCacheHit`; `loadRoot`/`openFolder`/`goBack` now wire a single lambda straight into
+`applyResult`. `main.cpp`'s composition root drops `SqliteNodeCache` construction and the
+`nodeCache` injection into `FolderNavigationService`/`AuthService` (the `cacheDir` local itself
+stays — `WindowsSessionStore` still needs it for `session.dat`). Removed the `lcCache` logging
+category (`src/app/Logging.h`/`.cpp`) since nothing logs through it anymore.
+
+Root `CMakeLists.txt` dropped `find_package(unofficial-sqlite3 CONFIG REQUIRED)` and the
+`unofficial::sqlite3::sqlite3` link on `appMegaExplorer`, along with `INodeCache.h`/
+`SqliteNodeCache.h`/`.cpp` from the relevant source lists; `tests/CMakeLists.txt` similarly dropped
+`SqliteNodeCacheTest.cpp`, `SqliteNodeCache.cpp`, `MockNodeCache.h`, and the sqlite3 link. Six
+cache-specific tests in `tests/FolderNavigationServiceTest.cpp` were deleted outright (they asserted
+cache-hit/write-through behavior that no longer exists); the remaining tests, plus all of
+`tests/AuthServiceTest.cpp`, were updated to construct their services without a mock node cache and
+to call the new single-callback `FolderNavigationService` API.

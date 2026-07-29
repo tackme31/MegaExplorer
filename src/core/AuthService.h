@@ -1,6 +1,5 @@
 #pragma once
 #include "IMegaClient.h"
-#include "INodeCache.h"
 #include "ISessionStore.h"
 #include "Result.h"
 
@@ -26,8 +25,8 @@ constexpr int kNoStoredSession = 1;
 bool isSessionDefinitivelyInvalid(int errorCode);
 
 // Coordinates login/logout and session-token persistence. Sits above
-// IMegaClient/ISessionStore/INodeCache, all three injected -- SDK-free like
-// the rest of src/core, unit-testable with mocks of all three.
+// IMegaClient/ISessionStore, both injected -- SDK-free like the rest of
+// src/core, unit-testable with mocks of both.
 //
 // Deliberately does not depend on FolderNavigationService: resetting
 // navigation state on logout/re-login is the caller's responsibility (Part
@@ -37,9 +36,7 @@ bool isSessionDefinitivelyInvalid(int errorCode);
 class AuthService
 {
 public:
-    AuthService(std::shared_ptr<IMegaClient> client,
-                std::shared_ptr<ISessionStore> sessionStore,
-                std::shared_ptr<INodeCache> nodeCache);
+    AuthService(std::shared_ptr<IMegaClient> client, std::shared_ptr<ISessionStore> sessionStore);
 
     // Attempts to resume a previously persisted session. onDone's Result:
     //   - success -> already logged in and nodes fetched, ready to use.
@@ -75,8 +72,8 @@ public:
     // always ok()) -- MegaApi::logout's own documentation says API_ESID
     // should not be treated as an error here, and a local-only failure to
     // reach the server shouldn't block the user from getting back to the
-    // login screen. Clears the persisted session token and the entire node
-    // cache regardless of whether the server round-trip succeeded.
+    // login screen. Clears the persisted session token regardless of
+    // whether the server round-trip succeeded.
     void logout(std::function<void(Result<void>)> onDone);
 
 private:
@@ -89,5 +86,4 @@ private:
 
     std::shared_ptr<IMegaClient> mClient;
     std::shared_ptr<ISessionStore> mSessionStore;
-    std::shared_ptr<INodeCache> mNodeCache;
 };

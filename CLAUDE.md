@@ -44,8 +44,9 @@ refresh when a folder is opened, no continuous watching.
 
 ## Project status
 
-Phases 0–6, 6a, 6b, 7a, and 7 are done (Phase 7 closes out login screen + session persistence).
-Phase 8 (breadcrumb trail) is next. The full roadmap — phases 8–16+ (breadcrumb, tabs, sidebar
+Phases 0–6, 6a, 6b, 7a, 7, and 7b are done (Phase 7 closes out login screen + session persistence;
+Phase 7b removes Phase 6's local node cache). Phase 8 (breadcrumb trail) is next. The full roadmap
+— phases 8–16+ (breadcrumb, tabs, sidebar
 folder tree/quick access, rename/delete/move, multi-select, upload, in-app preview, real-time
 remote-change reflection, ...) — lives in `docs/PROGRESS.md`'s Roadmap section; see the
 companion-docs list above. `docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional local
@@ -53,8 +54,9 @@ sync stays out of scope.
 
 Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`), `AuthService`/
 `FolderNavigationService`/`SearchService`/`DownloadService`/`ThumbnailService` (`src/core`) backed
-by `ISessionStore`/`WindowsSessionStore` and `INodeCache`/`SqliteNodeCache` for session/node-tree
-persistence, their QML-facing controllers/`FileListModel` (`src/qml`) — including `AuthController`,
+by `ISessionStore`/`WindowsSessionStore` for session persistence (folder listings are always
+fetched live from the network, no local cache), their QML-facing controllers/`FileListModel`
+(`src/qml`) — including `AuthController`,
 the codebase's first `QML_ELEMENT`-registered type, driving `qml/views/LoginView.qml` — an
 Explorer-style sortable detail list view (`qml/views/FileTableView.qml`, Phase 6b) alongside the
 unchanged thumbnail grid view, and cross-cutting app infrastructure — categorized logging + a MEGA
