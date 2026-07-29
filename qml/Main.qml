@@ -49,7 +49,6 @@ ApplicationWindow {
     // same "one-shot read, not a live binding" convention as
     // TabContentPane.qml's initialViewMode (see its own comment for why).
     property real treePanelWidth: 240
-    property bool treePanelVisible: true
 
     // The currently active tab's TabContentPane, kept in sync by the Binding
     // inside mainContentComponent below. footerComponent (a sibling nested
@@ -68,7 +67,6 @@ ApplicationWindow {
         property alias columnWidthModified: window.columnWidthModified
         property alias columnWidthSize: window.columnWidthSize
         property alias treePanelWidth: window.treePanelWidth
-        property alias treePanelVisible: window.treePanelVisible
     }
 
     // Logged-in chrome (header/footer/central StackLayout) only exists while
@@ -107,14 +105,6 @@ ApplicationWindow {
 
                 RowLayout {
                     anchors.fill: parent
-
-                    ToolButton {
-                        text: "☰"
-                        checkable: true
-                        checked: window.treePanelVisible
-                        focusPolicy: Qt.NoFocus
-                        onClicked: window.treePanelVisible = !window.treePanelVisible
-                    }
 
                     ToolButton {
                         text: qsTr("← Back")
@@ -271,7 +261,6 @@ ApplicationWindow {
 
             FolderTreePanel {
                 id: treePanel
-                visible: window.treePanelVisible
                 navController: tabsController.currentNavigation
                 SplitView.minimumWidth: 120
                 SplitView.maximumWidth: 500
@@ -335,8 +324,9 @@ ApplicationWindow {
                         // tab switch, or arrow keys go dead until the view is
                         // re-clicked.
                         StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
-                                                                Qt.callLater(() => pane.focusActiveView(
-                                                                                       ))
+                                                                Qt.callLater(()
+                                                                             => pane.focusActiveView(
+                                                                                    ))
                     }
                 }
 
@@ -352,7 +342,7 @@ ApplicationWindow {
                     target: window
                     property: "currentPane"
                     value: paneRepeater.count > 0 ? paneRepeater.itemAt(
-                                                         tabsController.currentIndex) : null
+                                                        tabsController.currentIndex) : null
                 }
             }
 

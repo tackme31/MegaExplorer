@@ -930,10 +930,11 @@ stay in one `Component` scope. `treePanel.SplitView.preferredWidth` is read once
 live -- same "one-shot read, not a live binding" convention as `TabContentPane.qml`'s
 `initialViewMode`, needed here because `SplitView` itself writes back to the panel's width as the user
 drags the splitter (`onResizingChanged: if (!resizing) window.treePanelWidth = treePanel.width`), and a
-live binding would fight that write-back. A new header `☰` `ToolButton` (checkable, before the `← Back`
-button) toggles a new `window.treePanelVisible` property (default `true`); both new properties are
-`Settings`-backed aliases alongside the existing `viewMode`/`sortColumn`/etc. ones, so panel width and
-visibility persist across restarts like everything else `window` already owns. The `authStateChanged`
+live binding would fight that write-back. `window.treePanelWidth` is a `Settings`-backed alias
+alongside the existing `viewMode`/`sortColumn`/etc. ones, so panel width persists across restarts like
+everything else `window` already owns. (A header `☰` `ToolButton` plus a `window.treePanelVisible`
+property originally let the panel be hidden; both were removed in a 2026-07-30 follow-up -- see the
+note at the end of this phase's log -- since the panel is now always shown.) The `authStateChanged`
 `Connections` handler now also calls `folderTreeModel.reload()` (`LoggedIn`, alongside
 `tabsController.loadRootAll()`) / `folderTreeModel.reset()` (`LoggedOut`, alongside
 `tabsController.resetAll()`), so a sign-out clears the tree back to a single "Cloud Drive" row and a
@@ -968,3 +969,9 @@ background tabs without switching focus"), which changed `addTabAt` to leave the
 but never updated this test's assertion -- renamed to
 `AddTabAtIncreasesCountWithoutSwitchingFocus` and corrected to expect `currentIndex() == 0`, matching
 the now-documented behavior in `TabsController.h`.
+
+**2026-07-30 follow-up**: removed the panel's show/hide toggle -- the header `☰` `ToolButton` in
+`Main.qml`'s `headerComponent` and the `window.treePanelVisible` property (plus its `Settings` alias
+and the `visible: window.treePanelVisible` binding on `FolderTreePanel`) are all gone, so the panel is
+now always shown, same as the tab strip/breadcrumb bar. `window.treePanelWidth` (drag-to-resize
+persistence) is unaffected. No test exercised the toggle directly, so no test changes were needed.
