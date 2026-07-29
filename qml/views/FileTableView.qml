@@ -36,6 +36,10 @@ ColumnLayout {
 
     readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size")]
 
+    SystemPalette {
+        id: sysPalette
+    }
+
     // Matches (English) Windows Explorer's Date modified column: short date
     // + short time, e.g. "7/28/2026 3:45 PM". Not reproducible via
     // Qt.formatDateTime(date, Locale.ShortFormat) -- QLocale's own
@@ -224,9 +228,36 @@ ColumnLayout {
             return [220, 150, 100][column];
         }
 
+        // The handler is declared inside TableView, which would install it on the
+        // contentItem (Qt docs, TableView::cellAtPosition) -- i.e. it would never see
+        // taps below the last row, since contentItem is only as tall as the content.
+        // parent: tableView scopes it to the viewport instead, at the cost of having
+        // to map the tap into content coordinates by hand.
+        //
+        // It also does the row selection, not just the clearing. The default
+        // gesturePolicy (DragThreshold) takes a passive grab only, so a per-cell
+        // TapHandler would fire in addition to this one and Ctrl+click would toggle
+        // the same row twice, cancelling itself out.
+        TapHandler {
+            parent: tableView
+            acceptedButtons: Qt.LeftButton
+            onTapped: {
+                const pos = tableView.contentItem.mapFromItem(tableView, point.position);
+                // x clamped inside the last column so a tap to its right still hits
+                // the row, matching Explorer's full-row selection.
+                const hit = tableView.cellAtPosition(
+                              Qt.point(Math.min(pos.x, tableView.contentWidth - 1), pos.y), false);
+                if (hit.y < 0)
+                    controller.fileListModel.clearSelection();
+                else
+                    controller.fileListModel.selectRow(hit.y, point.modifiers);
+            }
+        }
+
         delegate: Rectangle {
             id: cell
             implicitHeight: 28
+            required property int row
             required property int column
             required property string name
             required property bool isFolder
@@ -234,8 +265,10 @@ ColumnLayout {
             required property var sizeBytes
             required property string formattedSize
             required property double modificationTime
+            required property bool selected
 
-            color: "transparent"
+            color: cell.selected ? Qt.rgba(sysPalette.highlight.r, sysPalette.highlight.g,
+                                           sysPalette.highlight.b, 0.35) : "transparent"
 
             Label {
                 anchors.fill: parent
@@ -262,6 +295,9 @@ ColumnLayout {
                 }
             }
 
+            // Left-click selection is handled entirely by the view-level
+            // background TapHandler above (see its comment) -- this one is
+            // double-click-only.
             TapHandler {
                 acceptedButtons: Qt.LeftButton
                 onDoubleTapped: root.activateRequested(cell.isFolder, cell.handle, cell.name,

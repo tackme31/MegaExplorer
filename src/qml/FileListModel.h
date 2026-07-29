@@ -2,7 +2,10 @@
 #include "core/FileEntry.h"
 
 #include <QAbstractTableModel>
+#include <QVariantList>
 
+#include <optional>
+#include <unordered_set>
 #include <vector>
 
 // Owned by main.cpp's composition root and exposed to QML via
@@ -24,6 +27,7 @@
 class FileListModel : public QAbstractTableModel
 {
     Q_OBJECT
+    Q_PROPERTY(QVariantList selectedHandles READ selectedHandlesVariant NOTIFY selectionChanged)
 
 public:
     enum Role
@@ -36,6 +40,7 @@ public:
         ThumbnailPathRole,
         ModificationTimeRole,
         FormattedSizeRole,
+        SelectedRole,
     };
 
     explicit FileListModel(QObject* parent = nullptr);
@@ -53,10 +58,43 @@ public:
     // present (e.g. the user navigated away before the fetch completed).
     void setThumbnailPath(quint64 handle, QString path);
 
+    // Click-driven selection, called from the grid/list delegates' TapHandler
+    // (row is the model row tapped; modifiers is a Qt::KeyboardModifiers
+    // value, passed through as int from QML's TapHandler.point.modifiers).
+    // Plain click: replace selection with just this row, move the anchor
+    // here. Ctrl: toggle this row in/out of the selection, move the anchor
+    // here. Shift: replace selection with the contiguous range between the
+    // anchor and this row (falls back to just this row if the anchor's
+    // handle is no longer present).
+    Q_INVOKABLE void selectRow(int row, int modifiers);
+    Q_INVOKABLE void clearSelection();
+
+    QVariantList selectedHandlesVariant() const;
+
+    // Typed accessor for future non-QML consumers (e.g. a delete/move
+    // controller), mirroring the fileListModelForThumbnails() typed-accessor
+    // precedent in FolderNavigationController.
+    const std::unordered_set<quint64>& selectedHandleSet() const
+    {
+        return mSelectedHandles;
+    }
+
+signals:
+    void selectionChanged();
+
 private:
+    // Drops selected/anchor handles no longer present in mEntries. Handles
+    // are globally unique per MEGA node, so this alone is enough to clear
+    // the selection on navigation/search (new entries share no handles with
+    // the old ones) while preserving it across a same-folder re-sort (same
+    // handles, different order) -- no caller-side special-casing needed.
+    void pruneSelection();
+
     std::vector<FileEntry> mEntries;
     // Parallel to mEntries (same index, resized alongside it in setEntries).
     // Kept out of FileEntry itself since it's a session-local, GUI-populated
     // cache result, not SDK domain data -- FileEntry stays Qt-free.
     std::vector<QString> mThumbnailPaths;
+    std::unordered_set<quint64> mSelectedHandles;
+    std::optional<quint64> mAnchorHandle; // last click anchor, for Shift-range
 };

@@ -177,19 +177,41 @@ ApplicationWindow {
             }
 
             GridView {
+                id: gridView
                 model: controller.fileListModel
                 clip: true
                 cellWidth: 120
                 cellHeight: 120
 
+                SystemPalette {
+                    id: sysPalette
+                }
+
+                // Same rationale as FileTableView.qml's -- see the comment there for why
+                // this handler is re-parented to the view and why it owns the selection.
+                TapHandler {
+                    parent: gridView
+                    acceptedButtons: Qt.LeftButton
+                    onTapped: {
+                        const pos = gridView.contentItem.mapFromItem(gridView, point.position);
+                        const idx = gridView.indexAt(pos.x, pos.y);
+                        if (idx < 0)
+                            controller.fileListModel.clearSelection();
+                        else
+                            controller.fileListModel.selectRow(idx, point.modifiers);
+                    }
+                }
+
                 delegate: Item {
                     id: gridDelegateItem
+                    required property int index
                     required property string name
                     required property bool isFolder
                     required property var handle
                     required property var sizeBytes
                     required property bool hasThumbnail
                     required property string thumbnailPath
+                    required property bool selected
 
                     width: GridView.view.cellWidth
                     height: GridView.view.cellHeight
@@ -197,6 +219,15 @@ ApplicationWindow {
                     Component.onCompleted: {
                         if (gridDelegateItem.hasThumbnail && !gridDelegateItem.isFolder)
                             thumbnailController.requestThumbnail(gridDelegateItem.handle);
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 4
+                        color: gridDelegateItem.selected ? Qt.rgba(sysPalette.highlight.r,
+                                                                   sysPalette.highlight.g,
+                                                                   sysPalette.highlight.b, 0.35) :
+                                                           "transparent"
                     }
 
                     ColumnLayout {
@@ -240,6 +271,9 @@ ApplicationWindow {
                         }
                     }
 
+                    // Left-click selection is handled entirely by the view-level
+                    // background TapHandler above (see its comment) -- this one is
+                    // double-click-only.
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
                         onDoubleTapped: window.activateEntry(gridDelegateItem.isFolder,

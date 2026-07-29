@@ -2,6 +2,8 @@
 
 #include <QLocale>
 
+#include <algorithm>
+
 FileListModel::FileListModel(QObject* parent) : QAbstractTableModel(parent) {}
 
 int FileListModel::rowCount(const QModelIndex& parent) const
@@ -51,6 +53,8 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
                        : QLocale::system().formattedDataSize(static_cast<qint64>(entry.sizeBytes),
                                                              1,
                                                              QLocale::DataSizeTraditionalFormat);
+        case SelectedRole:
+            return mSelectedHandles.count(static_cast<quint64>(entry.handle)) > 0;
         default:
             return {};
     }
@@ -67,6 +71,7 @@ QHash<int, QByteArray> FileListModel::roleNames() const
         {ThumbnailPathRole, "thumbnailPath"},
         {ModificationTimeRole, "modificationTime"},
         {FormattedSizeRole, "formattedSize"},
+        {SelectedRole, "selected"},
     };
 }
 
@@ -76,6 +81,8 @@ void FileListModel::setEntries(std::vector<FileEntry> entries)
     mEntries = std::move(entries);
     mThumbnailPaths.assign(mEntries.size(), QString());
     endResetModel();
+
+    pruneSelection();
 }
 
 void FileListModel::setThumbnailPath(quint64 handle, QString path)
@@ -92,4 +99,98 @@ void FileListModel::setThumbnailPath(quint64 handle, QString path)
     }
     // Row no longer present -- stale async result, same "ignore it" handling
     // as FolderNavigationController::applyResult for other late callbacks.
+}
+
+void FileListModel::selectRow(int row, int modifiers)
+{
+    if (row < 0 || row >= static_cast<int>(mEntries.size()))
+        return;
+
+    const auto mods = static_cast<Qt::KeyboardModifiers>(modifiers);
+    const quint64 handle = static_cast<quint64>(mEntries[static_cast<std::size_t>(row)].handle);
+
+    if (mods.testFlag(Qt::ShiftModifier) && mAnchorHandle)
+    {
+        int anchorRow = -1;
+        for (std::size_t i = 0; i < mEntries.size(); ++i)
+        {
+            if (mEntries[i].handle == static_cast<std::uint64_t>(*mAnchorHandle))
+            {
+                anchorRow = static_cast<int>(i);
+                break;
+            }
+        }
+        if (anchorRow < 0)
+            anchorRow = row; // anchor's row is gone -- fall back to just this row
+
+        const int lo = std::min(anchorRow, row);
+        const int hi = std::max(anchorRow, row);
+        mSelectedHandles.clear();
+        for (int i = lo; i <= hi; ++i)
+            mSelectedHandles.insert(
+                static_cast<quint64>(mEntries[static_cast<std::size_t>(i)].handle));
+    }
+    else if (mods.testFlag(Qt::ControlModifier))
+    {
+        if (mSelectedHandles.count(handle))
+            mSelectedHandles.erase(handle);
+        else
+            mSelectedHandles.insert(handle);
+        mAnchorHandle = handle;
+    }
+    else
+    {
+        mSelectedHandles.clear();
+        mSelectedHandles.insert(handle);
+        mAnchorHandle = handle;
+    }
+
+    emit selectionChanged();
+    if (!mEntries.empty())
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {SelectedRole});
+}
+
+void FileListModel::clearSelection()
+{
+    if (mSelectedHandles.empty())
+        return;
+
+    mSelectedHandles.clear();
+    mAnchorHandle.reset();
+
+    emit selectionChanged();
+    if (!mEntries.empty())
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {SelectedRole});
+}
+
+QVariantList FileListModel::selectedHandlesVariant() const
+{
+    QVariantList result;
+    result.reserve(static_cast<qsizetype>(mSelectedHandles.size()));
+    for (quint64 handle : mSelectedHandles)
+        result.append(handle);
+    return result;
+}
+
+void FileListModel::pruneSelection()
+{
+    if (mSelectedHandles.empty())
+        return;
+
+    std::unordered_set<quint64> stillPresent;
+    for (const FileEntry& entry : mEntries)
+    {
+        const quint64 handle = static_cast<quint64>(entry.handle);
+        if (mSelectedHandles.count(handle))
+            stillPresent.insert(handle);
+    }
+
+    if (stillPresent.size() != mSelectedHandles.size())
+    {
+        mSelectedHandles = std::move(stillPresent);
+        emit selectionChanged();
+    }
+
+    if (mAnchorHandle && !mSelectedHandles.count(*mAnchorHandle))
+        mAnchorHandle.reset();
 }
