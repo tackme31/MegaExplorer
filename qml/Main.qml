@@ -378,8 +378,7 @@ ApplicationWindow {
                                 controller.fileListModel.selectRow(gridDelegateItem.index,
                                                                    Qt.NoModifier);
                             }
-                            if (!gridDelegateItem.isFolder)
-                                gridContextMenu.popup();
+                            gridContextMenu.popup();
                         }
                     }
 

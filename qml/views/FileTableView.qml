@@ -155,7 +155,7 @@ ColumnLayout {
     // doesn't fire while the header search TextField has focus (Shortcut
     // ignores focus entirely and would steal Ctrl+A from text selection);
     // Keys.onPressed only fires for the item that currently has activeFocus.
-    Keys.onPressed: (event) => {
+    Keys.onPressed: event => {
         if (event.modifiers & Qt.AltModifier)
             return; // reserved for a future Alt+Left "back" shortcut
 
@@ -351,8 +351,7 @@ ColumnLayout {
                         root.forceActiveFocus();
                         controller.fileListModel.selectRow(cell.row, Qt.NoModifier);
                     }
-                    if (!cell.isFolder)
-                        contextMenu.popup();
+                    contextMenu.popup();
                 }
             }
 
