@@ -157,9 +157,13 @@ ColumnLayout {
         // textRole defaults to "display", which FileListModel::roleNames()
         // doesn't provide (this delegate below builds header text itself
         // from columnLabels, never via textRole) -- left unset it just spams
-        // a "role doesn't exist" warning on every load. Qt docs: setting
-        // textRole silences that check.
-        textRole: ""
+        // a "role doesn't exist" warning on every load. Qt treats "" as still
+        // unset (it falls back to "display" internally for a
+        // QAbstractItemModel), so silencing the warning needs an actual
+        // existing role name, not just any explicit assignment -- "name" is
+        // never read by the delegate below, it's only here to satisfy Qt's
+        // roleNames() existence check.
+        textRole: "name"
         // Same rationale as tableView below -- HorizontalHeaderView is also
         // a Flickable and would otherwise let click-drag pan it independently
         // of the synced tableView.
@@ -245,8 +249,8 @@ ColumnLayout {
                 const pos = tableView.contentItem.mapFromItem(tableView, point.position);
                 // x clamped inside the last column so a tap to its right still hits
                 // the row, matching Explorer's full-row selection.
-                const hit = tableView.cellAtPosition(
-                              Qt.point(Math.min(pos.x, tableView.contentWidth - 1), pos.y), false);
+                const hit = tableView.cellAtPosition(Qt.point(Math.min(pos.x, tableView.contentWidth
+                                                                       - 1), pos.y), false);
                 if (hit.y < 0)
                     controller.fileListModel.clearSelection();
                 else
