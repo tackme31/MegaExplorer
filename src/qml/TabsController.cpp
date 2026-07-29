@@ -107,8 +107,6 @@ void TabsController::addTabAt(quint64 handle, bool isRoot)
         navigation->loadRoot();
     else
         navigation->openFolder(handle);
-
-    setCurrentIndex(row);
 }
 
 void TabsController::closeTab(int index)

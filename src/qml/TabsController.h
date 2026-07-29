@@ -84,9 +84,10 @@ public:
     Q_INVOKABLE void addTab();
 
     // Opens a brand-new tab at handle (isRoot mirrors
-    // FolderNavigationController::navigateTo's sentinel convention) and
-    // switches to it -- middle-click on a folder, or the context menu's
-    // "Open in new tab".
+    // FolderNavigationController::navigateTo's sentinel convention) in the
+    // background, without switching to it -- middle-click on a folder, or
+    // the context menu's "Open in new tab" (Explorer/browser convention: the
+    // current tab stays focused).
     Q_INVOKABLE void addTabAt(quint64 handle, bool isRoot);
 
     // Closes the tab at index. Clamps currentIndex so it keeps pointing at
