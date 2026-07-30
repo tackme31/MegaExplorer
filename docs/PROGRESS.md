@@ -96,6 +96,14 @@ the Phase 11 implementation-log entry below for what was built — in particular
 not to need any handling at all (a MEGA handle is stable across moves *and* renames), so only
 deletion breaks a pin.
 
+### Phase 11a — per-account quick-access scoping
+
+Unplanned correction of Phase 11's "Known limitations" entry: pins were persisted under one
+machine-wide QSettings key, so logging into a different MEGA account didn't just hide the previous
+account's pins, it silently dropped them via the login-time validation sweep (every handle fails to
+resolve against the new account, so the sweep treats them all as dangling and overwrites the shared
+key with the survivor list). See the Phase 11a implementation-log entry below.
+
 ### Phase 12 — rename / delete (move to rubbish)
 
 Done — see its implementation-log entry. Move (`moveNode` to an arbitrary parent) was cut from the
@@ -1131,12 +1139,52 @@ writes to the real per-user registry, so a round-trip test would either pollute 
 actual `HKCU\Software\MegaExplorer` key or need an org/app-name seam added purely for testing. The
 interesting logic all lives in the service and model, which are covered.
 
-**Known limitations**: pins are stored per machine, not per account, so signing into a different
-account initially shows the previous one's pins — but the login-time sweep drops every handle that
-doesn't resolve in the new account, so it self-cleans on the first sweep. Accepted rather than
-designed around, given this is a single-account app in practice. Because "in the Rubbish bin" counts
-as deleted, restoring a folder from the Rubbish bin does not bring its pin back. Pin order is
-insertion order with no reordering UI (drag-to-reorder was explicitly scoped out).
+**Known limitations**: ~~pins are stored per machine, not per account~~ — fixed in Phase 11a below.
+Because "in the Rubbish bin" counts as deleted, restoring a folder from the Rubbish bin does not
+bring its pin back. Pin order is insertion order with no reordering UI (drag-to-reorder was
+explicitly scoped out).
+
+## Phase 11a — per-account quick-access scoping (done)
+
+Phase 11's own "Known limitations" note above called the machine-wide pin key "accepted rather than
+designed around, given this is a single-account app in practice" — revisited because the actual
+behavior isn't "shows the previous account's pins, then self-cleans": logging out only clears
+`QuickAccessService`'s in-memory list, so the on-disk JSON survives untouched; logging into a
+*different* account then runs the login-time validation sweep against handles that belong to the
+old account, none of which resolve, and the sweep commits the (now empty) survivor list back over
+the same shared key — silently **destroying** the first account's pins, not merely hiding them.
+
+No per-account identifier existed anywhere in the app before this (checked `IMegaClient`,
+`AuthService`, `AuthController`, `ISessionStore`/`WindowsSessionStore` — all handle a single opaque
+session token and let no email/user-handle survive past login). Added
+`IMegaClient::currentUserHandle() -> Result<std::uint64_t>`, mirroring `currentSessionToken()`'s
+shape exactly (synchronous, fails if not logged in); `MegaSdkClient` implements it over
+`MegaApi::getMyUserHandleBinary()`. `IPinnedFolderStore::load`/`save` both gained an `accountKey`
+parameter — the account's user handle rendered as a decimal string, opaque and needing no escaping
+for a QSettings key path — and `QSettingsPinnedFolderStore` now nests the JSON blob at
+`quickAccess/accounts/<accountKey>/pinnedFolders` instead of the old flat
+`quickAccess/pinnedFolders`.
+
+Account-identity resolution lives entirely inside `QuickAccessService`, which already holds the
+`IMegaClient` it needs: `load()` resolves `currentUserHandle()` first and caches the result in a new
+`mAccountKey` member (cleared, alongside `mPins`, whenever resolution fails or on `clear()`), and
+every mutator (`pin`/`unpin`/`replaceAll`) passes it to `mStore->save()`, skipping the write entirely
+if no account is currently resolved. This keeps `QuickAccessModel`/`Main.qml` completely unchanged —
+`reload()`/`reset()` still take no arguments — matching the existing services-pass-through/
+QML-marshals split.
+
+**Deliberately no migration**: pre-existing flat-key pin data is simply abandoned/orphaned in the
+registry once this ships, rather than copied into whichever account happens to log in first. Decided
+during planning as the simpler option, given the flat key only ever reliably held one real-world
+account's pins anyway.
+
+Tests: `MockMegaClient`/`MockPinnedFolderStore` gained the new methods/parameter;
+`QuickAccessServiceTest`'s fixture stubs a fixed account handle by default and adds
+`PinsAreIsolatedPerAccount` (two accounts' pins don't cross-contaminate, verified via distinct
+`accountKey` arguments reaching the mock store) and
+`LoadWithNoLoggedInAccountDegradesToEmptyAndSkipsTheStore`. `QuickAccessModelTest` needed only the
+same fixture stub — it has no account awareness of its own, so its existing coverage was otherwise
+unaffected.
 
 ## Phase 12 — rename / delete (move to rubbish) (done)
 

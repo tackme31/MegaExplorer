@@ -58,13 +58,17 @@ protected:
         testApp();
         client = std::make_shared<MockMegaClient>();
         store = std::make_shared<MockPinnedFolderStore>();
+        // Fixed account for every test here (Phase 11a) -- none of this
+        // model's own coverage is about account scoping, that's
+        // QuickAccessServiceTest's job.
+        ON_CALL(*client, currentUserHandle()).WillByDefault(Return(Result<std::uint64_t>::ok(111)));
         service = std::make_shared<QuickAccessService>(client, store);
         model = std::make_unique<QuickAccessModel>(service);
     }
 
     void givenStoredPins(std::vector<PinnedFolder> pins)
     {
-        EXPECT_CALL(*store, load())
+        EXPECT_CALL(*store, load(_))
             .WillRepeatedly(Return(Result<std::vector<PinnedFolder>>::ok(std::move(pins))));
     }
 
@@ -106,7 +110,7 @@ TEST_F(QuickAccessModelTest, ReloadFollowsARename)
     EXPECT_CALL(*client, getNodeInfo(11u, _))
         .WillOnce(InvokeArgument<1>(liveFolder("Holiday photos", 11)));
     // The refreshed name is written through, so it survives the next restart.
-    EXPECT_CALL(*store, save(std::vector<PinnedFolder>{makePin("Holiday photos", 11)}))
+    EXPECT_CALL(*store, save(_, std::vector<PinnedFolder>{makePin("Holiday photos", 11)}))
         .WillOnce(Return(Result<void>::ok()));
 
     model->reload();
@@ -123,7 +127,7 @@ TEST_F(QuickAccessModelTest, ReloadDropsAPinWhoseTargetIsInTheRubbishBin)
     givenStoredPins({makePin("Photos", 11), makePin("Work", 22)});
     EXPECT_CALL(*client, getNodeInfo(11u, _)).WillOnce(InvokeArgument<1>(inRubbish("Photos", 11)));
     EXPECT_CALL(*client, getNodeInfo(22u, _)).WillOnce(InvokeArgument<1>(liveFolder("Work", 22)));
-    EXPECT_CALL(*store, save(std::vector<PinnedFolder>{makePin("Work", 22)}))
+    EXPECT_CALL(*store, save(_, std::vector<PinnedFolder>{makePin("Work", 22)}))
         .WillOnce(Return(Result<void>::ok()));
 
     model->reload();
@@ -138,7 +142,7 @@ TEST_F(QuickAccessModelTest, ReloadDropsAPinWhoseHandleNoLongerResolves)
     givenStoredPins({makePin("Photos", 11)});
     EXPECT_CALL(*client, getNodeInfo(11u, _))
         .WillOnce(InvokeArgument<1>(Result<NodeInfo>::fail("no such node")));
-    EXPECT_CALL(*store, save(std::vector<PinnedFolder>{})).WillOnce(Return(Result<void>::ok()));
+    EXPECT_CALL(*store, save(_, std::vector<PinnedFolder>{})).WillOnce(Return(Result<void>::ok()));
 
     model->reload();
     flushQueuedEvents();
@@ -152,7 +156,7 @@ TEST_F(QuickAccessModelTest, ReloadWithNothingChangedDoesNotRewriteTheStore)
     EXPECT_CALL(*client, getNodeInfo(11u, _)).WillOnce(InvokeArgument<1>(liveFolder("Photos", 11)));
     // The common case: the sweep confirms everything, so it must not churn the
     // store (nor reset the model) for an identical list.
-    EXPECT_CALL(*store, save(_)).Times(0);
+    EXPECT_CALL(*store, save(_, _)).Times(0);
 
     model->reload();
     flushQueuedEvents();
@@ -226,7 +230,7 @@ TEST_F(QuickAccessModelTest, ActivateEmitsMissingWithTheClickedLabelForADeletedP
 TEST_F(QuickAccessModelTest, PinAppendsARowAndUnpinRemovesIt)
 {
     givenStoredPins({});
-    EXPECT_CALL(*store, save(_)).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*store, save(_, _)).WillRepeatedly(Return(Result<void>::ok()));
     model->reload();
 
     model->pin(11, QStringLiteral("Photos"));
@@ -242,7 +246,7 @@ TEST_F(QuickAccessModelTest, PinAppendsARowAndUnpinRemovesIt)
 TEST_F(QuickAccessModelTest, PinIgnoresADuplicateHandle)
 {
     givenStoredPins({});
-    EXPECT_CALL(*store, save(_)).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*store, save(_, _)).WillRepeatedly(Return(Result<void>::ok()));
     model->reload();
 
     model->pin(11, QStringLiteral("Photos"));
@@ -260,7 +264,7 @@ TEST_F(QuickAccessModelTest, ResetPartWayThroughValidationDiscardsTheStaleResult
     EXPECT_CALL(*client, getNodeInfo(11u, _)).WillOnce(SaveArg<1>(&pendingCallback));
     // Without the generation guard the stale sweep would reconcile against the
     // now-empty list and write it back.
-    EXPECT_CALL(*store, save(_)).Times(0);
+    EXPECT_CALL(*store, save(_, _)).Times(0);
 
     model->reload();
     ASSERT_TRUE(static_cast<bool>(pendingCallback));

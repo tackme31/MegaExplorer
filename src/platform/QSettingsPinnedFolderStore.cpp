@@ -10,18 +10,26 @@
 
 namespace
 {
-const char* const kSettingsKey = "quickAccess/pinnedFolders";
 const char* const kFieldName = "name";
 const char* const kFieldHandle = "handle";
+
+// accountKey is a decimal MEGA user handle (IPinnedFolderStore's doc
+// comment) -- digits only, so no escaping is needed for a QSettings key path.
+QString settingsKeyFor(const std::string& accountKey)
+{
+    return QStringLiteral("quickAccess/accounts/%1/pinnedFolders")
+        .arg(QString::fromStdString(accountKey));
+}
 } // namespace
 
 QSettingsPinnedFolderStore::QSettingsPinnedFolderStore() = default;
 QSettingsPinnedFolderStore::~QSettingsPinnedFolderStore() = default;
 
-Result<std::vector<PinnedFolder>> QSettingsPinnedFolderStore::load() const
+Result<std::vector<PinnedFolder>>
+QSettingsPinnedFolderStore::load(const std::string& accountKey) const
 {
     QSettings settings;
-    const QString stored = settings.value(QString::fromLatin1(kSettingsKey)).toString();
+    const QString stored = settings.value(settingsKeyFor(accountKey)).toString();
     if (stored.isEmpty())
         return Result<std::vector<PinnedFolder>>::ok({});
 
@@ -57,7 +65,8 @@ Result<std::vector<PinnedFolder>> QSettingsPinnedFolderStore::load() const
     return Result<std::vector<PinnedFolder>>::ok(std::move(pins));
 }
 
-Result<void> QSettingsPinnedFolderStore::save(const std::vector<PinnedFolder>& pins)
+Result<void> QSettingsPinnedFolderStore::save(const std::string& accountKey,
+                                              const std::vector<PinnedFolder>& pins)
 {
     QJsonArray array;
     for (const PinnedFolder& pin : pins)
@@ -72,7 +81,7 @@ Result<void> QSettingsPinnedFolderStore::save(const std::vector<PinnedFolder>& p
     }
 
     QSettings settings;
-    settings.setValue(QString::fromLatin1(kSettingsKey),
+    settings.setValue(settingsKeyFor(accountKey),
                       QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)));
     settings.sync();
     if (settings.status() != QSettings::NoError)

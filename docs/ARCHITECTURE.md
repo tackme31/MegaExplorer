@@ -51,10 +51,12 @@ src/mega/      MegaSdkClient adapter and MegaSdkLogger (bridges mega::MegaLogger
 src/platform/  Local-storage adapters, not part of MegaExplorerCore (parallels src/mega):
                WindowsSessionStore (session token persistence via Windows DPAPI) and
                QSettingsPinnedFolderStore (quick-access pin list as JSON under QSettings'
-               quickAccess group). WindowsSessionStore gets its own adapter-level test
-               (tests/WindowsSessionStoreTest.cpp) since -- unlike MegaSdkClient -- it
-               needs no live account; QSettingsPinnedFolderStore doesn't, since QSettings
-               writes to the real per-user registry (see docs/PROGRESS.md's Phase 11 log).
+               quickAccess/accounts/<accountKey>/pinnedFolders key, one per MEGA account
+               since Phase 11a -- see docs/PROGRESS.md's Phase 11a log). WindowsSessionStore
+               gets its own adapter-level test (tests/WindowsSessionStoreTest.cpp) since --
+               unlike MegaSdkClient -- it needs no live account; QSettingsPinnedFolderStore
+               doesn't, since QSettings writes to the real per-user registry (see
+               docs/PROGRESS.md's Phase 11 log).
 src/qml/       C++ types exposed to QML (Q_PROPERTY etc.): FileListModel, controllers,
                NotificationController (shared error-toast relay)
 tests/         GoogleTest-based unit tests, one per src/core service

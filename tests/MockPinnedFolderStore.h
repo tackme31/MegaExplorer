@@ -6,6 +6,9 @@
 class MockPinnedFolderStore : public IPinnedFolderStore
 {
 public:
-    MOCK_METHOD(Result<std::vector<PinnedFolder>>, load, (), (const, override));
-    MOCK_METHOD(Result<void>, save, (const std::vector<PinnedFolder>&), (override));
+    MOCK_METHOD(Result<std::vector<PinnedFolder>>, load, (const std::string&), (const, override));
+    MOCK_METHOD(Result<void>,
+                save,
+                (const std::string&, const std::vector<PinnedFolder>&),
+                (override));
 };

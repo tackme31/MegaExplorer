@@ -42,6 +42,13 @@ public:
     // round-trip. Fails if not currently logged in.
     virtual Result<std::string> currentSessionToken() const = 0;
 
+
+    // MegaApi::getMyUserHandleBinary equivalent. Synchronous, same rationale as
+    // currentSessionToken(). Fails if not currently logged in. Used to scope
+    // per-account persisted state (quick-access pins) without account identity
+    // leaking into ISessionStore.
+    virtual Result<std::uint64_t> currentUserHandle() const = 0;
+
     // Must be called after a successful login(), before getRootChildren().
     virtual void fetchNodes(std::function<void(Result<void>)> onDone) = 0;
 

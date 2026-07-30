@@ -44,16 +44,20 @@ refresh when a folder is opened, no continuous watching.
 
 ## Project status
 
-Phases 0–6, 6a, 6b, 7a, 7, 7b, 8, 9, 10, 11, and 12 are done (Phase 7 closes out login screen + session
-persistence; Phase 7b removes Phase 6's local node cache; Phase 8 adds the breadcrumb trail; Phase 9
-adds Explorer-style tabs, each with its own independent navigation/search/sort/view-mode state; Phase
-10 adds the left `SplitView` folder-tree panel, shared across every tab, with lazy expansion and a
-navigation-driven highlight — no auto-expand/auto-scroll; Phase 11 adds the quick-access pinned-folder
-section above that tree, persisted by node handle so pins follow moves *and* renames, with a
-login-time validation sweep that silently drops deleted targets and a click-time confirmation dialog
-for ones deleted mid-session; Phase 12 adds inline rename plus move-to-Rubbish-bin — the codebase's
-first *mutating* SDK calls — with **move deliberately deferred to Phase 14**, since choosing a
-destination realistically needs drag & drop).
+Phases 0–6, 6a, 6b, 7a, 7, 7b, 8, 9, 10, 11, 11a, and 12 are done (Phase 7 closes out login screen +
+session persistence; Phase 7b removes Phase 6's local node cache; Phase 8 adds the breadcrumb trail;
+Phase 9 adds Explorer-style tabs, each with its own independent navigation/search/sort/view-mode
+state; Phase 10 adds the left `SplitView` folder-tree panel, shared across every tab, with lazy
+expansion and a navigation-driven highlight — no auto-expand/auto-scroll; Phase 11 adds the
+quick-access pinned-folder section above that tree, persisted by node handle so pins follow moves
+*and* renames, with a login-time validation sweep that silently drops deleted targets and a
+click-time confirmation dialog for ones deleted mid-session; Phase 11a is an unplanned correction of
+Phase 11's own known limitation — pins are now scoped per MEGA account (via the account's user
+handle, `IMegaClient::currentUserHandle()`) instead of one machine-wide list, so logging into a
+different account no longer has the login-time sweep silently wipe the previous account's pins;
+pre-existing flat-key pin data is not migrated and is simply abandoned; Phase 12 adds inline rename
+plus move-to-Rubbish-bin — the codebase's first *mutating* SDK calls — with **move deliberately
+deferred to Phase 14**, since choosing a destination realistically needs drag & drop).
 Phases 13a (selection model) and 13b (multi-select context menu + declarative action-resolution
 logic) were pulled forward out of numeric order — both are self-contained and didn't need phases
 9–12 first — and are also done; phase 13's remaining scope is now just bulk *move*, which waits on
@@ -79,8 +83,9 @@ Phase 9 log for why those two classes now use `enable_shared_from_this`), a shar
 `FolderTreeService`/`FolderTreeModel` (`src/core`/`src/qml`) backing `qml/components/
 FolderTreePanel.qml`'s lazily-expanded `TreeView` side panel (Phase 10), an equally shared
 `QuickAccessService`/`QuickAccessModel` (`src/core`/`src/qml`) backed by `IPinnedFolderStore`/
-`QSettingsPinnedFolderStore` behind `qml/components/QuickAccessSection.qml` — both panel halves now
-stacked by `qml/components/SidePanel.qml` (Phase 11) — and cross-cutting app
+`QSettingsPinnedFolderStore` (account-scoped since Phase 11a) behind `qml/components/
+QuickAccessSection.qml` — both panel halves now stacked by `qml/components/SidePanel.qml`
+(Phase 11) — and cross-cutting app
 infrastructure — categorized logging + a MEGA SDK logger bridge (`src/app`, `src/mega`) and a shared
 `NotificationController`/`ErrorToast.qml` for user-facing failures (`src/qml`, `qml/`) — see
 `docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md` for what each phase actually built

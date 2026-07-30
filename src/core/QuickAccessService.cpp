@@ -1,6 +1,7 @@
 #include "QuickAccessService.h"
 
 #include <algorithm>
+#include <string>
 #include <utility>
 
 QuickAccessService::QuickAccessService(std::shared_ptr<IMegaClient> client,
@@ -10,7 +11,16 @@ QuickAccessService::QuickAccessService(std::shared_ptr<IMegaClient> client,
 
 void QuickAccessService::load()
 {
-    Result<std::vector<PinnedFolder>> stored = mStore->load();
+    Result<std::uint64_t> handle = mClient->currentUserHandle();
+    if (!handle.success)
+    {
+        mAccountKey.clear();
+        mPins.clear();
+        return;
+    }
+
+    mAccountKey = std::to_string(handle.value);
+    Result<std::vector<PinnedFolder>> stored = mStore->load(mAccountKey);
     mPins = stored.success ? std::move(stored.value) : std::vector<PinnedFolder>();
 }
 
@@ -30,7 +40,8 @@ bool QuickAccessService::pin(const PinnedFolder& folder)
         return false;
 
     mPins.push_back(folder);
-    mStore->save(mPins);
+    if (!mAccountKey.empty())
+        mStore->save(mAccountKey, mPins);
     return true;
 }
 
@@ -41,19 +52,22 @@ bool QuickAccessService::unpin(std::uint64_t handle)
         return false;
 
     mPins.erase(existing);
-    mStore->save(mPins);
+    if (!mAccountKey.empty())
+        mStore->save(mAccountKey, mPins);
     return true;
 }
 
 void QuickAccessService::replaceAll(std::vector<PinnedFolder> pins)
 {
     mPins = std::move(pins);
-    mStore->save(mPins);
+    if (!mAccountKey.empty())
+        mStore->save(mAccountKey, mPins);
 }
 
 void QuickAccessService::clear()
 {
     mPins.clear();
+    mAccountKey.clear();
 }
 
 void QuickAccessService::resolveFolder(std::uint64_t handle,

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 // Owns the quick-access pin list and writes it through to IPinnedFolderStore
@@ -30,7 +31,11 @@ public:
     // Reads the persisted list into memory as-is, without validating any pin
     // against the node tree. A load failure degrades to an empty list (the
     // adapter has already logged the cause) -- a broken pin list is never
-    // worth blocking startup over.
+    // worth blocking startup over. Also resolves and caches the current
+    // account's key (Phase 11a, via IMegaClient::currentUserHandle) so every
+    // subsequent mutator persists under that account's own storage slot; if
+    // the client isn't logged in, the account key is cleared instead and the
+    // list degrades to empty, same as a load failure.
     void load();
 
     const std::vector<PinnedFolder>& pins() const;
@@ -49,10 +54,11 @@ public:
     // result in one write instead of one per dropped/renamed pin.
     void replaceAll(std::vector<PinnedFolder> pins);
 
-    // Sign-out: drops the in-memory list but deliberately leaves the store
-    // alone, so signing back into the same account restores the pins. (A
-    // different account's pins can't survive the next validation sweep
-    // anyway -- its handles don't resolve.)
+    // Sign-out: drops the in-memory list and the cached account key, but
+    // deliberately leaves the store alone -- signing back into the same
+    // account restores its pins via the next load(), which re-resolves the
+    // key (Phase 11a: a different account now gets its own storage slot
+    // instead of colliding with this one).
     void clear();
 
     void resolveFolder(std::uint64_t handle, std::function<void(Result<NodeInfo>)> onDone);
@@ -69,4 +75,8 @@ private:
     std::shared_ptr<IMegaClient> mClient;
     std::shared_ptr<IPinnedFolderStore> mStore;
     std::vector<PinnedFolder> mPins;
+    // Empty when not logged in / load() hasn't resolved an account yet.
+    // Set by load(), consumed by pin()/unpin()/replaceAll() to scope
+    // mStore->save() (Phase 11a).
+    std::string mAccountKey;
 };

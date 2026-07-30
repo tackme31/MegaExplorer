@@ -37,6 +37,8 @@ public:
 
     Result<std::string> currentSessionToken() const override;
 
+    Result<std::uint64_t> currentUserHandle() const override;
+
     void fetchNodes(std::function<void(Result<void>)> onDone) override;
 
     void getRootChildren(SortOrder order,

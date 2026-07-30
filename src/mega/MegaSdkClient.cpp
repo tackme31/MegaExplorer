@@ -237,6 +237,14 @@ Result<std::string> MegaSdkClient::currentSessionToken() const
     return Result<std::string>::ok(std::move(token));
 }
 
+Result<std::uint64_t> MegaSdkClient::currentUserHandle() const
+{
+    const mega::MegaHandle handle = mApi->getMyUserHandleBinary();
+    if (handle == mega::INVALID_HANDLE)
+        return Result<std::uint64_t>::fail("not logged in");
+    return Result<std::uint64_t>::ok(static_cast<std::uint64_t>(handle));
+}
+
 void MegaSdkClient::fetchNodes(std::function<void(Result<void>)> onDone)
 {
     mApi->fetchNodes(new SimpleResultListener(std::move(onDone)));

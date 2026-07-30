@@ -38,6 +38,9 @@ protected:
     {
         client = std::make_shared<MockMegaClient>();
         store = std::make_shared<MockPinnedFolderStore>();
+        // Fixed default account for tests that don't care about account
+        // scoping (Phase 11a); PinsAreIsolatedPerAccount below overrides this.
+        ON_CALL(*client, currentUserHandle()).WillByDefault(Return(Result<std::uint64_t>::ok(111)));
         service = std::make_unique<QuickAccessService>(client, store);
     }
 
@@ -45,7 +48,7 @@ protected:
     // tests override the expectation they actually care about.
     void expectEmptyStore()
     {
-        EXPECT_CALL(*store, load())
+        EXPECT_CALL(*store, load(_))
             .WillRepeatedly(Return(Result<std::vector<PinnedFolder>>::ok({})));
     }
 
@@ -59,7 +62,7 @@ protected:
 TEST_F(QuickAccessServiceTest, LoadReflectsStoredPinsInOrder)
 {
     const std::vector<PinnedFolder> stored = {makePin("Photos", 11), makePin("Work", 22)};
-    EXPECT_CALL(*store, load()).WillOnce(Return(Result<std::vector<PinnedFolder>>::ok(stored)));
+    EXPECT_CALL(*store, load(_)).WillOnce(Return(Result<std::vector<PinnedFolder>>::ok(stored)));
 
     service->load();
 
@@ -68,7 +71,7 @@ TEST_F(QuickAccessServiceTest, LoadReflectsStoredPinsInOrder)
 
 TEST_F(QuickAccessServiceTest, LoadFailureDegradesToEmptyList)
 {
-    EXPECT_CALL(*store, load())
+    EXPECT_CALL(*store, load(_))
         .WillOnce(Return(Result<std::vector<PinnedFolder>>::fail("corrupt")));
 
     service->load();
@@ -83,8 +86,8 @@ TEST_F(QuickAccessServiceTest, PinAppendsAtTheEndAndPersists)
 
     const std::vector<PinnedFolder> afterFirst = {makePin("Photos", 11)};
     const std::vector<PinnedFolder> afterSecond = {makePin("Photos", 11), makePin("Work", 22)};
-    EXPECT_CALL(*store, save(afterFirst)).WillOnce(Return(Result<void>::ok()));
-    EXPECT_CALL(*store, save(afterSecond)).WillOnce(Return(Result<void>::ok()));
+    EXPECT_CALL(*store, save(_, afterFirst)).WillOnce(Return(Result<void>::ok()));
+    EXPECT_CALL(*store, save(_, afterSecond)).WillOnce(Return(Result<void>::ok()));
 
     EXPECT_TRUE(service->pin(makePin("Photos", 11)));
     EXPECT_TRUE(service->pin(makePin("Work", 22)));
@@ -98,7 +101,7 @@ TEST_F(QuickAccessServiceTest, PinRejectsADuplicateHandleWithoutSaving)
     service->load();
 
     // Exactly one save: the second pin() must not reach the store at all.
-    EXPECT_CALL(*store, save(_)).Times(1).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*store, save(_, _)).Times(1).WillRepeatedly(Return(Result<void>::ok()));
 
     EXPECT_TRUE(service->pin(makePin("Photos", 11)));
     EXPECT_FALSE(service->pin(makePin("Photos renamed elsewhere", 11)));
@@ -109,13 +112,13 @@ TEST_F(QuickAccessServiceTest, PinRejectsADuplicateHandleWithoutSaving)
 
 TEST_F(QuickAccessServiceTest, UnpinRemovesAndPersists)
 {
-    EXPECT_CALL(*store, load())
+    EXPECT_CALL(*store, load(_))
         .WillOnce(Return(
             Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11), makePin("Work", 22)})));
     service->load();
 
     const std::vector<PinnedFolder> remaining = {makePin("Work", 22)};
-    EXPECT_CALL(*store, save(remaining)).WillOnce(Return(Result<void>::ok()));
+    EXPECT_CALL(*store, save(_, remaining)).WillOnce(Return(Result<void>::ok()));
 
     EXPECT_TRUE(service->unpin(11));
     EXPECT_EQ(service->pins(), remaining);
@@ -126,16 +129,16 @@ TEST_F(QuickAccessServiceTest, UnpinOfAnUnknownHandleDoesNothing)
     expectEmptyStore();
     service->load();
 
-    EXPECT_CALL(*store, save(_)).Times(0);
+    EXPECT_CALL(*store, save(_, _)).Times(0);
 
     EXPECT_FALSE(service->unpin(99));
 }
 
 TEST_F(QuickAccessServiceTest, IsPinnedTracksTheCurrentList)
 {
-    EXPECT_CALL(*store, load())
+    EXPECT_CALL(*store, load(_))
         .WillOnce(Return(Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11)})));
-    EXPECT_CALL(*store, save(_)).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*store, save(_, _)).WillRepeatedly(Return(Result<void>::ok()));
     service->load();
 
     EXPECT_TRUE(service->isPinned(11));
@@ -147,13 +150,13 @@ TEST_F(QuickAccessServiceTest, IsPinnedTracksTheCurrentList)
 
 TEST_F(QuickAccessServiceTest, ReplaceAllOverwritesAndPersistsInOneWrite)
 {
-    EXPECT_CALL(*store, load())
+    EXPECT_CALL(*store, load(_))
         .WillOnce(Return(
             Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11), makePin("Work", 22)})));
     service->load();
 
     const std::vector<PinnedFolder> replacement = {makePin("Photos (renamed)", 11)};
-    EXPECT_CALL(*store, save(replacement)).Times(1).WillOnce(Return(Result<void>::ok()));
+    EXPECT_CALL(*store, save(_, replacement)).Times(1).WillOnce(Return(Result<void>::ok()));
 
     service->replaceAll(replacement);
 
@@ -162,16 +165,54 @@ TEST_F(QuickAccessServiceTest, ReplaceAllOverwritesAndPersistsInOneWrite)
 
 TEST_F(QuickAccessServiceTest, ClearEmptiesMemoryButLeavesTheStoreAlone)
 {
-    EXPECT_CALL(*store, load())
+    EXPECT_CALL(*store, load(_))
         .WillOnce(Return(Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11)})));
     service->load();
 
     // Sign-out must not wipe the persisted list -- signing back in restores it.
-    EXPECT_CALL(*store, save(_)).Times(0);
+    EXPECT_CALL(*store, save(_, _)).Times(0);
 
     service->clear();
 
     EXPECT_TRUE(service->pins().empty());
+}
+
+// Phase 11a: pins are scoped by account, so signing into a different account
+// must not see (or silently overwrite) the previous account's pins.
+TEST_F(QuickAccessServiceTest, PinsAreIsolatedPerAccount)
+{
+    EXPECT_CALL(*client, currentUserHandle())
+        .WillOnce(Return(Result<std::uint64_t>::ok(111)))
+        .WillOnce(Return(Result<std::uint64_t>::ok(222)));
+    EXPECT_CALL(*store, load("111"))
+        .WillOnce(Return(Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11)})));
+    EXPECT_CALL(*store, load("222")).WillOnce(Return(Result<std::vector<PinnedFolder>>::ok({})));
+
+    service->load(); // account 111
+    EXPECT_EQ(service->pins(), std::vector<PinnedFolder>{makePin("Photos", 11)});
+
+    service->clear(); // sign-out
+    service->load();  // account 222 -- must not inherit account 111's pins
+    EXPECT_TRUE(service->pins().empty());
+
+    EXPECT_CALL(*store, save("222", _)).Times(1).WillOnce(Return(Result<void>::ok()));
+    EXPECT_TRUE(service->pin(makePin("Vacation", 33)));
+}
+
+// Phase 11a: with no resolvable account, load() must degrade the same way a
+// store failure already does, and mutators must not persist under a bogus key.
+TEST_F(QuickAccessServiceTest, LoadWithNoLoggedInAccountDegradesToEmptyAndSkipsTheStore)
+{
+    EXPECT_CALL(*client, currentUserHandle())
+        .WillOnce(Return(Result<std::uint64_t>::fail("not logged in")));
+    EXPECT_CALL(*store, load(_)).Times(0);
+
+    service->load();
+
+    EXPECT_TRUE(service->pins().empty());
+
+    EXPECT_CALL(*store, save(_, _)).Times(0);
+    EXPECT_TRUE(service->pin(makePin("Photos", 11)));
 }
 
 TEST_F(QuickAccessServiceTest, ResolveFolderDelegatesToGetNodeInfo)
