@@ -1,6 +1,7 @@
 #pragma once
 #include "DownloadOutcome.h"
 #include "FileEntry.h"
+#include "NodeInfo.h"
 #include "PathSegment.h"
 #include "Result.h"
 #include "SortOrder.h"
@@ -122,4 +123,14 @@ public:
     virtual void getPath(std::uint64_t handle,
                          bool isRoot,
                          std::function<void(Result<std::vector<PathSegment>>)> onDone) = 0;
+
+    // Current identity of the node identified by handle, without walking its
+    // ancestors. Fails when the handle resolves to nothing (permanently
+    // deleted, or fetchNodes() hasn't run). Succeeding does *not* mean the
+    // node is still in the Cloud Drive -- check NodeInfo::inCloud for that,
+    // since a deleted node lives on in the Rubbish bin. Must be called after
+    // a successful fetchNodes(). Synchronous under the hood (in-memory
+    // lookup), but kept callback-shaped for interface consistency.
+    virtual void getNodeInfo(std::uint64_t handle,
+                             std::function<void(Result<NodeInfo>)> onDone) = 0;
 };

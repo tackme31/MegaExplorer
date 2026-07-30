@@ -31,8 +31,11 @@ endif()
 add_library(MegaExplorerCore STATIC
     src/core/IMegaClient.h
     src/core/ISessionStore.h
+    src/core/IPinnedFolderStore.h
     src/core/FileEntry.h
     src/core/MegaErrorCodes.h
+    src/core/NodeInfo.h
+    src/core/PinnedFolder.h
     src/core/Result.h
     src/core/SortOrder.h
     src/core/PathSegment.h
@@ -51,6 +54,8 @@ add_library(MegaExplorerCore STATIC
     src/core/ThumbnailService.cpp
     src/core/FolderTreeService.h
     src/core/FolderTreeService.cpp
+    src/core/QuickAccessService.h
+    src/core/QuickAccessService.cpp
 )
 target_include_directories(MegaExplorerCore PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src)
 
@@ -67,6 +72,8 @@ qt_add_executable(appMegaExplorer
     src/mega/MegaSdkLogger.cpp
     src/platform/WindowsSessionStore.h
     src/platform/WindowsSessionStore.cpp
+    src/platform/QSettingsPinnedFolderStore.h
+    src/platform/QSettingsPinnedFolderStore.cpp
     src/qml/FileListModel.h
     src/qml/FileListModel.cpp
     src/qml/FolderNavigationController.h
@@ -81,6 +88,8 @@ qt_add_executable(appMegaExplorer
     src/qml/TabsController.cpp
     src/qml/FolderTreeModel.h
     src/qml/FolderTreeModel.cpp
+    src/qml/QuickAccessModel.h
+    src/qml/QuickAccessModel.cpp
 )
 
 qt_add_qml_module(appMegaExplorer
@@ -91,7 +100,10 @@ qt_add_qml_module(appMegaExplorer
         qml/components/DownloadSnackbar.qml
         qml/components/ErrorToast.qml
         qml/components/FileContextMenu.qml
+        qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
+        qml/components/QuickAccessSection.qml
+        qml/components/SidePanel.qml
         qml/components/TabStrip.qml
         qml/views/FileGridView.qml
         qml/views/FileTableView.qml

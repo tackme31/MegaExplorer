@@ -240,6 +240,29 @@ ApplicationWindow {
         onAccepted: authController.logout()
     }
 
+    // Raised when a quick-access pin turns out to point at a folder that no
+    // longer exists -- only reachable for a folder deleted *during* this
+    // session (e.g. on another device), since the login-time sweep in
+    // QuickAccessModel::reload silently drops the ones already gone.
+    // Declining leaves the pin in place, so clicking it again asks again.
+    Dialog {
+        id: missingPinDialog
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        standardButtons: Dialog.Yes | Dialog.Cancel
+
+        property var pinHandle: 0
+        property string pinName: ""
+
+        title: qsTr("Folder no longer exists")
+        Label {
+            text: qsTr("\"%1\" could not be found. Remove it from Quick access?").arg(
+                      missingPinDialog.pinName)
+        }
+
+        onAccepted: quickAccessModel.unpin(missingPinDialog.pinHandle)
+    }
+
     Loader {
         anchors.fill: parent
         sourceComponent: authController.authState === AuthController.LoggedIn
@@ -259,7 +282,7 @@ ApplicationWindow {
             id: splitView
             anchors.fill: parent
 
-            FolderTreePanel {
+            SidePanel {
                 id: treePanel
                 navController: tabsController.currentNavigation
                 SplitView.minimumWidth: 120
@@ -381,10 +404,29 @@ ApplicationWindow {
             if (authController.authState === AuthController.LoggedIn) {
                 tabsController.loadRootAll();
                 folderTreeModel.reload();
+                quickAccessModel.reload();
             } else if (authController.authState === AuthController.LoggedOut) {
                 tabsController.resetAll();
                 folderTreeModel.reset();
+                quickAccessModel.reset();
             }
+        }
+    }
+
+    // QuickAccessModel verifies a pin's target before anything happens, then
+    // reports back here -- it deliberately knows nothing about tabs or dialogs.
+    Connections {
+        target: quickAccessModel
+        function onActivated(handle, inNewTab) {
+            if (inNewTab)
+                tabsController.addTabAt(handle, false);
+            else
+                tabsController.currentNavigation?.navigateTo(handle, false);
+        }
+        function onMissing(handle, name) {
+            missingPinDialog.pinHandle = handle;
+            missingPinDialog.pinName = name;
+            missingPinDialog.open();
         }
     }
 

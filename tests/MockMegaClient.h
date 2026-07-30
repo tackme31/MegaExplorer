@@ -55,4 +55,8 @@ public:
                 getPath,
                 (std::uint64_t, bool, std::function<void(Result<std::vector<PathSegment>>)>),
                 (override));
+    MOCK_METHOD(void,
+                getNodeInfo,
+                (std::uint64_t, std::function<void(Result<NodeInfo>)>),
+                (override));
 };

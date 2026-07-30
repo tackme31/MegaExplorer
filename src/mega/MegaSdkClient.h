@@ -66,6 +66,8 @@ public:
                  bool isRoot,
                  std::function<void(Result<std::vector<PathSegment>>)> onDone) override;
 
+    void getNodeInfo(std::uint64_t handle, std::function<void(Result<NodeInfo>)> onDone) override;
+
 private:
     // Shared by getRootChildren/getChildren/search: isRoot selects
     // getRootNode(), otherwise looks handle up via getNodeByHandle().

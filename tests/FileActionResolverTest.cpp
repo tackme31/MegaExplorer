@@ -189,8 +189,32 @@ TEST(FileActionResolverTest, OpenInNewTabIdIsStable)
 TEST(FileActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
 {
     std::vector<FileAction> result = resolveFileActions(summary(0, 1));
-    ASSERT_EQ(result.size(), 1u);
+    ASSERT_EQ(result.size(), 2u);
     EXPECT_EQ(result[0], FileAction::OpenInNewTab);
+    EXPECT_EQ(result[1], FileAction::TogglePin);
+}
+
+TEST(FileActionResolverTest, TogglePinIdIsStable)
+{
+    // The only contract linking this enum value to FileContextMenu.qml's
+    // labelFor()/onTriggered branches.
+    EXPECT_STREQ(fileActionId(FileAction::TogglePin), "togglePin");
+}
+
+TEST(FileActionResolverTest, DefaultTableNeverOffersTogglePinForMultipleFolders)
+{
+    EXPECT_FALSE(contains(resolveFileActions(summary(0, 2)), FileAction::TogglePin));
+}
+
+TEST(FileActionResolverTest, DefaultTableNeverOffersTogglePinForASingleFile)
+{
+    // Only folders can be pinned; a single file still gets Download.
+    EXPECT_FALSE(contains(resolveFileActions(summary(1, 0)), FileAction::TogglePin));
+}
+
+TEST(FileActionResolverTest, DefaultTableNeverOffersTogglePinForAMixedSelection)
+{
+    EXPECT_FALSE(contains(resolveFileActions(summary(1, 1)), FileAction::TogglePin));
 }
 
 TEST(FileActionResolverTest, DefaultTableNeverOffersOpenInNewTabForMultipleFolders)

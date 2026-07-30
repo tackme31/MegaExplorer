@@ -3,15 +3,18 @@
 #include "core/DownloadService.h"
 #include "core/FolderNavigationService.h"
 #include "core/FolderTreeService.h"
+#include "core/QuickAccessService.h"
 #include "core/SearchService.h"
 #include "core/ThumbnailService.h"
 #include "mega/MegaSdkClient.h"
+#include "platform/QSettingsPinnedFolderStore.h"
 #include "platform/WindowsSessionStore.h"
 #include "qml/AuthController.h"
 #include "qml/DownloadController.h"
 #include "qml/FolderNavigationController.h"
 #include "qml/FolderTreeModel.h"
 #include "qml/NotificationController.h"
+#include "qml/QuickAccessModel.h"
 #include "qml/TabsController.h"
 #include "qml/ThumbnailController.h"
 
@@ -65,6 +68,14 @@ int main(int argc, char* argv[])
     auto folderTreeService = std::make_shared<FolderTreeService>(client);
     FolderTreeModel folderTreeModel(folderTreeService);
 
+    // Same shared side-panel scope as folderTreeService/folderTreeModel above.
+    // The store needs no resolved path, unlike sessionStore: it persists
+    // through QSettings, which resolves its own location from the
+    // organization/application name set at the top of this function.
+    auto pinnedFolderStore = std::make_shared<QSettingsPinnedFolderStore>();
+    auto quickAccessService = std::make_shared<QuickAccessService>(client, pinnedFolderStore);
+    QuickAccessModel quickAccessModel(quickAccessService);
+
     // Wires one tab's worth of navigation/search/thumbnail state: a fresh
     // FolderNavigationService/SearchService/FolderNavigationController/
     // ThumbnailController each, capturing the shared, app-lifetime
@@ -92,6 +103,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("notificationController", &notifications);
     engine.rootContext()->setContextProperty("authController", &authController);
     engine.rootContext()->setContextProperty("folderTreeModel", &folderTreeModel);
+    engine.rootContext()->setContextProperty("quickAccessModel", &quickAccessModel);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

@@ -21,6 +21,25 @@ Menu {
                                              "openInNewTab": qsTr("Open in new tab")
                                          })
 
+    // "togglePin" is one action with two labels -- FileActionResolver only sees
+    // selection counts, so it can't know whether the folder is already pinned
+    // (see FileAction.h). Sampled once per open rather than bound: there's no
+    // per-handle change signal on quickAccessModel to drive a binding, and the
+    // answer can't change while the menu is open.
+    property bool selectionPinned: false
+
+    onAboutToShow: {
+        const entries = root.navController.fileListModel.selectedEntries();
+        root.selectionPinned = entries.length === 1 && quickAccessModel.isPinned(entries[0].handle);
+    }
+
+    function labelFor(actionId) {
+        if (actionId === "togglePin")
+            return root.selectionPinned ? qsTr("Unpin from Quick access") : qsTr(
+                                              "Pin to Quick access");
+        return root.actionLabels[actionId];
+    }
+
     // Instantiator (Qt's "Dynamically Generating Menu Items" pattern) rather
     // than a Repeater: Menu's contentItem isn't a plain Item container a
     // Repeater can target. This also drops the old visible+height:0 hack's
@@ -41,7 +60,7 @@ Menu {
             // var, not string: a string-typed property coerces an undefined
             // lookup (unrecognized action ID) to "" instead of preserving
             // undefined, which would silently defeat the enabled check below.
-            readonly property var label: root.actionLabels[modelData]
+            readonly property var label: root.labelFor(modelData)
 
             text: label !== undefined ? label : qsTr("None")
             enabled: label !== undefined
@@ -57,6 +76,14 @@ Menu {
                     const entries = root.navController.fileListModel.selectedEntries();
                     if (entries.length > 0)
                         tabsController.addTabAt(entries[0].handle, false);
+                } else if (modelData === "togglePin") {
+                    const entries = root.navController.fileListModel.selectedEntries();
+                    if (entries.length > 0) {
+                        if (root.selectionPinned)
+                            quickAccessModel.unpin(entries[0].handle);
+                        else
+                            quickAccessModel.pin(entries[0].handle, entries[0].name);
+                    }
                 }
             }
         }

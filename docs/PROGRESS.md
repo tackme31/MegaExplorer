@@ -26,7 +26,7 @@ are post-MVP, sequenced by priority/dependency.
 | 8 | Breadcrumb trail | done |
 | 9 | Windows-Explorer-style tabs (multiple folder views) | done |
 | 10 | Folder tree navigation (side panel) | done |
-| 11 | Quick access (pinned folders, side panel) | planned |
+| 11 | Quick access (pinned folders, side panel) | done |
 | 12 | Rename / delete (move to rubbish) / move | planned |
 | 13a | Selection model (row/cell, keyboard, right-click) | done (pulled forward) |
 | 13 | Multi-select + bulk operations | planned (selection model prerequisite done in 13a) |
@@ -91,7 +91,10 @@ check performance on large folders. Shared across tabs (phase 9), not duplicated
 ### Phase 11 — quick access (pinned folders, side panel)
 
 Adds a pinned-folders section to phase 10's panel. Persist via `Settings` (QtCore). Dangling-pin
-handling (target deleted/moved) should be designed together with phase 12, not bolted on after.
+handling (target deleted/moved) should be designed together with phase 12, not bolted on after. See
+the Phase 11 implementation-log entry below for what was built — in particular, "moved" turned out
+not to need any handling at all (a MEGA handle is stable across moves *and* renames), so only
+deletion breaks a pin.
 
 ### Phase 12 — rename / delete (move to rubbish) / move
 
@@ -975,3 +978,156 @@ the now-documented behavior in `TabsController.h`.
 and the `visible: window.treePanelVisible` binding on `FolderTreePanel`) are all gone, so the panel is
 now always shown, same as the tab strip/breadcrumb bar. `window.treePanelWidth` (drag-to-resize
 persistence) is unaffected. No test exercised the toggle directly, so no test changes were needed.
+
+## Phase 11 — quick access (pinned folders, side panel) (done)
+
+Pinned folders in a section above phase 10's folder tree, matching Explorer's placement. Pins are
+stored by MEGA node handle, which turned out to settle most of the phase's design questions at once:
+a `MegaHandle` is stable for the node's whole lifetime, so **a pin follows both moves and renames for
+free** and the only thing that can break it is deletion. The roadmap's "target deleted/moved" framing
+was therefore half a non-problem.
+
+**Gotcha that shaped the whole phase — `getPath` can't see the Rubbish bin.** A MEGA delete is really
+a move to the Rubbish bin, so a deleted node's handle keeps resolving. Worse,
+`MegaSdkClient::getPath` normalizes whatever root its parent walk ends at into the Cloud Drive
+sentinel (`isRoot = true, handle = 0`, unchanged from phase 8), so a node sitting in the Rubbish bin
+comes back as a perfectly ordinary Cloud-Drive-rooted path. Validating pins through `getPath` would
+have reported every deleted folder as alive. Fixed with a new port method rather than by touching
+`getPath`'s phase 8 contract: `IMegaClient::getNodeInfo(handle, onDone)` → `Result<NodeInfo>`
+(`src/core/NodeInfo.h`: `{name, handle, isFolder, inCloud}`), implemented over the existing private
+`resolveNode(handle, false)` plus `MegaApi::isInCloud(node)`. It walks no ancestors, so it's also
+cheaper than `getPath` — and phase 12's rename/delete will want the same "what is this handle now"
+lookup. **Per the user's decision, "in the Rubbish bin" counts as deleted** (`isInCloud == false`,
+which also covers the Vault): the app never shows the Rubbish bin, so a pin that navigated into it
+would land the file list somewhere the tree can't represent.
+
+Persistence follows the `ISessionStore`/`WindowsSessionStore` port+adapter shape rather than being
+done in QML, even though the roadmap said "persist via `Settings` (QtCore)" — both halves were kept:
+`src/core/IPinnedFolderStore.h` (+ `src/core/PinnedFolder.h`, `{name, handle}` with the usual
+field-by-field `operator==` for gmock) is the Qt-free port, and `src/platform/
+QSettingsPinnedFolderStore.{h,cpp}` is the adapter, writing a single JSON array string to
+`QSettings`' `quickAccess/pinnedFolders` key — i.e. the same registry location `Main.qml`'s QML
+`Settings` item already uses, which keeps to the roadmap's storage choice while leaving the pin logic
+in testable C++. The alternative considered and rejected was a `pinnedFoldersJson` alias on `window`
+with the list logic in QML JS: validation needs `IMegaClient`, which only exists in C++, so that
+would have split the pin data (QML) from the code that validates it (C++) across two layers with no
+unit test possible. Deliberately *not* `QSettings::beginWriteArray`: an array write leaves a `size`
+key plus one subgroup per element behind, and shrinking the list needs an explicit `remove()` first
+or stale indices survive. A `handle` of 0 is skipped on load (never a real node, so it can only come
+from a hand-edited or truncated entry) rather than failing the whole load; a JSON parse failure logs
+via a new `lcQuickAccess` category and degrades to an empty list.
+
+`src/core/QuickAccessService.{h,cpp}` (`MegaExplorerCore`) owns the list and writes through to the
+store on every mutation: `load`/`pins`/`isPinned`/`pin`/`unpin`/`replaceAll`/`clear`, plus
+`resolveFolder` as a thin `getNodeInfo` pass-through and a static `isUsable(Result<NodeInfo>)` that
+is the codebase's single definition of "this pin still points at something usable"
+(`success && isFolder && inCloud`). Everything except `resolveFolder` is synchronous and runs on the
+caller's thread, deliberately: driving the N-way login-time validation sweep is `QuickAccessModel`'s
+job, matching the `FolderTreeService`/`FolderTreeModel` split (services pass through, `src/qml`
+marshals). Putting the sweep in the service would mean mutating its vector from the SDK thread while
+the GUI thread reads it. `clear()` (sign-out) empties memory but deliberately leaves the store
+intact so signing back in restores the pins.
+
+`src/qml/QuickAccessModel.{h,cpp}` is a flat `QAbstractListModel` (`NameRole`/`HandleRole`, `count`
+`Q_PROPERTY`) — no tree, since a pin is a shortcut and never expandable. Same lifetime shape as
+`FolderTreeModel`: an app-lifetime singleton, so **no `enable_shared_from_this`** and
+`invokeOnGuiThread` targets `qApp`, unlike the per-tab
+`FolderNavigationController`/`ThumbnailController` (phase 9). Everything is keyed by handle, not row
+index (`FileListModel`'s phase 13a convention), because the validation sweep drops rows.
+
+`reload()` (login) shows the stored names immediately, then starts the sweep, so there's no blank
+panel while it runs. The sweep fires one `resolveFolder` per pin and reconciles in a shared `Sweep`
+struct (a snapshot vector plus a `remaining` counter); the last callback to arrive commits once via
+`replaceAll`, refreshing surviving pins' names (rename following) and dropping the rest. Two details
+worth keeping: a dropped pin is marked by zeroing its handle in the snapshot rather than erasing mid
+sweep (0 is never a real handle, so it doubles as the marker without disturbing the other callbacks'
+indices), and the commit is **skipped entirely when the reconciled list equals the current one** —
+the common case — so an unchanged sweep causes neither a store write nor a model reset, same
+"don't emit an identical value" guard as `FolderNavigationController::refreshBreadcrumb`. Auto-removal
+is silent (a `lcQuickAccess` log line only, no `NotificationController` toast), per the user's
+decision and matching phase 8/10's "degrade quietly" precedent. The **generation guard** is copied
+verbatim from `FolderTreeModel`: `reload()`/`reset()` bump `mGeneration`, every callback captures it
+and bails on mismatch — without it a sign-out part-way through a sweep would let the stale result
+reconcile against the now-empty list and write it back.
+
+`activate(handle, inNewTab)` covers the case the login sweep can't: a folder deleted *during* the
+session, on another device. It re-checks via `resolveFolder` and answers with either
+`activated(handle, inNewTab)` or `missing(handle, name)` — navigation and dialogs stay QML's job,
+this model knows nothing about tabs. `Main.qml`'s new `Connections` on `quickAccessModel` turns
+`activated` into `navigateTo`/`addTabAt` and `missing` into a confirmation `Dialog`
+(`missingPinDialog`, alongside the existing `signOutConfirmDialog`): Yes unpins, Cancel leaves the
+pin alone so clicking it again asks again, exactly as scoped.
+
+**`FileAction::TogglePin`** — one enum value plus one `defaultFileActions()` row
+(`{TogglePin, FoldersOnly, SingleOnly}`), no `FileActionResolver` change, as phase 13b intended.
+Deliberately *one* action rather than a `Pin`/`Unpin` pair: the resolver only sees a
+`SelectionSummary` (counts by kind) and so cannot know whether the selected folder is already pinned.
+`FileContextMenu.qml` resolves that instead — a `selectionPinned` bool sampled in `onAboutToShow`
+(not bound: `quickAccessModel` has no per-handle change signal to drive a binding, and the answer
+can't change while the menu is open) feeding a new `labelFor()` that the delegate's `label` now calls
+instead of indexing `actionLabels` directly. Note this made
+`FileActionResolverTest.DefaultTableOffersOpenInNewTabForSingleFolder`'s exact-size assertion stale
+(a single-folder selection now yields two actions); updated in place.
+
+**QML**: `qml/components/SidePanel.qml` (new) is the whole left panel — `QuickAccessSection` + a 1px
+divider + the pre-existing `FolderTreePanel` in a `ColumnLayout`. It exists purely so
+`FolderTreePanel.qml` could stay a bare `TreeView` with its phase 10 design notes (including the
+hard-won `pointerNavigationEnabled` warning) untouched; `Main.qml`'s `SplitView` child changed from
+`FolderTreePanel` to `SidePanel`, which moved `SplitView.minimumWidth`/`maximumWidth` and the
+persisted-width one-shot `Component.onCompleted` onto the new wrapper (`window.treePanelWidth` and
+its `Settings` alias are otherwise unchanged). `SidePanel.qml` is the one file in `qml/components/`
+with **no** `QtQuick.Controls.FluentWinUI3` import — it instantiates no Controls type, and qmllint
+flags the import as unused.
+
+`qml/components/QuickAccessSection.qml` (new) is a header `Label` plus a `ListView` of `ItemDelegate`
+rows. `visible: quickAccessModel.count > 0` hides the header too when nothing is pinned, rather than
+leaving an empty labeled box above the tree. The list is sized to `contentHeight` but capped at 40%
+of the panel so a long pin list can't push the tree out; the cap reads a `required property real
+availableHeight` passed down from `SidePanel` rather than `root.height` — this `ColumnLayout`'s own
+height derives from its children, so capping a child against it would be a binding loop. The
+highlight is deliberately the *same* expression as `FolderTreePanel.qml`'s `isCurrent`
+(`!navController.atRoot && handle === navController.currentHandle`, `Qt.rgba(highlight…, 0.35)`), so
+both halves of the panel indicate the current folder identically. `focusPolicy: Qt.NoFocus` on the
+delegate, same reason as `TabStrip.qml`/`FolderTreePanel.qml` (otherwise clicking a row strands
+keyboard focus and deadens the file view's arrow keys).
+
+`qml/components/FolderPinMenu.qml` (new) is the right-click menu shared by tree rows and pin rows —
+both address a folder by `(handle, isRoot)`, unlike `FileContextMenu.qml`, which is selection-driven
+and knows nothing about which row was clicked. `popupFor(handle, isRoot, name)` fills the target
+properties then pops up. One instance per view (`FolderTreePanel` and `QuickAccessSection` each hold
+one), never per delegate — phase 13b's lesson. The pin item is disabled for the Cloud Drive root,
+which is permanently the tree's own top row. The tree's new right-click `TapHandler` needs no
+select-then-popup step (unlike the file views): the tree has no `selectionModel` at all, so the
+clicked row is handed straight to the menu. Its delegate gained `required property string name`
+purely to label a new pin — the row's own text still comes from `TreeViewDelegate`'s stock
+`contentItem` reading `Qt::DisplayRole`.
+
+**Tests**: `tests/QuickAccessServiceTest.cpp` (14 cases, Qt-free) covers load/ordering, load-failure
+degradation, append-at-end, duplicate rejection without a store write, unpin, `isPinned`,
+`replaceAll` as a single write, `clear` *not* touching the store, `resolveFolder` delegation, and
+each way `isUsable` can say no (unresolvable / outside the Cloud Drive / a file).
+`tests/QuickAccessModelTest.cpp` (10 cases) is the same narrow exception to "`src/qml` is GUI glue,
+untested by convention" as `FileListModelTest`/`TabsControllerTest`/`FolderTreeModelTest`, for the
+same reason — the sweep's reconciliation and generation guard are pure, bug-prone bookkeeping. It
+pins the stored-names-shown-before-validation behavior, rename following, both dangling cases,
+the no-rewrite-when-unchanged guard, `activated`/`missing` (including `missing` carrying the clicked
+label and *not* removing the pin), duplicate-pin rejection, and the generation guard via `SaveArg` →
+`reset()` → fire.
+
+**`tests/TestApp.h` (new)**: `FolderTreeModelTest.cpp`'s function-local static `QCoreApplication` had
+to be extracted here, because Qt permits exactly one per process and a second copy in
+`QuickAccessModelTest.cpp` would abort with "There should be only one application object". It's a
+static inside an `inline` function, so every translation unit including the header shares the one
+instance; `FolderTreeModelTest.cpp` now includes it instead of declaring its own.
+
+`QSettingsPinnedFolderStore` gets **no** adapter-level test, unlike `WindowsSessionStore`: `QSettings`
+writes to the real per-user registry, so a round-trip test would either pollute the developer's
+actual `HKCU\Software\MegaExplorer` key or need an org/app-name seam added purely for testing. The
+interesting logic all lives in the service and model, which are covered.
+
+**Known limitations**: pins are stored per machine, not per account, so signing into a different
+account initially shows the previous one's pins — but the login-time sweep drops every handle that
+doesn't resolve in the new account, so it self-cleans on the first sweep. Accepted rather than
+designed around, given this is a single-account app in practice. Because "in the Rubbish bin" counts
+as deleted, restoring a folder from the Rubbish bin does not bring its pin back. Pin order is
+insertion order with no reordering UI (drag-to-reorder was explicitly scoped out).

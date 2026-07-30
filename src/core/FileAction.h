@@ -7,6 +7,12 @@ enum class FileAction
 {
     Download,
     OpenInNewTab,
+    // One action, not a Pin/Unpin pair: the resolver only sees a
+    // SelectionSummary (counts by kind), so it can't know whether the selected
+    // folder is already pinned. QML resolves that and picks the label, the
+    // same C++-decides-applicability / QML-decides-wording split the rest of
+    // this table already relies on.
+    TogglePin,
     // Future: Rename, Delete, ...
 };
 

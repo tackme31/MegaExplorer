@@ -44,17 +44,20 @@ refresh when a folder is opened, no continuous watching.
 
 ## Project status
 
-Phases 0–6, 6a, 6b, 7a, 7, 7b, 8, 9, and 10 are done (Phase 7 closes out login screen + session
+Phases 0–6, 6a, 6b, 7a, 7, 7b, 8, 9, 10, and 11 are done (Phase 7 closes out login screen + session
 persistence; Phase 7b removes Phase 6's local node cache; Phase 8 adds the breadcrumb trail; Phase 9
 adds Explorer-style tabs, each with its own independent navigation/search/sort/view-mode state; Phase
 10 adds the left `SplitView` folder-tree panel, shared across every tab, with lazy expansion and a
-navigation-driven highlight — no auto-expand/auto-scroll).
+navigation-driven highlight — no auto-expand/auto-scroll; Phase 11 adds the quick-access pinned-folder
+section above that tree, persisted by node handle so pins follow moves *and* renames, with a
+login-time validation sweep that silently drops deleted targets and a click-time confirmation dialog
+for ones deleted mid-session).
 Phases 13a (selection model) and 13b (multi-select context menu + declarative action-resolution
 logic) were pulled forward out of numeric order — both are self-contained and didn't need phases
 9–12 first — and are also done; phase 13's remaining scope (rename/delete/move as multi-item
-actions) still needs phase 12's single-item versions. Phase 11 (quick access, built atop Phase 10's
-panel) is next in roadmap order. The full roadmap — phases 11–16+ (quick access, rename/delete/move,
-remaining multi-select bulk ops, upload, in-app preview, real-time remote-change reflection, ...) —
+actions) still needs phase 12's single-item versions. Phase 12 (rename / delete / move) is next in
+roadmap order. The full roadmap — phases 12–16+ (rename/delete/move, remaining multi-select bulk ops,
+upload, in-app preview, real-time remote-change reflection, ...) —
 lives in `docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above. `docs/MEMO.md`
 keeps only non-roadmap notes. Full bidirectional local sync stays out of scope.
 
@@ -71,7 +74,10 @@ instantiated per-tab by `qml/views/TabContentPane.qml` and driven by `src/qml/Ta
 instances, Phase 9 — see its `docs/ARCHITECTURE.md`-style lifetime notes in `docs/PROGRESS.md`'s
 Phase 9 log for why those two classes now use `enable_shared_from_this`), a shared (not per-tab)
 `FolderTreeService`/`FolderTreeModel` (`src/core`/`src/qml`) backing `qml/components/
-FolderTreePanel.qml`'s lazily-expanded `TreeView` side panel (Phase 10), and cross-cutting app
+FolderTreePanel.qml`'s lazily-expanded `TreeView` side panel (Phase 10), an equally shared
+`QuickAccessService`/`QuickAccessModel` (`src/core`/`src/qml`) backed by `IPinnedFolderStore`/
+`QSettingsPinnedFolderStore` behind `qml/components/QuickAccessSection.qml` — both panel halves now
+stacked by `qml/components/SidePanel.qml` (Phase 11) — and cross-cutting app
 infrastructure — categorized logging + a MEGA SDK logger bridge (`src/app`, `src/mega`) and a shared
 `NotificationController`/`ErrorToast.qml` for user-facing failures (`src/qml`, `qml/`) — see
 `docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md` for what each phase actually built

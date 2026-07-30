@@ -2,8 +2,7 @@
 
 #include "core/FolderTreeService.h"
 #include "MockMegaClient.h"
-
-#include <QCoreApplication>
+#include "TestApp.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -20,28 +19,9 @@ namespace
 
 // ensureLoaded()'s result always arrives via a queued invoke onto the GUI
 // thread (see FolderTreeModel.cpp's invokeOnGuiThread), even though
-// MockMegaClient's InvokeArgument action below fires synchronously -- the
-// queued event still needs actual QCoreApplication/event-loop plumbing to be
-// delivered to, flushed explicitly via processEvents() below. No other file
-// in this test binary needs a QCoreApplication, so this is that instance for
-// the whole process. Function-local static rather than a file-scope global:
-// it must not be constructed during static initialization (Qt requires a
-// live argc/argv pair and an otherwise-initialized process), and argc/argv
-// must outlive it -- hence the statics inside.
-QCoreApplication& testApp()
-{
-    static int argc = 1;
-    static char arg0[] = "MegaExplorerTests";
-    static char* argv[] = {arg0, nullptr};
-    static QCoreApplication app(argc, argv);
-    return app;
-}
-
-void flushQueuedEvents()
-{
-    QCoreApplication::processEvents();
-}
-
+// MockMegaClient's InvokeArgument action below fires synchronously, so this
+// fixture needs the shared QCoreApplication from TestApp.h and an explicit
+// flushQueuedEvents() after triggering a load.
 class FolderTreeModelTest : public ::testing::Test
 {
 protected:

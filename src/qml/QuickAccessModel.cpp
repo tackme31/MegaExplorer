@@ -1,0 +1,228 @@
+#include "QuickAccessModel.h"
+
+#include "app/Logging.h"
+
+#include <QCoreApplication>
+#include <QMetaObject>
+
+#include <utility>
+#include <vector>
+
+namespace
+{
+// Same helper (and same qApp target) as FolderTreeModel's: this model is an
+// app-lifetime singleton, so there's no per-tab destruction race to close.
+void invokeOnGuiThread(std::function<void()> fn)
+{
+    QMetaObject::invokeMethod(qApp, std::move(fn), Qt::QueuedConnection);
+}
+
+// One in-flight validation sweep. Shared by all N callbacks so the last one
+// to arrive can commit the reconciled list in a single write.
+struct Sweep
+{
+    // Snapshot of the pins at sweep start, in order. A surviving pin gets its
+    // name refreshed in place; a dangling one has its handle zeroed, which is
+    // never a real node handle and so doubles as the "dropped" marker.
+    std::vector<PinnedFolder> resolved;
+    int remaining = 0;
+};
+} // namespace
+
+QuickAccessModel::QuickAccessModel(std::shared_ptr<QuickAccessService> service, QObject* parent)
+    : QAbstractListModel(parent), mService(std::move(service))
+{}
+
+QuickAccessModel::~QuickAccessModel() = default;
+
+int QuickAccessModel::rowCount(const QModelIndex& parent) const
+{
+    if (parent.isValid())
+        return 0;
+    return static_cast<int>(mService->pins().size());
+}
+
+QVariant QuickAccessModel::data(const QModelIndex& index, int role) const
+{
+    if (!index.isValid() || index.row() < 0 || index.row() >= rowCount())
+        return {};
+
+    const PinnedFolder& pin = mService->pins()[static_cast<std::size_t>(index.row())];
+    switch (role)
+    {
+        case Qt::DisplayRole:
+        case NameRole:
+            return QString::fromStdString(pin.name);
+        case HandleRole:
+            return QVariant(static_cast<qulonglong>(pin.handle));
+        default:
+            return {};
+    }
+}
+
+QHash<int, QByteArray> QuickAccessModel::roleNames() const
+{
+    return {{Qt::DisplayRole, "display"}, {NameRole, "name"}, {HandleRole, "handle"}};
+}
+
+int QuickAccessModel::count() const
+{
+    return rowCount();
+}
+
+void QuickAccessModel::reload()
+{
+    beginResetModel();
+    ++mGeneration;
+    mService->load();
+    endResetModel();
+    emit countChanged();
+
+    validateAll();
+}
+
+void QuickAccessModel::reset()
+{
+    beginResetModel();
+    ++mGeneration;
+    mService->clear();
+    endResetModel();
+    emit countChanged();
+}
+
+bool QuickAccessModel::isPinned(quint64 handle) const
+{
+    return mService->isPinned(handle);
+}
+
+void QuickAccessModel::pin(quint64 handle, const QString& name)
+{
+    // Checked before beginInsertRows rather than relying on pin()'s return
+    // value: announcing an insertion the service then refuses would leave the
+    // view believing in a row that doesn't exist.
+    if (handle == 0 || mService->isPinned(handle))
+        return;
+
+    PinnedFolder folder;
+    folder.name = name.toStdString();
+    folder.handle = handle;
+
+    const int row = rowCount();
+    beginInsertRows(QModelIndex(), row, row);
+    mService->pin(folder);
+    endInsertRows();
+    emit countChanged();
+}
+
+void QuickAccessModel::unpin(quint64 handle)
+{
+    const int row = rowFor(handle);
+    if (row < 0)
+        return;
+
+    beginRemoveRows(QModelIndex(), row, row);
+    mService->unpin(handle);
+    endRemoveRows();
+    emit countChanged();
+}
+
+void QuickAccessModel::activate(quint64 handle, bool inNewTab)
+{
+    // Captured now: if the pin turns out to be gone, missing() reports the
+    // label the user actually clicked, which unpin() will then remove.
+    const QString name = nameFor(handle);
+    const std::uint64_t generation = mGeneration;
+
+    mService->resolveFolder(
+        handle, [this, handle, inNewTab, name, generation](Result<NodeInfo> resolved) {
+            invokeOnGuiThread([this, handle, inNewTab, name, generation, resolved]() {
+                if (generation != mGeneration)
+                    return;
+                if (QuickAccessService::isUsable(resolved))
+                    emit activated(handle, inNewTab);
+                else
+                    emit missing(handle, name);
+            });
+        });
+}
+
+void QuickAccessModel::validateAll()
+{
+    const std::vector<PinnedFolder> snapshot = mService->pins();
+    if (snapshot.empty())
+        return;
+
+    auto sweep = std::make_shared<Sweep>();
+    sweep->resolved = snapshot;
+    sweep->remaining = static_cast<int>(snapshot.size());
+
+    const std::uint64_t generation = mGeneration;
+
+    for (std::size_t i = 0; i < snapshot.size(); ++i)
+    {
+        mService->resolveFolder(
+            snapshot[i].handle, [this, sweep, i, generation](Result<NodeInfo> resolved) {
+                invokeOnGuiThread([this, sweep, i, generation, resolved]() {
+                    if (generation != mGeneration)
+                        return;
+
+                    PinnedFolder& pin = sweep->resolved[i];
+                    if (QuickAccessService::isUsable(resolved))
+                    {
+                        // A handle is stable across moves and renames, so
+                        // re-reading the name is all it takes to follow one.
+                        pin.name = resolved.value.name;
+                    }
+                    else
+                    {
+                        qCInfo(lcQuickAccess)
+                            << "dropping dangling quick-access pin"
+                            << QString::fromStdString(pin.name) << "handle=" << pin.handle;
+                        pin.handle = 0;
+                    }
+
+                    if (--sweep->remaining > 0)
+                        return;
+
+                    std::vector<PinnedFolder> survivors;
+                    survivors.reserve(sweep->resolved.size());
+                    for (PinnedFolder& candidate : sweep->resolved)
+                    {
+                        if (candidate.handle != 0)
+                            survivors.push_back(std::move(candidate));
+                    }
+
+                    // Skip the model reset when the sweep changed nothing,
+                    // which is the common case -- same "don't emit an
+                    // identical value" guard as
+                    // FolderNavigationController::refreshBreadcrumb.
+                    if (survivors == mService->pins())
+                        return;
+
+                    beginResetModel();
+                    mService->replaceAll(std::move(survivors));
+                    endResetModel();
+                    emit countChanged();
+                });
+            });
+    }
+}
+
+int QuickAccessModel::rowFor(quint64 handle) const
+{
+    const std::vector<PinnedFolder>& pins = mService->pins();
+    for (std::size_t row = 0; row < pins.size(); ++row)
+    {
+        if (pins[row].handle == handle)
+            return static_cast<int>(row);
+    }
+    return -1;
+}
+
+QString QuickAccessModel::nameFor(quint64 handle) const
+{
+    const int row = rowFor(handle);
+    if (row < 0)
+        return {};
+    return QString::fromStdString(mService->pins()[static_cast<std::size_t>(row)].name);
+}

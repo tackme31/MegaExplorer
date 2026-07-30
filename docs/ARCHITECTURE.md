@@ -48,10 +48,13 @@ src/core/      IMegaClient.h, ISessionStore.h, FileEntry.h, Result.h,
 src/mega/      MegaSdkClient adapter and MegaSdkLogger (bridges mega::MegaLogger into
                src/app/Logging.h's lcSdk category) — the only files allowed to include
                megaapi.h
-src/platform/  WindowsSessionStore adapter (session token persistence via Windows DPAPI).
-               Not part of MegaExplorerCore (parallels src/mega), but does get its own
-               adapter-level test (tests/WindowsSessionStoreTest.cpp) since -- unlike
-               MegaSdkClient -- it needs no live account to test.
+src/platform/  Local-storage adapters, not part of MegaExplorerCore (parallels src/mega):
+               WindowsSessionStore (session token persistence via Windows DPAPI) and
+               QSettingsPinnedFolderStore (quick-access pin list as JSON under QSettings'
+               quickAccess group). WindowsSessionStore gets its own adapter-level test
+               (tests/WindowsSessionStoreTest.cpp) since -- unlike MegaSdkClient -- it
+               needs no live account; QSettingsPinnedFolderStore doesn't, since QSettings
+               writes to the real per-user registry (see docs/PROGRESS.md's Phase 11 log).
 src/qml/       C++ types exposed to QML (Q_PROPERTY etc.): FileListModel, controllers,
                NotificationController (shared error-toast relay)
 tests/         GoogleTest-based unit tests, one per src/core service

@@ -34,6 +34,13 @@ TreeView {
         id: sysPalette
     }
 
+    // One instance for the whole tree rather than one per delegate row (Phase
+    // 13b's lesson). Menu is a Popup, not an Item, so it's neither laid out by
+    // this TreeView nor clipped by its Flickable viewport.
+    FolderPinMenu {
+        id: pinMenu
+    }
+
     delegate: TreeViewDelegate {
         id: treeDelegate
 
@@ -42,6 +49,9 @@ TreeView {
         // redeclaring shadows it with a second, never-populated copy.
         required property var handle
         required property bool isRoot
+        // Only needed to label a new pin; the delegate's own text still comes
+        // from TreeViewDelegate's stock contentItem reading Qt::DisplayRole.
+        required property string name
 
         // Matches TabStrip.qml's TabButton: without this, clicking a row
         // strands keyboard focus here instead of the file view, deadening
@@ -78,6 +88,14 @@ TreeView {
         TapHandler {
             acceptedButtons: Qt.MiddleButton
             onTapped: tabsController.addTabAt(treeDelegate.handle, treeDelegate.isRoot)
+        }
+
+        // No select-then-popup step here, unlike the file views: the tree has
+        // no selectionModel at all (its highlight follows navigation state), so
+        // the clicked row is handed to the menu directly.
+        TapHandler {
+            acceptedButtons: Qt.RightButton
+            onTapped: pinMenu.popupFor(treeDelegate.handle, treeDelegate.isRoot, treeDelegate.name)
         }
     }
 }

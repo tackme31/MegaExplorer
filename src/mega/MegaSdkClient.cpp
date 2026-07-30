@@ -364,6 +364,27 @@ void MegaSdkClient::getPath(std::uint64_t handle,
     onDone(Result<std::vector<PathSegment>>::ok(std::move(segments)));
 }
 
+void MegaSdkClient::getNodeInfo(std::uint64_t handle, std::function<void(Result<NodeInfo>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<NodeInfo>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / node deleted)"));
+        return;
+    }
+
+    NodeInfo info;
+    info.name = node->getName() ? node->getName() : "";
+    info.handle = static_cast<std::uint64_t>(node->getHandle());
+    info.isFolder = node->isFolder();
+    // A deleted node still resolves -- it just lives under the Rubbish bin
+    // now -- so this is the only reliable "still usable" test.
+    info.inCloud = mApi->isInCloud(node.get());
+
+    onDone(Result<NodeInfo>::ok(std::move(info)));
+}
+
 std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot)
 {
     if (isRoot)
