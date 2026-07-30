@@ -5,7 +5,6 @@ session lives in companion docs, linked from the relevant section below rather t
 
 - `docs/MEMO.md` — non-roadmap project notes: scope, tech stack, feature list, licensing, open
   technical concerns (Japanese). `README.md` is just a one-line title stub, not documentation.
-- `TASKS.md` — current phase's task checklist, present while a phase is in progress.
 - `docs/PROGRESS.md` — the roadmap (what's next and why-in-this-order) plus the full phase-by-phase
   implementation log (what was built, why, gotchas). Single source of truth for both, now that
   `docs/MEMO.md`'s former roadmap section moved here (2026-07-28, to end dual-tracking drift between

@@ -95,9 +95,6 @@ env.local.ps1
 # claude local settings
 .claude/settings.local.json
 
-# local task-tracking scratchpad, not shared via git
-/TASKS.md
-
 # serena
 .serena/
 
