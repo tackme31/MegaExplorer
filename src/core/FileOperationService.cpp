@@ -1,0 +1,33 @@
+#include "FileOperationService.h"
+
+FileOperationService::FileOperationService(std::shared_ptr<IMegaClient> client)
+    : mClient(std::move(client))
+{}
+
+bool FileOperationService::isValidName(const std::string& name)
+{
+    if (name.find_first_not_of(" \t\r\n") == std::string::npos)
+        return false;
+    // Path separators would break DownloadService's local-path composition
+    // downstream, so they're rejected here rather than at download time.
+    return name.find('/') == std::string::npos && name.find('\\') == std::string::npos;
+}
+
+void FileOperationService::rename(std::uint64_t handle,
+                                  const std::string& newName,
+                                  std::function<void(Result<void>)> onDone)
+{
+    if (!isValidName(newName))
+    {
+        onDone(Result<void>::fail("Invalid name: empty, or contains a path separator"));
+        return;
+    }
+
+    mClient->renameNode(handle, newName, std::move(onDone));
+}
+
+void FileOperationService::moveToRubbish(std::uint64_t handle,
+                                         std::function<void(Result<void>)> onDone)
+{
+    mClient->moveToRubbish(handle, std::move(onDone));
+}

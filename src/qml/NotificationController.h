@@ -23,6 +23,14 @@ public:
     // to errorOccurred.
     void notifyError(const QString& context, const QString& errorMessage);
 
+    // Outcome of a bulk operation that fanned out over N selected items (see
+    // FolderNavigationController::moveSelectionToRubbish). Same structured-
+    // fields convention as notifyError: context selects the sentence,
+    // succeeded/failed are the numbers QML plugs into it. Reported once per
+    // user action, not once per item. Not Q_INVOKABLE, same as notifyError.
+    void notifyOperation(const QString& context, int succeeded, int failed);
+
 signals:
     void errorOccurred(QString context, QString errorMessage);
+    void operationFinished(QString context, int succeeded, int failed);
 };

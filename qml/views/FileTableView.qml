@@ -195,6 +195,50 @@ ColumnLayout {
         root.restoreColumnWidths();
     }
 
+    // Handle of the row currently being renamed in place, 0 when not renaming
+    // (same meaningless-sentinel convention as PathSegment::isRoot's handle).
+    // Only the name cell of that one row swaps its Label for an
+    // InlineRenameField, via a Loader -- see the delegate below.
+    property var renamingHandle: 0
+
+    // Shared by F2 and the context menu's renameRequested. Renaming is
+    // inherently single-item, so this collapses the selection to the cursor row
+    // first -- selectRow(row, Qt.NoModifier) already means "deselect
+    // everything else and select just this row", so FileListModel needed
+    // nothing new. After a right-click the cursor is already on the clicked
+    // row (the delegate's right-button TapHandler selects it), so both entry
+    // points land here identically.
+    function beginRename() {
+        if (root.renamingHandle !== 0)
+            return;
+        const model = root.navController.fileListModel;
+        const row = model.cursorRow();
+        if (row < 0)
+            return;
+        model.selectRow(row, Qt.NoModifier);
+        const entries = model.selectedEntries();
+        if (entries.length !== 1)
+            return;
+        root.renamingHandle = entries[0].handle;
+        tableView.positionViewAtRow(row, TableView.Contain);
+    }
+
+    // Focus must be handed back explicitly, same reason the focusPolicy:
+    // Qt.NoFocus assignments elsewhere exist -- otherwise arrow keys go dead
+    // once the field is gone.
+    function endRename() {
+        root.renamingHandle = 0;
+        root.forceActiveFocus();
+    }
+
+    // Called from the field's committed signal, so tearing the field down is
+    // deferred past the end of that signal's own handler.
+    function commitRename(handle, oldName, newName) {
+        if (newName !== oldName)
+            root.navController.renameEntry(handle, newName);
+        Qt.callLater(root.endRename);
+    }
+
     // Placed on root (not tableView) so Main.qml has a single forceActiveFocus()
     // target per view, regardless of which child actually holds activeFocus.
     // Ctrl+A is handled here rather than via a window-level Shortcut so it
@@ -204,6 +248,24 @@ ColumnLayout {
     Keys.onPressed: event => {
         if (event.modifiers & Qt.AltModifier)
             return; // reserved for a future Alt+Left "back" shortcut
+
+        // While the rename field has focus this is still on its key-propagation
+        // path, and it doesn't consume F2/Delete the way it consumes arrows and
+        // Ctrl+A -- so the view has to stand down explicitly.
+        if (root.renamingHandle !== 0)
+            return;
+
+        if (event.key === Qt.Key_F2) {
+            root.beginRename();
+            event.accepted = true;
+            return;
+        }
+
+        if (event.key === Qt.Key_Delete) {
+            confirmRubbishDialog.confirm();
+            event.accepted = true;
+            return;
+        }
 
         if (event.matches(StandardKey.SelectAll)) {
             root.navController.fileListModel.selectAll();
@@ -327,12 +389,22 @@ ColumnLayout {
             parent: tableView
             acceptedButtons: Qt.LeftButton
             onTapped: {
-                root.forceActiveFocus();
                 const pos = tableView.contentItem.mapFromItem(tableView, point.position);
                 // x clamped inside the last column so a tap to its right still hits
                 // the row, matching Explorer's full-row selection.
                 const hit = tableView.cellAtPosition(Qt.point(Math.min(pos.x, tableView.contentWidth
                                                                        - 1), pos.y), false);
+                // This handler only takes a passive grab, so it also fires for
+                // taps that land inside the active rename field -- and
+                // forceActiveFocus() below would then commit the edit on the
+                // user's first click into their own text. The renamed row is the
+                // cursor row by construction (see beginRename), so that's the
+                // one to stand down for; a tap on any other row falls through
+                // and commits via focus loss, which is the wanted behavior.
+                if (root.renamingHandle !== 0
+                        && hit.y === root.navController.fileListModel.cursorRow())
+                    return;
+                root.forceActiveFocus();
                 if (hit.y < 0)
                     root.navController.fileListModel.clearSelection();
                 else
@@ -353,10 +425,16 @@ ColumnLayout {
             required property double modificationTime
             required property bool selected
 
+            // Only the name column of the one renamed row turns into an editor.
+            readonly property bool renaming: root.renamingHandle !== 0
+                                             && root.renamingHandle === cell.handle
+                                             && cell.column === 0
+
             color: cell.selected ? Qt.rgba(sysPalette.highlight.r, sysPalette.highlight.g,
                                            sysPalette.highlight.b, 0.35) : "transparent"
 
             Label {
+                visible: !cell.renaming
                 anchors.fill: parent
                 anchors.margins: 4
                 verticalAlignment: Text.AlignVCenter
@@ -378,6 +456,25 @@ ColumnLayout {
                         return cell.formattedSize;
                     }
                     return "";
+                }
+            }
+
+            // The Component is declared inline rather than shared at root level
+            // because InlineRenameField's properties are `required`, and a
+            // Loader has no way to supply those to a component it didn't
+            // declare -- inline, they can just bind to `cell`. Component itself
+            // instantiates nothing until active turns true.
+            Loader {
+                anchors.fill: parent
+                anchors.margins: 2
+                active: cell.renaming
+                sourceComponent: Component {
+                    InlineRenameField {
+                        originalName: cell.name
+                        isFolder: cell.isFolder
+                        onCommitted: newName => root.commitRename(cell.handle, cell.name, newName)
+                        onCancelled: Qt.callLater(root.endRename)
+                    }
                 }
             }
 
@@ -418,6 +515,15 @@ ColumnLayout {
     // at the mouse cursor regardless.
     FileContextMenu {
         id: contextMenu
+        navController: root.navController
+        onRenameRequested: root.beginRename()
+        onMoveToRubbishRequested: confirmRubbishDialog.confirm()
+    }
+
+    // One per view, same reasoning as the menu above -- the action always
+    // targets this view's own selection.
+    ConfirmRubbishDialog {
+        id: confirmRubbishDialog
         navController: root.navController
     }
 }

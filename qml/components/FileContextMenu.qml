@@ -18,8 +18,16 @@ Menu {
     // as NotificationController/ErrorToast.qml.
     readonly property var actionLabels: ({
                                              "download": qsTr("Download"),
-                                             "openInNewTab": qsTr("Open in new tab")
+                                             "openInNewTab": qsTr("Open in new tab"),
+                                             "rename": qsTr("Rename"),
+                                             "moveToRubbish": qsTr("Move to Rubbish bin")
                                          })
+
+    // Both delegated to the owning view rather than handled here: this file
+    // knows nothing about inline editing or dialogs, and each view owns its own
+    // rename field / ConfirmRubbishDialog instance.
+    signal renameRequested
+    signal moveToRubbishRequested
 
     // "togglePin" is one action with two labels -- FileActionResolver only sees
     // selection counts, so it can't know whether the folder is already pinned
@@ -84,6 +92,10 @@ Menu {
                         else
                             quickAccessModel.pin(entries[0].handle, entries[0].name);
                     }
+                } else if (modelData === "rename") {
+                    root.renameRequested();
+                } else if (modelData === "moveToRubbish") {
+                    root.moveToRubbishRequested();
                 }
             }
         }

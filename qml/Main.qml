@@ -384,6 +384,11 @@ ApplicationWindow {
         parent: Overlay.overlay
     }
 
+    OperationSnackbar {
+        id: operationSnackbar
+        parent: Overlay.overlay
+    }
+
     Connections {
         target: downloadController
         function onDownloadFinished(success, fileName, localPath, errorMessage, alreadyPresent) {
@@ -395,6 +400,9 @@ ApplicationWindow {
         target: notificationController
         function onErrorOccurred(context, errorMessage) {
             errorToast.show(context, errorMessage);
+        }
+        function onOperationFinished(context, succeeded, failed) {
+            operationSnackbar.show(context, succeeded, failed);
         }
     }
 

@@ -44,6 +44,8 @@ add_library(MegaExplorerCore STATIC
     src/core/FileActionResolver.cpp
     src/core/FolderNavigationService.h
     src/core/FolderNavigationService.cpp
+    src/core/FileOperationService.h
+    src/core/FileOperationService.cpp
     src/core/AuthService.h
     src/core/AuthService.cpp
     src/core/SearchService.h
@@ -97,11 +99,14 @@ qt_add_qml_module(appMegaExplorer
     QML_FILES
         qml/Main.qml
         qml/components/Breadcrumb.qml
+        qml/components/ConfirmRubbishDialog.qml
         qml/components/DownloadSnackbar.qml
         qml/components/ErrorToast.qml
         qml/components/FileContextMenu.qml
         qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
+        qml/components/InlineRenameField.qml
+        qml/components/OperationSnackbar.qml
         qml/components/QuickAccessSection.qml
         qml/components/SidePanel.qml
         qml/components/TabStrip.qml

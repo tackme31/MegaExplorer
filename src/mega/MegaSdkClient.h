@@ -68,6 +68,12 @@ public:
 
     void getNodeInfo(std::uint64_t handle, std::function<void(Result<NodeInfo>)> onDone) override;
 
+    void renameNode(std::uint64_t handle,
+                    const std::string& newName,
+                    std::function<void(Result<void>)> onDone) override;
+
+    void moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone) override;
+
 private:
     // Shared by getRootChildren/getChildren/search: isRoot selects
     // getRootNode(), otherwise looks handle up via getNodeByHandle().

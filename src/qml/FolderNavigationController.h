@@ -1,4 +1,5 @@
 #pragma once
+#include "core/FileOperationService.h"
 #include "core/FolderNavigationService.h"
 #include "core/SearchService.h"
 #include "core/SortOrder.h"
@@ -58,6 +59,7 @@ class FolderNavigationController : public QObject,
 public:
     explicit FolderNavigationController(std::shared_ptr<FolderNavigationService> navigationService,
                                         std::shared_ptr<SearchService> searchService,
+                                        std::shared_ptr<FileOperationService> fileOperationService,
                                         NotificationController* notifications,
                                         QObject* parent = nullptr);
 
@@ -110,6 +112,19 @@ public:
     // previous account's cached listing or retains its back-stack handles.
     Q_INVOKABLE void reset();
 
+    // Inline-rename commit (F2 / context menu, see InlineRenameField.qml).
+    // Callers must skip this when newName equals the current name -- this
+    // controller doesn't track per-row names. A rename never changes the
+    // handle, so the selection survives the refetch below.
+    Q_INVOKABLE void renameEntry(quint64 handle, const QString& newName);
+
+    // Moves every currently selected entry into the Rubbish bin, one SDK call
+    // per entry, and reports the tally once through
+    // NotificationController::notifyOperation. No undo: IMegaClient
+    // deliberately exposes no general move, so there'd be nothing to undo
+    // with (see docs/PROGRESS.md's Phase 12 log).
+    Q_INVOKABLE void moveSelectionToRubbish();
+
 signals:
     void canGoBackChanged();
     void breadcrumbChanged();
@@ -118,6 +133,13 @@ private:
     void applyResult(Result<std::vector<FileEntry>> result);
     void applySearchResult(Result<std::vector<FileEntry>> result);
     void refreshCurrentFolder();
+
+    // "Re-fetch whatever the user is currently looking at" -- the folder
+    // listing, or the active search's results (plus, in that case, the cached
+    // folder listing behind them, so clearing the search afterwards doesn't
+    // show a stale one). Shared by setSortOrder and by the Phase 12 mutations,
+    // which must not silently drop the user out of a search.
+    void refreshVisibleListing();
 
     // Resolves the current location's ancestor chain and updates
     // mBreadcrumb. Called at the end of applyResult's success path (loadRoot
@@ -128,8 +150,20 @@ private:
     // needlessly rebuild the Breadcrumb.qml Repeater.
     void refreshBreadcrumb();
 
+    // Shared bookkeeping for one moveSelectionToRubbish() fan-out: only the
+    // last callback to land refreshes the listing and reports the tally, so
+    // N deletions produce one refetch and one notification. Same shape as
+    // QuickAccessModel's Sweep.
+    struct RubbishBatch
+    {
+        int remaining = 0;
+        int succeeded = 0;
+        int failed = 0;
+    };
+
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<SearchService> mSearchService;
+    std::shared_ptr<FileOperationService> mFileOps;
     NotificationController* mNotifications;
     FileListModel mFileListModel;
     QVariantList mBreadcrumb;

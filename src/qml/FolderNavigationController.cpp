@@ -37,10 +37,12 @@ void invokeOnGuiThread(QObject* target, std::function<void()> fn)
 FolderNavigationController::FolderNavigationController(
     std::shared_ptr<FolderNavigationService> navigationService,
     std::shared_ptr<SearchService> searchService,
+    std::shared_ptr<FileOperationService> fileOperationService,
     NotificationController* notifications,
     QObject* parent)
     : QObject(parent), mService(std::move(navigationService)),
-      mSearchService(std::move(searchService)), mNotifications(notifications)
+      mSearchService(std::move(searchService)), mFileOps(std::move(fileOperationService)),
+      mNotifications(notifications)
 {}
 
 QObject* FolderNavigationController::fileListModel()
@@ -248,11 +250,16 @@ void FolderNavigationController::setSortOrder(int column, bool ascending)
     if (!mHasLoadedOnce)
         return;
 
+    refreshVisibleListing();
+}
+
+void FolderNavigationController::refreshVisibleListing()
+{
     if (!mLastSearchQuery.empty())
     {
-        // Re-run the visible search under the new order, and separately
-        // refresh the cached folder listing (not the visible model) so that
-        // clearing the search afterwards doesn't show stale ordering.
+        // Re-run the visible search, and separately refresh the cached folder
+        // listing (not the visible model) so that clearing the search
+        // afterwards doesn't show stale contents/ordering.
         mSearchService->search(
             mLastSearchQuery,
             mSortOrder,
@@ -272,6 +279,68 @@ void FolderNavigationController::setSortOrder(int column, bool ascending)
     }
 
     refreshCurrentFolder();
+}
+
+void FolderNavigationController::renameEntry(quint64 handle, const QString& newName)
+{
+    mFileOps->rename(static_cast<std::uint64_t>(handle),
+                     newName.toStdString(),
+                     [this, self = shared_from_this()](Result<void> result) {
+                         invokeOnGuiThread(this, [this, result = std::move(result)]() {
+                             if (!result.success)
+                             {
+                                 qCWarning(lcFileOps)
+                                     << "rename failed:"
+                                     << QString::fromStdString(result.errorMessage)
+                                     << "code=" << result.errorCode;
+                                 mNotifications->notifyError(
+                                     QStringLiteral("rename"),
+                                     QString::fromStdString(result.errorMessage));
+                                 return;
+                             }
+                             refreshVisibleListing();
+                         });
+                     });
+}
+
+void FolderNavigationController::moveSelectionToRubbish()
+{
+    const QVariantList entries = mFileListModel.selectedEntries();
+    if (entries.isEmpty())
+        return;
+
+    auto batch = std::make_shared<RubbishBatch>();
+    batch->remaining = static_cast<int>(entries.size());
+
+    for (const QVariant& entry : entries)
+    {
+        const quint64 handle = entry.toMap().value(QStringLiteral("handle")).toULongLong();
+        mFileOps->moveToRubbish(
+            static_cast<std::uint64_t>(handle),
+            [this, self = shared_from_this(), batch](Result<void> result) {
+                invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
+                    if (result.success)
+                    {
+                        ++batch->succeeded;
+                    }
+                    else
+                    {
+                        ++batch->failed;
+                        qCWarning(lcFileOps) << "move to rubbish failed:"
+                                             << QString::fromStdString(result.errorMessage)
+                                             << "code=" << result.errorCode;
+                    }
+
+                    if (--batch->remaining > 0)
+                        return;
+
+                    refreshVisibleListing();
+                    mNotifications->notifyOperation(QStringLiteral("moveToRubbish"),
+                                                    batch->succeeded,
+                                                    batch->failed);
+                });
+            });
+    }
 }
 
 void FolderNavigationController::reset()

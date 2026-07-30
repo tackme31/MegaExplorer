@@ -133,4 +133,22 @@ public:
     // lookup), but kept callback-shaped for interface consistency.
     virtual void getNodeInfo(std::uint64_t handle,
                              std::function<void(Result<NodeInfo>)> onDone) = 0;
+
+    // First two mutating calls in this interface -- everything above only
+    // reads. Both are MegaRequestListener-based, so they keep the
+    // single-Result<T>-callback shape; Result<void> because neither reports
+    // anything beyond success/failure. Must be called after a successful
+    // fetchNodes(). Unlike the read methods above these are genuinely
+    // asynchronous (a real API round-trip), so the background-thread caveat
+    // at the top of this file is not merely theoretical here.
+    virtual void renameNode(std::uint64_t handle,
+                            const std::string& newName,
+                            std::function<void(Result<void>)> onDone) = 0;
+
+    // "Delete" in MEGA terms: moves the node into the account's Rubbish bin
+    // rather than destroying it (MegaApi::remove() would be the permanent
+    // one, deliberately not exposed here). A node already in the Rubbish bin
+    // is moved to its top level again, which is harmless.
+    virtual void moveToRubbish(std::uint64_t handle,
+                               std::function<void(Result<void>)> onDone) = 0;
 };

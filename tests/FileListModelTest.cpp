@@ -260,26 +260,32 @@ TEST(FileListModelTest, AvailableActionsIsEmptyWithNoSelection)
 
 TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
 {
+    // Exact lists, in menu order -- this is the contract FileContextMenu.qml's
+    // Instantiator renders, so ordering matters as much as membership. Rename
+    // drops out of the multi case (ActionArity::SingleOnly).
     FileListModel modelSingle;
     modelSingle.setEntries(makeEntries(3));
     modelSingle.selectRow(0, 0);
-    EXPECT_EQ(modelSingle.availableActions(), (QStringList{"download"}));
+    EXPECT_EQ(modelSingle.availableActions(),
+              (QStringList{"download", "rename", "moveToRubbish"}));
 
     FileListModel modelMulti;
     modelMulti.setEntries(makeEntries(3));
     modelMulti.selectRow(0, 0);
     modelMulti.selectRow(1, kCtrl);
-    EXPECT_EQ(modelMulti.availableActions(), (QStringList{"download"}));
+    EXPECT_EQ(modelMulti.availableActions(), (QStringList{"download", "moveToRubbish"}));
 }
 
-TEST(FileListModelTest, AvailableActionsIsEmptyWhenSelectionContainsAFolder)
+TEST(FileListModelTest, AvailableActionsOffersOnlyMoveToRubbishForAMixedSelection)
 {
     FileListModel model;
     model.setEntries(std::vector<FileEntry>{makeEntry("a", 0), makeFolderEntry("b", 1)});
     model.selectRow(0, 0);
     model.selectRow(1, kCtrl);
 
-    EXPECT_TRUE(model.availableActions().isEmpty());
+    // Download is FilesOnly and Rename is SingleOnly, so deleting is all that
+    // a mixed multi-selection can do.
+    EXPECT_EQ(model.availableActions(), (QStringList{"moveToRubbish"}));
 }
 
 TEST(FileListModelTest, AvailableActionsClearedAfterNavigation)

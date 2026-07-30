@@ -51,6 +51,8 @@ Popup {
                 return qsTr("Failed to load thumbnail: %1").arg(root.errorMessage);
             case "openFile":
                 return qsTr("Failed to open file: %1").arg(root.errorMessage);
+            case "rename":
+                return qsTr("Failed to rename: %1").arg(root.errorMessage);
             default:
                 return root.errorMessage;
             }

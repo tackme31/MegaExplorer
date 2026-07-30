@@ -44,25 +44,28 @@ refresh when a folder is opened, no continuous watching.
 
 ## Project status
 
-Phases 0–6, 6a, 6b, 7a, 7, 7b, 8, 9, 10, and 11 are done (Phase 7 closes out login screen + session
+Phases 0–6, 6a, 6b, 7a, 7, 7b, 8, 9, 10, 11, and 12 are done (Phase 7 closes out login screen + session
 persistence; Phase 7b removes Phase 6's local node cache; Phase 8 adds the breadcrumb trail; Phase 9
 adds Explorer-style tabs, each with its own independent navigation/search/sort/view-mode state; Phase
 10 adds the left `SplitView` folder-tree panel, shared across every tab, with lazy expansion and a
 navigation-driven highlight — no auto-expand/auto-scroll; Phase 11 adds the quick-access pinned-folder
 section above that tree, persisted by node handle so pins follow moves *and* renames, with a
 login-time validation sweep that silently drops deleted targets and a click-time confirmation dialog
-for ones deleted mid-session).
+for ones deleted mid-session; Phase 12 adds inline rename plus move-to-Rubbish-bin — the codebase's
+first *mutating* SDK calls — with **move deliberately deferred to Phase 14**, since choosing a
+destination realistically needs drag & drop).
 Phases 13a (selection model) and 13b (multi-select context menu + declarative action-resolution
 logic) were pulled forward out of numeric order — both are self-contained and didn't need phases
-9–12 first — and are also done; phase 13's remaining scope (rename/delete/move as multi-item
-actions) still needs phase 12's single-item versions. Phase 12 (rename / delete / move) is next in
-roadmap order. The full roadmap — phases 12–16+ (rename/delete/move, remaining multi-select bulk ops,
-upload, in-app preview, real-time remote-change reflection, ...) —
+9–12 first — and are also done; phase 13's remaining scope is now just bulk *move*, which waits on
+Phase 14 for the same reason. Phase 14 (upload via drag & drop, carrying move with it) is next in
+roadmap order. The full roadmap — phases 13–16+ (bulk move, upload,
+in-app preview, real-time remote-change reflection, ...) —
 lives in `docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above. `docs/MEMO.md`
 keeps only non-roadmap notes. Full bidirectional local sync stays out of scope.
 
 Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`), `AuthService`/
-`FolderNavigationService`/`SearchService`/`DownloadService`/`ThumbnailService` (`src/core`) backed
+`FolderNavigationService`/`SearchService`/`DownloadService`/`ThumbnailService`/`FileOperationService`
+(`src/core`) backed
 by `ISessionStore`/`WindowsSessionStore` for session persistence (folder listings are always
 fetched live from the network, no local cache), their QML-facing controllers/`FileListModel`
 (`src/qml`) — including `AuthController`,

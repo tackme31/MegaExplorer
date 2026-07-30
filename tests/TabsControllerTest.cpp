@@ -39,8 +39,9 @@ protected:
     {
         auto navigationService = std::make_shared<FolderNavigationService>(client);
         auto searchService = std::make_shared<SearchService>(client, navigationService);
+        auto fileOperationService = std::make_shared<FileOperationService>(client);
         auto navigation = std::make_shared<FolderNavigationController>(
-            navigationService, searchService, &notifications);
+            navigationService, searchService, fileOperationService, &notifications);
         auto thumbnailService = std::make_shared<ThumbnailService>(client);
         auto thumbnails = std::make_shared<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);

@@ -59,4 +59,12 @@ public:
                 getNodeInfo,
                 (std::uint64_t, std::function<void(Result<NodeInfo>)>),
                 (override));
+    MOCK_METHOD(void,
+                renameNode,
+                (std::uint64_t, const std::string&, std::function<void(Result<void>)>),
+                (override));
+    MOCK_METHOD(void,
+                moveToRubbish,
+                (std::uint64_t, std::function<void(Result<void>)>),
+                (override));
 };

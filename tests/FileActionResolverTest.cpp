@@ -150,25 +150,32 @@ TEST(FileActionResolverTest, EmptySelectionYieldsNoActions)
 TEST(FileActionResolverTest, DefaultTableOffersDownloadForSingleFile)
 {
     std::vector<FileAction> result = resolveFileActions(summary(1, 0));
-    ASSERT_EQ(result.size(), 1u);
+    ASSERT_EQ(result.size(), 3u);
     EXPECT_EQ(result[0], FileAction::Download);
+    EXPECT_EQ(result[1], FileAction::Rename);
+    EXPECT_EQ(result[2], FileAction::MoveToRubbish);
 }
 
 TEST(FileActionResolverTest, DefaultTableOffersDownloadForMultipleFiles)
 {
     std::vector<FileAction> result = resolveFileActions(summary(3, 0));
-    ASSERT_EQ(result.size(), 1u);
+    ASSERT_EQ(result.size(), 2u);
     EXPECT_EQ(result[0], FileAction::Download);
+    EXPECT_EQ(result[1], FileAction::MoveToRubbish);
 }
 
-TEST(FileActionResolverTest, DefaultTableOffersNothingWhenSelectionContainsAFolder)
+TEST(FileActionResolverTest, DefaultTableOffersNoDownloadWhenSelectionContainsAFolder)
 {
-    EXPECT_TRUE(resolveFileActions(summary(1, 1)).empty());
+    std::vector<FileAction> result = resolveFileActions(summary(1, 1));
+    ASSERT_EQ(result.size(), 1u);
+    EXPECT_EQ(result[0], FileAction::MoveToRubbish);
 }
 
-TEST(FileActionResolverTest, DefaultTableOffersNothingForFoldersOnlySelection)
+TEST(FileActionResolverTest, DefaultTableOffersNoDownloadForFoldersOnlySelection)
 {
-    EXPECT_TRUE(resolveFileActions(summary(0, 2)).empty());
+    std::vector<FileAction> result = resolveFileActions(summary(0, 2));
+    ASSERT_EQ(result.size(), 1u);
+    EXPECT_EQ(result[0], FileAction::MoveToRubbish);
 }
 
 TEST(FileActionResolverTest, DefaultTableOffersNothingForEmptySelection)
@@ -189,9 +196,11 @@ TEST(FileActionResolverTest, OpenInNewTabIdIsStable)
 TEST(FileActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
 {
     std::vector<FileAction> result = resolveFileActions(summary(0, 1));
-    ASSERT_EQ(result.size(), 2u);
+    ASSERT_EQ(result.size(), 4u);
     EXPECT_EQ(result[0], FileAction::OpenInNewTab);
     EXPECT_EQ(result[1], FileAction::TogglePin);
+    EXPECT_EQ(result[2], FileAction::Rename);
+    EXPECT_EQ(result[3], FileAction::MoveToRubbish);
 }
 
 TEST(FileActionResolverTest, TogglePinIdIsStable)
@@ -232,4 +241,43 @@ TEST(FileActionResolverTest, DefaultTableNeverOffersOpenInNewTabForASingleFile)
 TEST(FileActionResolverTest, DefaultTableNeverOffersOpenInNewTabForAMixedSelection)
 {
     EXPECT_FALSE(contains(resolveFileActions(summary(1, 1)), FileAction::OpenInNewTab));
+}
+
+TEST(FileActionResolverTest, RenameIdIsStable)
+{
+    // The only contract linking this enum value to FileContextMenu.qml's
+    // actionLabels/onTriggered branches.
+    EXPECT_STREQ(fileActionId(FileAction::Rename), "rename");
+}
+
+TEST(FileActionResolverTest, MoveToRubbishIdIsStable)
+{
+    EXPECT_STREQ(fileActionId(FileAction::MoveToRubbish), "moveToRubbish");
+}
+
+TEST(FileActionResolverTest, DefaultTableOffersRenameForASingleFileOrFolder)
+{
+    EXPECT_TRUE(contains(resolveFileActions(summary(1, 0)), FileAction::Rename));
+    EXPECT_TRUE(contains(resolveFileActions(summary(0, 1)), FileAction::Rename));
+}
+
+TEST(FileActionResolverTest, DefaultTableNeverOffersRenameForAMultiSelection)
+{
+    // The requirement "no rename while several items are selected", expressed
+    // entirely by the spec table's ActionArity::SingleOnly.
+    EXPECT_FALSE(contains(resolveFileActions(summary(2, 0)), FileAction::Rename));
+    EXPECT_FALSE(contains(resolveFileActions(summary(0, 2)), FileAction::Rename));
+    EXPECT_FALSE(contains(resolveFileActions(summary(1, 1)), FileAction::Rename));
+}
+
+TEST(FileActionResolverTest, DefaultTableOffersMoveToRubbishForEveryNonEmptySelection)
+{
+    EXPECT_TRUE(contains(resolveFileActions(summary(1, 0)), FileAction::MoveToRubbish));
+    EXPECT_TRUE(contains(resolveFileActions(summary(0, 1)), FileAction::MoveToRubbish));
+    EXPECT_TRUE(contains(resolveFileActions(summary(3, 2)), FileAction::MoveToRubbish));
+}
+
+TEST(FileActionResolverTest, DefaultTableNeverOffersRenameOrMoveToRubbishForAnEmptySelection)
+{
+    EXPECT_TRUE(resolveFileActions(summary(0, 0)).empty());
 }

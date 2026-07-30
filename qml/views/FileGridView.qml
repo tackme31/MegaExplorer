@@ -34,9 +34,57 @@ GridView {
     // model driven by Keys.onPressed below.
     keyNavigationEnabled: false
 
+    // Rename state and its three entry-point helpers, identical in behavior to
+    // FileTableView.qml's -- see the comments there for the reasoning behind
+    // each (this view only differs in using positionViewAtIndex).
+    property var renamingHandle: 0
+
+    function beginRename() {
+        if (root.renamingHandle !== 0)
+            return;
+        const model = root.navController.fileListModel;
+        const row = model.cursorRow();
+        if (row < 0)
+            return;
+        model.selectRow(row, Qt.NoModifier);
+        const entries = model.selectedEntries();
+        if (entries.length !== 1)
+            return;
+        root.renamingHandle = entries[0].handle;
+        root.positionViewAtIndex(row, GridView.Contain);
+    }
+
+    function endRename() {
+        root.renamingHandle = 0;
+        root.forceActiveFocus();
+    }
+
+    function commitRename(handle, oldName, newName) {
+        if (newName !== oldName)
+            root.navController.renameEntry(handle, newName);
+        Qt.callLater(root.endRename);
+    }
+
     Keys.onPressed: event => {
         if (event.modifiers & Qt.AltModifier)
             return; // reserved for a future Alt+Left "back" shortcut
+
+        // See FileTableView.qml's matching guard: the rename field doesn't
+        // consume F2/Delete, so this view has to stand down while it's up.
+        if (root.renamingHandle !== 0)
+            return;
+
+        if (event.key === Qt.Key_F2) {
+            root.beginRename();
+            event.accepted = true;
+            return;
+        }
+
+        if (event.key === Qt.Key_Delete) {
+            confirmRubbishDialog.confirm();
+            event.accepted = true;
+            return;
+        }
 
         if (event.matches(StandardKey.SelectAll)) {
             root.navController.fileListModel.selectAll();
@@ -80,6 +128,13 @@ GridView {
     FileContextMenu {
         id: gridContextMenu
         navController: root.navController
+        onRenameRequested: root.beginRename()
+        onMoveToRubbishRequested: confirmRubbishDialog.confirm()
+    }
+
+    ConfirmRubbishDialog {
+        id: confirmRubbishDialog
+        navController: root.navController
     }
 
     // Same rationale as FileTableView.qml's -- see the comment there for why
@@ -88,9 +143,14 @@ GridView {
         parent: root
         acceptedButtons: Qt.LeftButton
         onTapped: {
-            root.forceActiveFocus();
             const pos = root.contentItem.mapFromItem(root, point.position);
             const idx = root.indexAt(pos.x, pos.y);
+            // Passive grab, so this also fires for taps inside the active
+            // rename field -- see FileTableView.qml's matching guard.
+            if (root.renamingHandle !== 0
+                    && idx === root.navController.fileListModel.cursorRow())
+                return;
+            root.forceActiveFocus();
             if (idx < 0)
                 root.navController.fileListModel.clearSelection();
             else
@@ -108,6 +168,9 @@ GridView {
         required property bool hasThumbnail
         required property string thumbnailPath
         required property bool selected
+
+        readonly property bool renaming: root.renamingHandle !== 0
+                                        && root.renamingHandle === gridDelegateItem.handle
 
         width: GridView.view.cellWidth
         height: GridView.view.cellHeight
@@ -157,10 +220,27 @@ GridView {
             }
 
             Label {
+                visible: !gridDelegateItem.renaming
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideMiddle
                 text: gridDelegateItem.name
+            }
+
+            // Takes the name label's slot in the tile. Inline Component for the
+            // same required-property reason as FileTableView.qml's.
+            Loader {
+                Layout.fillWidth: true
+                active: gridDelegateItem.renaming
+                sourceComponent: Component {
+                    InlineRenameField {
+                        originalName: gridDelegateItem.name
+                        isFolder: gridDelegateItem.isFolder
+                        onCommitted: newName => root.commitRename(gridDelegateItem.handle,
+                                                                  gridDelegateItem.name, newName)
+                        onCancelled: Qt.callLater(root.endRename)
+                    }
+                }
             }
         }
 

@@ -385,6 +385,43 @@ void MegaSdkClient::getNodeInfo(std::uint64_t handle, std::function<void(Result<
     onDone(Result<NodeInfo>::ok(std::move(info)));
 }
 
+void MegaSdkClient::renameNode(std::uint64_t handle,
+                               const std::string& newName,
+                               std::function<void(Result<void>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<void>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / node deleted)"));
+        return;
+    }
+
+    mApi->renameNode(node.get(), newName.c_str(), new SimpleResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<void>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / node deleted)"));
+        return;
+    }
+
+    // Deleting in MEGA is a move into the Rubbish bin, not MegaApi::remove()
+    // (which destroys the node outright) -- see IMegaClient::moveToRubbish.
+    std::unique_ptr<mega::MegaNode> rubbish(mApi->getRubbishNode());
+    if (!rubbish)
+    {
+        onDone(Result<void>::fail("Rubbish bin not available (nodes not fetched)"));
+        return;
+    }
+
+    mApi->moveNode(node.get(), rubbish.get(), new SimpleResultListener(std::move(onDone)));
+}
+
 std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot)
 {
     if (isRoot)

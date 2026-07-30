@@ -13,6 +13,7 @@ Q_DECLARE_LOGGING_CATEGORY(lcSdk)
 Q_DECLARE_LOGGING_CATEGORY(lcSession)
 Q_DECLARE_LOGGING_CATEGORY(lcAuth)
 Q_DECLARE_LOGGING_CATEGORY(lcQuickAccess)
+Q_DECLARE_LOGGING_CATEGORY(lcFileOps)
 
 // Installs a message handler that writes every qCWarning/qCInfo/etc. call to
 // both stderr (so Qt Creator's Application Output still works) and a log

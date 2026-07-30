@@ -27,7 +27,7 @@ are post-MVP, sequenced by priority/dependency.
 | 9 | Windows-Explorer-style tabs (multiple folder views) | done |
 | 10 | Folder tree navigation (side panel) | done |
 | 11 | Quick access (pinned folders, side panel) | done |
-| 12 | Rename / delete (move to rubbish) / move | planned |
+| 12 | Rename / delete (move to rubbish) | done (move deferred, see below) |
 | 13a | Selection model (row/cell, keyboard, right-click) | done (pulled forward) |
 | 13 | Multi-select + bulk operations | planned (selection model prerequisite done in 13a) |
 | 14 | Upload (drag & drop) | planned |
@@ -96,10 +96,13 @@ the Phase 11 implementation-log entry below for what was built — in particular
 not to need any handling at all (a MEGA handle is stable across moves *and* renames), so only
 deletion breaks a pin.
 
-### Phase 12 — rename / delete (move to rubbish) / move
+### Phase 12 — rename / delete (move to rubbish)
 
-Each maps to a single SDK request (`rename`/`moveToRubbish`/`moveNode`), no transfer-listener
-needed. Prerequisite for phase 13. Mainly `FileContextMenu.qml` + matching `IMegaClient` methods.
+Done — see its implementation-log entry. Move (`moveNode` to an arbitrary parent) was cut from the
+phase and deferred: with no destination picker in the UI, the only sane trigger for it is
+drag & drop, which belongs with phase 14's `DropArea` work rather than here. That also means
+there's nothing to build an Undo on yet, so the Rubbish-bin snackbar deliberately has no Undo
+button.
 
 ### Phase 13 — multi-select + bulk operations
 
@@ -109,13 +112,16 @@ implementation-log entry). The selection-driven context menu plus a declarative
 target/arity action-resolution table were also pulled forward as phase 13b (see its
 implementation-log entry) since bulk download doesn't actually depend on phase 12 — it reuses
 `DownloadService`'s existing queue directly. Remaining scope: rename/delete/move as multi-item
-context-menu actions, which do need phase 12's single-item versions first (they slot into 13b's
-resolver table as new `FileActionSpec` rows, no resolver redesign needed).
+context-menu actions. Phase 12 has since delivered rename (single-only by construction) and
+multi-item move-to-rubbish, both purely as new `FileActionSpec` rows exactly as predicted here — so
+what's actually left for 13 is bulk *move*, which waits on phase 14's drag & drop.
 
 ### Phase 14 — upload (drag & drop)
 
 Symmetric to phase 4's download but needs its own `MegaApi::startUpload` transfer listener
-(mirroring `DownloadService`), higher cost than phase 12. Drag & drop via Qt Quick's `DropArea`.
+(mirroring `DownloadService`), higher cost than phase 12. Drag & drop via Qt Quick's `DropArea` --
+which is also where phase 12's deferred *move* lands, since a drop target is the natural way to
+choose a destination.
 
 ### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
@@ -1131,3 +1137,132 @@ doesn't resolve in the new account, so it self-cleans on the first sweep. Accept
 designed around, given this is a single-account app in practice. Because "in the Rubbish bin" counts
 as deleted, restoring a folder from the Rubbish bin does not bring its pin back. Pin order is
 insertion order with no reordering UI (drag-to-reorder was explicitly scoped out).
+
+## Phase 12 — rename / delete (move to rubbish) (done)
+
+The codebase's **first mutating SDK calls**: everything `IMegaClient` exposed before this
+(`login`/`fetchNodes`/`getChildren`/`search`/`getPath`/`getNodeInfo`/`download`/`getThumbnail`) only
+read. Two methods were added, both `Result<void>` on a `MegaRequestListener`, so they reuse the
+existing self-deleting `SimpleResultListener` and the private `resolveNode(handle, false)` helper
+verbatim — no new listener class was needed:
+
+- `renameNode(handle, newName, onDone)` → `MegaApi::renameNode`.
+- `moveToRubbish(handle, onDone)` → `MegaApi::moveNode(node, getRubbishNode())`. **Not
+  `MegaApi::remove()`**, which destroys the node outright; a MEGA "delete" is a move into the Rubbish
+  bin (the same fact phase 11 had to work around from the other direction, where a deleted node's
+  handle keeps resolving). `getRubbishNode()` returning null (nodes not fetched) is treated as its
+  own failure rather than assumed away.
+
+**Move (`moveNode` to an arbitrary parent) was cut from the phase**, per the user's decision: with no
+destination picker anywhere in the UI, the only sensible trigger is drag & drop, which belongs with
+phase 14. That decision propagates into the UI — the Rubbish-bin snackbar has **no Undo button**,
+because undoing would need exactly the general move that doesn't exist yet.
+
+`src/core/FileOperationService.{h,cpp}` (`MegaExplorerCore`) is the same thin
+"validate + pass through, no state" shape as `FolderTreeService`, with the async fan-out left to
+`src/qml` per `QuickAccessService.h`'s written-down split. Its only rule is a static
+`isValidName(name)`: reject empty/whitespace-only, and reject `/` or `\` (those would break
+`DownloadService`'s local-path composition downstream). Deliberately **no duplicate-name check** —
+MEGA permits two same-named children in one folder — and no trimming, so what the user typed reaches
+the SDK verbatim. An invalid name fails the callback immediately without touching the SDK.
+
+The context menu needed **no resolver changes at all**, which is the phase 13b design paying off:
+two rows in `defaultFileActions()` (`Rename` → `ActionTarget::Any`/`ActionArity::SingleOnly`,
+`MoveToRubbish` → `Any`/`Any`) plus two `fileActionId()` cases. `ActionArity::SingleOnly` *is* the
+entire implementation of the requirement "don't offer rename while several items are selected".
+`FileContextMenu.qml` gained two labels and two new signals (`renameRequested`,
+`moveToRubbishRequested`) that it delegates to the owning view — it stays ignorant of inline editing
+and dialogs, which are per-view concerns.
+
+`NotificationController` gained a second channel, `notifyOperation(context, succeeded, failed)` →
+`operationFinished`, following the existing "C++ passes structured fields, QML composes the
+sentence" convention. `qml/components/OperationSnackbar.qml` is `DownloadSnackbar.qml` minus its
+"Open" button.
+
+`FolderNavigationController` is where both operations land (it already owns the tab's
+`FileListModel`, the `NotificationController*`, the refetch path and `enable_shared_from_this`), with
+one added constructor argument. `moveSelectionToRubbish()` walks `selectedEntries()` in row order,
+fires one `moveToRubbish` per entry, and tallies into a shared
+`RubbishBatch{remaining, succeeded, failed}` — **only the last callback to land** refreshes the
+listing and reports the tally, so N deletions produce one refetch and one snackbar (the same shape as
+`QuickAccessModel::validateAll`'s `Sweep`). Every async lambda captures `shared_from_this()` and
+marshals through `invokeOnGuiThread(this, ...)`, the two-stage phase 9 rule that makes closing a tab
+mid-operation safe.
+
+One thing the plan didn't foresee: refreshing with a bare `refreshCurrentFolder()` would silently
+throw the user out of an active search, since it overwrites the visible model with the folder
+listing. `setSortOrder` already had the correct two-branch logic for this, so that body was extracted
+into a private `refreshVisibleListing()` (re-run the search *and* refresh the cached folder listing
+behind it, or plain refetch when not searching) and both mutations go through it. Net effect is less
+duplication than before the phase.
+
+### Inline rename UI: why not `TableView.editDelegate`
+
+Qt 6.5+ does ship a cell-editing mechanism (`TableView.editDelegate` / `edit(index)` /
+`editTriggers`), and it was investigated and rejected:
+
+1. `edit()`'s documented behavior includes *"The current index in the selection model will also
+   change to modelIndex"* — but this project's `TableView` deliberately has **no `selectionModel`**
+   (phase 13a put handle-keyed selection in `FileListModel` instead) and sets
+   `keyNavigationEnabled: false`.
+2. The default `editTriggers` are `DoubleTapped | EditKeyPressed`, and double-click is already
+   "open folder / download file", so it would have had to become `NoEditTriggers` plus a manual
+   `edit()` call regardless.
+3. `GridView` has no equivalent at all, so one hand-rolled editor was needed either way.
+
+So `qml/components/InlineRenameField.qml` is a plain `TextField` used by both views: it selects the
+basename (extension excluded, `lastIndexOf(".") > 0` so a dotfile isn't mangled; folders select
+everything), commits on Enter via `TextInput`'s own `accepted`, cancels on Escape, and commits on
+focus loss. It carries a `settled` flag because confirming hands focus back to the view, which would
+otherwise re-fire the focus-loss commit for the same edit. Each view keeps a single `renamingHandle`
+(0 = not renaming, the usual meaningless-sentinel convention) and a `Loader` in the name cell/tile
+that goes active only for that row, so a large listing pays nothing. The `Component` inside each
+`Loader` is declared **inline** rather than shared at root level: `InlineRenameField`'s properties are
+`required`, and a `Loader` has no way to supply those to a component it didn't declare, whereas
+inline they simply bind to the delegate's scope.
+
+**Gotcha — the background `TapHandler` steals the first click into the field.** Both views handle
+selection with one view-level `TapHandler` (`parent: tableView` / `parent: root`, phase 13a) whose
+default `DragThreshold` gesture policy takes only a *passive* grab. A passive grab does not consume
+the event, so tapping inside the rename `TextField` still fires that handler, and its
+`root.forceActiveFocus()` would commit the edit the instant the user clicked into their own text.
+Fixed with a guard at the top of `onTapped`: if a rename is active and the hit row is the cursor row
+(which is the renamed row by construction — `beginRename` calls `selectRow(row, Qt.NoModifier)`,
+already "deselect everything else and select just this one", so `FileListModel` needed nothing new),
+return without touching focus. A tap on any *other* row deliberately falls through and commits via
+focus loss.
+
+Two smaller focus/key details: teardown of the field goes through `Qt.callLater(root.endRename)`
+rather than running inline, so the `Loader` doesn't destroy the object whose signal handler is still
+on the stack; and each view's `Keys.onPressed` returns early while `renamingHandle !== 0`, because
+the field is a focus-chain descendant and — unlike arrows and Ctrl+A, which `TextInput` consumes —
+F2 and Delete would otherwise propagate up to the view. `endRename` re-focuses the view, the same
+reason `focusPolicy: Qt.NoFocus` appears throughout this UI: without it the arrow keys go dead.
+
+F2 and Delete were both wired (Delete opens the same confirmation dialog as the menu action) since
+this is an Explorer-alike; the user confirmed Delete was wanted.
+`qml/components/ConfirmRubbishDialog.qml` is one instance per view, alongside that view's
+`FileContextMenu`, with `parent: Overlay.overlay` so it still centers on the window despite being
+declared from inside a view; it samples the selection count and first name at open time rather than
+binding, so the wording can't shift under an already-open dialog.
+
+**Tests.** `tests/FileOperationServiceTest.cpp` (9 cases) pins the validation rule from both sides,
+including `EXPECT_CALL(...).Times(0)` proof that a rejected name never reaches the SDK, and that
+Windows-illegal-but-MEGA-legal characters (`:?*`) are *not* rejected.
+`tests/FolderNavigationControllerTest.cpp` (6 cases) is another narrow, deliberate exception to
+"`src/qml` is GUI glue, untested by convention" — same justification as
+`FileListModelTest`/`TabsControllerTest`/`QuickAccessModelTest` — covering only the fan-out
+bookkeeping: all-succeed, partial failure, single item, empty selection, plus rename's invalid-name
+and success paths, each asserting the refetch happened **exactly once** (counted through
+`getRootChildren` calls). As phase 11 predicted for itself, the exact-action-list assertions went
+stale again: `FileActionResolverTest`'s default-table cases and two `FileListModelTest`
+`availableActions` cases had to be updated, and the two that asserted "no actions at all" for
+folder/mixed selections are now "only `moveToRubbish`" — worth expecting on every future action added
+to the table.
+
+**Known limitations (accepted).** The side panel (folder tree and quick access) does not reflect a
+rename or deletion until the next login; a deleted pin is still caught at click time by phase 11's
+`activate()` re-check, so the damage is limited. The refetch goes through `beginResetModel()`, so
+scroll position jumps to the top after an operation (selection and cursor survive, being
+handle-keyed). Other tabs showing the same folder are not invalidated — this app has never had any
+cross-tab invalidation mechanism. And move is not implemented; see the roadmap note.

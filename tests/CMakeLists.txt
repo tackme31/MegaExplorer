@@ -14,6 +14,8 @@ add_executable(MegaExplorerTests
     DownloadServiceTest.cpp
     ThumbnailServiceTest.cpp
     FolderTreeServiceTest.cpp
+    FileOperationServiceTest.cpp
+    FolderNavigationControllerTest.cpp
     WindowsSessionStoreTest.cpp
     FileListModelTest.cpp
     FileActionResolverTest.cpp

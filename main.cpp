@@ -1,6 +1,7 @@
 #include "app/Logging.h"
 #include "core/AuthService.h"
 #include "core/DownloadService.h"
+#include "core/FileOperationService.h"
 #include "core/FolderNavigationService.h"
 #include "core/FolderTreeService.h"
 #include "core/QuickAccessService.h"
@@ -55,6 +56,9 @@ int main(int argc, char* argv[])
     // unlike FolderNavigationService/SearchService/FolderNavigationController
     // below, which are inherently per-tab and so live in tabFactory instead.
     auto thumbnailService = std::make_shared<ThumbnailService>(client);
+    // Stateless validate-and-pass-through, so one instance is shared by every
+    // tab's FolderNavigationController (same rationale as thumbnailService).
+    auto fileOperationService = std::make_shared<FileOperationService>(client);
     auto authService = std::make_shared<AuthService>(client, sessionStore);
     // Declared before the controllers below: they hold a non-owning pointer
     // to it, and stack locals are destroyed in reverse construction order.
@@ -83,11 +87,12 @@ int main(int argc, char* argv[])
     // this whenever a new tab is needed (initial tab, "+", middle-click-open,
     // "Open in new tab") -- it has no wiring knowledge of its own, per
     // docs/ARCHITECTURE.md's composition-root convention.
-    auto tabFactory = [client, thumbnailService, &notifications]() -> TabContext {
+    auto tabFactory = [client, thumbnailService, fileOperationService,
+                       &notifications]() -> TabContext {
         auto navigationService = std::make_shared<FolderNavigationService>(client);
         auto searchService = std::make_shared<SearchService>(client, navigationService);
         auto navigation = std::make_shared<FolderNavigationController>(
-            navigationService, searchService, &notifications);
+            navigationService, searchService, fileOperationService, &notifications);
         auto thumbnails = std::make_shared<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
         return TabContext{std::move(navigationService),

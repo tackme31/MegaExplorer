@@ -47,6 +47,10 @@ const std::vector<FileActionSpec>& defaultFileActions()
         {FileAction::Download, ActionTarget::FilesOnly, ActionArity::Any},
         {FileAction::OpenInNewTab, ActionTarget::FoldersOnly, ActionArity::SingleOnly},
         {FileAction::TogglePin, ActionTarget::FoldersOnly, ActionArity::SingleOnly},
+        // SingleOnly is the whole implementation of "no rename while multiple
+        // items are selected" -- the resolver itself needed no change.
+        {FileAction::Rename, ActionTarget::Any, ActionArity::SingleOnly},
+        {FileAction::MoveToRubbish, ActionTarget::Any, ActionArity::Any},
     };
     return actions;
 }
@@ -73,6 +77,10 @@ const char* fileActionId(FileAction action)
             return "openInNewTab";
         case FileAction::TogglePin:
             return "togglePin";
+        case FileAction::Rename:
+            return "rename";
+        case FileAction::MoveToRubbish:
+            return "moveToRubbish";
     }
     return "";
 }

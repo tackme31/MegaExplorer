@@ -13,7 +13,11 @@ enum class FileAction
     // same C++-decides-applicability / QML-decides-wording split the rest of
     // this table already relies on.
     TogglePin,
-    // Future: Rename, Delete, ...
+    Rename,
+    // "Delete" from the user's point of view; named after what it actually
+    // does, since MEGA's delete is a move into the Rubbish bin rather than a
+    // destructive removal (see IMegaClient::moveToRubbish).
+    MoveToRubbish,
 };
 
 // The two axes a menu action can be restricted along. Orthogonal by design:
