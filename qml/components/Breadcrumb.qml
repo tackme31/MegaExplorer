@@ -22,10 +22,15 @@ Item {
     clip: true
 
     required property var navController
+    required property var dragProxy
 
     property alias model: repeater.model
 
     implicitHeight: row.implicitHeight
+
+    SystemPalette {
+        id: sysPalette
+    }
 
     // Index of the first (leftmost) segment still shown; segments before it
     // are hidden and represented by the "«" indicator. The last segment
@@ -90,6 +95,18 @@ Item {
                     text: delegateRoot.modelData.isRoot ? qsTr("Cloud Drive") :
                                                           delegateRoot.modelData.name
 
+                    // Drop feedback. Label has no background of its own, and a
+                    // plain child would paint over the text -- hence z: -1.
+                    // anchors.fill keeps it out of relayout()'s implicitWidth
+                    // sum, which the overflow cutoff depends on.
+                    Rectangle {
+                        anchors.fill: parent
+                        z: -1
+                        color: "transparent"
+                        border.width: dropArea.accepting ? 2 : 0
+                        border.color: sysPalette.highlight
+                    }
+
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
                         // The last segment is the current folder -- nothing
@@ -97,6 +114,36 @@ Item {
                         enabled: delegateRoot.index < repeater.count - 1
                         onTapped: root.navController.navigateTo(delegateRoot.modelData.handle,
                                                                 delegateRoot.modelData.isRoot)
+                    }
+
+                    // Same shape as QuickAccessSection.qml's per-delegate drop
+                    // target. The last segment needs no special-casing: it is
+                    // the current folder, which checkMove rejects as "already
+                    // in that folder". Segments hidden behind "«" are invisible
+                    // and so receive no drag events -- deliberately not
+                    // reachable as drop targets.
+                    DropArea {
+                        id: dropArea
+                        anchors.fill: parent
+                        keys: ["application/x-megaexplorer-nodes"]
+
+                        // Recomputed on enter only: the target can't change
+                        // without leaving this segment first. Payload read off
+                        // root.dragProxy rather than the event's drag.source,
+                        // which is typed QObject.
+                        property bool accepting: false
+
+                        onEntered: dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
+                                       root.dragProxy.handles, delegateRoot.modelData.handle,
+                                       delegateRoot.modelData.isRoot)
+                        onExited: dropArea.accepting = false
+                        onDropped: {
+                            if (dropArea.accepting)
+                                root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
+                                                                       delegateRoot.modelData.handle,
+                                                                       delegateRoot.modelData.isRoot);
+                            dropArea.accepting = false;
+                        }
                     }
                 }
 

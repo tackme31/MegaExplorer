@@ -132,6 +132,7 @@ ApplicationWindow {
                     // "no minimum width" is a deliberate requirement here.
                     Breadcrumb {
                         navController: tabsController.currentNavigation
+                        dragProxy: moveDragProxy
                         model: tabsController.currentNavigation?.breadcrumb ?? []
                         Layout.fillWidth: true
                         Layout.preferredWidth: 7

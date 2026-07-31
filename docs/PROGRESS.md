@@ -128,8 +128,9 @@ drag & drop the trigger. Nothing remains in phase 13.
 ### Phase 14a — move via drag & drop (done)
 
 Phase 12's deferred `moveNode`, triggered by dropping onto a folder row, a view's empty space, a
-folder-tree row, or a quick-access pin. See its implementation-log entry. Split out of phase 14 so
-the `DropArea` groundwork could land without waiting on upload's transfer listener.
+folder-tree row, a quick-access pin, or a breadcrumb segment. See its implementation-log entry.
+Split out of phase 14 so the `DropArea` groundwork could land without waiting on upload's transfer
+listener.
 
 ### Phase 14b — upload (drag & drop)
 
@@ -1327,8 +1328,8 @@ cross-tab invalidation mechanism. And move is not implemented; see the roadmap n
 Collects phase 12's deferred `moveNode` (see its log entry and the roadmap note). **Upload was
 explicitly left out** and stays as phase 14b: this phase is only about moving nodes that already
 exist in the account. Scope: drag starts in the grid/list views only; drops land on a folder row, a
-view's empty space (= the folder being shown), a folder-tree row (including the root), or a
-quick-access pin.
+view's empty space (= the folder being shown), a folder-tree row (including the root), a
+quick-access pin, or a breadcrumb segment (added as a follow-up, see the last section below).
 
 ### SDK layer: `checkMove` is the interesting half
 
@@ -1430,3 +1431,25 @@ scrolling continues — but the highlighted row doesn't follow until the pointer
 D&D itself has no automated coverage: `tests/` is entirely C++ gtest with no QML test harness. The
 C++ half is covered (`FileOperationServiceTest`, `FolderNavigationControllerTest`); the gesture is
 manual-test-only.
+
+### Follow-up: the breadcrumb as a fifth drop target
+
+Dragging onto an ancestor to move something "back up" is natural in Explorer, and the breadcrumb was
+the one place showing ancestors that couldn't take a drop. No C++ was needed: `Breadcrumb.qml`'s
+delegates already carry the `{handle, isRoot}` pair that `canDropHandlesOn`/`moveHandlesTo` take, so
+this is `QuickAccessSection.qml`'s per-delegate `DropArea` copied verbatim with `modelData.isRoot`
+in place of the hardcoded `false`.
+
+Only the segment `Label` is the target — not the `>` separator, which is still reserved for a future
+subfolder dropdown. Feedback is the same highlight outline, drawn by a `z: -1` `Rectangle` because
+`Label` has no background and a plain child would paint over the text; it's anchored rather than
+laid out so `relayout()`'s `implicitWidth` sum (the overflow cutoff) is unaffected.
+
+Two cases need no code. The last segment is the current folder, which `checkMove` already rejects as
+"already in that folder" — the same rule that makes the empty-space drop reject in place. Segments
+folded behind the `«` overflow indicator are `visible: false` and therefore receive no drag events,
+so they're unreachable as targets; `«` itself deliberately gets no `DropArea` (it stands for several
+folders at once, and the tree panel reaches those anyway).
+
+Also deliberately not done: hover-to-navigate (spring loading) on a segment, matching the other four
+targets, which likewise don't navigate.

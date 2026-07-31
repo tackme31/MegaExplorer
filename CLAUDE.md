@@ -71,7 +71,8 @@ logic) were pulled forward out of numeric order — both are self-contained and 
 9–12 first — and are also done; Phase 14a then closed out phase 13's last remaining item (bulk
 *move*) by making drag & drop its trigger, so nothing is left in 13. Phase 14a adds move via
 drag & drop: drag from the grid/list views, drop onto a folder row, a view's empty space, a
-folder-tree row, or a quick-access pin — backed by `IMegaClient::moveNode` plus a *synchronous*
+folder-tree row, a quick-access pin, or a breadcrumb segment — backed by `IMegaClient::moveNode`
+plus a *synchronous*
 `checkMove` (the interface's third sync method) that a hovering drag queries to paint accept/reject
 feedback. It deliberately does **not** refresh other tabs or the folder tree (so a moved folder
 shows in two places in the tree until the next login) — both are left to Phase 16's remote-change
