@@ -41,6 +41,15 @@ refresh when a folder is opened, no continuous watching.
   patterns.
 - Stack detail (thumbnail/cache libraries etc.) is in `docs/MEMO.md`, not repeated here.
 
+## Pre-release: refactoring existing code during planning is allowed
+
+This project has not shipped yet, so there's no external API/data compatibility to preserve. When
+planning a new feature, if an existing design constraint makes the implementation notably more
+complex or risky, and reworking that existing code would avoid it, prefer proposing the rework
+instead of working around the constraint — as long as it doesn't change product-level behavior/scope
+in a significant way. If a plan includes such a rework, call it out explicitly and get the user's
+go-ahead before proceeding (as part of normal plan review, not a separate approval step).
+
 ## Project status
 
 Phases 0–6, 6a, 6b, 7a, 7, 7b, 8, 9, 10, 11, 11a, and 12 are done (Phase 7 closes out login screen +
