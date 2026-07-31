@@ -9,6 +9,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include <windows.h>
+
 // Default-constructed (2-arg) Q_LOGGING_CATEGORY enables all message types --
 // confirmed against Qt's own docs, since only categories with the "qt."
 // prefix get the debug/info-suppressed default. lcSdk doesn't need a
@@ -55,6 +57,56 @@ void rotateExistingLog(const QString& path)
     QFile::rename(path, backupPath);
 }
 
+// Qt Creator's Application Output pane paints the whole stderr stream red
+// regardless of content, so routing every level there made info/debug look
+// identical to errors. The stream split alone only buys two tiers (stdout
+// normal / stderr red), so warnings additionally carry an ANSI color code.
+// Downside of the split: the two streams reach a consumer as separate pipes
+// and can interleave out of order under bursts -- the log file below is
+// written from one sink and stays the authoritative chronological record.
+FILE* streamFor(QtMsgType type)
+{
+    return (type == QtWarningMsg || type == QtCriticalMsg || type == QtFatalMsg) ? stderr : stdout;
+}
+
+// Deliberately not gated on _isatty: the main consumer is Qt Creator's
+// Application Output, which decodes SGR codes but is a pipe, not a tty, so
+// an isatty check suppressed exactly the case this exists for. Cost is
+// escape sequences appearing verbatim if console output is redirected to a
+// file -- the log file sink is the supported way to capture a run anyway.
+const char* colorCodeFor(QtMsgType type)
+{
+    switch (type)
+    {
+    case QtWarningMsg:
+        return "\x1b[33m"; // yellow
+    case QtCriticalMsg:
+    case QtFatalMsg:
+        return "\x1b[31m"; // red -- for real terminals; Qt Creator already reds stderr
+    default:
+        return nullptr; // QtDebugMsg / QtInfoMsg: stdout's default color, no codes needed
+    }
+}
+constexpr const char* kAnsiReset = "\x1b[0m";
+
+// Legacy conhost.exe needs ENABLE_VIRTUAL_TERMINAL_PROCESSING opted in per
+// handle before it'll render SGR color codes instead of printing them as
+// garbage; Windows Terminal supports it unconditionally, but this is
+// harmless there too. GetConsoleMode fails (and is skipped) when the handle
+// isn't an actual console -- e.g. Qt Creator's Application Output, which
+// captures our stdout/stderr through a pipe -- so this only ever affects
+// real terminals.
+void enableAnsiOnStream(DWORD stdHandle)
+{
+    const HANDLE h = GetStdHandle(stdHandle);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    DWORD mode = 0;
+    if (!GetConsoleMode(h, &mode))
+        return;
+    SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+}
+
 void messageHandler(QtMsgType type, const QMessageLogContext& context, const QString& msg)
 {
     const QString formatted = qFormatLogMessage(type, context, msg);
@@ -64,7 +116,16 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
     // from an SDK-internal background thread, in addition to GUI-thread
     // qCWarning calls from controllers.
     QMutexLocker lock(&logMutex());
-    fprintf(stderr, "%s\n", qPrintable(formatted)); // keeps Qt Creator's Application Output working
+    FILE* const stream = streamFor(type);
+    if (const char* const color = colorCodeFor(type))
+        fprintf(stream, "%s%s%s\n", color, qPrintable(formatted), kAnsiReset);
+    else
+        fprintf(stream, "%s\n", qPrintable(formatted));
+    // stdout is block-buffered whenever it isn't a console (Qt Creator, shell
+    // redirect): without this, info/debug lines sit in the CRT buffer and only
+    // surface when the process exits. MSVC's _IOLBF is an alias for full
+    // buffering, so per-line flushing is the only option short of _IONBF.
+    fflush(stream);
     if (logFile().isOpen())
     {
         QTextStream ts(&logFile());
@@ -83,6 +144,9 @@ void installLogging()
 {
     qSetMessagePattern(
         "[%{time yyyy-MM-dd HH:mm:ss.zzz}] [%{category}] [%{type}] %{message} (%{file}:%{line})");
+
+    enableAnsiOnStream(STD_OUTPUT_HANDLE);
+    enableAnsiOnStream(STD_ERROR_HANDLE);
 
     // AppLocalDataLocation, not AppDataLocation: on Windows the latter is the
     // *roaming* profile path, which would sync this log file over the
