@@ -13,6 +13,7 @@ constexpr int kEFailed = -5;       // Permanent failure (2FA PIN rejection may l
 constexpr int kETooMany = -6;      // Too many uses for this resource / rate limited
 constexpr int kEExpired = -8;      // Expired
 constexpr int kENoEnt = -9;        // Bad credentials, or bad 2FA pin
+constexpr int kECircular = -10;    // Move would make a folder its own descendant
 constexpr int kEAccess = -11;      // Access denied
 constexpr int kESid = -15;         // Stored session invalid or expired
 constexpr int kEBlocked = -16;     // Account blocked/suspended

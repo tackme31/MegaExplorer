@@ -207,6 +207,19 @@ QVariantList FileListModel::selectedEntries() const
     return result;
 }
 
+QVariantMap FileListModel::entryAt(int row) const
+{
+    QVariantMap map;
+    if (row < 0 || row >= static_cast<int>(mEntries.size()))
+        return map;
+
+    const FileEntry& entry = mEntries[static_cast<size_t>(row)];
+    map.insert(QStringLiteral("handle"), static_cast<qulonglong>(entry.handle));
+    map.insert(QStringLiteral("name"), QString::fromStdString(entry.name));
+    map.insert(QStringLiteral("isFolder"), entry.isFolder);
+    return map;
+}
+
 void FileListModel::pruneSelection()
 {
     if (mSelectedHandles.empty())

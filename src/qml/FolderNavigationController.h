@@ -125,6 +125,21 @@ public:
     // with (see docs/PROGRESS.md's Phase 12 log).
     Q_INVOKABLE void moveSelectionToRubbish();
 
+    // Drag & drop's move. handles is the selection snapshot taken when the drag
+    // gesture started, passed in explicitly rather than read back off
+    // mFileListModel like moveSelectionToRubbish does: a drop can land on the
+    // folder tree or a quick-access pin, both of which are shared by every tab,
+    // so "the selection" there would be ambiguous. target/targetIsRoot use the
+    // usual isRoot sentinel convention.
+    Q_INVOKABLE void moveHandlesTo(const QVariantList& handles, quint64 target, bool targetIsRoot);
+
+    // Whether every handle could be moved onto target -- what a hovered drop
+    // target paints its accept/reject feedback from. Synchronous all the way
+    // down to IMegaClient::checkMove, so it's safe to call from a hover
+    // handler. False for an empty selection: nothing to drop.
+    Q_INVOKABLE bool
+    canDropHandlesOn(const QVariantList& handles, quint64 target, bool targetIsRoot) const;
+
 signals:
     void canGoBackChanged();
     void breadcrumbChanged();
@@ -150,16 +165,23 @@ private:
     // needlessly rebuild the Breadcrumb.qml Repeater.
     void refreshBreadcrumb();
 
-    // Shared bookkeeping for one moveSelectionToRubbish() fan-out: only the
-    // last callback to land refreshes the listing and reports the tally, so
-    // N deletions produce one refetch and one notification. Same shape as
-    // QuickAccessModel's Sweep.
-    struct RubbishBatch
+    // Shared bookkeeping for one bulk fan-out (moveSelectionToRubbish,
+    // moveHandlesTo): only the last callback to land refreshes the listing and
+    // reports the tally, so N operations produce one refetch and one
+    // notification. Same shape as QuickAccessModel's Sweep.
+    struct BulkOperationBatch
     {
         int remaining = 0;
         int succeeded = 0;
         int failed = 0;
     };
+
+    // Common tail of both bulk fan-outs above: counts one outcome and, once the
+    // batch is empty, refreshes and reports it under context. Must run on the
+    // GUI thread (callers wrap it in invokeOnGuiThread).
+    void accountForBulkOutcome(const std::shared_ptr<BulkOperationBatch>& batch,
+                               const Result<void>& result,
+                               const char* context);
 
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<SearchService> mSearchService;

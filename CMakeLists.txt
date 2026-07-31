@@ -101,6 +101,8 @@ qt_add_qml_module(appMegaExplorer
         qml/components/Breadcrumb.qml
         qml/components/ConfirmRubbishDialog.qml
         qml/components/DownloadSnackbar.qml
+        qml/components/DragAutoScroller.qml
+        qml/components/DragProxy.qml
         qml/components/ErrorToast.qml
         qml/components/FileContextMenu.qml
         qml/components/FolderPinMenu.qml

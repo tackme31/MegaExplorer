@@ -309,7 +309,7 @@ void FolderNavigationController::moveSelectionToRubbish()
     if (entries.isEmpty())
         return;
 
-    auto batch = std::make_shared<RubbishBatch>();
+    auto batch = std::make_shared<BulkOperationBatch>();
     batch->remaining = static_cast<int>(entries.size());
 
     for (const QVariant& entry : entries)
@@ -319,28 +319,76 @@ void FolderNavigationController::moveSelectionToRubbish()
             static_cast<std::uint64_t>(handle),
             [this, self = shared_from_this(), batch](Result<void> result) {
                 invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
-                    if (result.success)
-                    {
-                        ++batch->succeeded;
-                    }
-                    else
-                    {
-                        ++batch->failed;
-                        qCWarning(lcFileOps) << "move to rubbish failed:"
-                                             << QString::fromStdString(result.errorMessage)
-                                             << "code=" << result.errorCode;
-                    }
-
-                    if (--batch->remaining > 0)
-                        return;
-
-                    refreshVisibleListing();
-                    mNotifications->notifyOperation(QStringLiteral("moveToRubbish"),
-                                                    batch->succeeded,
-                                                    batch->failed);
+                    accountForBulkOutcome(batch, result, "moveToRubbish");
                 });
             });
     }
+}
+
+void FolderNavigationController::moveHandlesTo(const QVariantList& handles,
+                                               quint64 target,
+                                               bool targetIsRoot)
+{
+    if (handles.isEmpty())
+        return;
+
+    auto batch = std::make_shared<BulkOperationBatch>();
+    batch->remaining = static_cast<int>(handles.size());
+
+    for (const QVariant& handle : handles)
+    {
+        mFileOps->move(static_cast<std::uint64_t>(handle.toULongLong()),
+                       static_cast<std::uint64_t>(target),
+                       targetIsRoot,
+                       [this, self = shared_from_this(), batch](Result<void> result) {
+                           invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
+                               accountForBulkOutcome(batch, result, "move");
+                           });
+                       });
+    }
+}
+
+bool FolderNavigationController::canDropHandlesOn(const QVariantList& handles,
+                                                  quint64 target,
+                                                  bool targetIsRoot) const
+{
+    if (handles.isEmpty())
+        return false;
+
+    for (const QVariant& handle : handles)
+    {
+        if (!mFileOps
+                 ->canMove(static_cast<std::uint64_t>(handle.toULongLong()),
+                           static_cast<std::uint64_t>(target),
+                           targetIsRoot)
+                 .success)
+            return false;
+    }
+    return true;
+}
+
+void FolderNavigationController::accountForBulkOutcome(
+    const std::shared_ptr<BulkOperationBatch>& batch,
+    const Result<void>& result,
+    const char* context)
+{
+    if (result.success)
+    {
+        ++batch->succeeded;
+    }
+    else
+    {
+        ++batch->failed;
+        qCWarning(lcFileOps) << context
+                             << "failed:" << QString::fromStdString(result.errorMessage)
+                             << "code=" << result.errorCode;
+    }
+
+    if (--batch->remaining > 0)
+        return;
+
+    refreshVisibleListing();
+    mNotifications->notifyOperation(QString::fromLatin1(context), batch->succeeded, batch->failed);
 }
 
 void FolderNavigationController::reset()

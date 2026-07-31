@@ -18,6 +18,9 @@ ColumnLayout {
     id: root
 
     required property var navController
+    // Main.qml's single window-wide DragProxy -- both halves of this panel are
+    // drop targets for a move drag started in a file view.
+    required property var dragProxy
 
     spacing: 0
 
@@ -28,6 +31,7 @@ ColumnLayout {
     QuickAccessSection {
         Layout.fillWidth: true
         navController: root.navController
+        dragProxy: root.dragProxy
         // This panel's height is set by SplitView, independent of its own
         // contents, so it's safe for the section to cap itself against it.
         availableHeight: root.height
@@ -45,5 +49,6 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
         navController: root.navController
+        dragProxy: root.dragProxy
     }
 }

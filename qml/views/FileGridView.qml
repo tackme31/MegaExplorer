@@ -18,6 +18,9 @@ GridView {
 
     required property var navController
     required property var thumbController
+    // Main.qml's window-wide DragProxy -- see its own comment for why the drag
+    // is carried by a separate overlay item instead of a delegate.
+    required property var dragProxy
 
     signal activateRequested(bool isFolder, var handle, string name, var sizeBytes)
     // Middle-click on a folder delegate below -- ignored for files, same
@@ -29,6 +32,11 @@ GridView {
     clip: true
     cellWidth: 120
     cellHeight: 120
+    // Same rationale as FileTableView.qml's TableView: Flickable defaults to
+    // panning on left-drag, which since Phase 14a is how a move drag & drop
+    // starts instead. NoButton disables drag/flick while leaving wheel
+    // scrolling untouched (Flickable.acceptedButtons, since 6.9).
+    acceptedButtons: Qt.NoButton
     // GridView has its own built-in arrow-key handling (currentIndex
     // movement + auto-scroll) that would otherwise fight with the selection
     // model driven by Keys.onPressed below.
@@ -116,6 +124,107 @@ GridView {
         event.accepted = true;
     }
 
+    // Drag & drop (Phase 14a). Both halves live at the view level rather than
+    // per delegate, matching the TapHandler above: a tile is too small a unit
+    // to hit-test against, and the "dropped on empty space" case has no
+    // delegate at all.
+
+    // Row a drop would land in, or -1 when it would land on the folder this
+    // view is showing (empty space, a file tile, or a folder that refuses the
+    // drop). Only meaningful while dropOnCurrentFolder/dropRow are being fed by
+    // the DropArea below.
+    property int dropRow: -1
+    property bool dropOnCurrentFolder: false
+
+    function beginDrag(scenePos) {
+        const entries = root.navController.fileListModel.selectedEntries();
+        if (entries.length === 0)
+            return;
+        const label = entries.length === 1 ? entries[0].name : qsTr("%1 items").arg(entries.length);
+        root.dragProxy.begin(root.navController, entries.map(e => e.handle), label, scenePos);
+    }
+
+    function clearDropTarget() {
+        root.dropRow = -1;
+        root.dropOnCurrentFolder = false;
+    }
+
+    // Reads the payload off root.dragProxy rather than the event's own
+    // drag.source. They're the same object -- the DropArea's keys let nothing
+    // else in -- but drag.source is typed QObject, so every field access
+    // through it is an unchecked dynamic lookup.
+    function updateDropTarget(drag) {
+        const nav = root.dragProxy.sourceNav;
+        const handles = root.dragProxy.handles;
+        const pos = root.contentItem.mapFromItem(root, Qt.point(drag.x, drag.y));
+        const row = root.indexAt(pos.x, pos.y);
+        const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
+
+        if (entry.isFolder && nav.canDropHandlesOn(handles, entry.handle, false)) {
+            root.dropRow = row;
+            root.dropOnCurrentFolder = false;
+            return;
+        }
+
+        // Anything else in this view means "into the folder being shown",
+        // Explorer's own fallback -- which canDropHandlesOn rejects when the
+        // dragged items already live there.
+        root.dropRow = -1;
+        root.dropOnCurrentFolder = nav.canDropHandlesOn(handles, root.navController.currentHandle,
+                                                        root.navController.atRoot);
+    }
+
+    DragAutoScroller {
+        id: autoScroller
+        flickable: root
+    }
+
+    DropArea {
+        // parent: root for the same reason the TapHandler below uses it -- a
+        // plain child of a Flickable lands in contentItem, which scrolls and is
+        // only as tall as the content.
+        parent: root
+        anchors.fill: parent
+        keys: ["application/x-megaexplorer-nodes"]
+
+        onEntered: drag => {
+            root.updateDropTarget(drag);
+            autoScroller.track(drag.y);
+        }
+        onPositionChanged: drag => {
+            root.updateDropTarget(drag);
+            autoScroller.track(drag.y);
+        }
+        onExited: {
+            root.clearDropTarget();
+            autoScroller.release();
+        }
+        onDropped: {
+            autoScroller.release();
+            if (root.dropRow >= 0) {
+                const entry = root.navController.fileListModel.entryAt(root.dropRow);
+                root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles, entry.handle, false);
+            } else if (root.dropOnCurrentFolder) {
+                root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
+                                                       root.navController.currentHandle,
+                                                       root.navController.atRoot);
+            }
+            root.clearDropTarget();
+        }
+    }
+
+    // Drawn over the whole viewport when a drop would land in the folder this
+    // view is showing, since that target has no delegate to highlight.
+    Rectangle {
+        parent: root
+        anchors.fill: parent
+        visible: root.dropOnCurrentFolder
+        color: "transparent"
+        border.width: 2
+        border.color: sysPalette.highlight
+        radius: 4
+    }
+
     SystemPalette {
         id: sysPalette
     }
@@ -172,6 +281,8 @@ GridView {
         readonly property bool renaming: root.renamingHandle !== 0
                                         && root.renamingHandle === gridDelegateItem.handle
 
+        readonly property bool dropTarget: root.dropRow === gridDelegateItem.index
+
         width: GridView.view.cellWidth
         height: GridView.view.cellHeight
 
@@ -186,6 +297,10 @@ GridView {
             color: gridDelegateItem.selected ? Qt.rgba(sysPalette.highlight.r,
                                                        sysPalette.highlight.g,
                                                        sysPalette.highlight.b, 0.35) : "transparent"
+            // Outlined rather than filled, so a drop target that also happens
+            // to be selected still reads as two distinct states.
+            border.width: gridDelegateItem.dropTarget ? 2 : 0
+            border.color: sysPalette.highlight
         }
 
         ColumnLayout {
@@ -252,6 +367,39 @@ GridView {
             onDoubleTapped: root.activateRequested(gridDelegateItem.isFolder,
                                                    gridDelegateItem.handle, gridDelegateItem.name,
                                                    gridDelegateItem.sizeBytes)
+        }
+
+        // Starts a move drag. target: null because the tile must stay in the
+        // grid -- what moves is Main.qml's DragProxy, which this only steers.
+        // Passing the threshold makes this take the exclusive grab, which
+        // cancels the view-level TapHandler's pending tap; that is what keeps
+        // a drag off an already-selected tile from collapsing the selection.
+        DragHandler {
+            id: dragHandler
+            target: null
+
+            onActiveChanged: {
+                if (!dragHandler.active) {
+                    root.dragProxy.finish();
+                    return;
+                }
+                // Explorer's rule: dragging an unselected tile selects it
+                // first, dragging a selected one carries the whole selection.
+                if (!gridDelegateItem.selected) {
+                    root.forceActiveFocus();
+                    root.navController.fileListModel.selectRow(gridDelegateItem.index,
+                                                               Qt.NoModifier);
+                }
+                root.beginDrag(dragHandler.centroid.scenePosition);
+            }
+
+            // activeTranslation is the documented "changes on every move"
+            // property; centroid is read for the position it changed to.
+            onActiveTranslationChanged: if (dragHandler.active)
+                                            root.dragProxy.moveTo(
+                                                dragHandler.centroid.scenePosition)
+
+            onCanceled: root.dragProxy.cancel()
         }
 
         // Folder-only, mirrors FileTableView.qml's row delegate -- a file

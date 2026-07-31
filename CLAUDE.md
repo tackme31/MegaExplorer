@@ -59,12 +59,17 @@ plus move-to-Rubbish-bin — the codebase's first *mutating* SDK calls — with 
 deferred to Phase 14**, since choosing a destination realistically needs drag & drop).
 Phases 13a (selection model) and 13b (multi-select context menu + declarative action-resolution
 logic) were pulled forward out of numeric order — both are self-contained and didn't need phases
-9–12 first — and are also done; phase 13's remaining scope is now just bulk *move*, which waits on
-Phase 14 for the same reason. Phase 14 (upload via drag & drop, carrying move with it) is next in
-roadmap order. The full roadmap — phases 13–16+ (bulk move, upload,
-in-app preview, real-time remote-change reflection, ...) —
-lives in `docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above. `docs/MEMO.md`
-keeps only non-roadmap notes. Full bidirectional local sync stays out of scope.
+9–12 first — and are also done; Phase 14a then closed out phase 13's last remaining item (bulk
+*move*) by making drag & drop its trigger, so nothing is left in 13. Phase 14a adds move via
+drag & drop: drag from the grid/list views, drop onto a folder row, a view's empty space, a
+folder-tree row, or a quick-access pin — backed by `IMegaClient::moveNode` plus a *synchronous*
+`checkMove` (the interface's third sync method) that a hovering drag queries to paint accept/reject
+feedback. It deliberately does **not** refresh other tabs or the folder tree (so a moved folder
+shows in two places in the tree until the next login) — both are left to Phase 16's remote-change
+reflection. Phase 14b (upload via drag & drop) is next in roadmap order; its drop targets already
+exist. The full roadmap — phases 14b–16+ (upload, in-app preview, real-time remote-change
+reflection, ...) — lives in `docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
+`docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional local sync stays out of scope.
 
 Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`), `AuthService`/
 `FolderNavigationService`/`SearchService`/`DownloadService`/`ThumbnailService`/`FileOperationService`
@@ -84,7 +89,10 @@ FolderTreePanel.qml`'s lazily-expanded `TreeView` side panel (Phase 10), an equa
 `QuickAccessService`/`QuickAccessModel` (`src/core`/`src/qml`) backed by `IPinnedFolderStore`/
 `QSettingsPinnedFolderStore` (account-scoped since Phase 11a) behind `qml/components/
 QuickAccessSection.qml` — both panel halves now stacked by `qml/components/SidePanel.qml`
-(Phase 11) — and cross-cutting app
+(Phase 11) — a single window-wide `qml/components/DragProxy.qml` parented to the window `Overlay`
+that carries every move drag (a delegate can't: the views' `Flickable` viewport would clip it before
+it reached the side panel) plus `qml/components/DragAutoScroller.qml` for the edge scrolling Qt
+doesn't provide (Phase 14a) — and cross-cutting app
 infrastructure — categorized logging + a MEGA SDK logger bridge (`src/app`, `src/mega`) and a shared
 `NotificationController`/`ErrorToast.qml` for user-facing failures (`src/qml`, `qml/`) — see
 `docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md` for what each phase actually built

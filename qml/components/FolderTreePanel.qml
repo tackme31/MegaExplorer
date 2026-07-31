@@ -25,6 +25,10 @@ TreeView {
     id: root
 
     required property var navController
+    // Main.qml's window-wide DragProxy. This panel is a drop target only --
+    // dragging *out* of the tree is deliberately not supported (Phase 14a), so
+    // no DragHandler appears below.
+    required property var dragProxy
 
     clip: true
 
@@ -39,6 +43,15 @@ TreeView {
     // this TreeView nor clipped by its Flickable viewport.
     FolderPinMenu {
         id: pinMenu
+    }
+
+    // Driven from the per-delegate DropAreas below. A stationary cursor at the
+    // panel edge keeps scrolling because content moving underneath doesn't
+    // re-deliver drag events -- the last track() call stands until the pointer
+    // actually moves again, or the gesture ends and onExited releases it.
+    DragAutoScroller {
+        id: autoScroller
+        flickable: root
     }
 
     delegate: TreeViewDelegate {
@@ -75,6 +88,50 @@ TreeView {
             implicitHeight: 24
             color: treeDelegate.isCurrent ? Qt.rgba(sysPalette.highlight.r, sysPalette.highlight.g, sysPalette.highlight.b,
                                                     0.35) : "transparent"
+            // Outlined rather than filled, so the drop target stays legible on
+            // the row that also happens to be the current folder.
+            border.width: dropArea.accepting ? 2 : 0
+            border.color: sysPalette.highlight
+        }
+
+        // Per delegate, unlike the file views' single view-level DropArea: a
+        // tree row *is* the drop target, so there's no position-to-row
+        // hit-testing to centralize, and the existing handlers here are already
+        // per delegate. isRoot rows are valid targets too -- dropping on
+        // "Cloud Drive" moves to the account root.
+        DropArea {
+            id: dropArea
+            anchors.fill: parent
+            keys: ["application/x-megaexplorer-nodes"]
+
+            // Recomputed on enter only: the target can't change without leaving
+            // this row first, so a positionChanged handler would re-ask the SDK
+            // for an answer that cannot have changed.
+            property bool accepting: false
+
+            // Payload read off root.dragProxy rather than the event's own
+            // drag.source: same object (keys let nothing else in), but
+            // drag.source is typed QObject and every field access through it
+            // would be an unchecked dynamic lookup.
+            onEntered: drag => {
+                dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
+                            root.dragProxy.handles, treeDelegate.handle, treeDelegate.isRoot);
+                autoScroller.track(root.mapFromItem(dropArea, drag.x, drag.y).y);
+            }
+            onPositionChanged: drag => autoScroller.track(
+                                   root.mapFromItem(dropArea, drag.x, drag.y).y)
+            onExited: {
+                dropArea.accepting = false;
+                autoScroller.release();
+            }
+            onDropped: {
+                if (dropArea.accepting)
+                    root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
+                                                           treeDelegate.handle,
+                                                           treeDelegate.isRoot);
+                dropArea.accepting = false;
+                autoScroller.release();
+            }
         }
 
         TapHandler {

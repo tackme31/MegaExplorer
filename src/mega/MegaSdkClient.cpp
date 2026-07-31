@@ -19,6 +19,8 @@ static_assert(MegaErrorCode::kETooMany == mega::MegaError::API_ETOOMANY,
               "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kEExpired == mega::MegaError::API_EEXPIRED,
               "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kECircular == mega::MegaError::API_ECIRCULAR,
+              "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kENoEnt == mega::MegaError::API_ENOENT,
               "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kEAccess == mega::MegaError::API_EACCESS,
@@ -430,7 +432,61 @@ void MegaSdkClient::moveToRubbish(std::uint64_t handle, std::function<void(Resul
     mApi->moveNode(node.get(), rubbish.get(), new SimpleResultListener(std::move(onDone)));
 }
 
-std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot)
+void MegaSdkClient::moveNode(std::uint64_t handle,
+                             std::uint64_t newParentHandle,
+                             bool newParentIsRoot,
+                             std::function<void(Result<void>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<void>::fail("No node with the given handle (not logged in / nodes not "
+                                  "fetched / node deleted)",
+                                  MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    std::unique_ptr<mega::MegaNode> parent = resolveNode(newParentHandle, newParentIsRoot);
+    if (!parent)
+    {
+        onDone(Result<void>::fail("No destination folder with the given handle (nodes not "
+                                  "fetched / folder deleted)",
+                                  MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    mApi->moveNode(node.get(), parent.get(), new SimpleResultListener(std::move(onDone)));
+}
+
+Result<void> MegaSdkClient::checkMove(std::uint64_t handle,
+                                     std::uint64_t newParentHandle,
+                                     bool newParentIsRoot) const
+{
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    std::unique_ptr<mega::MegaNode> parent = resolveNode(newParentHandle, newParentIsRoot);
+    if (!node || !parent)
+        return Result<void>::fail("Source or destination no longer exists",
+                                  MegaErrorCode::kENoEnt);
+
+    // Stricter than the SDK, which happily accepts a move to where the node
+    // already is. Detected here rather than by comparing handles in a caller
+    // because this is the only layer holding real nodes -- a caller looking at
+    // the root would have only the isRoot sentinel, never the root's actual
+    // handle, so it couldn't make the comparison at all.
+    if (node->getParentHandle() == parent->getHandle())
+        return Result<void>::fail("Already in that folder", MegaErrorCode::kEArgs);
+
+    // Ownership of the returned MegaError is the caller's (megaapi.h's
+    // checkMoveErrorExtended docs), unlike the borrowed MegaError* handed to
+    // MegaRequestListener::onRequestFinish.
+    std::unique_ptr<mega::MegaError> error(mApi->checkMoveErrorExtended(node.get(), parent.get()));
+    if (!error || error->getErrorCode() == mega::MegaError::API_OK)
+        return Result<void>::ok();
+
+    return Result<void>::fail(error->getErrorString(), error->getErrorCode());
+}
+
+std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot) const
 {
     if (isRoot)
         return std::unique_ptr<mega::MegaNode>(mApi->getRootNode());

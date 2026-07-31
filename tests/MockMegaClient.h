@@ -68,4 +68,9 @@ public:
                 moveToRubbish,
                 (std::uint64_t, std::function<void(Result<void>)>),
                 (override));
+    MOCK_METHOD(void,
+                moveNode,
+                (std::uint64_t, std::uint64_t, bool, std::function<void(Result<void>)>),
+                (override));
+    MOCK_METHOD(Result<void>, checkMove, (std::uint64_t, std::uint64_t, bool), (const, override));
 };

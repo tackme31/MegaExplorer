@@ -12,9 +12,9 @@ import QtQuick.Layouts
 // counts are plugged into it, same structured-fields convention as
 // ErrorToast.qml.
 //
-// No Undo button: reversing a Rubbish-bin move would need a general move
-// operation, which IMegaClient deliberately doesn't expose yet (see
-// docs/PROGRESS.md's Phase 12 log).
+// No Undo button. Phase 14a did add a general move to IMegaClient, so a
+// Rubbish-bin undo is finally expressible -- but it would need the pre-move
+// parent of every item in the batch, which nothing currently records.
 Popup {
     id: root
 
@@ -47,6 +47,12 @@ Popup {
         wrapMode: Text.Wrap
         text: {
             switch (root.context) {
+            case "move":
+                if (root.failed === 0)
+                    return qsTr("Moved %1 item(s)").arg(root.succeeded);
+                if (root.succeeded === 0)
+                    return qsTr("Failed to move %1 item(s)").arg(root.failed);
+                return qsTr("Moved %1 item(s), %2 failed").arg(root.succeeded).arg(root.failed);
             case "moveToRubbish":
                 if (root.failed === 0)
                     return qsTr("Moved %1 item(s) to the Rubbish bin").arg(root.succeeded);

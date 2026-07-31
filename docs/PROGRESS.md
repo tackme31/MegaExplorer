@@ -108,9 +108,9 @@ key with the survivor list). See the Phase 11a implementation-log entry below.
 
 Done — see its implementation-log entry. Move (`moveNode` to an arbitrary parent) was cut from the
 phase and deferred: with no destination picker in the UI, the only sane trigger for it is
-drag & drop, which belongs with phase 14's `DropArea` work rather than here. That also means
-there's nothing to build an Undo on yet, so the Rubbish-bin snackbar deliberately has no Undo
-button.
+drag & drop, which belongs with phase 14's `DropArea` work rather than here. **Phase 14a has since
+delivered it.** The Rubbish-bin snackbar still has no Undo button, though: a general move now exists
+to undo *with*, but nothing records each item's pre-move parent to undo *to*.
 
 ### Phase 13 — multi-select + bulk operations
 
@@ -122,14 +122,21 @@ implementation-log entry) since bulk download doesn't actually depend on phase 1
 `DownloadService`'s existing queue directly. Remaining scope: rename/delete/move as multi-item
 context-menu actions. Phase 12 has since delivered rename (single-only by construction) and
 multi-item move-to-rubbish, both purely as new `FileActionSpec` rows exactly as predicted here — so
-what's actually left for 13 is bulk *move*, which waits on phase 14's drag & drop.
+what was actually left for 13 was bulk *move* — **delivered by phase 14a**, which makes multi-select
+drag & drop the trigger. Nothing remains in phase 13.
 
-### Phase 14 — upload (drag & drop)
+### Phase 14a — move via drag & drop (done)
+
+Phase 12's deferred `moveNode`, triggered by dropping onto a folder row, a view's empty space, a
+folder-tree row, or a quick-access pin. See its implementation-log entry. Split out of phase 14 so
+the `DropArea` groundwork could land without waiting on upload's transfer listener.
+
+### Phase 14b — upload (drag & drop)
 
 Symmetric to phase 4's download but needs its own `MegaApi::startUpload` transfer listener
-(mirroring `DownloadService`), higher cost than phase 12. Drag & drop via Qt Quick's `DropArea` --
-which is also where phase 12's deferred *move* lands, since a drop target is the natural way to
-choose a destination.
+(mirroring `DownloadService`), higher cost than phase 12. The drop targets themselves already exist
+after 14a; what's new is distinguishing an external file drop (`drop.hasUrls`, a different
+`DropArea.keys`) from 14a's internal node drag, and the upload transfer plumbing behind it.
 
 ### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
@@ -1314,3 +1321,112 @@ rename or deletion until the next login; a deleted pin is still caught at click 
 scroll position jumps to the top after an operation (selection and cursor survive, being
 handle-keyed). Other tabs showing the same folder are not invalidated — this app has never had any
 cross-tab invalidation mechanism. And move is not implemented; see the roadmap note.
+
+## Phase 14a — move via drag & drop (done)
+
+Collects phase 12's deferred `moveNode` (see its log entry and the roadmap note). **Upload was
+explicitly left out** and stays as phase 14b: this phase is only about moving nodes that already
+exist in the account. Scope: drag starts in the grid/list views only; drops land on a folder row, a
+view's empty space (= the folder being shown), a folder-tree row (including the root), or a
+quick-access pin.
+
+### SDK layer: `checkMove` is the interesting half
+
+`moveNode(handle, newParentHandle, newParentIsRoot, onDone)` is the trivial part — `moveToRubbish`
+already called `MegaApi::moveNode`, just with `getRubbishNode()` hardcoded as the destination, so it
+reuses `SimpleResultListener` and `resolveNode` unchanged.
+
+`checkMove(handle, newParentHandle, newParentIsRoot)` is the **third synchronous method** in
+`IMegaClient`, after `currentSessionToken`/`currentUserHandle`. It wraps
+`MegaApi::checkMoveErrorExtended` (in-memory ancestor walk, no API round-trip) and has to be
+synchronous because a hovering drag queries it to decide whether to paint an accept highlight.
+Its result's `errorCode` is the payload, not its message: `kENoEnt` (either end gone),
+`kECircular` (folder into its own descendant), `kEAccess`. `kECircular = -10` was added to
+`MegaErrorCodes.h` with its matching `static_assert`.
+
+It is deliberately **stricter than the SDK**: a move to the node's current parent is reported as
+`kEArgs` rather than accepted as a pointless no-op. That check lives here, not in a caller, because
+this is the only layer holding real `MegaNode`s — a caller pointing at the root has only the
+`isRoot` sentinel and never the root's actual handle, so it *cannot* make the comparison. An earlier
+draft instead added `FileEntry::parentHandle` and compared in the controller; that was dropped once
+the root case showed it couldn't work uniformly.
+
+`resolveNode` became `const` to let `checkMove` be `const`. Nothing else had to change:
+`unique_ptr::operator->()` is const-qualified but hands back a non-const `MegaApi*`, the same trick
+`currentSessionToken() const` already relied on.
+
+`FileOperationService` gained the matching `move`/`canMove` pair, keeping the phase 12
+"async execute + sync pre-check" split that `rename`/`isValidName` established. `move` re-runs
+`canMove` itself, so skipping the pre-check can't smuggle through a move the SDK would refuse.
+
+### Controller: one batch helper, two callers
+
+`moveSelectionToRubbish`'s `RubbishBatch` was renamed `BulkOperationBatch` and its tail extracted
+into `accountForBulkOutcome(batch, result, context)` — N results collapse into one
+`refreshVisibleListing()` and one `notifyOperation()`, which is now shared verbatim by both
+fan-outs.
+
+`moveHandlesTo(handles, target, targetIsRoot)` takes the handles **explicitly** rather than reading
+`mFileListModel`'s selection the way `moveSelectionToRubbish` does. A drop can land on the folder
+tree or a quick-access pin, both of which are shared across every tab, so "the selection" has no
+single meaning there; the drag snapshots its payload at gesture start and carries it.
+`canDropHandlesOn` is all-or-nothing — one un-movable item greys out the whole drop rather than
+silently moving the rest.
+
+`FileListModel::entryAt(row)` was added so a view-level drop handler can ask what sits under the
+cursor after resolving a position to a row. QML can't call `data()` usefully: the `Role` enum isn't
+exposed there.
+
+### QML: why a proxy item, and why view-level drop areas
+
+`qml/components/DragProxy.qml` is a single window-wide item parented to `Overlay.overlay`, and it is
+the thing that actually carries `Drag.active`. Putting `Drag.active` on a delegate does not work
+here: a delegate lives inside GridView/TableView's Flickable viewport, which **clips** it, so the
+drag visual would vanish exactly when dragged towards the side panel — which is where half the drop
+targets are. The proxy also has to *move*, since an internal drag emits its events from the attached
+item's position changes; `moveTo()` is simultaneously "update the ghost" and "tell the DropAreas
+where the cursor is".
+
+It reaches the views as a required property drilled through `TabContentPane`/`SidePanel`, the same
+route `navController` takes — a separately-loaded `.qml` file can't reach `Main.qml` by id.
+
+Drop handling is split by what the target *is*:
+
+- **File views: one view-level `DropArea`**, resolving the row by position (`GridView.indexAt` /
+  `TableView.cellAtPosition`), mirroring the view-level `TapHandler` those files already use. This
+  also sidesteps `FileTableView`'s cell-granular delegate, which can't cover a whole row, and gives
+  the "dropped on empty space" case somewhere to live — it has no delegate at all.
+- **Tree and quick access: a `DropArea` per delegate**, because a row there *is* the target and the
+  existing handlers in those files are already per delegate.
+
+Both read the payload off `root.dragProxy` rather than the event's `drag.source`. They're the same
+object — `keys: ["application/x-megaexplorer-nodes"]` lets nothing else in — but `drag.source` is
+typed `QObject`, so every field access through it is an unchecked dynamic lookup that `qmllint`
+flags.
+
+`GridView` gained `acceptedButtons: Qt.NoButton`, matching what `FileTableView` already did:
+Flickable pans on left-drag by default, which is now how a move drag starts instead. Wheel
+scrolling is unaffected.
+
+`qml/components/DragAutoScroller.qml` restores edge scrolling, which Qt provides nothing for and
+which disabling the pan took away. One subtlety worth knowing: with a stationary cursor at the
+edge, content scrolls but drag events are *not* re-delivered, so the last `track()` call stands and
+scrolling continues — but the highlighted row doesn't follow until the pointer moves again.
+
+### Deliberately not done
+
+- **Other tabs are not refreshed.** Only the tab the drag started from refetches. There has never
+  been a cross-tab invalidation mechanism (phase 12's log says the same); phase 16's remote-change
+  reflection is expected to subsume it.
+- **The folder tree is not refreshed**, so a moved folder shows in both its old and new position
+  until the next login. `FolderTreeModel` never removes loaded nodes by design and has no partial
+  reload API. Same phase 16 rationale.
+- **Spring-loaded (hover-to-expand) tree rows**, and auto-scrolling of the quick-access list.
+- **Dragging out of the tree or quick access**, and a "Move to..." context-menu action. Drag & drop
+  is the only trigger.
+- **Undo.** A general move now exists, so a Rubbish-bin undo is finally *expressible* — but it would
+  need each item's pre-move parent, which nothing records.
+
+D&D itself has no automated coverage: `tests/` is entirely C++ gtest with no QML test harness. The
+C++ half is covered (`FileOperationServiceTest`, `FolderNavigationControllerTest`); the gesture is
+manual-test-only.

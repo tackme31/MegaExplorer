@@ -31,3 +31,25 @@ void FileOperationService::moveToRubbish(std::uint64_t handle,
 {
     mClient->moveToRubbish(handle, std::move(onDone));
 }
+
+void FileOperationService::move(std::uint64_t handle,
+                                std::uint64_t newParentHandle,
+                                bool newParentIsRoot,
+                                std::function<void(Result<void>)> onDone)
+{
+    Result<void> allowed = canMove(handle, newParentHandle, newParentIsRoot);
+    if (!allowed.success)
+    {
+        onDone(std::move(allowed));
+        return;
+    }
+
+    mClient->moveNode(handle, newParentHandle, newParentIsRoot, std::move(onDone));
+}
+
+Result<void> FileOperationService::canMove(std::uint64_t handle,
+                                           std::uint64_t newParentHandle,
+                                           bool newParentIsRoot) const
+{
+    return mClient->checkMove(handle, newParentHandle, newParentIsRoot);
+}

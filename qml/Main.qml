@@ -285,6 +285,7 @@ ApplicationWindow {
             SidePanel {
                 id: treePanel
                 navController: tabsController.currentNavigation
+                dragProxy: moveDragProxy
                 SplitView.minimumWidth: 120
                 SplitView.maximumWidth: 500
 
@@ -317,6 +318,7 @@ ApplicationWindow {
                         required property var thumbnails
                         navController: navigation
                         thumbController: thumbnails
+                        dragProxy: moveDragProxy
 
                         // Read once at this tab's creation (see
                         // TabContentPane.qml's own comment on why these are
@@ -372,6 +374,20 @@ ApplicationWindow {
             onResizingChanged: if (!resizing)
                                    window.treePanelWidth = treePanel.width
         }
+    }
+
+    // Phase 14a's move drag & drop. One instance for the whole window, parented
+    // to the Overlay so it escapes the file views' Flickable clipping on its way
+    // to the side panel -- see DragProxy.qml's own comment. Handed down as a
+    // required property (the same route navController takes) because a
+    // separately-loaded .qml file can't reach Main.qml by id.
+    // id deliberately differs from the `dragProxy` property name it gets
+    // assigned to below: inside an object that declares its own `dragProxy`,
+    // that property shadows a same-named outer id, so `dragProxy: dragProxy`
+    // would silently bind the property to itself and evaluate to undefined.
+    DragProxy {
+        id: moveDragProxy
+        parent: Overlay.overlay
     }
 
     DownloadSnackbar {

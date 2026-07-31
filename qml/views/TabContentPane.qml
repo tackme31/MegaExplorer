@@ -14,6 +14,10 @@ ColumnLayout {
 
     required property var navController
     required property var thumbController
+    // Main.qml's single window-wide DragProxy, passed through to both views --
+    // see Main.qml's own comment on why this is drilled down rather than
+    // reached by id.
+    required property var dragProxy
 
     // Read once (Component.onCompleted below), not bound live: Main.qml
     // passes in the single Settings-backed window.* value at the moment this
@@ -79,6 +83,7 @@ ColumnLayout {
         FileTableView {
             id: fileTableView
             navController: pane.navController
+            dragProxy: pane.dragProxy
             initialSortColumn: pane.initialSortColumn
             initialSortAscending: pane.initialSortAscending
             initialColumnWidthName: pane.initialColumnWidthName
@@ -108,6 +113,7 @@ ColumnLayout {
             id: fileGridView
             navController: pane.navController
             thumbController: pane.thumbController
+            dragProxy: pane.dragProxy
             StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
                                                     Qt.callLater(() => fileGridView.forceActiveFocus(
                                                                            ))

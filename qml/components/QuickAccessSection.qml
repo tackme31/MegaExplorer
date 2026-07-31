@@ -20,6 +20,9 @@ ColumnLayout {
     id: root
 
     required property var navController
+    // Main.qml's window-wide DragProxy. Drop target only, same as
+    // FolderTreePanel.qml -- a pin is a shortcut, not something to drag out of.
+    required property var dragProxy
 
     // Passed in rather than read off root.height: this ColumnLayout's own
     // height is derived from its children, so capping a child against it would
@@ -98,6 +101,34 @@ ColumnLayout {
                 color: pinDelegate.isCurrent ? Qt.rgba(sysPalette.highlight.r,
                                                        sysPalette.highlight.g,
                                                        sysPalette.highlight.b, 0.35) : "transparent"
+                border.width: dropArea.accepting ? 2 : 0
+                border.color: sysPalette.highlight
+            }
+
+            // Same per-delegate arrangement as FolderTreePanel.qml's. A pin
+            // whose target was deleted on another device simply never accepts:
+            // canDropHandlesOn bottoms out in checkMove, which fails with
+            // kENoEnt for a handle that no longer resolves.
+            DropArea {
+                id: dropArea
+                anchors.fill: parent
+                keys: ["application/x-megaexplorer-nodes"]
+
+                property bool accepting: false
+
+                // Payload read off root.dragProxy rather than the event's own
+                // drag.source, same reasoning as FolderTreePanel.qml's.
+                onEntered: {
+                    dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
+                                root.dragProxy.handles, pinDelegate.handle, false);
+                }
+                onExited: dropArea.accepting = false
+                onDropped: {
+                    if (dropArea.accepting)
+                        root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
+                                                               pinDelegate.handle, false);
+                    dropArea.accepting = false;
+                }
             }
 
             // activate() rather than navigateTo() directly: the pin's target

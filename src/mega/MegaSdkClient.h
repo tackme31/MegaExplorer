@@ -76,10 +76,22 @@ public:
 
     void moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone) override;
 
+    void moveNode(std::uint64_t handle,
+                  std::uint64_t newParentHandle,
+                  bool newParentIsRoot,
+                  std::function<void(Result<void>)> onDone) override;
+
+    Result<void> checkMove(std::uint64_t handle,
+                           std::uint64_t newParentHandle,
+                           bool newParentIsRoot) const override;
+
 private:
     // Shared by getRootChildren/getChildren/search: isRoot selects
     // getRootNode(), otherwise looks handle up via getNodeByHandle().
-    std::unique_ptr<mega::MegaNode> resolveNode(std::uint64_t handle, bool isRoot);
+    // const so the const checkMove() can use it -- unique_ptr::operator->()
+    // is const-qualified but hands back a non-const MegaApi*, so nothing else
+    // has to change (same trick currentSessionToken() already relies on).
+    std::unique_ptr<mega::MegaNode> resolveNode(std::uint64_t handle, bool isRoot) const;
 
     void listChildren(std::unique_ptr<mega::MegaNode> node,
                       const char* notFoundMessage,

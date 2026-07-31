@@ -1,5 +1,6 @@
 #include "qml/FolderNavigationController.h"
 
+#include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
 #include "qml/NotificationController.h"
 #include "TestApp.h"
@@ -10,6 +11,7 @@
 using ::testing::_;
 using ::testing::Invoke;
 using ::testing::InvokeArgument;
+using ::testing::Return;
 
 // FolderNavigationController is src/qml GUI glue, which this codebase otherwise
 // leaves untested by convention -- bent here for exactly one thing, the same way
@@ -193,6 +195,100 @@ TEST_F(FolderNavigationControllerTest, MoveSelectionToRubbishDoesNothingWithAnEm
 
     EXPECT_EQ(operationCalls, 0);
     EXPECT_EQ(rootFetches - fetchesBefore, 0);
+}
+
+TEST_F(FolderNavigationControllerTest, MoveHandlesToReportsOneTallyForTheWholeDrop)
+{
+    givenRootListing({entry("a", 1), entry("b", 2), entry("c", 3)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, checkMove(_, 99u, false)).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(_, 99u, false, _))
+        .Times(3)
+        .WillRepeatedly(InvokeArgument<3>(Result<void>::ok()));
+    const int fetchesBefore = rootFetches;
+
+    controller->moveHandlesTo({1u, 2u, 3u}, 99, false);
+    flush();
+
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastContext, QStringLiteral("move"));
+    EXPECT_EQ(lastSucceeded, 3);
+    EXPECT_EQ(lastFailed, 0);
+    // One refetch for the whole drop, not one per item.
+    EXPECT_EQ(rootFetches - fetchesBefore, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, MoveHandlesToSeparatesSucceededFromFailed)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(1u, _, _, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(2u, _, _, _))
+        .WillOnce(InvokeArgument<3>(Result<void>::fail("access denied")));
+
+    controller->moveHandlesTo({1u, 2u}, 99, false);
+    flush();
+
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(lastFailed, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, MoveHandlesToForwardsTheRootSentinel)
+{
+    // Dropping onto the tree's "Cloud Drive" row: the handle is meaningless and
+    // only the isRoot flag identifies the destination.
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, checkMove(1u, _, true)).WillOnce(Return(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(1u, _, true, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
+
+    controller->moveHandlesTo({1u}, 0, true);
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, MoveHandlesToDoesNothingWithAnEmptyDrop)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+    const int fetchesBefore = rootFetches;
+
+    controller->moveHandlesTo({}, 99, false);
+    flush();
+
+    EXPECT_EQ(operationCalls, 0);
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
+}
+
+TEST_F(FolderNavigationControllerTest, CanDropHandlesOnRejectsUnlessEveryHandlePasses)
+{
+    // A drop target is all-or-nothing: one un-movable item greys out the whole
+    // drop rather than silently moving the rest.
+    EXPECT_CALL(*client, checkMove(1u, 99u, false)).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*client, checkMove(2u, 99u, false))
+        .WillRepeatedly(Return(Result<void>::fail("circular", MegaErrorCode::kECircular)));
+
+    EXPECT_TRUE(controller->canDropHandlesOn({1u}, 99, false));
+    EXPECT_FALSE(controller->canDropHandlesOn({1u, 2u}, 99, false));
+}
+
+TEST_F(FolderNavigationControllerTest, CanDropHandlesOnRejectsAnEmptyDrag)
+{
+    EXPECT_CALL(*client, checkMove(_, _, _)).Times(0);
+
+    EXPECT_FALSE(controller->canDropHandlesOn({}, 99, false));
 }
 
 TEST_F(FolderNavigationControllerTest, RenameEntryReportsAnInvalidNameWithoutRefetching)

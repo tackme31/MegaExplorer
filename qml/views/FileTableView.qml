@@ -37,6 +37,9 @@ ColumnLayout {
     spacing: 0
 
     required property var navController
+    // Main.qml's window-wide DragProxy -- see its own comment for why the drag
+    // is carried by a separate overlay item instead of a delegate.
+    required property var dragProxy
 
     // Re-exposed so TabContentPane (which owns activation/download dispatch)
     // can wire this file's double-click/download-open dispatch without this
@@ -60,6 +63,52 @@ ColumnLayout {
     required property real initialColumnWidthSize
 
     readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size")]
+
+    // Drag & drop (Phase 14a), the mirror of FileGridView.qml's -- see the
+    // comments there. The one difference is hit-testing: this view's delegate
+    // is a cell, so a row is resolved through TableView.cellAtPosition rather
+    // than GridView.indexAt.
+
+    // Row a drop would land in, or -1 when it would land on the folder this
+    // view is showing (empty space, a file row, or a folder that refuses it).
+    property int dropRow: -1
+    property bool dropOnCurrentFolder: false
+
+    function beginDrag(scenePos) {
+        const entries = root.navController.fileListModel.selectedEntries();
+        if (entries.length === 0)
+            return;
+        const label = entries.length === 1 ? entries[0].name : qsTr("%1 items").arg(entries.length);
+        root.dragProxy.begin(root.navController, entries.map(e => e.handle), label, scenePos);
+    }
+
+    function clearDropTarget() {
+        root.dropRow = -1;
+        root.dropOnCurrentFolder = false;
+    }
+
+    // Reads the payload off root.dragProxy rather than the event's own
+    // drag.source, same reasoning as FileGridView.qml's.
+    function updateDropTarget(drag, dropArea) {
+        const nav = root.dragProxy.sourceNav;
+        const handles = root.dragProxy.handles;
+        const pos = tableView.contentItem.mapFromItem(dropArea, Qt.point(drag.x, drag.y));
+        // x clamped inside the last column so a hover to its right still hits
+        // the row, matching the TapHandler's own full-row behavior.
+        const hit = tableView.cellAtPosition(
+                      Qt.point(Math.min(pos.x, tableView.contentWidth - 1), pos.y), false);
+        const entry = hit.y < 0 ? ({}) : root.navController.fileListModel.entryAt(hit.y);
+
+        if (entry.isFolder && nav.canDropHandlesOn(handles, entry.handle, false)) {
+            root.dropRow = hit.y;
+            root.dropOnCurrentFolder = false;
+            return;
+        }
+
+        root.dropRow = -1;
+        root.dropOnCurrentFolder = nav.canDropHandlesOn(handles, root.navController.currentHandle,
+                                                        root.navController.atRoot);
+    }
 
     SystemPalette {
         id: sysPalette
@@ -385,6 +434,58 @@ ColumnLayout {
         // gesturePolicy (DragThreshold) takes a passive grab only, so a per-cell
         // TapHandler would fire in addition to this one and Ctrl+click would toggle
         // the same row twice, cancelling itself out.
+        DragAutoScroller {
+            id: autoScroller
+            flickable: tableView
+        }
+
+        DropArea {
+            id: tableDropArea
+            // parent: tableView for the same reason as the TapHandler below --
+            // a plain child of a Flickable lands in contentItem, which scrolls
+            // and is only as tall as the content.
+            parent: tableView
+            anchors.fill: parent
+            keys: ["application/x-megaexplorer-nodes"]
+
+            onEntered: drag => {
+                root.updateDropTarget(drag, tableDropArea);
+                autoScroller.track(drag.y);
+            }
+            onPositionChanged: drag => {
+                root.updateDropTarget(drag, tableDropArea);
+                autoScroller.track(drag.y);
+            }
+            onExited: {
+                root.clearDropTarget();
+                autoScroller.release();
+            }
+            onDropped: {
+                autoScroller.release();
+                if (root.dropRow >= 0) {
+                    const entry = root.navController.fileListModel.entryAt(root.dropRow);
+                    root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles, entry.handle,
+                                                           false);
+                } else if (root.dropOnCurrentFolder) {
+                    root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
+                                                           root.navController.currentHandle,
+                                                           root.navController.atRoot);
+                }
+                root.clearDropTarget();
+            }
+        }
+
+        // Drawn over the whole viewport when a drop would land in the folder
+        // this view is showing, since that target has no delegate to highlight.
+        Rectangle {
+            parent: tableView
+            anchors.fill: parent
+            visible: root.dropOnCurrentFolder
+            color: "transparent"
+            border.width: 2
+            border.color: sysPalette.highlight
+        }
+
         TapHandler {
             parent: tableView
             acceptedButtons: Qt.LeftButton
@@ -432,6 +533,16 @@ ColumnLayout {
 
             color: cell.selected ? Qt.rgba(sysPalette.highlight.r, sysPalette.highlight.g,
                                            sysPalette.highlight.b, 0.35) : "transparent"
+            // Outlined rather than filled, so a drop target that also happens
+            // to be selected still reads as two distinct states. Top/bottom
+            // only, so adjacent cells of the same row join into one band.
+            Rectangle {
+                anchors.fill: parent
+                visible: root.dropRow === cell.row
+                color: "transparent"
+                border.width: 2
+                border.color: sysPalette.highlight
+            }
 
             Label {
                 visible: !cell.renaming
@@ -485,6 +596,32 @@ ColumnLayout {
                 acceptedButtons: Qt.LeftButton
                 onDoubleTapped: root.activateRequested(cell.isFolder, cell.handle, cell.name,
                                                        cell.sizeBytes)
+            }
+
+            // Per cell rather than per row -- the delegate is a cell here, so
+            // this is what makes the whole row draggable. See
+            // FileGridView.qml's matching handler for the rest of the reasoning.
+            DragHandler {
+                id: dragHandler
+                target: null
+
+                onActiveChanged: {
+                    if (!dragHandler.active) {
+                        root.dragProxy.finish();
+                        return;
+                    }
+                    if (!cell.selected) {
+                        root.forceActiveFocus();
+                        root.navController.fileListModel.selectRow(cell.row, Qt.NoModifier);
+                    }
+                    root.beginDrag(dragHandler.centroid.scenePosition);
+                }
+
+                onActiveTranslationChanged: if (dragHandler.active)
+                                                root.dragProxy.moveTo(
+                                                    dragHandler.centroid.scenePosition)
+
+                onCanceled: root.dragProxy.cancel()
             }
 
             // Folder-only, mirrors FileGridView.qml's delegate -- a file has

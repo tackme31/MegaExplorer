@@ -113,12 +113,18 @@ public:
     // Q_PROPERTY that FileContextMenu.qml drives its Instantiator off.
     QStringList availableActions() const;
 
-    // Row-ordered {handle, name, sizeBytes, isFolder} maps for every
-    // selected row -- unlike mSelectedHandles (an unordered_set), callers
-    // that act on the selection (e.g. bulk download) need a stable,
-    // predictable order. Walks mEntries rather than mSelectedHandles for
-    // that reason.
+    // Row-ordered {handle, name, sizeBytes, isFolder} maps for every selected
+    // row -- unlike mSelectedHandles (an unordered_set), callers that act on
+    // the selection (e.g. bulk download, or a drag's start-of-gesture
+    // snapshot) need a stable, predictable order. Walks mEntries rather than
+    // mSelectedHandles for that reason.
     Q_INVOKABLE QVariantList selectedEntries() const;
+
+    // One row's {handle, name, isFolder}, or an empty map when row is out of
+    // range. Lets a view-level drag/drop handler ask "what is under the cursor"
+    // after resolving a position to a row, which it can't do through data()
+    // from QML -- the Role enum above isn't exposed there.
+    Q_INVOKABLE QVariantMap entryAt(int row) const;
 
 signals:
     void selectionChanged();

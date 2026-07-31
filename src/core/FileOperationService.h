@@ -30,6 +30,24 @@ public:
 
     void moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone);
 
+    // Reparents handle under newParentHandle (newParentIsRoot mirrors the
+    // isRoot sentinel convention used throughout). Calls onDone with a failure
+    // immediately -- without touching the SDK -- when canMove() rejects the
+    // pair, so a caller that skipped the pre-check still can't issue a move the
+    // SDK would only refuse later.
+    void move(std::uint64_t handle,
+              std::uint64_t newParentHandle,
+              bool newParentIsRoot,
+              std::function<void(Result<void>)> onDone);
+
+    // Synchronous pre-check, the move counterpart to isValidName() above:
+    // "would move() be accepted?", answered without an API round-trip so a drag
+    // hovering over a drop target can query it continuously. Failures carry a
+    // MegaErrorCodes.h code (kENoEnt / kECircular / kEAccess), not just text.
+    Result<void> canMove(std::uint64_t handle,
+                         std::uint64_t newParentHandle,
+                         bool newParentIsRoot) const;
+
     // Single definition of the naming rule, static so QML-side pre-validation
     // could share it later. Deliberately minimal: MEGA permits duplicate names
     // within one folder, so there's no uniqueness check to make here.

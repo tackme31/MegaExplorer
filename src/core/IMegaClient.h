@@ -158,4 +158,34 @@ public:
     // is moved to its top level again, which is harmless.
     virtual void moveToRubbish(std::uint64_t handle,
                                std::function<void(Result<void>)> onDone) = 0;
+
+    // Reparents the node identified by handle under newParentHandle
+    // (newParentIsRoot makes newParentHandle meaningless, same sentinel
+    // convention as getChildren/getPath above). moveToRubbish is really this
+    // with the Rubbish bin hardcoded as the destination.
+    virtual void moveNode(std::uint64_t handle,
+                          std::uint64_t newParentHandle,
+                          bool newParentIsRoot,
+                          std::function<void(Result<void>)> onDone) = 0;
+
+    // Whether moveNode() with the same arguments would be accepted. Synchronous
+    // -- third exception in this interface after currentSessionToken/
+    // currentUserHandle, and for the same reason: it's a pure in-memory check
+    // against the already-fetched node tree, no API round-trip. It has to be,
+    // since a drag hovering over a drop target queries it continuously to paint
+    // the "can I drop here" feedback.
+    //
+    // Failure codes are the interesting part of the result, so they're set
+    // precisely (MegaErrorCodes.h): kENoEnt when either end no longer exists,
+    // kECircular when a folder would become its own descendant, kEAccess on
+    // insufficient permissions, and kEArgs when the node already sits in that
+    // folder. Callers branch on errorCode, never on errorMessage.
+    //
+    // That last case is stricter than the SDK, which accepts a move to the
+    // node's current parent as a no-op. It belongs here because an
+    // implementation is the only thing that can see a node's actual parent
+    // handle; a caller pointing at the root has only the isRoot sentinel.
+    virtual Result<void> checkMove(std::uint64_t handle,
+                                   std::uint64_t newParentHandle,
+                                   bool newParentIsRoot) const = 0;
 };
