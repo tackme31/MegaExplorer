@@ -154,24 +154,55 @@ GridView {
     // else in -- but drag.source is typed QObject, so every field access
     // through it is an unchecked dynamic lookup.
     function updateDropTarget(drag) {
-        const nav = root.dragProxy.sourceNav;
-        const handles = root.dragProxy.handles;
         const pos = root.contentItem.mapFromItem(root, Qt.point(drag.x, drag.y));
         const row = root.indexAt(pos.x, pos.y);
         const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 
-        if (entry.isFolder && nav.canDropHandlesOn(handles, entry.handle, false)) {
-            root.dropRow = row;
-            root.dropOnCurrentFolder = false;
+        // Internal (move) vs. external (upload) is decided on dragProxy.active,
+        // not on drag.hasUrls -- see FolderTreePanel.qml's DropArea for why.
+        // Everything downstream (dropRow/dropOnCurrentFolder and the highlight
+        // Rectangles they drive) is payload-agnostic; only the question being
+        // asked here differs.
+        if (root.dragProxy.active) {
+            const nav = root.dragProxy.sourceNav;
+            const handles = root.dragProxy.handles;
+
+            if (entry.isFolder && nav.canDropHandlesOn(handles, entry.handle, false)) {
+                root.dropRow = row;
+                root.dropOnCurrentFolder = false;
+                return;
+            }
+
+            // Anything else in this view means "into the folder being shown",
+            // Explorer's own fallback -- which canDropHandlesOn rejects when
+            // the dragged items already live there.
+            root.dropRow = -1;
+            root.dropOnCurrentFolder = nav.canDropHandlesOn(
+                        handles, root.navController.currentHandle, root.navController.atRoot);
             return;
         }
 
-        // Anything else in this view means "into the folder being shown",
-        // Explorer's own fallback -- which canDropHandlesOn rejects when the
-        // dragged items already live there.
-        root.dropRow = -1;
-        root.dropOnCurrentFolder = nav.canDropHandlesOn(handles, root.navController.currentHandle,
-                                                        root.navController.atRoot);
+        if (!drag.hasUrls) {
+            root.clearDropTarget();
+            drag.accepted = false;
+            return;
+        }
+
+        if (entry.isFolder && uploadController.canUploadTo(entry.handle, false)) {
+            root.dropRow = row;
+            root.dropOnCurrentFolder = false;
+        } else {
+            root.dropRow = -1;
+            // Unlike the move path, this is true almost always -- an external
+            // drag has no "already lives there" case -- so the viewport frame
+            // stays lit for most of the gesture. That's Explorer's behavior,
+            // not a bug.
+            root.dropOnCurrentFolder = uploadController.canUploadTo(
+                        root.navController.currentHandle, root.navController.atRoot);
+        }
+        // Only the external branch touches drag.accepted: the move path relies
+        // on implicit acceptance by key match.
+        drag.accepted = root.dropRow >= 0 || root.dropOnCurrentFolder;
     }
 
     DragAutoScroller {
@@ -185,7 +216,9 @@ GridView {
         // only as tall as the content.
         parent: root
         anchors.fill: parent
-        keys: ["application/x-megaexplorer-nodes"]
+        // "text/uri-list" is what an external OS drop matches on -- without it
+        // those drops are silently ignored here.
+        keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
 
         onEntered: drag => {
             root.updateDropTarget(drag);
@@ -199,15 +232,23 @@ GridView {
             root.clearDropTarget();
             autoScroller.release();
         }
-        onDropped: {
+        // Branches on drop.hasUrls, not on dragProxy.active like
+        // updateDropTarget above -- see FolderTreePanel.qml's onDropped.
+        onDropped: drop => {
             autoScroller.release();
-            if (root.dropRow >= 0) {
-                const entry = root.navController.fileListModel.entryAt(root.dropRow);
-                root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles, entry.handle, false);
-            } else if (root.dropOnCurrentFolder) {
-                root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
-                                                       root.navController.currentHandle,
-                                                       root.navController.atRoot);
+            const target = root.dropRow >= 0
+                         ? root.navController.fileListModel.entryAt(root.dropRow).handle
+                         : root.navController.currentHandle;
+            const targetIsRoot = root.dropRow >= 0 ? false : root.navController.atRoot;
+
+            if (root.dropRow >= 0 || root.dropOnCurrentFolder) {
+                if (drop.hasUrls) {
+                    drop.accept(Qt.CopyAction);
+                    uploadController.dropUrls(drop.urls, target, targetIsRoot);
+                } else {
+                    root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles, target,
+                                                           targetIsRoot);
+                }
             }
             root.clearDropTarget();
         }

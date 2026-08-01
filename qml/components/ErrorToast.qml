@@ -53,6 +53,12 @@ Popup {
                 return qsTr("Failed to open file: %1").arg(root.errorMessage);
             case "rename":
                 return qsTr("Failed to rename: %1").arg(root.errorMessage);
+            case "uploadNothingToUpload":
+                return qsTr("Nothing to upload — folders and non-file items can't be uploaded");
+            // The uploads themselves succeeded; what needs saying is that the
+            // files they were meant to replace are still there.
+            case "uploadReplaceFailed":
+                return qsTr("Uploaded, but some of the files being replaced could not be removed");
             default:
                 return root.errorMessage;
             }

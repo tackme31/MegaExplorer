@@ -189,11 +189,32 @@ ApplicationWindow {
                     value: downloadController.activeProgress
                 }
 
-                // Keeps the view-mode buttons right-aligned when the download
-                // group above is hidden (RowLayout excludes invisible items).
+                // Uploads run on their own serial queue alongside downloads, so
+                // both pairs can be showing at once. "n remaining" is the only
+                // progress cue a serial queue offers beyond the active file.
+                Label {
+                    Layout.fillWidth: true
+                    visible: uploadController.uploadActive
+                    elide: Text.ElideMiddle
+                    text: uploadController.pendingCount > 1 ? qsTr("↑ %1 (%2 remaining)").arg(
+                                                                  uploadController.activeFileName).arg(
+                                                                  uploadController.pendingCount
+                                                                  - 1) : qsTr("↑ %1").arg(
+                                                                  uploadController.activeFileName)
+                }
+                ProgressBar {
+                    Layout.preferredWidth: 160
+                    visible: uploadController.uploadActive
+                    from: 0
+                    to: 1
+                    value: uploadController.activeProgress
+                }
+
+                // Keeps the view-mode buttons right-aligned when the transfer
+                // groups above are hidden (RowLayout excludes invisible items).
                 Item {
                     Layout.fillWidth: true
-                    visible: !downloadController.downloadActive
+                    visible: !downloadController.downloadActive && !uploadController.uploadActive
                 }
 
                 // Reads/writes window.currentPane (the active tab's pane),
@@ -233,11 +254,12 @@ ApplicationWindow {
         anchors.centerIn: Overlay.overlay
         modal: true
         standardButtons: Dialog.Yes | Dialog.Cancel
-        // DownloadService has no cancel API yet, so an in-flight transfer is
-        // simply aborted by logout(). Warn about it up front rather than
-        // silently dropping it.
-        title: downloadController.downloadActive ? qsTr("Sign out? (download in progress)") : qsTr(
-                                                       "Sign out?")
+        // Neither DownloadService nor UploadService has a cancel API yet, so an
+        // in-flight transfer is simply aborted by logout(). Warn about it up
+        // front rather than silently dropping it.
+        title: (downloadController.downloadActive
+                || uploadController.uploadActive) ? qsTr("Sign out? (transfer in progress)") : qsTr(
+                                                        "Sign out?")
         onAccepted: authController.logout()
     }
 
@@ -262,6 +284,92 @@ ApplicationWindow {
         }
 
         onAccepted: quickAccessModel.unpin(missingPinDialog.pinHandle)
+    }
+
+    // Phase 14b's two upload confirmations. Both live here rather than in
+    // qml/components/ because all five drop targets reach them through a
+    // single uploadController signal -- they're window-global singletons with
+    // no reuse, unlike ConfirmRubbishDialog.qml which is instantiated per view.
+    //
+    // The destination rides along on each dialog instead of being remembered
+    // in C++, so it stays alive exactly as long as the question does (same
+    // shape as missingPinDialog above). destinationHandle is `property var`
+    // because a quint64 doesn't survive QML's int/real property types.
+
+    Dialog {
+        id: folderDropDialog
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        standardButtons: Dialog.Yes | Dialog.Cancel
+
+        property var filePaths: []
+        property int folderCount: 0
+        property var destinationHandle: 0
+        property bool destinationIsRoot: false
+
+        title: qsTr("Folders can't be uploaded")
+        Label {
+            text: qsTr("%1 folder(s) will be skipped. Upload the remaining %2 file(s)?").arg(
+                      folderDropDialog.folderCount).arg(folderDropDialog.filePaths.length)
+        }
+
+        // Cancel needs no handler: nothing has been enqueued yet.
+        onAccepted: uploadController.uploadFiles(folderDropDialog.filePaths,
+                                                 folderDropDialog.destinationHandle,
+                                                 folderDropDialog.destinationIsRoot)
+    }
+
+    // Three-way, so standardButtons can't express it -- a hand-built
+    // DialogButtonBox with two ActionRole buttons and a RejectRole one. The
+    // answers call uploadController directly rather than going through
+    // onAccepted/onRejected.
+    Dialog {
+        id: nameConflictDialog
+        anchors.centerIn: Overlay.overlay
+        modal: true
+
+        property var filePaths: []
+        property var conflictNames: []
+        property var destinationHandle: 0
+        property bool destinationIsRoot: false
+
+        title: qsTr("Files with the same name already exist")
+        Label {
+            width: 360
+            wrapMode: Text.Wrap
+            text: qsTr("%1 file(s) with the same name already exist in the destination:").arg(
+                      nameConflictDialog.conflictNames.length) + "\n"
+                  + nameConflictDialog.conflictNames.slice(0, 5).join(", ")
+                  + (nameConflictDialog.conflictNames.length > 5 ? " …" : "")
+        }
+
+        footer: DialogButtonBox {
+            Button {
+                text: qsTr("Replace")
+                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+                onClicked: {
+                    uploadController.uploadReplacingExisting(nameConflictDialog.filePaths,
+                                                             nameConflictDialog.destinationHandle,
+                                                             nameConflictDialog.destinationIsRoot);
+                    nameConflictDialog.close();
+                }
+            }
+            Button {
+                text: qsTr("Skip")
+                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+                onClicked: {
+                    uploadController.uploadSkippingExisting(nameConflictDialog.filePaths,
+                                                            nameConflictDialog.destinationHandle,
+                                                            nameConflictDialog.destinationIsRoot);
+                    nameConflictDialog.close();
+                }
+            }
+            Button {
+                text: qsTr("Cancel")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                onClicked: nameConflictDialog.close()
+            }
+        }
     }
 
     Loader {
@@ -410,6 +518,27 @@ ApplicationWindow {
         target: downloadController
         function onDownloadFinished(success, fileName, localPath, errorMessage, alreadyPresent) {
             downloadSnackbar.show(success, fileName, localPath, errorMessage, alreadyPresent);
+        }
+    }
+
+    // The two-dialog chain needs no explicit state machine: answering the
+    // folder question calls uploadFiles(), which raises the name-conflict one
+    // by itself if it finds collisions.
+    Connections {
+        target: uploadController
+        function onFolderDropRequiresConfirmation(filePaths, folderCount, destinationHandle, destinationIsRoot) {
+            folderDropDialog.filePaths = filePaths;
+            folderDropDialog.folderCount = folderCount;
+            folderDropDialog.destinationHandle = destinationHandle;
+            folderDropDialog.destinationIsRoot = destinationIsRoot;
+            folderDropDialog.open();
+        }
+        function onNameConflictRequiresConfirmation(filePaths, conflictNames, destinationHandle, destinationIsRoot) {
+            nameConflictDialog.filePaths = filePaths;
+            nameConflictDialog.conflictNames = conflictNames;
+            nameConflictDialog.destinationHandle = destinationHandle;
+            nameConflictDialog.destinationIsRoot = destinationIsRoot;
+            nameConflictDialog.open();
         }
     }
 

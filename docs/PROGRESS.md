@@ -132,12 +132,9 @@ folder-tree row, a quick-access pin, or a breadcrumb segment. See its implementa
 Split out of phase 14 so the `DropArea` groundwork could land without waiting on upload's transfer
 listener.
 
-### Phase 14b — upload (drag & drop)
+### Phase 14b — upload (drag & drop) (done)
 
-Symmetric to phase 4's download but needs its own `MegaApi::startUpload` transfer listener
-(mirroring `DownloadService`), higher cost than phase 12. The drop targets themselves already exist
-after 14a; what's new is distinguishing an external file drop (`drop.hasUrls`, a different
-`DropArea.keys`) from 14a's internal node drag, and the upload transfer plumbing behind it.
+Drop files from Explorer onto any of 14a's five drop targets. See its implementation-log entry.
 
 ### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
@@ -1453,3 +1450,212 @@ folders at once, and the tree panel reaches those anyway).
 
 Also deliberately not done: hover-to-navigate (spring loading) on a segment, matching the other four
 targets, which likewise don't navigate.
+
+## Phase 14b — upload via drag & drop (done)
+
+Files dragged in from Explorer land on the *same five* drop targets 14a built (folder row, a view's
+empty space, folder-tree row including the root, quick-access pin, breadcrumb segment). No new drop
+target, no new `.qml` file. What was actually new: telling an external file drop apart from 14a's
+internal node drag, and the `MegaApi::startUpload` transfer plumbing behind it.
+
+Files only. A drop containing folders raises a "skip them and upload the rest?" dialog; a drop of
+*nothing but* folders is reported as "nothing to upload" instead — asking "upload the remaining 0
+file(s)?" would be a terrible question, so the empty check runs first.
+
+### SDK layer: three additions, two of them synchronous
+
+`upload(localPath, parentHandle, parentIsRoot, onProgress, onDone)` mirrors `download`'s
+two-callback shape for the same reason (`MegaTransferListener`, not `MegaRequestListener`), with
+`UploadListener` a near-copy of `DownloadListener`.
+
+**`MegaUploadOptions` turned out to be unnecessary.** The non-deprecated overload
+(`megaapi.h:17506`) takes `const MegaUploadOptions*`, and `megaapi.cpp:3801-3805` only copies the
+struct when it is non-null — so passing `nullptr` yields every default (name from the local path,
+local mtime preserved, `isSourceTemporary=false`), which is exactly what this app wants. No options
+object is constructed anywhere.
+
+`UploadOutcome` carries only the created node's handle. It deliberately has **no counterpart to
+`DownloadOutcome::alreadyPresent`**: the SDK's upload-side shortcut (an existing node with a
+matching fingerprint, whose mtime is simply updated) is indistinguishable from a real upload both to
+the user and to us — there is no upload equivalent of the `transferredBytes == 0 && totalBytes > 0`
+tell that the download path relies on.
+
+`checkUpload(parentHandle, parentIsRoot)` is the interface's **fourth synchronous method**, and
+exists for the same reason `checkMove` does — a hovering drag queries it continuously. Unlike
+`checkMove` there is no `checkUploadErrorExtended` to wrap, so the conditions are spelled out:
+`kENoEnt` when the handle doesn't resolve *or* resolves outside the Cloud Drive (`isInCloud`, the
+same "still usable?" test `NodeInfo::inCloud` uses, since a deleted folder keeps resolving from the
+Rubbish bin), `kEArgs` when it's a file, `kEAccess` when `getAccess` is below `ACCESS_READWRITE`.
+That last one is purely defensive — this app only ever shows the user's own drive — and was the
+phase's second-largest risk, since `ACCESS_UNKNOWN` would have made every target silently reject;
+verified on a real account before the remaining drop targets were wired up.
+
+`findChildFiles(parentHandle, parentIsRoot, names)` is the **fifth**, backing the same-name dialog.
+It uses `getChildNodeOfType(parent, name, TYPE_FILE)`, **not** `getChildNode`, which prefers a
+same-named *folder*. MEGA lets a file and a folder share a name, and uploads are files-only, so
+"replacing" a folder with a file would be both destructive and unasked-for; a destination holding
+only a same-named folder is simply not a conflict. `nodeListToEntries` was split so its per-node
+half (`nodeToEntry`) could be reused here.
+
+`MegaErrorCodes.h` was **not** touched — `kENoEnt`/`kEArgs`/`kEAccess` already cover every branch,
+and that header's rule is "only the values something actually branches on".
+
+### `UploadService`: `DownloadService` with two deliberate divergences
+
+Same serial queue, same mutex discipline copied verbatim (lock only around `mQueue` mutation and
+observer copy-out; observers invoked unlocked; `mClient->` called with no lock held, or the first
+`MockMegaClient` test self-deadlocks; `mQueue.front()` is always the active job; finished jobs
+erased *before* their notification).
+
+**`startNextIfIdle` is a `for(;;)` loop, not tail recursion.** Each job re-validates its destination
+via `checkUpload` before starting — the hover-time check only covered the moment of the drop, and
+the folder can be deleted from another device while the queue drains. That failure path is
+*synchronous* and *reachable in production*: dropping 200 files onto a folder that has just
+disappeared would recurse 200 frames deep. `DownloadService`'s recursion is only ever exercised
+through a mock, so it was left alone.
+
+**No duplicate suppression, no local-file existence check.** `DownloadController::hasJobForHandle`
+exists because a double-click or menu item can be fired repeatedly; a drop is one explicit gesture.
+There is also nothing to key on — MEGA allows same-named siblings, and an uploaded node has no
+handle until its transfer completes. Existence is left unchecked because `src/core` has no
+filesystem access by design; a file gone by its turn just fails through the ordinary path.
+
+`UploadJob::replaceHandle` rides along completely uninterpreted by this service and comes back
+untouched in the finished-job notification — see the next section for why the actual deletion lives
+one layer up.
+
+### "Replace" is not native to MEGA
+
+MEGA has no overwrite. "Replace" is therefore two steps: **upload first, then move the old node to
+the Rubbish bin.** Never the reverse — deleting first would lose data if the transfer then failed.
+The cost is that it isn't atomic: a crash in between leaves both files, which is strictly the safer
+failure.
+
+The second step lives in `UploadController` via `FileOperationService::moveToRubbish`, not in
+`UploadService`, so the queue stays the single source of *order* without owning a two-phase
+transaction. `Batch::pendingReplaces` then **gates the batch flush**: emitting `destinationChanged`
+before the bin moves land would have the refetched listing show both the old and the new file side
+by side.
+
+When two dropped files share a leaf name (`C:\a\x.txt` and `C:\b\x.txt`) there is still only one
+node to replace, so `enqueueAll` gives the handle to the **first** of them; binning it twice would
+just fail the second time with `kENoEnt`. The rest upload normally and end up as same-named
+siblings, which MEGA considers perfectly legal.
+
+### `UploadController`: app-global, and the two-dialog chain
+
+App-global like `DownloadController` (stack local in `main.cpp`, no `shared_from_this`), because
+three of the five drop targets — tree, pins, breadcrumb — are chrome shared by every tab and have no
+owning tab at all. That also settles where `canUploadTo` belongs: here, not on the per-tab
+`FolderNavigationController`.
+
+`dropUrls` is the single entry point for all five `DropArea`s. Classification has to be C++: QML
+can't tell a directory from a file. It drops non-local URLs (a browser drag), counts directories,
+and `QDir::toNativeSeparators`es the rest — the path crosses into the SDK's own `LocalPath`, which
+splits on `\` on Windows (phase 4's gotcha).
+
+Dialog order is **folder check → same-name check**, and the chain needs no explicit state machine:
+answering the folder dialog calls `uploadFiles()`, which runs the collision check itself and raises
+the second dialog only if it finds something. Both dialogs **carry the destination** rather than
+having C++ remember it, so it lives exactly as long as the question does (`missingPinDialog`'s
+shape). Both answers **re-derive the collision set** instead of round-tripping handles through QML —
+more robust, and it picks up any change made to the destination while the dialog was open. It's an
+in-memory lookup, so re-deriving is nearly free.
+
+The three-way answer (Replace / Skip / Cancel) can't be expressed with `standardButtons`, so
+`nameConflictDialog` supplies its own `DialogButtonBox` footer with two `ActionRole` buttons and one
+`RejectRole`, calling `uploadController` directly rather than through `onAccepted`.
+
+Batch accounting collapses a whole drop into **one** snackbar (a second drop arriving mid-flight
+joins the same batch on purpose — one snackbar beats two competing ones). Individual failures are
+`qCWarning(lcUpload)` only, per `DownloadController`'s no-double-reporting rule.
+
+One correction to the plan: the flush condition was going to be "no active job and no pending
+replaces", read off the service's queue. That is **wrong**, and a test caught it — the finished
+notifications arrive through a queued invoke, so when the mock completes transfers synchronously the
+queue is already empty by the time the *first* notification is handled, and the batch flushed once
+per job instead of once per batch. `Batch::pendingJobs` is now counted by the controller itself.
+
+### Refresh fan-out, and how it squares with 14a
+
+`refreshVisibleListing()` is private and *per tab*, while `UploadController` is app-global. The
+bridge is a guarded public entry point, `FolderNavigationController::refreshIfShowing(handle,
+isRoot)`, which each tab wires to `uploadController.destinationChanged` from `TabContentPane.qml` —
+every tab decides for itself. It calls `refreshVisibleListing`, not `refreshCurrentFolder`, so a tab
+that happens to be searching isn't dropped out of its search.
+
+Rejected alternatives: carrying a `sourceNav` the way `DragProxy` does (the tree/pins/breadcrumb all
+bind `navController` to the *current* tab, which usually isn't showing the destination — and a
+needless `refreshVisibleListing` on a searching tab costs a whole extra search round-trip); matching
+the current tab in QML (leaks the `atRoot`-vs-`currentHandle==0` sentinel rule and the
+`mHasLoadedOnce` guard into QML, and misses a background tab showing the destination); exposing
+`refreshVisibleListing` raw.
+
+This **fans out wider than 14a**, which refreshes only the drag's source tab. That's not an
+inconsistency: an upload has no "source tab" to prefer, so every tab showing the destination is the
+minimal correct answer. And 14a's other deferral doesn't apply either — the folder tree shows *only
+folders* while 14b uploads *only files*, so an upload cannot change the tree's contents. Nothing is
+being postponed to phase 16 here.
+
+### QML: four points repeated across all five drop areas
+
+1. **`keys` gains `"text/uri-list"`.** An internal Qt drag is matched against `Drag.keys`, but a
+   drop coming in from Explorer is matched against its `QMimeData` format strings — without this,
+   external drops are silently ignored.
+2. **The hover handlers branch on `dragProxy.active`, not `drag.hasUrls`.** All five previously
+   dereferenced `dragProxy.sourceNav` unconditionally, which would `TypeError` on an external drop.
+   `hasUrls` is a claim about the *event*; `active` is a claim about the very object the internal
+   branch then dereferences.
+3. **`onDropped` branches on `drop.hasUrls` instead** — a deliberate departure from the plan.
+   `DragProxy.finish()` calls `Drag.drop()` to deliver that very event, and `Drag.active` is cleared
+   as a side effect of the same call, so its value inside the handler depends on Qt's internal
+   ordering. The event's own payload doesn't. (Qt sources aren't installed locally to settle the
+   ordering question, and relying on it would risk a 14a move regression for no benefit.)
+4. **`drag.accepted` / `drop.accept(Qt.CopyAction)` are set on the external branch only.** Touching
+   `drag.accepted` on the internal branch would break the move path, which relies on implicit
+   acceptance via key matching.
+
+The existing `accepting`/`dropRow`/`dropOnCurrentFolder` state and the highlight `Rectangle`s are
+payload-agnostic and were reused as-is; only the question being asked branches. `DragAutoScroller`
+is unchanged, and its `track()` call sits *outside* the branch — edge scrolling should work for
+either kind of drag.
+
+Two intentional behavior differences from the move path, both correct:
+
+- **The last breadcrumb segment now highlights.** It's the current folder, which `checkMove` rejects
+  as "already in that folder" but which is a perfectly good upload destination.
+- **The file views' viewport frame stays lit for most of an external drag.** There is no "already
+  lives there" case for a file coming from outside, so `dropOnCurrentFolder` is almost always true.
+  That is Explorer's behavior.
+
+### Testing
+
+`tests/UploadServiceTest.cpp` (12) plus `tests/UploadControllerTest.cpp` (12).
+**`UploadController` is in the test target**, unlike `DownloadController` — the latter is excluded
+because `QDesktopServices` pulls in QtGui, while this one touches only QtCore
+(`QUrl`/`QFileInfo`/`QDir`/`QStringList`/`QMetaObject`), which the target already links. The "src/qml
+is untested by convention" rule bends exactly as far as it already does for
+`FolderNavigationController`/`TabsController`/`QuickAccessModel`: `dropUrls`' classification and the
+collision bookkeeping are real logic, not rendering. Signals are observed with plain
+`QObject::connect` lambdas rather than `QSignalSpy`, which would add a `Qt6::Test` dependency.
+
+**gmock trap worth remembering**: `Result<void>::success` defaults to `false`, so the *default*
+action for an unstubbed `checkUpload()` is a **failure**, which makes `startNextIfIdle` fail every
+job before it ever calls `upload()`. It surfaces as "every test fails", not as a compile error. Both
+fixtures therefore open with a blanket `EXPECT_CALL(...).Times(AnyNumber()).WillRepeatedly(Return(
+Result<void>::ok()))`; tests wanting the opposite declare their own, later, `EXPECT_CALL`, since
+gmock matches expectations newest-first.
+
+The gesture itself remains manual-test-only — `tests/` is C++ gtest with no QML harness, same as
+14a.
+
+### Deliberately not done
+
+- **Folder upload.** `startUpload` accepts a directory and would recurse, but a folder in a drop is
+  skipped by explicit user confirmation instead.
+- **Cancel.** `MegaCancelToken` is created and kept alive (the SDK requires it until
+  `onTransferFinish`), but nothing cancels — same as `DownloadService`. Sign-out warns about
+  in-flight transfers rather than cancelling them.
+- **Parallel transfers.** One at a time, matching download.
+- **Dragging files *out* of the app** to Explorer.
+- **Per-file progress UI.** The footer shows the active file plus an "n remaining" count.

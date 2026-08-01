@@ -36,6 +36,7 @@ add_library(MegaExplorerCore STATIC
     src/core/MegaErrorCodes.h
     src/core/NodeInfo.h
     src/core/PinnedFolder.h
+    src/core/UploadOutcome.h
     src/core/Result.h
     src/core/SortOrder.h
     src/core/PathSegment.h
@@ -52,6 +53,8 @@ add_library(MegaExplorerCore STATIC
     src/core/SearchService.cpp
     src/core/DownloadService.h
     src/core/DownloadService.cpp
+    src/core/UploadService.h
+    src/core/UploadService.cpp
     src/core/ThumbnailService.h
     src/core/ThumbnailService.cpp
     src/core/FolderTreeService.h
@@ -82,6 +85,8 @@ qt_add_executable(appMegaExplorer
     src/qml/FolderNavigationController.cpp
     src/qml/DownloadController.h
     src/qml/DownloadController.cpp
+    src/qml/UploadController.h
+    src/qml/UploadController.cpp
     src/qml/ThumbnailController.h
     src/qml/ThumbnailController.cpp
     src/qml/NotificationController.h

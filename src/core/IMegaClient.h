@@ -5,6 +5,7 @@
 #include "PathSegment.h"
 #include "Result.h"
 #include "SortOrder.h"
+#include "UploadOutcome.h"
 
 #include <cstdint>
 #include <functional>
@@ -104,6 +105,28 @@ public:
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<DownloadOutcome>)> onDone) = 0;
 
+    // Uploads the local *file* at localPath into the folder identified by
+    // parentHandle (parentIsRoot makes parentHandle meaningless, same
+    // sentinel convention as getChildren/getPath above). localPath is
+    // already fully resolved by the caller -- absolute, with native
+    // separators -- exactly like download()'s destinationPath, since
+    // IMegaClient has no filesystem access of its own.
+    //
+    // Files only: MegaApi::startUpload also accepts a directory (uploading
+    // it recursively), but this app never exposes that, so callers must
+    // filter directories out beforehand.
+    //
+    // Same two-callback shape as download() and for the same reason
+    // (MegaTransferListener, not MegaRequestListener): onProgress may fire
+    // zero or more times with (transferredBytes, totalBytes), onDone fires
+    // exactly once, terminally.
+    virtual void upload(
+        const std::string& localPath,
+        std::uint64_t parentHandle,
+        bool parentIsRoot,
+        std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
+        std::function<void(Result<UploadOutcome>)> onDone) = 0;
+
     // Fetches the server-side thumbnail of the node identified by handle into
     // the exact local file path destinationPath, same caller-resolves-the-path
     // division of responsibility as download() above. Must not end with a path
@@ -188,4 +211,33 @@ public:
     virtual Result<void> checkMove(std::uint64_t handle,
                                    std::uint64_t newParentHandle,
                                    bool newParentIsRoot) const = 0;
+
+    // Whether upload() into this folder would be accepted. Synchronous for
+    // the same reason as checkMove -- a drag hovering over a drop target
+    // queries it continuously -- but unlike checkMove the SDK has no
+    // checkUploadErrorExtended equivalent, so the conditions are spelled out
+    // by the implementation. Same error-code discipline as checkMove
+    // (callers branch on errorCode, never on errorMessage):
+    //
+    //   kENoEnt  the handle no longer resolves, or resolves to a node that
+    //            is no longer in the Cloud Drive (Rubbish bin / Vault)
+    //   kEArgs   it resolves to a file, not a folder
+    //   kEAccess insufficient permission to add children (read-only share)
+    virtual Result<void> checkUpload(std::uint64_t parentHandle, bool parentIsRoot) const = 0;
+
+    // Of names, returns those that already name an existing *file* directly
+    // under (parentHandle, parentIsRoot). Neither the order nor the size of
+    // the result matches names -- only the hits come back.
+    //
+    // Same-named *folders* are ignored: uploads are files-only, and MEGA
+    // lets a file and a folder share a name, so replacing a folder with a
+    // file would be both destructive and unasked-for.
+    //
+    // Synchronous for the same reason as checkUpload: an in-memory walk of
+    // the already-fetched node tree, and drop handling has to decide right
+    // there whether to raise a confirmation dialog.
+    virtual Result<std::vector<FileEntry>>
+    findChildFiles(std::uint64_t parentHandle,
+                   bool parentIsRoot,
+                   const std::vector<std::string>& names) const = 0;
 };

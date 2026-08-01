@@ -7,6 +7,7 @@
 #include "core/QuickAccessService.h"
 #include "core/SearchService.h"
 #include "core/ThumbnailService.h"
+#include "core/UploadService.h"
 #include "mega/MegaSdkClient.h"
 #include "platform/QSettingsPinnedFolderStore.h"
 #include "platform/WindowsSessionStore.h"
@@ -18,6 +19,7 @@
 #include "qml/QuickAccessModel.h"
 #include "qml/TabsController.h"
 #include "qml/ThumbnailController.h"
+#include "qml/UploadController.h"
 
 #include <QDebug>
 #include <QDir>
@@ -52,6 +54,7 @@ int main(int argc, char* argv[])
         std::make_shared<WindowsSessionStore>((cacheDir + "/session.dat").toStdString());
 
     auto downloadService = std::make_shared<DownloadService>(client);
+    auto uploadService = std::make_shared<UploadService>(client);
     // Shared across every tab (handle-keyed cache, no per-tab state) --
     // unlike FolderNavigationService/SearchService/FolderNavigationController
     // below, which are inherently per-tab and so live in tabFactory instead.
@@ -64,6 +67,7 @@ int main(int argc, char* argv[])
     // to it, and stack locals are destroyed in reverse construction order.
     NotificationController notifications;
     DownloadController downloadController(downloadService, &notifications);
+    UploadController uploadController(uploadService, fileOperationService, &notifications);
     AuthController authController(authService);
 
     // Shared across every tab (Phase 10's side panel is chrome beside the
@@ -105,6 +109,7 @@ int main(int argc, char* argv[])
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("tabsController", &tabs);
     engine.rootContext()->setContextProperty("downloadController", &downloadController);
+    engine.rootContext()->setContextProperty("uploadController", &uploadController);
     engine.rootContext()->setContextProperty("notificationController", &notifications);
     engine.rootContext()->setContextProperty("authController", &authController);
     engine.rootContext()->setContextProperty("folderTreeModel", &folderTreeModel);

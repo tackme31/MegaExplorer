@@ -76,13 +76,24 @@ plus a *synchronous*
 `checkMove` (the interface's third sync method) that a hovering drag queries to paint accept/reject
 feedback. It deliberately does **not** refresh other tabs or the folder tree (so a moved folder
 shows in two places in the tree until the next login) — both are left to Phase 16's remote-change
-reflection. Phase 14b (upload via drag & drop) is next in roadmap order; its drop targets already
-exist. The full roadmap — phases 14b–16+ (upload, in-app preview, real-time remote-change
-reflection, ...) — lives in `docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
+reflection. Phase 14b then adds *upload* onto those same five drop targets (no new ones): external
+file drops are told apart from 14a's internal node drag by a `"text/uri-list"` `DropArea` key plus a
+`dragProxy.active` guard, and are backed by `IMegaClient::upload` (`MegaApi::startUpload` with
+`options = nullptr`) plus two more *synchronous* methods, `checkUpload` (fourth) and `findChildFiles`
+(fifth, the same-name check, `getChildNodeOfType(TYPE_FILE)` so a same-named folder is never
+"replaced"). Files only — folders in a drop are skipped after a confirmation dialog; a second dialog
+offers Replace/Skip/Cancel for same-named files, "replace" being upload-then-move-old-node-to-Rubbish
+since MEGA has no native overwrite. Unlike 14a it *does* refresh every tab showing the destination
+(an upload has no "source tab"), via the new guarded
+`FolderNavigationController::refreshIfShowing`; the folder tree still isn't refreshed, but that's
+vacuous here since uploads only create files. The full roadmap — phases 15–16+ (in-app preview,
+real-time remote-change reflection, ...) — lives in `docs/PROGRESS.md`'s Roadmap section; see the
+companion-docs list above.
 `docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional local sync stays out of scope.
 
 Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`), `AuthService`/
-`FolderNavigationService`/`SearchService`/`DownloadService`/`ThumbnailService`/`FileOperationService`
+`FolderNavigationService`/`SearchService`/`DownloadService`/`UploadService`/`ThumbnailService`/
+`FileOperationService`
 (`src/core`) backed
 by `ISessionStore`/`WindowsSessionStore` for session persistence (folder listings are always
 fetched live from the network, no local cache), their QML-facing controllers/`FileListModel`
@@ -102,7 +113,9 @@ QuickAccessSection.qml` — both panel halves now stacked by `qml/components/Sid
 (Phase 11) — a single window-wide `qml/components/DragProxy.qml` parented to the window `Overlay`
 that carries every move drag (a delegate can't: the views' `Flickable` viewport would clip it before
 it reached the side panel) plus `qml/components/DragAutoScroller.qml` for the edge scrolling Qt
-doesn't provide (Phase 14a) — and cross-cutting app
+doesn't provide (Phase 14a), the app-global `UploadController` (`src/qml`) behind all five drop
+targets' external-drop path and Main.qml's two upload confirmation dialogs (Phase 14b) — and
+cross-cutting app
 infrastructure — categorized logging + a MEGA SDK logger bridge (`src/app`, `src/mega`) and a shared
 `NotificationController`/`ErrorToast.qml` for user-facing failures (`src/qml`, `qml/`) — see
 `docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md` for what each phase actually built

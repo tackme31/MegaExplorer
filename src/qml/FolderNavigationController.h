@@ -140,6 +140,15 @@ public:
     Q_INVOKABLE bool
     canDropHandlesOn(const QVariantList& handles, quint64 target, bool targetIsRoot) const;
 
+    // Re-fetches this tab's listing, but only if this tab is the one showing
+    // (handle, isRoot). Guarded entry point to the private
+    // refreshVisibleListing() so an app-global controller can fan a
+    // "something changed in folder X" notification out to every tab and let
+    // each tab decide for itself (see UploadController::destinationChanged).
+    // Deliberately refreshVisibleListing, not refreshCurrentFolder: a tab
+    // that happens to be searching must not be dropped out of its search.
+    Q_INVOKABLE void refreshIfShowing(quint64 handle, bool isRoot);
+
 signals:
     void canGoBackChanged();
     void breadcrumbChanged();

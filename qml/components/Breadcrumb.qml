@@ -117,15 +117,24 @@ Item {
                     }
 
                     // Same shape as QuickAccessSection.qml's per-delegate drop
-                    // target. The last segment needs no special-casing: it is
-                    // the current folder, which checkMove rejects as "already
-                    // in that folder". Segments hidden behind "«" are invisible
-                    // and so receive no drag events -- deliberately not
-                    // reachable as drop targets.
+                    // target, internal/external branching included -- see
+                    // FolderTreePanel.qml for why the hover handlers key off
+                    // dragProxy.active while onDropped keys off the event's own
+                    // payload. Segments hidden behind "«" are invisible and so
+                    // receive no drag events -- deliberately not reachable as
+                    // drop targets.
+                    //
+                    // The last segment behaves differently between the two:
+                    // it's the current folder, which checkMove rejects as
+                    // "already in that folder", but which is a perfectly valid
+                    // upload destination -- so it highlights for an external
+                    // drop and not for a move. That asymmetry is correct.
                     DropArea {
                         id: dropArea
                         anchors.fill: parent
-                        keys: ["application/x-megaexplorer-nodes"]
+                        // "text/uri-list" is what an external OS drop matches
+                        // on -- without it those drops are silently ignored.
+                        keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
 
                         // Recomputed on enter only: the target can't change
                         // without leaving this segment first. Payload read off
@@ -133,15 +142,38 @@ Item {
                         // which is typed QObject.
                         property bool accepting: false
 
-                        onEntered: dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
-                                       root.dragProxy.handles, delegateRoot.modelData.handle,
-                                       delegateRoot.modelData.isRoot)
+                        onEntered: drag => {
+                            if (root.dragProxy.active) {
+                                dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
+                                            root.dragProxy.handles, delegateRoot.modelData.handle,
+                                            delegateRoot.modelData.isRoot);
+                            } else if (drag.hasUrls) {
+                                dropArea.accepting = uploadController.canUploadTo(
+                                            delegateRoot.modelData.handle,
+                                            delegateRoot.modelData.isRoot);
+                                // Only the external branch touches
+                                // drag.accepted: the move path relies on
+                                // implicit acceptance by key match.
+                                drag.accepted = dropArea.accepting;
+                            } else {
+                                dropArea.accepting = false;
+                            }
+                        }
                         onExited: dropArea.accepting = false
-                        onDropped: {
-                            if (dropArea.accepting)
-                                root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
-                                                                       delegateRoot.modelData.handle,
-                                                                       delegateRoot.modelData.isRoot);
+                        onDropped: drop => {
+                            if (dropArea.accepting) {
+                                if (drop.hasUrls) {
+                                    drop.accept(Qt.CopyAction);
+                                    uploadController.dropUrls(drop.urls,
+                                                              delegateRoot.modelData.handle,
+                                                              delegateRoot.modelData.isRoot);
+                                } else {
+                                    root.dragProxy.sourceNav.moveHandlesTo(
+                                                root.dragProxy.handles,
+                                                delegateRoot.modelData.handle,
+                                                delegateRoot.modelData.isRoot);
+                                }
+                            }
                             dropArea.accepting = false;
                         }
                     }

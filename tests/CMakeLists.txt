@@ -12,6 +12,8 @@ add_executable(MegaExplorerTests
     AuthServiceTest.cpp
     SearchServiceTest.cpp
     DownloadServiceTest.cpp
+    UploadServiceTest.cpp
+    UploadControllerTest.cpp
     ThumbnailServiceTest.cpp
     FolderTreeServiceTest.cpp
     FileOperationServiceTest.cpp
@@ -33,6 +35,8 @@ add_executable(MegaExplorerTests
     ${CMAKE_SOURCE_DIR}/src/qml/ThumbnailController.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/NotificationController.h
     ${CMAKE_SOURCE_DIR}/src/qml/NotificationController.cpp
+    ${CMAKE_SOURCE_DIR}/src/qml/UploadController.h
+    ${CMAKE_SOURCE_DIR}/src/qml/UploadController.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/TabsController.h
     ${CMAKE_SOURCE_DIR}/src/qml/TabsController.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/FolderTreeModel.h

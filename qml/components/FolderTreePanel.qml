@@ -102,33 +102,74 @@ TreeView {
         DropArea {
             id: dropArea
             anchors.fill: parent
-            keys: ["application/x-megaexplorer-nodes"]
+            // "text/uri-list" is what an external OS drop matches on: an
+            // internal Qt drag is matched against Drag.keys, but a drop coming
+            // in from Explorer is matched against its QMimeData's format
+            // strings, and without this one those drops are silently ignored.
+            keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
 
             // Recomputed on enter only: the target can't change without leaving
             // this row first, so a positionChanged handler would re-ask the SDK
             // for an answer that cannot have changed.
             property bool accepting: false
 
+            // Internal vs. external is decided on root.dragProxy.active, not on
+            // drag.hasUrls: hasUrls is a claim about the *event*, while active
+            // is a claim about the very object the internal branch then
+            // dereferences. DragProxy.begin() sets both active and sourceNav,
+            // and finish() calls Drag.drop() before clearing sourceNav, so it's
+            // still valid inside onDropped.
+            //
             // Payload read off root.dragProxy rather than the event's own
             // drag.source: same object (keys let nothing else in), but
             // drag.source is typed QObject and every field access through it
             // would be an unchecked dynamic lookup.
             onEntered: drag => {
-                dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
-                            root.dragProxy.handles, treeDelegate.handle, treeDelegate.isRoot);
+                if (root.dragProxy.active) {
+                    dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
+                                root.dragProxy.handles, treeDelegate.handle, treeDelegate.isRoot);
+                } else if (drag.hasUrls) {
+                    dropArea.accepting = uploadController.canUploadTo(treeDelegate.handle,
+                                                                      treeDelegate.isRoot);
+                    // Only the external branch touches drag.accepted; the move
+                    // path relies on implicit acceptance via key matching, and
+                    // assigning here would break it.
+                    drag.accepted = dropArea.accepting;
+                } else {
+                    dropArea.accepting = false;
+                }
+                // Outside the branch: edge scrolling should work for either.
                 autoScroller.track(root.mapFromItem(dropArea, drag.x, drag.y).y);
             }
-            onPositionChanged: drag => autoScroller.track(
-                                   root.mapFromItem(dropArea, drag.x, drag.y).y)
+            onPositionChanged: drag => {
+                if (!root.dragProxy.active && drag.hasUrls)
+                    drag.accepted = dropArea.accepting;
+                autoScroller.track(root.mapFromItem(dropArea, drag.x, drag.y).y);
+            }
             onExited: {
                 dropArea.accepting = false;
                 autoScroller.release();
             }
-            onDropped: {
-                if (dropArea.accepting)
-                    root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
-                                                           treeDelegate.handle,
-                                                           treeDelegate.isRoot);
+            // Branches on drop.hasUrls, not on dragProxy.active like the hover
+            // handlers above: DragProxy.finish() calls Drag.drop() to deliver
+            // this very event, and Drag.active is cleared as a side effect of
+            // that same call, so its value here depends on Qt's internal
+            // ordering. The event's own payload doesn't.
+            //
+            // A row whose folder is gone is rejected by canDropHandlesOn's
+            // kENoEnt on the move path, and by canUploadTo's on the upload one.
+            onDropped: drop => {
+                if (dropArea.accepting) {
+                    if (drop.hasUrls) {
+                        drop.accept(Qt.CopyAction);
+                        uploadController.dropUrls(drop.urls, treeDelegate.handle,
+                                                  treeDelegate.isRoot);
+                    } else {
+                        root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
+                                                               treeDelegate.handle,
+                                                               treeDelegate.isRoot);
+                    }
+                }
                 dropArea.accepting = false;
                 autoScroller.release();
             }

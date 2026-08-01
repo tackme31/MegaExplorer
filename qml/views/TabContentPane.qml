@@ -124,6 +124,17 @@ ColumnLayout {
         }
     }
 
+    // uploadController is app-global (three of the five drop targets are shared
+    // chrome with no owning tab), so it broadcasts the destination and each tab
+    // decides for itself whether it's the one showing it. Connections is a
+    // QtObject, so it isn't laid out by this ColumnLayout.
+    Connections {
+        target: uploadController
+        function onDestinationChanged(handle, isRoot) {
+            pane.navController.refreshIfShowing(handle, isRoot);
+        }
+    }
+
     // Relayed up to Main.qml alongside viewModeWriteBack above -- see
     // FileTableView.qml's own top comment for why sort order/column widths
     // funnel through here rather than each tab owning a Settings item.

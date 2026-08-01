@@ -73,4 +73,17 @@ public:
                 (std::uint64_t, std::uint64_t, bool, std::function<void(Result<void>)>),
                 (override));
     MOCK_METHOD(Result<void>, checkMove, (std::uint64_t, std::uint64_t, bool), (const, override));
+    MOCK_METHOD(void,
+                upload,
+                (const std::string&,
+                 std::uint64_t,
+                 bool,
+                 std::function<void(std::uint64_t, std::uint64_t)>,
+                 std::function<void(Result<UploadOutcome>)>),
+                (override));
+    MOCK_METHOD(Result<void>, checkUpload, (std::uint64_t, bool), (const, override));
+    MOCK_METHOD(Result<std::vector<FileEntry>>,
+                findChildFiles,
+                (std::uint64_t, bool, const std::vector<std::string>&),
+                (const, override));
 };

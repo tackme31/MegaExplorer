@@ -60,6 +60,16 @@ Popup {
                     return qsTr("Failed to move %1 item(s) to the Rubbish bin").arg(root.failed);
                 return qsTr("Moved %1 item(s) to the Rubbish bin, %2 failed").arg(
                             root.succeeded).arg(root.failed);
+            case "upload":
+                if (root.failed === 0)
+                    return qsTr("Uploaded %1 file(s)").arg(root.succeeded);
+                if (root.succeeded === 0)
+                    return qsTr("Failed to upload %1 file(s)").arg(root.failed);
+                return qsTr("Uploaded %1 file(s), %2 failed").arg(root.succeeded).arg(root.failed);
+            // Whole batch failed because the destination was gone by the time
+            // its turn came -- the count adds nothing, the reason is the point.
+            case "uploadDestinationGone":
+                return qsTr("The upload destination folder no longer exists");
             default:
                 return "";
             }

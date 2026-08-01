@@ -105,28 +105,48 @@ ColumnLayout {
                 border.color: sysPalette.highlight
             }
 
-            // Same per-delegate arrangement as FolderTreePanel.qml's. A pin
-            // whose target was deleted on another device simply never accepts:
-            // canDropHandlesOn bottoms out in checkMove, which fails with
-            // kENoEnt for a handle that no longer resolves.
+            // Same per-delegate arrangement as FolderTreePanel.qml's, including
+            // its internal/external branching -- see that file for why the
+            // hover handlers key off dragProxy.active while onDropped keys off
+            // the event's own payload. A pin whose target was deleted on
+            // another device simply never accepts: both canDropHandlesOn and
+            // canUploadTo bottom out in a kENoEnt for a handle that no longer
+            // resolves.
             DropArea {
                 id: dropArea
                 anchors.fill: parent
-                keys: ["application/x-megaexplorer-nodes"]
+                // "text/uri-list" is what an external OS drop matches on --
+                // without it those drops are silently ignored here.
+                keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
 
                 property bool accepting: false
 
                 // Payload read off root.dragProxy rather than the event's own
                 // drag.source, same reasoning as FolderTreePanel.qml's.
-                onEntered: {
-                    dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
-                                root.dragProxy.handles, pinDelegate.handle, false);
+                onEntered: drag => {
+                    if (root.dragProxy.active) {
+                        dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
+                                    root.dragProxy.handles, pinDelegate.handle, false);
+                    } else if (drag.hasUrls) {
+                        dropArea.accepting = uploadController.canUploadTo(pinDelegate.handle, false);
+                        // Only the external branch touches drag.accepted: the
+                        // move path relies on implicit acceptance by key match.
+                        drag.accepted = dropArea.accepting;
+                    } else {
+                        dropArea.accepting = false;
+                    }
                 }
                 onExited: dropArea.accepting = false
-                onDropped: {
-                    if (dropArea.accepting)
-                        root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
-                                                               pinDelegate.handle, false);
+                onDropped: drop => {
+                    if (dropArea.accepting) {
+                        if (drop.hasUrls) {
+                            drop.accept(Qt.CopyAction);
+                            uploadController.dropUrls(drop.urls, pinDelegate.handle, false);
+                        } else {
+                            root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
+                                                                   pinDelegate.handle, false);
+                        }
+                    }
                     dropArea.accepting = false;
                 }
             }

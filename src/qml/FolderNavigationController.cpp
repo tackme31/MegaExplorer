@@ -367,6 +367,17 @@ bool FolderNavigationController::canDropHandlesOn(const QVariantList& handles,
     return true;
 }
 
+void FolderNavigationController::refreshIfShowing(quint64 handle, bool isRoot)
+{
+    if (!mHasLoadedOnce)
+        return;
+    if (atRoot() != isRoot)
+        return;
+    if (!isRoot && currentHandle() != handle)
+        return;
+    refreshVisibleListing();
+}
+
 void FolderNavigationController::accountForBulkOutcome(
     const std::shared_ptr<BulkOperationBatch>& batch,
     const Result<void>& result,

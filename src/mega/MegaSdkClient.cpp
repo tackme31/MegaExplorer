@@ -108,6 +108,18 @@ int toMegaOrder(SortOrder order)
     }
 }
 
+FileEntry nodeToEntry(mega::MegaNode* node)
+{
+    FileEntry entry;
+    entry.name = node->getName() ? node->getName() : "";
+    entry.handle = node->getHandle();
+    entry.sizeBytes = node->isFile() ? static_cast<std::uint64_t>(node->getSize()) : 0;
+    entry.isFolder = node->isFolder();
+    entry.modificationTime = node->getModificationTime();
+    entry.hasThumbnail = node->hasThumbnail();
+    return entry;
+}
+
 std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
 {
     std::vector<FileEntry> entries;
@@ -116,15 +128,8 @@ std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
     {
         for (int i = 0; i < children->size(); ++i)
         {
-            mega::MegaNode* node = children->get(i); // owned by the list, do not delete
-            FileEntry entry;
-            entry.name = node->getName() ? node->getName() : "";
-            entry.handle = node->getHandle();
-            entry.sizeBytes = node->isFile() ? static_cast<std::uint64_t>(node->getSize()) : 0;
-            entry.isFolder = node->isFolder();
-            entry.modificationTime = node->getModificationTime();
-            entry.hasThumbnail = node->hasThumbnail();
-            entries.push_back(std::move(entry));
+            // owned by the list, do not delete
+            entries.push_back(nodeToEntry(children->get(i)));
         }
     }
     return entries;
@@ -177,6 +182,48 @@ public:
 private:
     std::function<void(std::uint64_t, std::uint64_t)> mOnProgress;
     std::function<void(Result<DownloadOutcome>)> mOnDone;
+    std::unique_ptr<mega::MegaCancelToken> mCancelToken;
+};
+
+// Same shape as DownloadListener, minus the alreadyPresent inference (see
+// UploadOutcome.h for why there is no upload equivalent of it).
+class UploadListener : public mega::MegaTransferListener
+{
+public:
+    UploadListener(std::function<void(std::uint64_t, std::uint64_t)> onProgress,
+                   std::function<void(Result<UploadOutcome>)> onDone,
+                   std::unique_ptr<mega::MegaCancelToken> cancelToken)
+        : mOnProgress(std::move(onProgress)), mOnDone(std::move(onDone)),
+          mCancelToken(std::move(cancelToken))
+    {}
+
+    void onTransferUpdate(mega::MegaApi* /*api*/, mega::MegaTransfer* transfer) override
+    {
+        mOnProgress(static_cast<std::uint64_t>(transfer->getTransferredBytes()),
+                    static_cast<std::uint64_t>(transfer->getTotalBytes()));
+    }
+
+    void onTransferFinish(mega::MegaApi* /*api*/,
+                          mega::MegaTransfer* transfer,
+                          mega::MegaError* e) override
+    {
+        int code = e->getErrorCode();
+        if (code == mega::MegaError::API_OK)
+        {
+            UploadOutcome outcome;
+            outcome.nodeHandle = static_cast<std::uint64_t>(transfer->getNodeHandle());
+            mOnDone(Result<UploadOutcome>::ok(std::move(outcome)));
+        }
+        else
+        {
+            mOnDone(Result<UploadOutcome>::fail(e->getErrorString(), code));
+        }
+        delete this; // also destroys mCancelToken -- SDK requires it alive until here
+    }
+
+private:
+    std::function<void(std::uint64_t, std::uint64_t)> mOnProgress;
+    std::function<void(Result<UploadOutcome>)> mOnDone;
     std::unique_ptr<mega::MegaCancelToken> mCancelToken;
 };
 
@@ -322,6 +369,32 @@ void MegaSdkClient::download(std::uint64_t handle,
                         mega::MegaTransfer::COLLISION_RESOLUTION_NEW_WITH_N,
                         /*undelete*/ false,
                         listener);
+}
+
+void MegaSdkClient::upload(const std::string& localPath,
+                           std::uint64_t parentHandle,
+                           bool parentIsRoot,
+                           std::function<void(std::uint64_t, std::uint64_t)> onProgress,
+                           std::function<void(Result<UploadOutcome>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
+    if (!parent)
+    {
+        onDone(Result<UploadOutcome>::fail("No destination folder with the given handle (nodes not "
+                                           "fetched / folder deleted)",
+                                           MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    std::unique_ptr<mega::MegaCancelToken> cancelToken(mega::MegaCancelToken::createInstance());
+    mega::MegaCancelToken* cancelTokenRaw = cancelToken.get(); // extract before moving below
+    auto* listener =
+        new UploadListener(std::move(onProgress), std::move(onDone), std::move(cancelToken));
+
+    // options == nullptr means all defaults (name taken from localPath, local
+    // mtime preserved, not a temporary source) -- megaapi.cpp only copies the
+    // struct when it's non-null, so there's nothing to construct here.
+    mApi->startUpload(localPath, parent.get(), cancelTokenRaw, /*options*/ nullptr, listener);
 }
 
 void MegaSdkClient::getThumbnail(std::uint64_t handle,
@@ -484,6 +557,51 @@ Result<void> MegaSdkClient::checkMove(std::uint64_t handle,
         return Result<void>::ok();
 
     return Result<void>::fail(error->getErrorString(), error->getErrorCode());
+}
+
+Result<void> MegaSdkClient::checkUpload(std::uint64_t parentHandle, bool parentIsRoot) const
+{
+    std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
+    if (!parent)
+        return Result<void>::fail("Destination folder no longer exists", MegaErrorCode::kENoEnt);
+
+    if (!parent->isFolder())
+        return Result<void>::fail("Destination is not a folder", MegaErrorCode::kEArgs);
+
+    // A deleted folder still resolves -- it just lives under the Rubbish bin
+    // now -- so this is the only reliable "still usable destination" test
+    // (same rationale as NodeInfo::inCloud).
+    if (!mApi->isInCloud(parent.get()))
+        return Result<void>::fail("Destination folder is no longer in the Cloud Drive",
+                                  MegaErrorCode::kENoEnt);
+
+    if (mApi->getAccess(parent.get()) < mega::MegaShare::ACCESS_READWRITE)
+        return Result<void>::fail("No permission to add files to that folder",
+                                  MegaErrorCode::kEAccess);
+
+    return Result<void>::ok();
+}
+
+Result<std::vector<FileEntry>>
+MegaSdkClient::findChildFiles(std::uint64_t parentHandle,
+                              bool parentIsRoot,
+                              const std::vector<std::string>& names) const
+{
+    std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
+    if (!parent)
+        return Result<std::vector<FileEntry>>::fail("Destination folder no longer exists",
+                                                    MegaErrorCode::kENoEnt);
+
+    std::vector<FileEntry> hits;
+    for (const std::string& name : names)
+    {
+        // TYPE_FILE, not getChildNode(), which prefers a same-named folder.
+        std::unique_ptr<mega::MegaNode> child(
+            mApi->getChildNodeOfType(parent.get(), name.c_str(), mega::MegaNode::TYPE_FILE));
+        if (child)
+            hits.push_back(nodeToEntry(child.get()));
+    }
+    return Result<std::vector<FileEntry>>::ok(std::move(hits));
 }
 
 std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot) const
