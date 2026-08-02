@@ -57,6 +57,11 @@ RowLayout {
     TabBar {
         id: tabBar
         Layout.fillWidth: true
+        // Without this the bar keeps its own implicitHeight and, since neither
+        // this RowLayout nor CaptionBar clips, anything taller than the caption
+        // row spills below it. That is how the active tab's indicator ended up
+        // drawn on top of the breadcrumb row.
+        Layout.fillHeight: true
         clip: true
         currentIndex: tabsController.currentIndex
 
@@ -96,23 +101,34 @@ RowLayout {
                     onTapped: tabsController.closeTab(tabButton.index)
                 }
 
-                contentItem: RowLayout {
-                    spacing: 4
+                // The close button is a sibling of contentItem, not a child of
+                // it, and that placement is load-bearing: TabButton derives its
+                // implicitHeight from implicitContentHeight, and Fluent sizes
+                // the content row to the label alone (20px). A ToolButton in
+                // there -- Fluent's is 32px tall and cannot be told otherwise
+                // without overriding the style's own background -- inflates the
+                // tab to 52px, and the active tab's bottom indicator gets
+                // clipped off the caption row along with it.
+                //
+                // Out here the tab keeps its natural 40px, and the button keeps
+                // its natural size.
+                contentItem: Label {
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                    // Reserves the strip the button overlays; contentItem is
+                    // laid out across the full availableWidth regardless.
+                    rightPadding: closeButton.width
+                    text: tabButton.text
+                }
 
-                    Label {
-                        Layout.fillWidth: true
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        text: tabButton.text
-                    }
-
-                    ToolButton {
-                        text: "×"
-                        focusPolicy: Qt.NoFocus
-                        implicitWidth: 22
-                        implicitHeight: 22
-                        onClicked: tabsController.closeTab(tabButton.index)
-                    }
+                ToolButton {
+                    id: closeButton
+                    anchors.right: parent.right
+                    anchors.rightMargin: tabButton.rightPadding
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "×"
+                    focusPolicy: Qt.NoFocus
+                    onClicked: tabsController.closeTab(tabButton.index)
                 }
             }
         }

@@ -197,6 +197,18 @@ ColumnLayout {
                                                        root.columnWidthModified,
                                                        root.columnWidthSize)
 
+    // Width of one of the two *fixed* columns -- persisted value if the user
+    // has resized it, hardcoded default otherwise, clamped to its floor either
+    // way. Column 0 is deliberately not expressible here; see
+    // columnWidthProvider below.
+    function fixedColumnWidth(column) {
+        const w = tableView.explicitColumnWidth(column);
+        // Math.max(min, w) pattern straight from Qt's own TableView docs
+        // ("Row heights and column widths") for clamping a user-resizable
+        // column to a floor.
+        return Math.max(root.minColumnWidths[column], w >= 0 ? w : [220, 150, 100][column]);
+    }
+
     // Same column same click: toggle direction. Different column: switch to
     // it, reset to ascending (Explorer's convention).
     function requestSort(column) {
@@ -443,15 +455,38 @@ ColumnLayout {
         // reapplying here, not just once at Component.onCompleted.
         onRowsChanged: root.restoreColumnWidths()
 
+        // Name takes whatever the viewport has left over; Modified and Size
+        // keep their own width. Two defects come out of the fixed-width
+        // alternative, and both close here:
+        //
+        //  - this view's delegate is a *cell*, so the selection highlight is
+        //    only ever as wide as the columns are. With fixed widths it ended
+        //    partway across a wide window and left a dead strip to its right,
+        //    which is also clickable (the TapHandler clamps into the last
+        //    column) but never painted.
+        //  - narrow windows had the opposite problem: the fixed total
+        //    overflowed the viewport, and with no horizontal scroll bar the
+        //    Size column simply could not be reached.
+        //
+        // The cost is that dragging Name's own edge no longer moves anything
+        // -- resizing the other two is what widens or narrows it now.
+        // columnWidthName is still saved and restored (that plumbing spans
+        // TabContentPane and Main.qml's Settings), it just isn't read here.
         columnWidthProvider: function (column) {
-            const w = explicitColumnWidth(column);
-            // Math.max(min, w) pattern straight from Qt's own TableView docs
-            // ("Row heights and column widths") for clamping a
-            // user-resizable column to a floor.
-            if (w >= 0)
-                return Math.max(root.minColumnWidths[column], w);
-            return [220, 150, 100][column];
+            if (column !== 0)
+                return root.fixedColumnWidth(column);
+            return Math.max(root.minColumnWidths[0], tableView.width - root.fixedColumnWidth(
+                                1) - root.fixedColumnWidth(2));
         }
+        // The provider is only consulted during a layout pass, and resizing
+        // the window alone doesn't trigger one.
+        onWidthChanged: tableView.forceLayout()
+
+        // Neither axis had one. Vertical: nothing indicated a folder had more
+        // rows than fit. Horizontal: still reachable above the floor case,
+        // when the user drags Modified or Size wide enough to overflow.
+        ScrollBar.vertical: ScrollBar {}
+        ScrollBar.horizontal: ScrollBar {}
 
         // The handler is declared inside TableView, which would install it on the
         // contentItem (Qt docs, TableView::cellAtPosition) -- i.e. it would never see

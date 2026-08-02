@@ -32,6 +32,36 @@ TreeView {
 
     clip: true
 
+    // Pins every row to the viewport width instead of letting
+    // TreeViewDelegate size itself by its own content. Two separate defects
+    // come from that default:
+    //
+    //  - the row background (the selection highlight below) stretched only as
+    //    far as the widest row's content, so how much of a selected row got
+    //    painted depended on what else happened to be expanded;
+    //  - the stock contentItem already asks for elide: Text.ElideRight, but a
+    //    label handed exactly the width it asked for never has anything to
+    //    elide, so deep rows were cut mid-glyph at the panel edge with no "…".
+    //
+    // Fixing the width closes both, and leaves nothing to scroll horizontally
+    // -- which Explorer's navigation pane doesn't offer either.
+    columnWidthProvider: function (column) {
+        return root.width;
+    }
+    // columnWidthProvider is only consulted during a layout pass, and a width
+    // change alone doesn't trigger one.
+    onWidthChanged: root.forceLayout()
+
+    // Flickable defaults acceptedButtons to Qt.LeftButton, i.e. click-dragging
+    // a row pans the tree -- which the two file views already suppress
+    // (FileTableView.qml, FileGridView.qml) and Explorer's navigation pane
+    // doesn't do. Wheel scrolling is unaffected.
+    acceptedButtons: Qt.NoButton
+
+    // Without this there is no indication that a tree taller than the panel
+    // can be scrolled at all.
+    ScrollBar.vertical: ScrollBar {}
+
     model: folderTreeModel
 
     SystemPalette {
@@ -62,8 +92,6 @@ TreeView {
         // redeclaring shadows it with a second, never-populated copy.
         required property var handle
         required property bool isRoot
-        // Only needed to label a new pin; the delegate's own text still comes
-        // from TreeViewDelegate's stock contentItem reading Qt::DisplayRole.
         required property string name
 
         // Matches TabStrip.qml's TabButton: without this, clicking a row
@@ -81,17 +109,39 @@ TreeView {
         // No selectionModel is set on the TreeView -- the highlight follows
         // navigation state, not a click-driven selection -- so the style's
         // own highlighted/selected painting is replaced wholesale here.
-        // implicitHeight restates what the style's background supplies:
-        // without it, rows whose indicator is hidden (a folder already known
-        // to be empty) would come out shorter than the rest.
+        //
+        // Nothing about the row's *height* can be said from here: the
+        // TreeViewDelegate this resolves to is Basic's (FluentWinUI3 ships no
+        // TreeViewDelegate of its own), and its implicitHeight formula --
+        // max(indicator.height, implicitContentHeight) * 1.25 -- has no
+        // background term at all. An implicitHeight written here is simply
+        // ignored; the 40px click area of the stock indicator is what sets
+        // the row height.
         background: Rectangle {
-            implicitHeight: 24
             color: treeDelegate.isCurrent ? Qt.rgba(sysPalette.highlight.r, sysPalette.highlight.g, sysPalette.highlight.b,
                                                     0.35) : "transparent"
             // Outlined rather than filled, so the drop target stays legible on
             // the row that also happens to be the current folder.
             border.width: dropArea.accepting ? 2 : 0
             border.color: sysPalette.highlight
+        }
+
+        // Restated from Basic's own contentItem purely to hang a tooltip off
+        // it. Now that rows are pinned to the viewport width, a deep row's
+        // name really does elide -- and the panel offers no other way to read
+        // it: there is no horizontal scroll, and MEGA folder names run long.
+        // The stock highlighted/highlightedText branch is dropped because
+        // highlighted needs a selectionModel, which this TreeView has none of.
+        contentItem: Label {
+            id: nameLabel
+            text: treeDelegate.name
+            elide: Text.ElideRight
+            color: treeDelegate.palette.buttonText
+            visible: !treeDelegate.editing
+
+            ToolTip.text: treeDelegate.name
+            ToolTip.delay: 500
+            ToolTip.visible: treeDelegate.hovered && nameLabel.truncated
         }
 
         // Per delegate, unlike the file views' single view-level DropArea: a

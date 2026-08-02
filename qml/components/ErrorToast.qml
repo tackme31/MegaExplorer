@@ -3,7 +3,6 @@ import QtQuick
 // style selection per Qt docs' "Styling Qt Quick Controls"), same rule as
 // Main.qml/DownloadSnackbar.qml.
 import QtQuick.Controls.FluentWinUI3
-import QtQuick.Layouts
 
 // Generic auto-hiding error notification for controllers with no dedicated
 // UI feedback path (folder navigation, search, thumbnail fetch, and
@@ -28,6 +27,12 @@ Popup {
 
     x: (parent ? (parent.width - width) / 2 : 0)
     y: (parent ? parent.height - height - 16 : 0)
+    // A Popup's contentItem is not laid out by a Layout, so the
+    // Layout.maximumWidth that used to sit on the Label below was silently
+    // ignored -- a long SDK error string stretched the toast past the edge of
+    // the window. contentWidth is the equivalent that actually applies, and
+    // the Label's wrapMode does the rest.
+    contentWidth: Math.min(root.implicitContentWidth, 320, parent ? parent.width - 32 : 320)
     modal: false
     focus: false
     closePolicy: Popup.CloseOnEscape
@@ -39,7 +44,6 @@ Popup {
     }
 
     contentItem: Label {
-        Layout.maximumWidth: 320
         wrapMode: Text.Wrap
         text: {
             switch (root.context) {

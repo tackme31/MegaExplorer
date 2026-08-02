@@ -29,7 +29,16 @@ Item {
     // draggable area of the window, so it can't be allowed to reach zero.
     readonly property int dragReserve: 120
 
-    implicitHeight: 36
+    // Fluent's own metric for the tab strip this row carries, not a number of
+    // our own: TabBar contributes 4px of vertical padding either side of a
+    // TabButton that is label(20) + 10 top + 10 bottom = 40px, so 48 is what
+    // the strip needs to show the active tab's indicator. The 36 this started
+    // at clipped that indicator away entirely.
+    //
+    // Explorer 11's caption+tab row is nearer 40px, but getting there means
+    // overriding the style's padding, which only makes sense once the tab's
+    // background is ours too (planned alongside the rounded-tab treatment).
+    implicitHeight: 48
 
     // Called by Main.qml's own Component.onCompleted rather than run from
     // ours: every call below needs windowAgent.setup() to have happened
