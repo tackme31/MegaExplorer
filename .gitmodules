@@ -5,3 +5,6 @@
 [submodule "vcpkg"]
 	path = third_party/vcpkg
 	url = https://github.com/microsoft/vcpkg.git
+[submodule "third_party/qwindowkit"]
+	path = third_party/qwindowkit
+	url = https://github.com/stdware/qwindowkit.git

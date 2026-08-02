@@ -86,9 +86,14 @@ offers Replace/Skip/Cancel for same-named files, "replace" being upload-then-mov
 since MEGA has no native overwrite. Unlike 14a it *does* refresh every tab showing the destination
 (an upload has no "source tab"), via the new guarded
 `FolderNavigationController::refreshIfShowing`; the folder tree still isn't refreshed, but that's
-vacuous here since uploads only create files. The full roadmap — phases 15–16+ (in-app preview,
-real-time remote-change reflection, ...) — lives in `docs/PROGRESS.md`'s Roadmap section; see the
-companion-docs list above.
+vacuous here since uploads only create files. Phase 17 was then also pulled forward ahead of 15/16
+(same "self-contained" reasoning): it integrates the tabs into the window's title bar, Explorer-11
+style, by vendoring **QWindowKit** (`third_party/qwindowkit`, Apache-2.0, tag 1.5.0) — 17a makes the
+window frameless and replaces the native caption with `qml/components/CaptionBar.qml` (no visible
+change by design), 17b then moves `TabStrip` onto that caption row. Windows-only, no
+`#ifdef Q_OS_WIN` fallback. Tab drag-to-reorder / tear-off is explicitly **not** in scope. The full
+roadmap — phases 15–16+ (in-app preview, real-time remote-change reflection, ...) — lives in
+`docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
 `docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional local sync stays out of scope.
 
 Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`), `AuthService`/
@@ -114,8 +119,11 @@ QuickAccessSection.qml` — both panel halves now stacked by `qml/components/Sid
 that carries every move drag (a delegate can't: the views' `Flickable` viewport would clip it before
 it reached the side panel) plus `qml/components/DragAutoScroller.qml` for the edge scrolling Qt
 doesn't provide (Phase 14a), the app-global `UploadController` (`src/qml`) behind all five drop
-targets' external-drop path and Main.qml's two upload confirmation dialogs (Phase 14b) — and
-cross-cutting app
+targets' external-drop path and Main.qml's two upload confirmation dialogs (Phase 14b),
+`qml/components/CaptionBar.qml` — the window's own caption row, carrying `TabStrip` and the three
+system buttons, registered with QWindowKit's `WindowAgent` (exposed to QML by the header-only
+`src/qml/WindowAgentForeign.h`, `QML_FOREIGN`) from `Main.qml`'s root `Component.onCompleted`,
+Phase 17a/17b — and cross-cutting app
 infrastructure — categorized logging + a MEGA SDK logger bridge (`src/app`, `src/mega`) and a shared
 `NotificationController`/`ErrorToast.qml` for user-facing failures (`src/qml`, `qml/`) — see
 `docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md` for what each phase actually built
@@ -131,8 +139,9 @@ variable (`docs/BUILD.md` has the exact mechanism). Qt is installed at both
 
 Submodules: `third_party/sdk` (pinned `v10.17.0`), `third_party/vcpkg` (**full history — do not
 shallow-clone**, its baseline resolution needs `git show` on historical `versions/baseline.json`
-blobs). Fresh clone: `git submodule update --init --recursive`, then
-`third_party/vcpkg/bootstrap-vcpkg.bat`.
+blobs), `third_party/qwindowkit` (pinned tag `1.5.0`; has its own nested `qmsetup`/`syscmdline`
+submodules, so `--recursive` is mandatory, not just tidy — see `docs/BUILD.md`). Fresh clone:
+`git submodule update --init --recursive`, then `third_party/vcpkg/bootstrap-vcpkg.bat`.
 
 `CMakePresets.json`'s `msvc-debug` preset pins the full configure (generator, vcpkg toolchain,
 `VCPKG_*` variables) — prefer it over hand-entering variables in Qt Creator (see `docs/BUILD.md`

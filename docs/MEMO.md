@@ -42,6 +42,7 @@ Windowsエクスプローラー風のUIを持つ、MEGA向けの独自デスク�
 - MEGA SDK本体(`meganz/sdk`)は **BSD 2-Clause**。組み込み・改変・再配布は同ライセンス条件を満たせば可能
 - MEGAsync本体のソース(`meganz/MEGAsync`)は別の制限的ライセンス(Code Review Licence)であり、参考にする場合もコピー&ペーストせず、あくまでSDKの使い方の参考程度に留める
 - MEGAの利用規約(ToS)に従う必要があり、appKeyの取得・レート制限順守が必須
+- QWindowKit(`stdware/qwindowkit`、Phase 17aでベンダリング)は **Apache-2.0**。GPLv3と両立する(Apache-2.0はGPLv3互換)ので、本体がQt経由でGPLv3であることと矛盾しない
 
 ## 既知の技術的懸念事項
 

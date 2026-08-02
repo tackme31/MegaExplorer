@@ -29,11 +29,14 @@ are post-MVP, sequenced by priority/dependency.
 | 11 | Quick access (pinned folders, side panel) | done |
 | 12 | Rename / delete (move to rubbish) | done (move deferred, see below) |
 | 13a | Selection model (row/cell, keyboard, right-click) | done (pulled forward) |
-| 13 | Multi-select + bulk operations | planned (selection model prerequisite done in 13a) |
-| 14 | Upload (drag & drop) | planned |
+| 13b | Multi-select context menu + action resolution | done (pulled forward) |
+| 13 | Multi-select + bulk operations | done (bulk move delivered by 14a) |
+| 14a | Move via drag & drop | done |
+| 14b | Upload (drag & drop) | done |
+| 17 | Title-bar-integrated tabs (Windows, QWindowKit) | done (pulled forward) |
 | 15 | In-app preview (side panel, `getPreview`) | planned |
 | 16 | Real-time remote-change reflection | future, post-MVP |
-| 17+ | Undecided | full bidirectional local sync stays out of scope |
+| 18+ | Undecided | full bidirectional local sync stays out of scope |
 
 ### Phase 6 — local cache + open-folder background refresh
 
@@ -136,6 +139,16 @@ listener.
 
 Drop files from Explorer onto any of 14a's five drop targets. See its implementation-log entry.
 
+### Phase 17 — title-bar-integrated tabs (done, pulled forward)
+
+Run ahead of 15/16 — same "self-contained, doesn't need the phases before it" reasoning that pulled
+13a/13b/14a forward. It touches only window chrome (QML plus one CMake dependency), shares nothing
+with preview or remote-change reflection, and the investigation memo it implements
+(`docs/TITLEBAR_TABS_INVESTIGATION.md`) was already written and decided. Split into 17a (frameless
+window + own caption row, tabs left where they were) and 17b (tab strip moved onto that caption
+row), so the shared cost landed and stabilised before the risky part. See both implementation-log
+entries.
+
 ### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
 Lowest priority; explicitly deferred in Phase 4 since download→open already covers "view the file".
@@ -146,7 +159,7 @@ Format-specific rendering (image/PDF/text/...) makes this the highest-effort ite
 Reflect other devices' changes via the SDK's push-notification mechanism into whatever listing is
 open. Additive on top of phase 6's refresh.
 
-### Phase 17+ — undecided
+### Phase 18+ — undecided
 
 Full bidirectional local sync stays out of scope for the foreseeable future.
 
@@ -1659,3 +1672,156 @@ The gesture itself remains manual-test-only — `tests/` is C++ gtest with no QM
 - **Parallel transfers.** One at a time, matching download.
 - **Dragging files *out* of the app** to Explorer.
 - **Per-file progress UI.** The footer shows the active file plus an "n remaining" count.
+
+## Phase 17a — frameless window + own caption row (done)
+
+Windows' native title bar is gone; the row where it used to be is `qml/components/CaptionBar.qml`.
+Nothing else moved — the tab strip stayed below in `Main.qml`'s header, which was the point of the
+split: 17a is a like-for-like replacement whose success looks like *no visible change*, so the
+frameless plumbing could be shaken out before 17b started rearranging things on top of it.
+
+Path 3 of `docs/TITLEBAR_TABS_INVESTIGATION.md` (vendor QWindowKit) rather than a DIY
+`FramelessWindowHint`, because everything a hand-rolled version silently loses — the Snap Layout
+flyout, DWM minimise/restore animation, drop shadow, Win11 rounded corners, 8-direction resize — is
+exactly what QWindowKit's `WM_NCCALCSIZE`/`WM_NCHITTEST` handling keeps. No `#ifdef Q_OS_WIN`
+fallback path exists: this app is already MSVC/vcpkg/Windows-only (`WindowsSessionStore`,
+`QSettingsPinnedFolderStore`).
+
+### CMake / dependency
+
+`third_party/qwindowkit` is the third submodule, pinned to tag **1.5.0**. Unlike `third_party/sdk`
+it is *not* shallow — and it carries its own nested `qmsetup` submodule (which in turn carries
+`syscmdline`), so a fresh clone genuinely needs the `--recursive` that `CLAUDE.md` already
+prescribes. Four cache variables are forced before `add_subdirectory`: `BUILD_QUICK` on,
+`BUILD_WIDGETS` off (this app is `QGuiApplication`, no `QtWidgets`), `BUILD_STATIC` on (so nothing
+new has to join the `PATH` dance to run the binary), `INSTALL` off. `find_package(Qt6 ...)` gained
+`Gui`; `appMegaExplorer` links `QWindowKit::Quick`.
+
+This was flagged as the phase's largest risk — QWindowKit's root `CMakeLists.txt` configures and
+builds `qmsetup` as a *separate* host project at configure time, which looked likely to collide with
+this project's "VS generator + vcpkg toolchain" configure. **It didn't.** Neither of the two planned
+fallbacks (pre-building QWindowKit and pointing `QWindowKit_DIR` at it; retreating to path 1) was
+needed. Configure does log `The CorePrivate target is mentioned as a dependency for
+QWindowKit::Quick, but not declared` (and the same for `GuiPrivate`/`QuickPrivate`) — cosmetic, a
+known Qt 6.10+ change in how private modules are exported; linking succeeds.
+
+Tag 1.5.0 rather than the newer `master`: pinning to a release keeps the dependency legible. The
+cost is two Windows-side fixes that only exist past the tag — `#243` (window drift in the QWK layer)
+and `#229` (top border overlap). Neither reproduced in manual testing, and the height drift 17a hit
+(below) was ours, fixed on our side.
+
+### QML type registration: `QML_FOREIGN`, not `QWK::registerTypes`
+
+The documented setup is `QWK::registerTypes(&engine)` plus `import QWindowKit 1.0`, but that is a
+*runtime* registration: `qmlcachegen` compiling this project's own QML module can't see the type and
+warns about an unresolved import. Since `qwkquickglobal.cpp` shows the call is nothing but
+`qmlRegisterType<QuickWindowAgent>("QWindowKit", 1, 0, "WindowAgent")`, the type is re-registered
+into the `MegaExplorer` module instead, via a header-only `src/qml/WindowAgentForeign.h`
+(`Q_GADGET` + `QML_NAMED_ELEMENT(WindowAgent)` + `QML_FOREIGN`) added to `qt_add_qml_module`'s
+`SOURCES`. `Main.qml` writes `WindowAgent { }` with no extra import, and both `qmlcachegen` and
+`qmllint` see the type. `main.cpp` is untouched — no `registerTypes`, no `rootObjects()`, and
+`setup()` is called from QML. `WindowAgentBase`'s `SystemButton` enum resolves at runtime without a
+second foreign gadget, so none was added.
+
+### Registration order: why `registerWithAgent()` exists
+
+`QuickWindowAgent::setTitleBar`/`setSystemButton`/`setHitTestVisible` all dereference `d->context`
+unguarded, and that context is only created by `setup()`. `Component.onCompleted` fires
+innermost-object-first, so the natural spelling — each system button registering itself from its own
+`onCompleted` — runs button then `CaptionBar` then window, i.e. **every registration before
+`setup()`, and crashes**. Instead `CaptionBar` exposes `registerWithAgent()` and `Main.qml`'s root
+`Component.onCompleted` calls `winAgent.setup(window)` and then that, in the one place where the
+order is visible.
+
+The agent's id is `winAgent`, not `windowAgent`: QML resolves an identifier against the scope
+object's properties before ids, so `CaptionBar { windowAgent: windowAgent }` would bind the property
+to itself.
+
+### The window grew 31px per launch
+
+Found while measuring, not while testing — the saved window height climbed 996, 1027, 1058, 1089
+across four launches, 31px each time, which is exactly the native caption height. Dropping the
+caption hands those pixels to the client area, so `window.height` jumps the moment the window
+becomes visible, and `Settings`' `property alias windowHeight: window.height` faithfully persists
+the inflated value for the next launch to inflate again.
+
+Probing narrowed it to the assignment itself: `setup()` is harmless, and the growth is **synchronous
+with `visible` turning true** (native handle creation), not deferred to a later frame. So the fix is
+to be synchronous back — `visible: false` declaratively, then `Component.onCompleted` saves the
+restored size, shows the window, and writes the size back. It settles within the same turn, before
+the first frame is presented. Verified stable at 1200x800 over four consecutive launches; the test
+runs' inflated setting was reset by hand.
+
+Note that the same saved size now yields a window 31px shorter overall than before 17a, since the
+caption is part of the client area. That is inherent to the integration, not a bug.
+
+### Deliberately not done
+
+- **macOS/Linux branches.** Windows-only, as above.
+- **`Mica`/`Acrylic` backdrop** (`setWindowAttribute("mica", true)`) — matching it to
+  `FluentWinUI3`'s palette is its own piece of work.
+- **Persisting the maximised state.** `Settings` still stores width/height only, so quitting
+  maximised reopens at the normal size.
+- **An app icon in the caption.** Title text only.
+
+## Phase 17b — tab strip moved onto the caption row (done)
+
+`TabStrip` now lives inside `CaptionBar`, Explorer-11 style, and `headerComponent` is back to being
+the address-bar `ToolBar` directly — the `ColumnLayout` wrapper Phase 9 added to stack the strip
+above it had one child left and was dropped.
+
+### QML: caption-row composition
+
+`CaptionBar` is still a plain `Item` (it *is* the registered title bar) with anchor-positioned
+children rather than a `RowLayout`, because the tab strip's width is a computed clamp, not a share
+of a layout:
+
+    width: max(0, min(tabStrip.preferredWidth, captionWidth - systemButtons.width - dragReserve))
+
+`preferredWidth` is `count * maxTabWidth + addButton.implicitWidth` — what the strip would like once
+every tab is at its cap — and `dragReserve` (120px) is the band the strip may never enter. Both
+matter for the same reason: **anything the strip covers stops being caption**, so a `fillWidth`
+strip would leave a window with open tabs undraggable. The gap the clamp leaves, plus everything
+right of the "+" button, is the drag area.
+
+The strip is `visible:` on `authState === LoggedIn` rather than wrapped in a `Loader` — the caption
+row itself deliberately sits *outside* that gate (17a), so hiding the strip when logged out simply
+hands the whole row back to dragging. The title `Label` is the inverse
+(`visible: !tabStrip.visible`), because Explorer 11 shows no title text once tabs are on the caption
+row.
+
+### Hit-test registration: two items, not every delegate
+
+Anything on the caption row that should react to clicks must be registered with
+`setHitTestVisible()`, or the OS swallows the click as caption (the failure mode is that clicking a
+tab drags the window instead). The plan expected per-delegate registration from each `TabButton`'s
+`Component.onCompleted`, with `Component.onDestruction` as a possible counterpart. Reading
+`AbstractWindowContext::isInTitleBarDraggableArea()` showed neither is needed:
+
+- The test is `mapGeometryToScene(item).contains(pos)` over the registered items — a **rect** test,
+  so registering `tabBar` covers every `TabButton` and its close button without the Repeater-created
+  delegates knowing anything about the agent. Only `tabBar` and the "+" button are registered.
+- The items are held as `QVector<QPointer<QObject>>` and null-checked on every hit test, so
+  unregistering on destruction is unnecessary in general — and moot here, since both registered
+  items outlive the window.
+
+Registration is driven from `CaptionBar.registerWithAgent()` (see 17a) for the `setup()`-ordering
+reason, not from `TabStrip`'s own `onCompleted`.
+
+### `TabBar` ignores implicit widths — tabs must set `width`
+
+The per-tab width clamp is an **explicit `width`** on `TabButton`, the only control in that file
+that sets one, and the reason is specific: `QQuickTabBarPrivate::updateLayout()` divides the bar's
+width evenly among the tabs whose width is still *implicit*, without consulting what those implicit
+widths are. Writing the clamp as `implicitWidth` therefore did nothing — at 15 tabs every tab was
+squeezed to ~60px and its label elided away to nothing, leaving a visibly empty strip. Assigning
+`width` takes the button out of that redistribution pool entirely (`updateLayout` only reserves its
+size), so `clamp(80, 200, tabBar.availableWidth / tabBar.count)` decides, and the bar scrolls
+(`clip: true`) once the tabs stop fitting. Caught on-screen with 15 tabs open, not in review.
+
+### Deliberately not done
+
+- **Drag-to-reorder tabs, and tearing a tab off into a new window.** The hardest part of the whole
+  idea and in direct conflict with caption dragging. Nothing regresses by leaving it out — neither
+  ever existed.
+- Everything 17a lists as not done stays not done.

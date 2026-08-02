@@ -21,8 +21,49 @@ ApplicationWindow {
     height: 800
     minimumWidth: 200
     minimumHeight: 250
-    visible: true
+    // Shown from Component.onCompleted below, not declaratively: QWindowKit's
+    // setup() drops the native caption via WM_NCCALCSIZE, which hands those
+    // ~31px back to the client area. Doing that to an already-visible window
+    // grows window.height by exactly that much, and the Settings alias below
+    // then persists the inflated value -- the window gained 31px on every
+    // launch until this was deferred.
+    visible: false
     title: qsTr("MegaExplorer")
+
+    // QWindowKit's window agent (Phase 17a): takes the native caption away
+    // from Windows and hands it to captionBar below, while keeping the real
+    // Win32 behaviour (Snap Layout flyout, DWM animations, shadow, rounded
+    // corners) that a plain Qt.FramelessWindowHint would throw away.
+    //
+    // Named winAgent, not windowAgent, purely to keep CaptionBar's
+    // `windowAgent: ...` assignment below from resolving to CaptionBar's own
+    // property of that name instead of this id.
+    WindowAgent {
+        id: winAgent
+    }
+
+    // setup() must precede every setTitleBar/setSystemButton call -- the
+    // agent's internal context is only created here, and the register calls
+    // dereference it unguarded. Component.onCompleted fires innermost-first,
+    // so captionBar can't do its own registration from its onCompleted; it
+    // exposes registerWithAgent() and this root handler drives the order.
+    Component.onCompleted: {
+        winAgent.setup(window);
+        captionBar.registerWithAgent();
+
+        // Showing a frameless window hands the pixels the native caption used
+        // to occupy back to the client area, so window.height jumps by the
+        // caption height (~31px) the moment visible turns true -- and the
+        // Settings alias above persists that, making the window taller on
+        // every single launch. The jump is synchronous with the assignment,
+        // so restoring the pre-show size right here settles it in one turn,
+        // before the frame is presented.
+        const restoredWidth = window.width;
+        const restoredHeight = window.height;
+        window.visible = true;
+        window.width = restoredWidth;
+        window.height = restoredHeight;
+    }
 
     // 0 = list, 1 = grid. Persisted below via Settings (alias, so every
     // change is written through automatically -- a plain property on
@@ -77,9 +118,23 @@ ApplicationWindow {
     // logged-in StackLayout and LoginView. This codebase's first Loader use
     // -- an exclusive two-state switch, not a multi-step screen flow, so
     // Loader rather than StackView.
-    header: Loader {
-        active: authController.authState === AuthController.LoggedIn
-        sourceComponent: headerComponent
+    // The caption row is deliberately *outside* the authState gate below:
+    // once the window is frameless, it is the only draggable area, so gating
+    // it would leave LoginView with no way to move the window.
+    header: ColumnLayout {
+        spacing: 0
+
+        CaptionBar {
+            id: captionBar
+            Layout.fillWidth: true
+            windowAgent: winAgent
+        }
+
+        Loader {
+            Layout.fillWidth: true
+            active: authController.authState === AuthController.LoggedIn
+            sourceComponent: headerComponent
+        }
     }
 
     footer: Loader {
@@ -90,77 +145,68 @@ ApplicationWindow {
     Component {
         id: headerComponent
 
-        // TabStrip above the address bar/breadcrumb ToolBar, Explorer-11
-        // style (Phase 9) -- previously this Loader's sourceComponent was
-        // just the ToolBar directly.
-        ColumnLayout {
-            spacing: 0
+        // Address bar/breadcrumb only. Phase 9 wrapped this ToolBar in a
+        // ColumnLayout to stack a TabStrip above it; Phase 17b moved that
+        // strip onto the caption row itself (see CaptionBar.qml), leaving the
+        // wrapper with a single child and no reason to exist.
+        ToolBar {
+            RowLayout {
+                anchors.fill: parent
 
-            TabStrip {
-                Layout.fillWidth: true
-            }
+                ToolButton {
+                    text: qsTr("← Back")
+                    // tabsController.currentNavigation is only null
+                    // during the brief login/logout state transition
+                    // (see AuthController.authState's Connections below)
+                    // -- ?./?? guard against that window.
+                    enabled: tabsController.currentNavigation?.canGoBack ?? false
+                    // Without this, clicking here while the grid is showing
+                    // (view mode doesn't change, so no StackLayout focus
+                    // handoff fires) leaves focus on the button and arrow
+                    // keys dead until the view is re-clicked.
+                    focusPolicy: Qt.NoFocus
+                    onClicked: tabsController.currentNavigation?.goBack()
+                }
 
-            ToolBar {
-                Layout.fillWidth: true
+                // 7:3 against the search field below. Qt Quick Layouts
+                // distributes space between fillWidth items in the ratio of
+                // their preferred sizes ("If there are multiple items with
+                // fillWidth set to true, the layout will grow or shrink the
+                // items relative to the ratio of their preferred size" --
+                // Qt 6.11 Layout docs), so the literal 7/3 below are that
+                // ratio, not pixel values. minimumWidth: 0 is spelled out
+                // (it's already the default for a non-layout item) because
+                // "no minimum width" is a deliberate requirement here.
+                Breadcrumb {
+                    navController: tabsController.currentNavigation
+                    dragProxy: moveDragProxy
+                    model: tabsController.currentNavigation?.breadcrumb ?? []
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 7
+                    Layout.minimumWidth: 0
+                    Layout.fillHeight: true
+                }
 
-                RowLayout {
-                    anchors.fill: parent
+                TextField {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 3
+                    Layout.minimumWidth: 0
+                    placeholderText: qsTr("Search in this folder")
+                    // MegaApi::search() blocks the GUI thread synchronously, so
+                    // search on Enter only rather than on every keystroke.
+                    onAccepted: tabsController.currentNavigation?.search(text)
+                }
 
-                    ToolButton {
-                        text: qsTr("← Back")
-                        // tabsController.currentNavigation is only null
-                        // during the brief login/logout state transition
-                        // (see AuthController.authState's Connections below)
-                        // -- ?./?? guard against that window.
-                        enabled: tabsController.currentNavigation?.canGoBack ?? false
-                        // Without this, clicking here while the grid is showing
-                        // (view mode doesn't change, so no StackLayout focus
-                        // handoff fires) leaves focus on the button and arrow
-                        // keys dead until the view is re-clicked.
-                        focusPolicy: Qt.NoFocus
-                        onClicked: tabsController.currentNavigation?.goBack()
-                    }
+                ToolButton {
+                    text: "≡"
+                    focusPolicy: Qt.NoFocus
+                    onClicked: signOutMenu.popup()
 
-                    // 7:3 against the search field below. Qt Quick Layouts
-                    // distributes space between fillWidth items in the ratio of
-                    // their preferred sizes ("If there are multiple items with
-                    // fillWidth set to true, the layout will grow or shrink the
-                    // items relative to the ratio of their preferred size" --
-                    // Qt 6.11 Layout docs), so the literal 7/3 below are that
-                    // ratio, not pixel values. minimumWidth: 0 is spelled out
-                    // (it's already the default for a non-layout item) because
-                    // "no minimum width" is a deliberate requirement here.
-                    Breadcrumb {
-                        navController: tabsController.currentNavigation
-                        dragProxy: moveDragProxy
-                        model: tabsController.currentNavigation?.breadcrumb ?? []
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 7
-                        Layout.minimumWidth: 0
-                        Layout.fillHeight: true
-                    }
-
-                    TextField {
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 3
-                        Layout.minimumWidth: 0
-                        placeholderText: qsTr("Search in this folder")
-                        // MegaApi::search() blocks the GUI thread synchronously, so
-                        // search on Enter only rather than on every keystroke.
-                        onAccepted: tabsController.currentNavigation?.search(text)
-                    }
-
-                    ToolButton {
-                        text: "≡"
-                        focusPolicy: Qt.NoFocus
-                        onClicked: signOutMenu.popup()
-
-                        Menu {
-                            id: signOutMenu
-                            MenuItem {
-                                text: qsTr("Sign out")
-                                onTriggered: signOutConfirmDialog.open()
-                            }
+                    Menu {
+                        id: signOutMenu
+                        MenuItem {
+                            text: qsTr("Sign out")
+                            onTriggered: signOutConfirmDialog.open()
                         }
                     }
                 }
@@ -257,9 +303,9 @@ ApplicationWindow {
         // Neither DownloadService nor UploadService has a cancel API yet, so an
         // in-flight transfer is simply aborted by logout(). Warn about it up
         // front rather than silently dropping it.
-        title: (downloadController.downloadActive
-                || uploadController.uploadActive) ? qsTr("Sign out? (transfer in progress)") : qsTr(
-                                                        "Sign out?")
+        title: (downloadController.downloadActive || uploadController.uploadActive) ? qsTr(
+                                                                                          "Sign out? (transfer in progress)") :
+                                                                                      qsTr("Sign out?")
         onAccepted: authController.logout()
     }
 
@@ -339,8 +385,8 @@ ApplicationWindow {
             wrapMode: Text.Wrap
             text: qsTr("%1 file(s) with the same name already exist in the destination:").arg(
                       nameConflictDialog.conflictNames.length) + "\n"
-                  + nameConflictDialog.conflictNames.slice(0, 5).join(", ")
-                  + (nameConflictDialog.conflictNames.length > 5 ? " …" : "")
+                  + nameConflictDialog.conflictNames.slice(0, 5).join(", ") + (
+                      nameConflictDialog.conflictNames.length > 5 ? " …" : "")
         }
 
         footer: DialogButtonBox {
@@ -526,14 +572,16 @@ ApplicationWindow {
     // by itself if it finds collisions.
     Connections {
         target: uploadController
-        function onFolderDropRequiresConfirmation(filePaths, folderCount, destinationHandle, destinationIsRoot) {
+        function onFolderDropRequiresConfirmation(filePaths, folderCount, destinationHandle,
+                                                  destinationIsRoot) {
             folderDropDialog.filePaths = filePaths;
             folderDropDialog.folderCount = folderCount;
             folderDropDialog.destinationHandle = destinationHandle;
             folderDropDialog.destinationIsRoot = destinationIsRoot;
             folderDropDialog.open();
         }
-        function onNameConflictRequiresConfirmation(filePaths, conflictNames, destinationHandle, destinationIsRoot) {
+        function onNameConflictRequiresConfirmation(filePaths, conflictNames, destinationHandle,
+                                                    destinationIsRoot) {
             nameConflictDialog.filePaths = filePaths;
             nameConflictDialog.conflictNames = conflictNames;
             nameConflictDialog.destinationHandle = destinationHandle;

@@ -4,7 +4,8 @@ project(MegaExplorer VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick)
+# Gui is for QWindowKit, which links Qt's Core/Gui/Quick *private* modules.
+find_package(Qt6 REQUIRED COMPONENTS Gui Quick)
 
 qt_standard_project_setup(REQUIRES 6.10)
 
@@ -12,6 +13,16 @@ qt_standard_project_setup(REQUIRES 6.10)
 if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/importedcontent/CMakeLists.txt")
     add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/importedcontent)
 endif()
+
+# QWindowKit (vendored at third_party/qwindowkit) -- frameless window with the
+# native Win32 behaviour kept (Snap Layout flyout, DWM animations, shadow,
+# rounded corners). Static so no extra DLL has to join Qt's/vcpkg's on PATH;
+# widgets module off since this app is QGuiApplication-only.
+set(QWINDOWKIT_BUILD_QUICK   ON  CACHE BOOL "" FORCE)
+set(QWINDOWKIT_BUILD_WIDGETS OFF CACHE BOOL "" FORCE)
+set(QWINDOWKIT_BUILD_STATIC  ON  CACHE BOOL "" FORCE)
+set(QWINDOWKIT_INSTALL       OFF CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/third_party/qwindowkit)
 
 # MEGA C++ SDK (vendored as a submodule at third_party/sdk); requires vcpkg's
 # toolchain file to be passed via CMAKE_TOOLCHAIN_FILE at configure time.
@@ -104,6 +115,7 @@ qt_add_qml_module(appMegaExplorer
     QML_FILES
         qml/Main.qml
         qml/components/Breadcrumb.qml
+        qml/components/CaptionBar.qml
         qml/components/ConfirmRubbishDialog.qml
         qml/components/DownloadSnackbar.qml
         qml/components/DragAutoScroller.qml
@@ -124,6 +136,7 @@ qt_add_qml_module(appMegaExplorer
     SOURCES
         src/qml/AuthController.h
         src/qml/AuthController.cpp
+        src/qml/WindowAgentForeign.h
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
@@ -161,6 +174,7 @@ target_link_libraries(appMegaExplorer
     PRIVATE Qt6::Quick
     PRIVATE MEGA::SDKlib
     PRIVATE MegaExplorerCore
+    PRIVATE QWindowKit::Quick
     PRIVATE crypt32
 )
 

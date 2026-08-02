@@ -61,6 +61,34 @@ endif()
 top-level `CMakeLists.txt`. If the SDK version bumps and `sdklib_libraries.cmake` starts requesting
 `SWSCALE` itself, this block becomes a no-op and can be removed.
 
+## QWindowKit (`third_party/qwindowkit`, Phase 17a)
+
+Vendored submodule pinned to tag `1.5.0`, supplying the frameless-window/caption handling behind
+`qml/components/CaptionBar.qml`. Two things about it differ from the other two submodules:
+
+- **It is not shallow** (`third_party/sdk` is), and it has a *nested* submodule of its own, `qmsetup`
+  — which nests `syscmdline` in turn. `git submodule update --init --recursive` is therefore not
+  optional here; a non-recursive init leaves QWindowKit's own configure step unable to find
+  `qmsetup` and the whole configure fails.
+- Its root `CMakeLists.txt` **configures and builds `qmsetup` as a separate host project at
+  configure time** (`qm_install_package(qmsetup HOST ...)`). This was expected to fight the VS
+  generator + vcpkg toolchain setup and does not; nothing has to be pre-built or passed via
+  `QWindowKit_DIR`.
+
+Four cache variables are forced in the root `CMakeLists.txt` before `add_subdirectory`:
+
+```cmake
+set(QWINDOWKIT_BUILD_QUICK   ON  CACHE BOOL "" FORCE)
+set(QWINDOWKIT_BUILD_WIDGETS OFF CACHE BOOL "" FORCE)   # app is QGuiApplication, no QtWidgets
+set(QWINDOWKIT_BUILD_STATIC  ON  CACHE BOOL "" FORCE)   # keeps a DLL off the runtime PATH
+set(QWINDOWKIT_INSTALL       OFF CACHE BOOL "" FORCE)
+```
+
+`find_package(Qt6 ...)` needs `Gui` for it, and `appMegaExplorer` links `QWindowKit::Quick`.
+Configure logs `The CorePrivate target is mentioned as a dependency for QWindowKit::Quick, but not
+declared` (likewise `GuiPrivate`/`QuickPrivate`) — cosmetic, from Qt 6.10+'s change to how private
+modules are exported. Linking succeeds; do not chase it.
+
 ## SDK-only sanity check
 
 To sanity-check the SDK in isolation (e.g. after bumping the pinned version), without our own

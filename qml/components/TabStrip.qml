@@ -4,8 +4,9 @@ import QtQuick.Layouts
 
 // Windows-Explorer-11-style tab strip: one TabButton per row of
 // tabsController (a QAbstractListModel, see TabsController.h) plus a
-// trailing "+" button. Sits above the address bar/breadcrumb in Main.qml's
-// header.
+// trailing "+" button. Lives inside CaptionBar, on the window's caption row
+// itself (Phase 17b) -- before that it sat above the address bar/breadcrumb
+// in Main.qml's header.
 //
 // checkable is deliberately false on every TabButton below, with `checked`
 // driven by an explicit binding instead of TabBar's own click-driven
@@ -21,6 +22,37 @@ import QtQuick.Layouts
 RowLayout {
     id: root
     spacing: 0
+
+    // Passed down from CaptionBar, same explicit-hand-off convention the rest
+    // of components/ uses for navController/dragProxy.
+    required property WindowAgent windowAgent
+
+    // Per-tab bounds, both enforced by the TabButton width binding below. A
+    // tab is never wider than maxTabWidth however few tabs there are
+    // (Explorer/Chrome both cap it), and never narrower than minTabWidth
+    // however many -- past that the bar scrolls instead of shrinking further.
+    readonly property int maxTabWidth: 200
+    readonly property int minTabWidth: 80
+
+    // What CaptionBar sizes us to when the caption row has the space, so the
+    // strip stops growing once every tab is at maxTabWidth and the leftover
+    // stays draggable.
+    readonly property real preferredWidth: tabBar.count * root.maxTabWidth
+                                           + addTabButton.implicitWidth
+
+    // Called by CaptionBar's own registerWithAgent(), which the root
+    // Component.onCompleted in Main.qml drives after windowAgent.setup() --
+    // see CaptionBar.qml for why registration can't happen from here.
+    //
+    // Registering the two container items is enough: QWindowKit tests the
+    // *rect* of each registered item, so tabBar covers every TabButton and
+    // its "×" without the Repeater-created delegates having to register
+    // themselves. Unregistering is likewise unnecessary -- these two outlive
+    // the window, and the agent stores QPointers regardless.
+    function registerWithAgent(): void {
+    root.windowAgent.setHitTestVisible(tabBar, true);
+    root.windowAgent.setHitTestVisible(addTabButton, true);
+}
 
     TabBar {
         id: tabBar
@@ -41,6 +73,18 @@ RowLayout {
                 checked: tabButton.index === tabsController.currentIndex
                 focusPolicy: Qt.NoFocus
                 text: tabButton.atRoot ? qsTr("Cloud Drive") : tabButton.title
+
+                // An *explicit* width, unlike every other control in this
+                // file, and deliberately so: TabBar::updateLayout() divides
+                // its own width evenly among the tabs whose width is still
+                // implicit, ignoring what those implicit widths are. Left
+                // implicit, fifteen tabs would each be squeezed to ~60px and
+                // elide their labels away to nothing. Assigning width here
+                // takes the button out of that pool entirely, so the clamp
+                // below is what decides, and the bar scrolls (clip: true
+                // above) once the tabs stop fitting.
+                width: Math.max(root.minTabWidth, Math.min(root.maxTabWidth, tabBar.availableWidth
+                                                           / tabBar.count))
 
                 onClicked: tabsController.currentIndex = tabButton.index
 
