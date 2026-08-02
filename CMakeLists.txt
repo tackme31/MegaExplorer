@@ -110,10 +110,16 @@ qt_add_executable(appMegaExplorer
     src/qml/QuickAccessModel.cpp
 )
 
+# pragma Singleton alone does not put a `singleton` line in the generated
+# qmldir -- this property does, and it has to be set before the module is
+# created.
+set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+
 qt_add_qml_module(appMegaExplorer
     URI MegaExplorer
     QML_FILES
         qml/Main.qml
+        qml/Theme.qml
         qml/components/Breadcrumb.qml
         qml/components/CaptionBar.qml
         qml/components/ConfirmRubbishDialog.qml

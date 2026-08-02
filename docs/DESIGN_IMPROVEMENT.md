@@ -20,7 +20,11 @@
 
 **2026-08-03: S0（B1〜B9）を実装し、9 件すべて実機で合格条件を満たすことを確認した。** その過程で
 判明した訂正（B2 の原因は B1 と別物だった / キャプション高は 40px ではなく 48px が Fluent の実寸）は
-該当節に反映済み。以降の S1〜S11 は未着手。
+該当節に反映済み。
+
+**同日 S1（`qml/Theme.qml` の新設）も実装した。** トークンを定義しただけで消費側は 1 行も
+触っておらず、変更前後のスクリーンショットに構造差がないことを実測で確認している（§0-1 に
+確定した実装事実を追記）。以降の S2〜S11 は未着手。
 
 ---
 
@@ -84,7 +88,10 @@ C++ は 1 行も触れておらず、変更は QML 5 ファイル（`TabStrip.qm
 
 ### C. 段階（見た目の整理）
 
-- [ ] **S1** `Theme.qml` シングルトン新設（トークン定義のみ、適用しない）
+- [x] **S1** `Theme.qml` シングルトン新設（トークン定義のみ、適用しない）→ **2026-08-03 完了**。
+      変更は `qml/Theme.qml`（新規）と `CMakeLists.txt` の 2 ファイルのみで、既存 QML は 1 行も
+      触っていない。実測でも変更前後のスクリーンショットに構造差なし（差分は全ピクセル
+      delta 1 以下 = 同一ビルドを 2 回起動したときのアンチエイリアス揺らぎより小さい）
 - [ ] **S2** タブの意匠（インジケータの形・タブ間セパレータ・「+」の間隔）— [1-2](#1-2-インジケータの位置とラベルの位置が噛み合っていない) / [1-4](#1-4-その他)
 - [ ] **S3** サーフェス色の分離 + 全境界線の追加（D3 = Explorer 11 準拠） — [0-2](#0-2-すべての面サーフェスが同一色で境界線が-1-本もない)
 - [ ] **S4** アイコンの絵文字脱却（D6 によりこの第 1 段階で打ち止め） — [4-4](#4-4-アイコンが絵文字文字列-ユーザー指摘に関連)
@@ -122,12 +129,44 @@ C++ は 1 行も触れておらず、変更は QML 5 ファイル（`TabStrip.qm
 → S0 でこの無効な即値と、それを説明していた誤ったコメントは削除済み（行高 50px 自体は S5 まで
 そのまま）。
 
-**修正案**: `qml/Theme.qml`（`QML_SINGLETON` 相当の QML シングルトン。`pragma Singleton` +
-`qt_add_qml_module` の `QML_FILES` に追加）を新設し、`spacing.xs/sm/md/lg`、`radius.sm/md`、
-`rowHeight.compact/normal`、`font.body/caption`、`color.surface/surfaceAlt/stroke/strokeSubtle`
-を一元化する。以降の全項目はこのトークンを参照する形で書く。ハードコード色のうち閉じるボタンの
-赤（`#c42b1c`/`#e81123`）だけは Windows 仕様の固定値なので Theme 側に「Windows 固定色」として
-名前付きで持たせる。
+**修正案 → S1 で実装済み（2026-08-03）**: `qml/Theme.qml`（`pragma Singleton` + `QML_FILES` に
+追加）を新設し、`spacing.xs/sm/md/lg`、`radius.sm/md`、`rowHeight.compact/normal`、
+`font.body/caption`、`color.surface/surfaceAlt/stroke/strokeSubtle` を一元化した。以降の全項目は
+このトークンを参照する形で書く。ハードコード色のうち閉じるボタンの赤（`#c42b1c`/`#e81123`）は
+Windows 仕様の固定値なので `color.closePressed`/`color.closeHover`/`color.closeGlyphOn` として
+Theme 側に隔離した（テーマ追従させない）。
+
+実装時に上記から増やしたもの（S2〜S11 の各節が名指ししている分の先取り）:
+
+| 追加 | 用途 | 出典節 |
+|---|---|---|
+| `spacing.xl`（16） | ドラッグゴーストの左右パディング等 | — |
+| `border.thin`（1）/ `border.drop`（2） | 区切り線 / ドロップ受け入れ枠。後者は現状 7 箇所に即値 2 | 0-2 / 2-3 |
+| `iconSize.sm`（16）/ `iconSize.lg`（32） | 行頭アイコン / グリッドタイル | 3-5 / 4-4 / 5 |
+| `font.iconFamily` | Segoe Fluent Icons | 2-2 / S4 |
+| `color.text` / `color.textSecondary` | opacity 透かしの置き換え | 3-6 |
+| `color.accent` / `color.onAccent` / `color.selection` / `color.dragGhost` | 4 ファイルに散っている `Qt.rgba(highlight…, 0.35)` と DragProxy の 0.85 | 0-3 |
+| `color.danger` | `"crimson"` の置き換え | 8 |
+| `toast.maxWidth`（320）/ `toast.margin`（16）/ `toast.dismissMs`（6000） | 3 つのトーストで重複している即値 | 7 |
+
+実装で確定した事実:
+
+- ライト/ダーク判定は `Application.styleHints.colorScheme === Qt.Light`。**FluentWinUI3 自身が
+  全ファイルでこの式を使っている**ので、スタイルと判定がずれることはない。ファイル構造
+  （`pragma Singleton` + 入れ子 `readonly property QtObject`）も Qt 本体の
+  `FluentWinUI3/Config.qml` に倣った。
+- `font.body: 14` は当て推量ではなく **FluentWinUI3 の既定値そのもの**
+  （`Config.qml` の `fontFamily: "Segoe UI"` / `fontSize: 14`）。3-2 の「ink 高 11px」と整合する。
+- CMake 側は `set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)` が
+  必須で、**`qt_add_qml_module` より前**に置く必要がある。これが無いと生成 qmldir の行が
+  `Theme 254.0 …`（singleton 無し）になる。
+- **消費側に `import MegaExplorer` は不要**だった（実機で確認）。同一モジュール内なので
+  `Theme.spacing.md` がそのまま解決する。S2 以降で import 行を足す必要はない。
+- **`strokeSubtle` は D3 が決めていない**ので暫定値（ライト `#ebebeb` / ダーク `#2d2d2d`）を
+  置いてある。**S3 の実機確認で確定させ、D3 に追記すること。**
+- `color.text` は `SystemPalette.text` にしたが、既存コードは 2 箇所で `palette.buttonText` を
+  使っている（`CaptionBar.qml:119`, `FolderTreePanel.qml:139`）。差し替える S3/S5 で見え方を
+  確認し、必要ならトークン側を直す。
 
 ### 0-2. すべての面（サーフェス）が同一色で、境界線が 1 本もない
 
@@ -724,7 +763,7 @@ D2 = (c) によりデリゲート幅がビューポート幅に固定される�
 | 段階 | 内容 | 対象 | 前提 |
 |---|---|---|---|
 | ~~**S0**~~ | ~~バグ B1〜B9 の修正（意匠は変えない）~~ **完了 2026-08-03**。B3 と B4 は予定どおり D2 = (c) の 1 修正でまとめて閉じた | `TabStrip.qml`, `CaptionBar.qml`, `FolderTreePanel.qml`, `FileTableView.qml`, `ErrorToast.qml` | — |
-| **S1** | `Theme.qml` シングルトン新設（トークン定義のみ、適用しない） | 新規 1 ファイル + `CMakeLists.txt` | — |
+| ~~**S1**~~ | ~~`Theme.qml` シングルトン新設（トークン定義のみ、適用しない）~~ **完了 2026-08-03**。消費側に `import MegaExplorer` は不要と実機で確認済み | `qml/Theme.qml`（新規）, `CMakeLists.txt` | — |
 | **S2** | タブの意匠（1-2, 1-4）。**S0 でキャプションは Fluent 実寸の 48px にした**ので、Explorer 相当の 40px にするならここで — `TabButton.background` を自前化するのと同時に `TabBar` の上下 padding も定義すること（1-1 参照）。「ホバー中/アクティブなタブのみ × 表示」も | `CaptionBar.qml`, `TabStrip.qml` | S0, S1 |
 | **S3** | サーフェス色の分離 + 全境界線の追加（0-2、D3 = Explorer 11 準拠） | `Main.qml`, `SidePanel.qml`, `CaptionBar.qml` | S1, S2 |
 | **S4** | アイコンの絵文字脱却・第 1 段階（4-4）。D6 により**第 2 段階には進まない** | `FileTableView.qml`, `FileGridView.qml`, サイドパネル | S1 |
