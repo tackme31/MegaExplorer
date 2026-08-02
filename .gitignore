@@ -107,3 +107,7 @@ megaclient_statecache*.db-shm
 
 # vscode local folder
 .vscode/
+
+# ui-style skill output: screenshots of the running app (they contain the
+# developer's real MEGA account contents) plus its pid/registry-snapshot state
+.screenshots/

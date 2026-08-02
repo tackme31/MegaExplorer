@@ -149,7 +149,7 @@ for why). From the CLI: `cmake --preset msvc-debug` / `cmake --build --preset ms
 equivalent, which also documents each variable:
 
 ```
-cmake -S . -B build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug -G "Visual Studio 17 2022" -A x64 ^
+cmake -S . -B build/msvc-debug -G "Visual Studio 17 2022" -A x64 ^
     -DCMAKE_PREFIX_PATH=C:/Qt/6.11.1/msvc2022_64 -DCMAKE_BUILD_TYPE=Debug ^
     -DVCPKG_ROOT=third_party/vcpkg ^
     -DCMAKE_TOOLCHAIN_FILE=third_party/vcpkg/scripts/buildsystems/vcpkg.cmake ^
@@ -158,18 +158,18 @@ cmake -S . -B build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug -G "Visual Studio 17 
     -DVCPKG_OVERLAY_PORTS=third_party/sdk/cmake/vcpkg_overlay_ports ^
     -DVCPKG_OVERLAY_TRIPLETS=third_party/sdk/cmake/vcpkg_overlay_triplets ^
     -DVCPKG_MANIFEST_FEATURES="use-openssl;use-freeimage;use-ffmpeg;use-pdfium;sdk-tests"
-cmake --build build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug --config Debug --target appMegaExplorer
+cmake --build build/msvc-debug --config Debug --target appMegaExplorer
 ```
 
 Build only `appMegaExplorer`, not the full solution — the SDK's `gfxworker` tool currently fails to
 link, unrelated to our code (`docs/BUILD.md`). Test target: `MegaExplorerTests` instead, then run
 via `ctest --preset msvc-debug` or `build/msvc-debug/tests/Debug/MegaExplorerTests.exe` directly.
 
-Binary: `build/Desktop_Qt_6_11_1_MSVC2022_64bit_Debug/Debug/appMegaExplorer.exe`. Needs Qt's `bin`
+Binary: `build/msvc-debug/Debug/appMegaExplorer.exe`. Needs Qt's `bin`
 and vcpkg's `debug/bin` on `PATH` to run outside Qt Creator:
 
 ```
-set PATH=C:\Qt\6.11.1\msvc2022_64\bin;%CD%\build\Desktop_Qt_6_11_1_MSVC2022_64bit_Debug\vcpkg_installed\x64-windows-mega\debug\bin;%PATH%
+set PATH=C:\Qt\6.11.1\msvc2022_64\bin;%CD%\build\msvc-debug\vcpkg_installed\x64-windows-mega\debug\bin;%PATH%
 ```
 
 **Compiler warnings**: `appMegaExplorer` builds at `/W4`. At the end of any task touching
@@ -190,6 +190,16 @@ After adding/removing a `.qml` file from `qt_add_qml_module`'s `QML_FILES`, **re
 `QmlCacheGeneratedCode::...` symbols (hit during Phase 9, see its `docs/PROGRESS.md` log entry).
 
 No linter or CI yet.
+
+## Style tuning
+
+Visual/QML tweaking runs through the `ui-style` skill (`.claude/skills/ui-style/`) — invoked
+automatically when the task is about looks, or explicitly as `/ui-style`. Its
+`scripts/ui_shot.py` wraps the whole loop: `cycle <name>` does close → build → launch →
+screenshot in one command and drops a PNG in `.screenshots/` (gitignored), and `launch --size WxH`
+opens the window at a given size. Options and failure modes: the skill's `reference.md`. The
+`drive` subcommand (click/keystroke injection) hijacks the real mouse — **ask the user before
+running it**.
 
 ## Architecture
 
