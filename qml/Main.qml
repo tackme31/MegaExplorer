@@ -304,7 +304,7 @@ ApplicationWindow {
             // unlike before S8a there are no margins to restate here.
             RowLayout {
                 anchors.fill: parent
-                spacing: Theme.spacing.sm
+                spacing: Theme.spacing.md
 
                 ToolbarIconButton {
                     text: Theme.glyph.back

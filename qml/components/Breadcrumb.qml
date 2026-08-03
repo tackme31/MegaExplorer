@@ -144,7 +144,7 @@ Item {
                     Row {
                         id: segmentContent
                         anchors.centerIn: parent
-                        spacing: Theme.spacing.sm
+                        spacing: Theme.spacing.md
 
                         // Inside the delegate rather than beside the trail: when
                         // overflow folds the root away behind "«", the icon has
