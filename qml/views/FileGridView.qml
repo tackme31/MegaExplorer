@@ -177,8 +177,9 @@ GridView {
             // Explorer's own fallback -- which canDropHandlesOn rejects when
             // the dragged items already live there.
             root.dropRow = -1;
-            root.dropOnCurrentFolder = nav.canDropHandlesOn(
-                        handles, root.navController.currentHandle, root.navController.atRoot);
+            root.dropOnCurrentFolder = nav.canDropHandlesOn(handles,
+                                                            root.navController.currentHandle,
+                                                            root.navController.atRoot);
             return;
         }
 
@@ -197,8 +198,8 @@ GridView {
             // drag has no "already lives there" case -- so the viewport frame
             // stays lit for most of the gesture. That's Explorer's behavior,
             // not a bug.
-            root.dropOnCurrentFolder = uploadController.canUploadTo(
-                        root.navController.currentHandle, root.navController.atRoot);
+            root.dropOnCurrentFolder = uploadController.canUploadTo(root.navController.currentHandle,
+                                                                    root.navController.atRoot);
         }
         // Only the external branch touches drag.accepted: the move path relies
         // on implicit acceptance by key match.
@@ -236,9 +237,8 @@ GridView {
         // updateDropTarget above -- see FolderTreePanel.qml's onDropped.
         onDropped: drop => {
             autoScroller.release();
-            const target = root.dropRow >= 0
-                         ? root.navController.fileListModel.entryAt(root.dropRow).handle
-                         : root.navController.currentHandle;
+            const target = root.dropRow >= 0 ? root.navController.fileListModel.entryAt(root.dropRow).handle :
+                                               root.navController.currentHandle;
             const targetIsRoot = root.dropRow >= 0 ? false : root.navController.atRoot;
 
             if (root.dropRow >= 0 || root.dropOnCurrentFolder) {
@@ -297,8 +297,7 @@ GridView {
             const idx = root.indexAt(pos.x, pos.y);
             // Passive grab, so this also fires for taps inside the active
             // rename field -- see FileTableView.qml's matching guard.
-            if (root.renamingHandle !== 0
-                    && idx === root.navController.fileListModel.cursorRow())
+            if (root.renamingHandle !== 0 && idx === root.navController.fileListModel.cursorRow())
                 return;
             root.forceActiveFocus();
             if (idx < 0)
@@ -319,8 +318,8 @@ GridView {
         required property string thumbnailPath
         required property bool selected
 
-        readonly property bool renaming: root.renamingHandle !== 0
-                                        && root.renamingHandle === gridDelegateItem.handle
+        readonly property bool renaming: root.renamingHandle !== 0 && root.renamingHandle
+                                         === gridDelegateItem.handle
 
         readonly property bool dropTarget: root.dropRow === gridDelegateItem.index
 
@@ -366,12 +365,12 @@ GridView {
                     asynchronous: true
                 }
 
-                Label {
+                FileIcon {
                     anchors.centerIn: parent
                     visible: !gridDelegateItem.hasThumbnail || gridDelegateItem.isFolder
                              || gridDelegateItem.thumbnailPath === ""
-                    text: gridDelegateItem.isFolder ? "📁" : "📄"
-                    font.pixelSize: 32
+                    isFolder: gridDelegateItem.isFolder
+                    size: Theme.iconSize.lg
                 }
             }
 
@@ -438,7 +437,7 @@ GridView {
             // property; centroid is read for the position it changed to.
             onActiveTranslationChanged: if (dragHandler.active)
                                             root.dragProxy.moveTo(
-                                                dragHandler.centroid.scenePosition)
+                                                        dragHandler.centroid.scenePosition)
 
             onCanceled: root.dragProxy.cancel()
         }

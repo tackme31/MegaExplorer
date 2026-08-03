@@ -92,6 +92,25 @@ ColumnLayout {
 
             text: pinDelegate.name
 
+            // Spelled out only to get the leading icon in; the label half
+            // restates what the style's own contentItem already did. Kept the
+            // same shape as FolderTreePanel.qml's so the two halves of the
+            // panel gain the icon on identical terms (S4).
+            contentItem: RowLayout {
+                spacing: Theme.spacing.md
+
+                FileIcon {
+                    isFolder: true
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: pinDelegate.text
+                    elide: Text.ElideRight
+                    color: pinDelegate.palette.buttonText
+                }
+            }
+
             readonly property bool isCurrent: root.navController ? (!root.navController.atRoot
                                                                     && pinDelegate.handle
                                                                     === root.navController.currentHandle) :
@@ -128,7 +147,8 @@ ColumnLayout {
                         dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
                                     root.dragProxy.handles, pinDelegate.handle, false);
                     } else if (drag.hasUrls) {
-                        dropArea.accepting = uploadController.canUploadTo(pinDelegate.handle, false);
+                        dropArea.accepting = uploadController.canUploadTo(pinDelegate.handle,
+                                                                          false);
                         // Only the external branch touches drag.accepted: the
                         // move path relies on implicit acceptance by key match.
                         drag.accepted = dropArea.accepting;

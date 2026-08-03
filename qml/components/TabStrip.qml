@@ -132,7 +132,9 @@ RowLayout {
                     radius: Theme.radius.md
                     bottomLeftRadius: 0
                     bottomRightRadius: 0
-                    color: tabButton.checked ? Theme.color.surface : tabButton.pressed ? Theme.color.subtlePressed : tabButton.hovered ? Theme.color.subtleHover : "transparent"
+                    color: tabButton.checked ? Theme.color.surface : tabButton.pressed
+                                               ? Theme.color.subtlePressed : tabButton.hovered
+                                                 ? Theme.color.subtleHover : "transparent"
 
                     // Hairline between two adjacent tabs that are both plain --
                     // without it neighbouring inactive tabs merge into one
@@ -144,11 +146,11 @@ RowLayout {
                         width: Theme.border.thin
                         height: Theme.iconSize.sm
                         color: Theme.color.stroke
-                        visible: tabButton.index < tabsController.count - 1
-                                 && tabButton.index !== tabsController.currentIndex
-                                 && tabButton.index + 1 !== tabsController.currentIndex
-                                 && tabButton.index !== tabBar.hoveredIndex
-                                 && tabButton.index + 1 !== tabBar.hoveredIndex
+                        visible: tabButton.index < tabsController.count - 1 && tabButton.index
+                                 !== tabsController.currentIndex && tabButton.index + 1
+                                 !== tabsController.currentIndex && tabButton.index
+                                 !== tabBar.hoveredIndex && tabButton.index + 1
+                                 !== tabBar.hoveredIndex
                     }
                 }
 
@@ -179,21 +181,35 @@ RowLayout {
                 // implicitHeight from implicitContentHeight, so anything taller
                 // than the label in there sets the tab's height. Out here the
                 // 36px above stands, whatever the button turns out to measure.
-                contentItem: Label {
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
-                    // Reserves the strip the button overlays; contentItem is
-                    // laid out across the full availableWidth regardless.
-                    // Unconditional, so the label does not reflow when hover
-                    // brings the button in and out (a hidden Item keeps width).
-                    rightPadding: closeButton.width
-                    // Both spelled out rather than inherited: Fluent drove the
-                    // label's colour from its own contentItem, which went away
-                    // with the background above, and the size matching Fluent's
-                    // default is now a stated fact instead of a coincidence.
-                    font.pixelSize: Theme.font.body
-                    color: tabButton.checked ? Theme.color.text : Theme.color.textSecondary
-                    text: tabButton.text
+                contentItem: RowLayout {
+                    spacing: Theme.spacing.md
+
+                    // Explorer puts a folder on every tab; a tab always shows a
+                    // folder's contents, so there is nothing to switch on (S4).
+                    FileIcon {
+                        isFolder: true
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        // Reserves the strip the button overlays; contentItem
+                        // is laid out across the full availableWidth
+                        // regardless. Unconditional, so the label does not
+                        // reflow when hover brings the button in and out (a
+                        // hidden Item keeps width). A margin rather than the
+                        // padding this used to be: a RowLayout has none.
+                        Layout.rightMargin: closeButton.width
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        // Both spelled out rather than inherited: Fluent drove
+                        // the label's colour from its own contentItem, which
+                        // went away with the background above, and the size
+                        // matching Fluent's default is now a stated fact
+                        // instead of a coincidence.
+                        font.pixelSize: Theme.font.body
+                        color: tabButton.checked ? Theme.color.text : Theme.color.textSecondary
+                        text: tabButton.text
+                    }
                 }
 
                 ToolButton {
@@ -226,7 +242,9 @@ RowLayout {
                     implicitHeight: 20
                     background: Rectangle {
                         radius: Theme.radius.sm
-                        color: closeButton.pressed ? Theme.color.subtlePressed : closeButton.hovered ? Theme.color.subtleHover : "transparent"
+                        color: closeButton.pressed ? Theme.color.subtlePressed :
+                                                     closeButton.hovered ? Theme.color.subtleHover :
+                                                                           "transparent"
                     }
                     // Same glyph, same font, as the window's own close button a
                     // few pixels to the right (CaptionBar.qml); a literal "×"

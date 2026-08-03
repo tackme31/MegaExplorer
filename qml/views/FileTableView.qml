@@ -94,8 +94,8 @@ ColumnLayout {
         // x clamped inside the last column so a hover to its right still hits
         // the row, matching the TapHandler's own full-row behavior. Clamping is
         // payload-agnostic, so it stays ahead of the branch below.
-        const hit = tableView.cellAtPosition(
-                      Qt.point(Math.min(pos.x, tableView.contentWidth - 1), pos.y), false);
+        const hit = tableView.cellAtPosition(Qt.point(Math.min(pos.x, tableView.contentWidth - 1),
+                                                      pos.y), false);
         const entry = hit.y < 0 ? ({}) : root.navController.fileListModel.entryAt(hit.y);
 
         // Internal (move) vs. external (upload), same split as
@@ -112,8 +112,9 @@ ColumnLayout {
             }
 
             root.dropRow = -1;
-            root.dropOnCurrentFolder = nav.canDropHandlesOn(
-                        handles, root.navController.currentHandle, root.navController.atRoot);
+            root.dropOnCurrentFolder = nav.canDropHandlesOn(handles,
+                                                            root.navController.currentHandle,
+                                                            root.navController.atRoot);
             return;
         }
 
@@ -131,8 +132,8 @@ ColumnLayout {
             // Almost always true for an external drag (there's no "already
             // lives there" case), so the viewport frame stays lit for most of
             // the gesture -- Explorer's behavior, not a bug.
-            root.dropOnCurrentFolder = uploadController.canUploadTo(
-                        root.navController.currentHandle, root.navController.atRoot);
+            root.dropOnCurrentFolder = uploadController.canUploadTo(root.navController.currentHandle,
+                                                                    root.navController.atRoot);
         }
         // Only the external branch touches drag.accepted: the move path relies
         // on implicit acceptance by key match.
@@ -475,8 +476,9 @@ ColumnLayout {
         columnWidthProvider: function (column) {
             if (column !== 0)
                 return root.fixedColumnWidth(column);
-            return Math.max(root.minColumnWidths[0], tableView.width - root.fixedColumnWidth(
-                                1) - root.fixedColumnWidth(2));
+            return Math.max(root.minColumnWidths[0], tableView.width - root.fixedColumnWidth(1) - root.fixedColumnWidth(
+                                2));
+
         }
         // The provider is only consulted during a layout pass, and resizing
         // the window alone doesn't trigger one.
@@ -530,9 +532,9 @@ ColumnLayout {
             // updateDropTarget above -- see FolderTreePanel.qml's onDropped.
             onDropped: drop => {
                 autoScroller.release();
-                const target = root.dropRow >= 0
-                             ? root.navController.fileListModel.entryAt(root.dropRow).handle
-                             : root.navController.currentHandle;
+                const target = root.dropRow >= 0 ? root.navController.fileListModel.entryAt(
+                                                       root.dropRow).handle :
+                                                   root.navController.currentHandle;
                 const targetIsRoot = root.dropRow >= 0 ? false : root.navController.atRoot;
 
                 if (root.dropRow >= 0 || root.dropOnCurrentFolder) {
@@ -575,8 +577,8 @@ ColumnLayout {
                 // cursor row by construction (see beginRename), so that's the
                 // one to stand down for; a tap on any other row falls through
                 // and commits via focus loss, which is the wanted behavior.
-                if (root.renamingHandle !== 0
-                        && hit.y === root.navController.fileListModel.cursorRow())
+                if (root.renamingHandle !== 0 && hit.y
+                        === root.navController.fileListModel.cursorRow())
                     return;
                 root.forceActiveFocus();
                 if (hit.y < 0)
@@ -600,9 +602,8 @@ ColumnLayout {
             required property bool selected
 
             // Only the name column of the one renamed row turns into an editor.
-            readonly property bool renaming: root.renamingHandle !== 0
-                                             && root.renamingHandle === cell.handle
-                                             && cell.column === 0
+            readonly property bool renaming: root.renamingHandle !== 0 && root.renamingHandle
+                                             === cell.handle && cell.column === 0
 
             color: cell.selected ? Qt.rgba(sysPalette.highlight.r, sysPalette.highlight.g,
                                            sysPalette.highlight.b, 0.35) : "transparent"
@@ -617,29 +618,46 @@ ColumnLayout {
                 border.color: sysPalette.highlight
             }
 
-            Label {
+            // The icon is a sibling of the label rather than a prefix on its
+            // text: as part of the string it rode on Segoe UI Emoji (colour,
+            // against an otherwise monochrome icon set), sat a single space
+            // away from the name, and got eaten by ElideMiddle on a narrow
+            // column (4-4).
+            RowLayout {
                 visible: !cell.renaming
                 anchors.fill: parent
                 anchors.margins: 4
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: cell.column === 2 ? Text.AlignRight : Text.AlignLeft
-                elide: Text.ElideMiddle
-                text: {
-                    switch (cell.column) {
-                    case 0:
-                        return (cell.isFolder ? "📁 " : "📄 ") + cell.name;
-                    case 1:
-                        // Folders have no modification time from the SDK
-                        // (MegaNode::getModificationTime() returns 0 for
-                        // them) -- formatting that would show the Epoch
-                        // instead of a blank cell, unlike Explorer.
-                        return cell.isFolder ? "" : Qt.formatDateTime(new Date(
-                                                                          cell.modificationTime
-                                                                          * 1000), root.modifiedDateFormat);
-                    case 2:
-                        return cell.formattedSize;
+                spacing: Theme.spacing.md
+
+                FileIcon {
+                    // An invisible item is skipped by RowLayout entirely, so
+                    // the date and size columns keep their full width.
+                    visible: cell.column === 0
+                    isFolder: cell.isFolder
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    verticalAlignment: Text.AlignVCenter
+                    horizontalAlignment: cell.column === 2 ? Text.AlignRight : Text.AlignLeft
+                    elide: Text.ElideMiddle
+                    text: {
+                        switch (cell.column) {
+                        case 0:
+                            return cell.name;
+                        case 1:
+                            // Folders have no modification time from the SDK
+                            // (MegaNode::getModificationTime() returns 0 for
+                            // them) -- formatting that would show the Epoch
+                            // instead of a blank cell, unlike Explorer.
+                            return cell.isFolder ? "" : Qt.formatDateTime(new Date(
+                                                                              cell.modificationTime
+                                                                              * 1000), root.modifiedDateFormat);
+                        case 2:
+                            return cell.formattedSize;
+                        }
+                        return "";
                     }
-                    return "";
                 }
             }
 
@@ -692,7 +710,7 @@ ColumnLayout {
 
                 onActiveTranslationChanged: if (dragHandler.active)
                                                 root.dragProxy.moveTo(
-                                                    dragHandler.centroid.scenePosition)
+                                                            dragHandler.centroid.scenePosition)
 
                 onCanceled: root.dragProxy.cancel()
             }

@@ -3,6 +3,7 @@ import QtQuick
 // style selection per Qt docs' "Styling Qt Quick Controls"), same rule as
 // Main.qml/Breadcrumb.qml/FileTableView.qml.
 import QtQuick.Controls.FluentWinUI3
+import QtQuick.Layouts
 
 // Left side-panel folder tree (Phase 10). model is folderTreeModel, an
 // app-lifetime context property shared across every tab (main.cpp) -- but
@@ -132,16 +133,29 @@ TreeView {
         // it: there is no horizontal scroll, and MEGA folder names run long.
         // The stock highlighted/highlightedText branch is dropped because
         // highlighted needs a selectionModel, which this TreeView has none of.
-        contentItem: Label {
-            id: nameLabel
-            text: treeDelegate.name
-            elide: Text.ElideRight
-            color: treeDelegate.palette.buttonText
+        // The icon (S4) stays clear of the indicator: the chevron is the
+        // style's own hit area and the file-header comment above explains why
+        // that must not be taken over. Row height is unaffected -- Basic sizes
+        // the row off the 40px indicator, which this 16px row does not reach.
+        contentItem: RowLayout {
+            spacing: Theme.spacing.md
             visible: !treeDelegate.editing
 
-            ToolTip.text: treeDelegate.name
-            ToolTip.delay: 500
-            ToolTip.visible: treeDelegate.hovered && nameLabel.truncated
+            FileIcon {
+                isFolder: true
+            }
+
+            Label {
+                id: nameLabel
+                Layout.fillWidth: true
+                text: treeDelegate.name
+                elide: Text.ElideRight
+                color: treeDelegate.palette.buttonText
+
+                ToolTip.text: treeDelegate.name
+                ToolTip.delay: 500
+                ToolTip.visible: treeDelegate.hovered && nameLabel.truncated
+            }
         }
 
         // Per delegate, unlike the file views' single view-level DropArea: a

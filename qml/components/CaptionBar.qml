@@ -149,14 +149,15 @@ Item {
         }
     }
 
-    // Segoe Fluent Icons is the Windows 11 system icon font; the four
-    // glyphs used here carry the same code points in Windows 10's Segoe
-    // MDL2 Assets, so both resolve without a fallback path.
+    // Segoe Fluent Icons is the Windows 11 system icon font; the four glyphs
+    // used here carry the same code points in Windows 10's Segoe MDL2 Assets,
+    // so both resolve without a fallback path. Re-checked against both fonts'
+    // cmap when S4 took the rest of the app onto the same font.
     component CaptionButton: ToolButton {
         focusPolicy: Qt.NoFocus
         implicitWidth: 46
         implicitHeight: root.implicitHeight
-        font.family: "Segoe Fluent Icons"
+        font.family: Theme.font.iconFamily
         font.pixelSize: 10
     }
 }

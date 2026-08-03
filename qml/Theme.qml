@@ -2,9 +2,9 @@ pragma Singleton
 
 import QtQuick
 
-// Design tokens, defined in one place (docs/DESIGN_IMPROVEMENT.md 0-1). This
-// phase (S1) only defines them -- nothing consumes them yet; the existing views
-// keep their inline literals until S2 onwards replaces them section by section.
+// Design tokens, defined in one place (docs/DESIGN_IMPROVEMENT.md 0-1). S1
+// defined them; S2 onwards replaces the views' inline literals with them
+// section by section, so some tokens still have no consumer yet.
 //
 // Structure follows Qt's own FluentWinUI3/Config.qml: pragma Singleton over a
 // QtObject, grouped by nested read-only QtObjects, light/dark picked per token
@@ -56,6 +56,23 @@ QtObject {
         readonly property int lg: 32 // grid tiles (S8)
     }
 
+    // Segoe Fluent Icons code points, spelled as escapes: the raw glyphs sit in
+    // the private use area, where an editor or a grep shows nothing at all.
+    // Both of these also exist at the same code point in Windows 10's Segoe
+    // MDL2 Assets (checked against both fonts' cmap), so no fallback path is
+    // needed -- the same conclusion CaptionBar.qml records for the window
+    // buttons. Later phases add their glyphs here (S6 sort arrows, S7
+    // breadcrumb chevron and nav buttons, S9 view-mode toggles).
+    // Both are outlines: the font has no solid folder. E838, EC50 and F12B were
+    // all rendered and all draw a stroked folder, some with extra inner detail
+    // that turns to mush at 16px -- Explorer's filled yellow folder is a raster
+    // asset out of imageres.dll, not a glyph. E8B7 is the cleanest of them, and
+    // accentFolder carries the Explorer association on its own.
+    readonly property QtObject glyph: QtObject {
+        readonly property string folder: "\uE8B7" // Folder
+        readonly property string file: "\uE7C3"   // Page
+    }
+
     readonly property QtObject color: QtObject {
         // D3: Explorer 11 ordering -- the panel side is the lighter surface.
         readonly property color surface: root.isLight ? "#ffffff" : "#202020"
@@ -77,6 +94,11 @@ QtObject {
                                                    root.sysPalette.highlight.g,
                                                    root.sysPalette.highlight.b, 0.85)
         readonly property color danger: root.isLight ? "#c42b1c" : "#ff99a4"
+
+        // The folder is the one coloured thing in an otherwise monochrome icon
+        // set, which is what makes it readable at 16px (D3 = Explorer 11).
+        // Files stay textSecondary so the two never compete.
+        readonly property color accentFolder: root.isLight ? "#ffb900" : "#ffd166"
 
         // Copied verbatim from FluentWinUI3/impl/ButtonBackground.qml's `subtle`
         // branch, so a control we background ourselves keeps hover/press

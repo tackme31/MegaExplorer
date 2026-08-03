@@ -128,6 +128,7 @@ qt_add_qml_module(appMegaExplorer
         qml/components/DragProxy.qml
         qml/components/ErrorToast.qml
         qml/components/FileContextMenu.qml
+        qml/components/FileIcon.qml
         qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
         qml/components/InlineRenameField.qml
