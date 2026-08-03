@@ -80,13 +80,12 @@ QtObject {
     // is needed -- the same conclusion CaptionBar.qml records for the window
     // buttons. Later phases add their glyphs here (S6 sort arrows, S7
     // breadcrumb chevron and nav buttons, S9 view-mode toggles).
-    // folder/file are outlines: the font has no solid folder. E838, EC50 and
-    // F12B were all rendered and all draw a stroked folder, some with extra
-    // inner detail that turns to mush at 16px -- Explorer's filled yellow folder
-    // is a raster asset out of imageres.dll, not a glyph. E8B7 is the cleanest
-    // of them, and accentFolder carries the Explorer association on its own.
+    // The folder is E8D5 FolderFill, a solid shape -- closest to Explorer's own
+    // filled yellow folder, which is a raster asset out of imageres.dll rather
+    // than a glyph. file stays an outline; the font has no filled page that
+    // reads at 16px.
     readonly property QtObject glyph: QtObject {
-        readonly property string folder: "\uE8B7" // Folder
+        readonly property string folder: "\uE8D5" // FolderFill
         readonly property string file: "\uE7C3"   // Page
         // Two glyphs rather than one rotated 90 degrees (what Basic's
         // TreeViewDelegate does with its arrow PNG): the font already draws
