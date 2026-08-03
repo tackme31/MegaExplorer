@@ -64,6 +64,12 @@ ColumnLayout {
 
     readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size")]
 
+    // Row under the pointer, shared by all three of its cells (S6). The
+    // delegate is a cell, so a HoverHandler on it lights that cell alone --
+    // every cell writes its own row here instead, and every cell reads it, so
+    // the fill spans the row the way Explorer's does.
+    property int hoverRow: -1
+
     // Drag & drop (Phase 14a), the mirror of FileGridView.qml's -- see the
     // comments there. The one difference is hit-testing: this view's delegate
     // is a cell, so a row is resolved through TableView.cellAtPosition rather
@@ -138,10 +144,6 @@ ColumnLayout {
         // Only the external branch touches drag.accepted: the move path relies
         // on implicit acceptance by key match.
         drag.accepted = root.dropRow >= 0 || root.dropOnCurrentFolder;
-    }
-
-    SystemPalette {
-        id: sysPalette
     }
 
     // Matches (English) Windows Explorer's Date modified column: short date
@@ -401,7 +403,7 @@ ColumnLayout {
 
         delegate: Rectangle {
             id: headerCell
-            implicitHeight: 32
+            implicitHeight: Theme.rowHeight.normal
             required property int column
 
             // FluentWinUI3 ships no HorizontalHeaderView delegate of its own
@@ -411,16 +413,59 @@ ColumnLayout {
             // Windows) foreground, producing invisible white-on-white text.
             // transparent lets the real themed background show through,
             // same as the row delegate below.
-            color: "transparent"
+            color: headerHover.hovered ? Theme.color.subtleHover : "transparent"
 
-            Label {
-                anchors.fill: parent
-                anchors.margins: 6
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
-                text: root.columnLabels[headerCell.column] + (root.sortColumn === headerCell.column
-                                                              ? (root.sortAscending ? " ▲" : " ▼") :
-                                                                "")
+            // A header cell sorts on click, and nothing else here said so.
+            HoverHandler {
+                id: headerHover
+            }
+
+            // Explorer draws these inside the header only, never down the rows.
+            // On the left edge rather than the right, so the last column ends
+            // without a line butting up against the vertical scroll bar.
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.topMargin: Theme.spacing.sm
+                anchors.bottomMargin: Theme.spacing.sm
+                width: Theme.border.thin
+                visible: headerCell.column > 0
+                color: Theme.color.stroke
+            }
+
+            // A plain Row, not a RowLayout: Layout.fillWidth on the title would
+            // push the sort chevron to the cell's right edge, and the decision
+            // (S6-c) is to keep it right after the text. The title's width is
+            // therefore explicit, so it still elides in a narrow column.
+            Row {
+                id: headerRow
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: Theme.spacing.md
+                anchors.rightMargin: Theme.spacing.md
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Theme.spacing.sm
+
+                Label {
+                    width: Math.min(implicitWidth, headerRow.width - (sortGlyph.visible
+                                                                      ? sortGlyph.width
+                                                                        + headerRow.spacing : 0))
+                    font.pixelSize: Theme.font.body
+                    color: Theme.color.text
+                    elide: Text.ElideRight
+                    text: root.columnLabels[headerCell.column]
+                }
+
+                Label {
+                    id: sortGlyph
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.sortColumn === headerCell.column
+                    font.family: Theme.font.iconFamily
+                    font.pixelSize: Theme.font.caption
+                    color: Theme.color.textSecondary
+                    text: root.sortAscending ? Theme.glyph.chevronUp : Theme.glyph.chevronDown
+                }
             }
 
             // Same TapHandler-on-a-child pattern as the row delegate below --
@@ -431,6 +476,15 @@ ColumnLayout {
                 onTapped: root.requestSort(headerCell.column)
             }
         }
+    }
+
+    // Sibling of the header rather than part of its delegate: delegates only
+    // exist across contentWidth, so a line drawn there stops short whenever the
+    // columns don't fill the viewport, and scrolls away when they overflow it.
+    Rectangle {
+        Layout.fillWidth: true
+        Layout.preferredHeight: Theme.border.thin
+        color: Theme.color.stroke
     }
 
     TableView {
@@ -557,8 +611,8 @@ ColumnLayout {
             anchors.fill: parent
             visible: root.dropOnCurrentFolder
             color: "transparent"
-            border.width: 2
-            border.color: sysPalette.highlight
+            border.width: Theme.border.drop
+            border.color: Theme.color.accent
         }
 
         TapHandler {
@@ -590,7 +644,7 @@ ColumnLayout {
 
         delegate: Rectangle {
             id: cell
-            implicitHeight: 28
+            implicitHeight: Theme.rowHeight.normal
             required property int row
             required property int column
             required property string name
@@ -605,8 +659,26 @@ ColumnLayout {
             readonly property bool renaming: root.renamingHandle !== 0 && root.renamingHandle
                                              === cell.handle && cell.column === 0
 
-            color: cell.selected ? Qt.rgba(sysPalette.highlight.r, sysPalette.highlight.g,
-                                           sysPalette.highlight.b, 0.35) : "transparent"
+            // No rounded corners here, unlike the side panel's pill (S5-a):
+            // this delegate is a cell, so a radius would round off the middle
+            // of a row at every column boundary.
+            color: cell.selected ? Theme.color.selection : (root.hoverRow === cell.row
+                                                            ? Theme.color.subtleHover :
+                                                              "transparent")
+
+            // Writes the shared row (see root.hoverRow): the last cell to lose
+            // the pointer clears it, and a cell that lost it after another one
+            // already claimed a different row leaves that claim alone.
+            HoverHandler {
+                id: cellHover
+                onHoveredChanged: {
+                    if (cellHover.hovered)
+                        root.hoverRow = cell.row;
+                    else if (root.hoverRow === cell.row)
+                        root.hoverRow = -1;
+                }
+            }
+
             // Outlined rather than filled, so a drop target that also happens
             // to be selected still reads as two distinct states. Top/bottom
             // only, so adjacent cells of the same row join into one band.
@@ -614,8 +686,8 @@ ColumnLayout {
                 anchors.fill: parent
                 visible: root.dropRow === cell.row
                 color: "transparent"
-                border.width: 2
-                border.color: sysPalette.highlight
+                border.width: Theme.border.drop
+                border.color: Theme.color.accent
             }
 
             // The icon is a sibling of the label rather than a prefix on its
@@ -626,7 +698,12 @@ ColumnLayout {
             RowLayout {
                 visible: !cell.renaming
                 anchors.fill: parent
-                anchors.margins: 4
+                // Horizontal only, and the same token the header uses (S6-a):
+                // the two used to be 4 and 6, which left the header text 2px off
+                // the row content it labels. Vertical padding falls out of the
+                // 32px row height around a 16px icon, so it isn't spelled here.
+                anchors.leftMargin: Theme.spacing.md
+                anchors.rightMargin: Theme.spacing.md
                 spacing: Theme.spacing.md
 
                 FileIcon {
@@ -638,6 +715,8 @@ ColumnLayout {
 
                 Label {
                     Layout.fillWidth: true
+                    font.pixelSize: Theme.font.body
+                    color: Theme.color.text
                     verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: cell.column === 2 ? Text.AlignRight : Text.AlignLeft
                     elide: Text.ElideMiddle
@@ -668,7 +747,7 @@ ColumnLayout {
             // instantiates nothing until active turns true.
             Loader {
                 anchors.fill: parent
-                anchors.margins: 2
+                anchors.margins: Theme.spacing.xs
                 active: cell.renaming
                 sourceComponent: Component {
                     InlineRenameField {
