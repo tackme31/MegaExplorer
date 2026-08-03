@@ -10,7 +10,7 @@ session lives in companion docs, linked from the relevant section below rather t
   `docs/MEMO.md`'s former roadmap section moved here (2026-07-28, to end dual-tracking drift between
   the two files).
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
-  and the per-stage log for S0–S11 (S0–S8 done, plus the unplanned S6a/S8a corrections). Visual work goes here, not in `docs/PROGRESS.md`;
+  and the per-stage log for S0–S11 (S0–S8 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
   the three C++ changes it caused are cross-linked from both.
 - `docs/ARCHITECTURE.md` — directory layout detail + the ports-and-adapters/DI design.
 - `docs/BUILD.md` — rationale behind each build gotcha below (why VS generator, why

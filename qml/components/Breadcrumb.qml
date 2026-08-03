@@ -26,7 +26,14 @@ Item {
 
     property alias model: repeater.model
 
-    implicitHeight: row.implicitHeight
+    // Inside the frame, before the first segment's own 4px -- so the frame's
+    // inner edge sits 8px from the leading glyph, matching Explorer.
+    readonly property int contentPadding: Theme.spacing.sm
+
+    // Only a fallback: in the toolbar the frame is sized to the search field
+    // beside it (Main.qml). The inner row is 28, smaller than the frame, so it
+    // can't be what states this any more.
+    implicitHeight: Theme.rowHeight.normal
 
     // Index of the first (leftmost) segment still shown; segments before it
     // are hidden and represented by the "«" indicator. The last segment
@@ -48,7 +55,7 @@ Item {
                 if (item)
                     total += item.implicitWidth;
             }
-            if (total <= root.width)
+            if (total <= root.width - 2 * root.contentPadding)
                 break;
             ++idx;
         }
@@ -57,9 +64,24 @@ Item {
 
     onWidthChanged: Qt.callLater(root.relayout)
 
+    // Explorer draws its address bar as a field, not as bare text on the band
+    // (S8b). Declared before the Row so it paints underneath it without a z
+    // fight. fieldFill is the SearchField sprite's own fill, so the two boxes
+    // read as the same kind of surface; the border stays a flat stroke where
+    // the sprite has a top-to-bottom gradient (5.9%->15.7% black in light),
+    // which a Rectangle can't express and which is invisible at this size.
+    Rectangle {
+        anchors.fill: parent
+        radius: Theme.radius.sm
+        color: Theme.color.fieldFill
+        border.width: Theme.border.thin
+        border.color: Theme.color.stroke
+    }
+
     Row {
         id: row
         anchors.left: parent.left
+        anchors.leftMargin: root.contentPadding
         anchors.verticalCenter: parent.verticalCenter
 
         Label {
@@ -127,8 +149,16 @@ Item {
                         // Inside the delegate rather than beside the trail: when
                         // overflow folds the root away behind "«", the icon has
                         // to go with it (S7-d).
+                        //
+                        // Both children carry the same explicit height for the
+                        // reason the outer Row's children do -- S8a fixed that
+                        // level and missed this one (S8b). A 16px icon font and
+                        // a 14px text font have different ascents, so without a
+                        // shared box they top-align and the cloud rides ~2px
+                        // high.
                         Label {
                             visible: delegateRoot.modelData.isRoot
+                            height: Theme.rowHeight.compact
                             verticalAlignment: Text.AlignVCenter
                             font.family: Theme.font.iconFamily
                             font.pixelSize: Theme.iconSize.sm
@@ -137,7 +167,11 @@ Item {
                         }
 
                         Label {
+                            height: Theme.rowHeight.compact
                             verticalAlignment: Text.AlignVCenter
+                            // Fluent's own default, stated so the metrics this
+                            // alignment depends on aren't implicit.
+                            font.pixelSize: Theme.font.body
                             elide: Text.ElideRight
                             text: delegateRoot.modelData.isRoot ? qsTr("Cloud Drive") :
                                                                   delegateRoot.modelData.name

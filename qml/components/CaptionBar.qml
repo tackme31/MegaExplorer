@@ -40,9 +40,7 @@ Item {
     // which showed the indicator correctly but left the row 8px thicker than
     // Explorer's.
     //
-    // The token is shared with Main.qml's toolbar row, which has to match this
-    // height for the two to read as one band (S7-c).
-    implicitHeight: Theme.rowHeight.bar
+    implicitHeight: Theme.rowHeight.caption
 
     // Called by Main.qml's own Component.onCompleted rather than run from
     // ours: every call below needs windowAgent.setup() to have happened

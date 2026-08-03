@@ -43,9 +43,11 @@ QtObject {
     readonly property QtObject rowHeight: QtObject {
         readonly property int compact: 28 // tree + pin rows (D1a)
         readonly property int normal: 32  // detail view rows and header (S6)
-        // Caption row and the toolbar row directly under it (S7-c): the two
-        // read as one band only while they're the same height.
-        readonly property int bar: 40
+        readonly property int caption: 40 // caption row / tab strip (S2)
+        // Address bar row. Taller than the caption above it -- both are the
+        // same surface, but Explorer 11 measures 48 here and 40 there, and the
+        // breadcrumb frame added in S8b needs the extra room to sit inside.
+        readonly property int toolbar: 48
     }
 
     // Tree-row geometry, shared so the pin rows can derive the same numbers
@@ -133,6 +135,15 @@ QtObject {
         readonly property color surface: root.isLight ? "#ffffff" : "#202020"
         readonly property color surfaceAlt: root.isLight ? "#f3f3f3" : "#272727"
         readonly property color stroke: root.isLight ? "#e5e5e5" : "#303030"
+
+        // Fill of a FluentWinUI3 input field. The style paints no colour for it
+        // -- the background is a 9-patch sprite (light|dark/images/
+        // combobox-background.png) of plain white at alpha 178/255 light,
+        // 15/255 dark, i.e. WinUI's ControlFillColorDefault. Restated as an
+        // alpha so anything we frame ourselves composites to the same shade the
+        // sprite does over the same surface (S8b: the breadcrumb frame sits
+        // beside a SearchField and the two were visibly different).
+        readonly property color fieldFill: Qt.rgba(1, 1, 1, root.isLight ? 178 / 255 : 15 / 255)
 
         readonly property color text: root.sysPalette.text
         // De-emphasis by colour, not item opacity, so it stays clean when the

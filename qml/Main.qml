@@ -194,9 +194,11 @@ ApplicationWindow {
         // strip onto the caption row itself (see CaptionBar.qml), leaving the
         // wrapper with a single child and no reason to exist.
         ToolBar {
-            // Matches the caption row above it so the two read as one band
-            // (S7-c); the default would be whatever the tallest child asks for.
-            implicitHeight: Theme.rowHeight.bar
+            // Explorer 11's address bar row, measured (S8b). Taller than the
+            // caption row above it, which stays at 40 -- they share a surface,
+            // not a height. The default would be whatever the tallest child
+            // asks for.
+            implicitHeight: Theme.rowHeight.toolbar
 
             // A ToolBar is a Pane, so the RowLayout declared below is not the
             // contentItem -- it's a child of the implicit one the Pane creates,
@@ -288,13 +290,20 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 700
                     Layout.minimumWidth: 0
-                    Layout.fillHeight: true
+                    // Not fillHeight: since S8b the trail is drawn inside a
+                    // framed box, and the frame has to be the same height as
+                    // the search field beside it rather than the whole band.
+                    // Bound to that field's actual height instead of a token
+                    // because it's the style that decides it (34, see below).
+                    Layout.preferredHeight: searchField.height
+                    Layout.alignment: Qt.AlignVCenter
                 }
 
                 // Qt 6.10's own search control, so the magnifier and the clear
                 // button come from the style rather than from us (S7-b). It has
                 // no placeholderText, which is the price of that.
                 SearchField {
+                    id: searchField
                     Layout.fillWidth: true
                     Layout.preferredWidth: 300
                     // Unlike the breadcrumb beside it, this must not collapse to
