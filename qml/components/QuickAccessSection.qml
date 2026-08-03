@@ -120,6 +120,19 @@ ColumnLayout {
                     font.pixelSize: Theme.font.body
                     color: Theme.color.text
                 }
+
+                // Explorer's trailing pin marker -- what tells a pinned
+                // shortcut apart from an ordinary tree row. Indicator only: the
+                // row is one click target, and unpinning stays in the
+                // right-click menu.
+                Label {
+                    Layout.preferredWidth: Theme.iconSize.sm
+                    horizontalAlignment: Text.AlignHCenter
+                    font.family: Theme.font.iconFamily
+                    font.pixelSize: Theme.iconSize.sm
+                    color: Theme.color.textSecondary
+                    text: Theme.glyph.pin
+                }
             }
 
             readonly property bool isCurrent: root.navController ? (!root.navController.atRoot

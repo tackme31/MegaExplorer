@@ -93,6 +93,10 @@ QtObject {
         // both, and a rotation would need a transformOrigin to stay centred.
         readonly property string chevronRight: "\uE76C" // ChevronRight
         readonly property string chevronDown: "\uE70D"  // ChevronDown
+        // Explorer's quick-access rows carry this at their right edge. The
+        // diagonal outline (Pin) rather than E840 Pinned, which is upright and
+        // filled -- Explorer draws the diagonal one.
+        readonly property string pin: "\uE718" // Pin
     }
 
     readonly property QtObject color: QtObject {
