@@ -1825,3 +1825,45 @@ size), so `clamp(80, 200, tabBar.availableWidth / tabBar.count)` decides, and th
   idea and in direct conflict with caption dragging. Nothing regresses by leaving it out — neither
   ever existed.
 - Everything 17a lists as not done stays not done.
+
+---
+
+## UI polish pass S0–S5 (done) — the C++ half
+
+The UI-tidying stages themselves are logged in `docs/DESIGN_IMPROVEMENT.md` (findings, decisions,
+per-stage measurements), not here: they are QML work with no phase-level architecture to record.
+Two of them did reach C++, and those belong next to the rest of the interface's history.
+
+**S3** added `MEGAEXPLORER_COLOR_SCHEME=light|dark`, read in `main.cpp` right after
+`QGuiApplication` is constructed and applied via `QStyleHints::setColorScheme()` (Qt 6.8+). One call
+switches the whole UI, because FluentWinUI3 and `qml/Theme.qml` both read
+`Application.styleHints.colorScheme` — style and design tokens cannot disagree. It exists so
+light/dark can be checked without touching the Windows personalization setting; the eventual
+settings screen replaces where the value comes from, not what it does.
+
+**S5** added `IMegaClient::hasSubfolders(handle, isRoot)` — the **sixth** synchronous method, after
+`currentSessionToken` / `currentUserHandle` / `checkMove` / `checkUpload` / `findChildFiles`. Same
+justification as the last three (an in-memory query against the node tree already held since
+`fetchNodes`, no round-trip), plus one of its own: its caller is
+`QAbstractItemModel::hasChildren()`, which answers the view inline and has nowhere to put a
+callback.
+
+It exists because `FolderTreeModel::hasChildren()` used to answer "yes" for any node it hadn't
+loaded, so **every** folder in the side panel got an expand chevron, childless ones included. The
+obvious repair — flip the answer once a load comes back empty — doesn't work: `TreeView`'s internal
+proxy is not guaranteed to re-query `hasChildren()` after a plain `dataChanged()`, so the arrow
+could linger anyway (Phase 10 recorded this as a known limitation).
+
+`MegaSdkClient` implements it with `MegaApi::getNumChildFolders()` rather than walking
+`getChildren()`, which avoids allocating a `MegaNodeList` per query — this runs per visible row on
+every layout pass. `FolderTreeService` collapses the `Result<bool>` to the plain bool the model
+returns, reading a failure as "no children": a handle that no longer resolves should not carry an
+expand arrow. `FileEntry` was deliberately **not** given a `hasSubfolders` field, the other option
+on the table — nothing outside the folder tree wants it, and every other producer of a `FileEntry`
+would have had to leave it meaningless.
+
+> **TRAP for tests**: `Result<bool>::success` defaults to false (`src/core/Result.h`), so gmock's
+> default action for an unstubbed `hasSubfolders()` is a *failure*, which the service reads as "no
+> children". `FolderTreeModelTest::SetUp` carries a blanket `EXPECT_CALL` for it — same shape as
+> `UploadServiceTest`'s for `checkUpload`, and the same failure mode if it's missing: unrelated
+> assertions fail, with nothing pointing at the cause.

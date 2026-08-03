@@ -28,6 +28,14 @@ public:
                         bool isRoot,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
+    // Whether this folder would have anything to show if expanded. Synchronous
+    // like IMegaClient::hasSubfolders itself, because its one caller is
+    // FolderTreeModel::hasChildren(), which has to answer the view inline.
+    // Collapses the Result to the bool that caller returns: a handle that no
+    // longer resolves simply gets no expand arrow, which is the same thing the
+    // user would see after trying to expand it.
+    bool hasSubfolders(std::uint64_t handle, bool isRoot) const;
+
 private:
     std::shared_ptr<IMegaClient> mClient;
 };

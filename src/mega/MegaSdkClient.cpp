@@ -532,14 +532,13 @@ void MegaSdkClient::moveNode(std::uint64_t handle,
 }
 
 Result<void> MegaSdkClient::checkMove(std::uint64_t handle,
-                                     std::uint64_t newParentHandle,
-                                     bool newParentIsRoot) const
+                                      std::uint64_t newParentHandle,
+                                      bool newParentIsRoot) const
 {
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     std::unique_ptr<mega::MegaNode> parent = resolveNode(newParentHandle, newParentIsRoot);
     if (!node || !parent)
-        return Result<void>::fail("Source or destination no longer exists",
-                                  MegaErrorCode::kENoEnt);
+        return Result<void>::fail("Source or destination no longer exists", MegaErrorCode::kENoEnt);
 
     // Stricter than the SDK, which happily accepts a move to where the node
     // already is. Detected here rather than by comparing handles in a caller
@@ -582,10 +581,8 @@ Result<void> MegaSdkClient::checkUpload(std::uint64_t parentHandle, bool parentI
     return Result<void>::ok();
 }
 
-Result<std::vector<FileEntry>>
-MegaSdkClient::findChildFiles(std::uint64_t parentHandle,
-                              bool parentIsRoot,
-                              const std::vector<std::string>& names) const
+Result<std::vector<FileEntry>> MegaSdkClient::findChildFiles(
+    std::uint64_t parentHandle, bool parentIsRoot, const std::vector<std::string>& names) const
 {
     std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
     if (!parent)
@@ -602,6 +599,18 @@ MegaSdkClient::findChildFiles(std::uint64_t parentHandle,
             hits.push_back(nodeToEntry(child.get()));
     }
     return Result<std::vector<FileEntry>>::ok(std::move(hits));
+}
+
+Result<bool> MegaSdkClient::hasSubfolders(std::uint64_t handle, bool isRoot) const
+{
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, isRoot);
+    if (!node)
+        return Result<bool>::fail("No node with the given handle", MegaErrorCode::kENoEnt);
+
+    // getNumChildFolders rather than walking getChildren(): it counts against
+    // the node tree already in memory since fetchNodes(), so this costs no
+    // round-trip and no MegaNodeList allocation.
+    return Result<bool>::ok(node->isFolder() && mApi->getNumChildFolders(node.get()) > 0);
 }
 
 std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot) const

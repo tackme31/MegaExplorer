@@ -36,22 +36,21 @@ ColumnLayout {
     // labeled box above the tree would just be dead space.
     visible: quickAccessModel.count > 0
 
-    SystemPalette {
-        id: sysPalette
-    }
-
     FolderPinMenu {
         id: pinMenu
     }
 
+    // Windows 11 renders a section header as slightly smaller and weakly
+    // coloured, not bold (3-6). De-emphasis by colour rather than opacity, so
+    // it doesn't go muddy against surfaceAlt.
     Label {
         Layout.fillWidth: true
-        Layout.leftMargin: 8
-        Layout.topMargin: 6
-        Layout.bottomMargin: 2
+        Layout.leftMargin: Theme.spacing.lg
+        Layout.topMargin: Theme.spacing.sm
+        Layout.bottomMargin: Theme.spacing.sm
         text: qsTr("Quick access")
-        font.bold: true
-        opacity: 0.7
+        font.pixelSize: Theme.font.caption
+        color: Theme.color.textSecondary
         elide: Text.ElideRight
     }
 
@@ -78,11 +77,20 @@ ColumnLayout {
             required property var handle
 
             width: pinList.width
-            // Matches the height FolderTreePanel.qml's delegate background
-            // restates, so both halves of the panel have the same row rhythm.
-            implicitHeight: 24
-            // Lines the labels up with the tree's first-level rows below.
-            leftPadding: 20
+            // Same token FolderTreePanel.qml's delegate uses, so both halves of
+            // the panel share one row rhythm (D1a).
+            implicitHeight: Theme.rowHeight.compact
+            // Lines the leading icons up with the tree's depth-0 rows below.
+            // Derived, not hand-matched: the tree's offset is the sum of three
+            // style defaults, so the old literal 20 was quietly 8px out and
+            // could not have been kept in step by hand (3-4).
+            leftPadding: Theme.tree.contentIndent
+            rightPadding: Theme.tree.margin
+
+            // The rounded pill of Windows 11's navigation pane, same as the
+            // tree rows (3-1).
+            leftInset: Theme.spacing.sm
+            rightInset: Theme.spacing.sm
 
             // Matches TabStrip.qml's TabButton and FolderTreePanel.qml's
             // delegate: without this, clicking a row strands keyboard focus
@@ -107,7 +115,10 @@ ColumnLayout {
                     Layout.fillWidth: true
                     text: pinDelegate.text
                     elide: Text.ElideRight
-                    color: pinDelegate.palette.buttonText
+                    // Stated outright rather than inherited, same as the tree's
+                    // label (D1a).
+                    font.pixelSize: Theme.font.body
+                    color: Theme.color.text
                 }
             }
 
@@ -117,11 +128,12 @@ ColumnLayout {
                                                                    false
 
             background: Rectangle {
-                color: pinDelegate.isCurrent ? Qt.rgba(sysPalette.highlight.r,
-                                                       sysPalette.highlight.g,
-                                                       sysPalette.highlight.b, 0.35) : "transparent"
-                border.width: dropArea.accepting ? 2 : 0
-                border.color: sysPalette.highlight
+                radius: Theme.radius.sm
+                color: pinDelegate.isCurrent ? Theme.color.selection : (pinDelegate.hovered
+                                                                        ? Theme.color.subtleHover :
+                                                                          "transparent")
+                border.width: dropArea.accepting ? Theme.border.drop : 0
+                border.color: Theme.color.accent
             }
 
             // Same per-delegate arrangement as FolderTreePanel.qml's, including

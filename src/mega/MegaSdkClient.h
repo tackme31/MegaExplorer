@@ -60,12 +60,12 @@ public:
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<DownloadOutcome>)> onDone) override;
 
-    void upload(
-        const std::string& localPath,
-        std::uint64_t parentHandle,
-        bool parentIsRoot,
-        std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
-        std::function<void(Result<UploadOutcome>)> onDone) override;
+    void
+    upload(const std::string& localPath,
+           std::uint64_t parentHandle,
+           bool parentIsRoot,
+           std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
+           std::function<void(Result<UploadOutcome>)> onDone) override;
 
     void getThumbnail(std::uint64_t handle,
                       const std::string& destinationPath,
@@ -98,6 +98,8 @@ public:
     findChildFiles(std::uint64_t parentHandle,
                    bool parentIsRoot,
                    const std::vector<std::string>& names) const override;
+
+    Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const override;
 
 private:
     // Shared by getRootChildren/getChildren/search: isRoot selects

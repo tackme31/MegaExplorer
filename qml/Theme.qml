@@ -45,6 +45,23 @@ QtObject {
         readonly property int normal: 32  // detail view rows and header (S6)
     }
 
+    // Tree-row geometry, shared so the pin rows can derive the same numbers
+    // instead of restating them as literals (3-4: a hand-tuned leftPadding: 20
+    // was already 8px out of step). The values themselves are Basic's own
+    // TreeViewDelegate defaults; only indent departs from it, dropping the
+    // stock 20 -- which is just indicator.width reused -- to 16 (3-9).
+    readonly property QtObject tree: QtObject {
+        id: treeGeom
+        readonly property int margin: 4
+        readonly property int indicatorWidth: 20 // D1b: the hit area never shrinks
+        readonly property int indent: 16
+        readonly property int spacing: 4
+        // Row left edge to leading icon, at depth 0. Both halves of the side
+        // panel line up on this.
+        readonly property int contentIndent: treeGeom.margin + treeGeom.indicatorWidth
+                                             + treeGeom.spacing
+    }
+
     readonly property QtObject font: QtObject {
         readonly property int body: 14 // FluentWinUI3's own default size
         readonly property int caption: 12
@@ -58,19 +75,24 @@ QtObject {
 
     // Segoe Fluent Icons code points, spelled as escapes: the raw glyphs sit in
     // the private use area, where an editor or a grep shows nothing at all.
-    // Both of these also exist at the same code point in Windows 10's Segoe
-    // MDL2 Assets (checked against both fonts' cmap), so no fallback path is
-    // needed -- the same conclusion CaptionBar.qml records for the window
+    // Every one of these also exists at the same code point in Windows 10's
+    // Segoe MDL2 Assets (checked against both fonts' cmap), so no fallback path
+    // is needed -- the same conclusion CaptionBar.qml records for the window
     // buttons. Later phases add their glyphs here (S6 sort arrows, S7
     // breadcrumb chevron and nav buttons, S9 view-mode toggles).
-    // Both are outlines: the font has no solid folder. E838, EC50 and F12B were
-    // all rendered and all draw a stroked folder, some with extra inner detail
-    // that turns to mush at 16px -- Explorer's filled yellow folder is a raster
-    // asset out of imageres.dll, not a glyph. E8B7 is the cleanest of them, and
-    // accentFolder carries the Explorer association on its own.
+    // folder/file are outlines: the font has no solid folder. E838, EC50 and
+    // F12B were all rendered and all draw a stroked folder, some with extra
+    // inner detail that turns to mush at 16px -- Explorer's filled yellow folder
+    // is a raster asset out of imageres.dll, not a glyph. E8B7 is the cleanest
+    // of them, and accentFolder carries the Explorer association on its own.
     readonly property QtObject glyph: QtObject {
         readonly property string folder: "\uE8B7" // Folder
         readonly property string file: "\uE7C3"   // Page
+        // Two glyphs rather than one rotated 90 degrees (what Basic's
+        // TreeViewDelegate does with its arrow PNG): the font already draws
+        // both, and a rotation would need a transformOrigin to stay centred.
+        readonly property string chevronRight: "\uE76C" // ChevronRight
+        readonly property string chevronDown: "\uE70D"  // ChevronDown
     }
 
     readonly property QtObject color: QtObject {

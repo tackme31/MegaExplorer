@@ -29,6 +29,16 @@ protected:
     {
         testApp();
         client = std::make_shared<MockMegaClient>();
+        // TRAP: Result<bool>::success defaults to false (src/core/Result.h), so
+        // gmock's default action for an unstubbed hasSubfolders() is *failure*,
+        // which FolderTreeService reads as "no subfolders" -- every unloaded
+        // node would then report hasChildren() == false and the failures would
+        // look unrelated to this line. Same blanket-expectation shape
+        // UploadServiceTest uses for checkUpload(). Tests wanting the opposite
+        // declare their own, later, EXPECT_CALL: gmock matches newest-first.
+        EXPECT_CALL(*client, hasSubfolders(::testing::_, ::testing::_))
+            .Times(::testing::AnyNumber())
+            .WillRepeatedly(::testing::Return(Result<bool>::ok(true)));
         service = std::make_shared<FolderTreeService>(client);
         model = std::make_unique<FolderTreeModel>(service);
     }
@@ -59,6 +69,19 @@ TEST_F(FolderTreeModelTest, UnloadedRootHasChildrenAndCanFetchMore)
 {
     const QModelIndex root = rootIndex();
     EXPECT_TRUE(model->hasChildren(root));
+    EXPECT_TRUE(model->canFetchMore(root));
+}
+
+TEST_F(FolderTreeModelTest, UnloadedNodeWithoutSubfoldersReportsNoChildren)
+{
+    // The expand arrow used to appear on every not-yet-loaded node, so a folder
+    // holding only files still got one. Overrides SetUp()'s blanket answer.
+    EXPECT_CALL(*client, hasSubfolders(::testing::_, ::testing::_))
+        .WillRepeatedly(::testing::Return(Result<bool>::ok(false)));
+
+    const QModelIndex root = rootIndex();
+    EXPECT_FALSE(model->hasChildren(root));
+    // Still fetchable: canFetchMore is about load state, not about the answer.
     EXPECT_TRUE(model->canFetchMore(root));
 }
 

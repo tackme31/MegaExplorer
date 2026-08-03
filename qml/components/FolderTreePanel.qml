@@ -30,8 +30,21 @@ TreeView {
     // dragging *out* of the tree is deliberately not supported (Phase 14a), so
     // no DragHandler appears below.
     required property var dragProxy
+    // Whether the pointer is anywhere inside the side panel, supplied by
+    // SidePanel.qml's single HoverHandler. Drives the chevrons' visibility
+    // (D7): Explorer only shows them while the pane is under the cursor.
+    // Pane-wide rather than per row on purpose -- a row-level version leaves an
+    // invisible but live 20px hit area on every unhovered row, so a click meant
+    // to navigate toggles expansion instead.
+    required property bool paneHovered
 
     clip: true
+
+    // Breathing room at the top and bottom of the pane (3-1). Flickable
+    // margins rather than padding, so the space scrolls with the content
+    // instead of clipping the first and last rows.
+    topMargin: Theme.spacing.sm
+    bottomMargin: Theme.spacing.sm
 
     // Pins every row to the viewport width instead of letting
     // TreeViewDelegate size itself by its own content. Two separate defects
@@ -65,10 +78,6 @@ TreeView {
 
     model: folderTreeModel
 
-    SystemPalette {
-        id: sysPalette
-    }
-
     // One instance for the whole tree rather than one per delegate row (Phase
     // 13b's lesson). Menu is a Popup, not an Item, so it's neither laid out by
     // this TreeView nor clipped by its Flickable viewport.
@@ -100,6 +109,31 @@ TreeView {
         // its arrow-key navigation until the view is re-clicked.
         focusPolicy: Qt.NoFocus
 
+        // D1a. Basic's TreeViewDelegate derives this from
+        // max(indicator.height, implicitContentHeight) * 1.25, which landed on
+        // 50px purely because its stock indicator is 40px tall -- a number
+        // nobody chose. Written on the delegate itself, not on the background:
+        // that formula has no background term, so an implicitHeight put there
+        // is silently ignored (which is what the old code did).
+        implicitHeight: Theme.rowHeight.compact
+
+        // Spelled out even where they match Basic's defaults, so
+        // QuickAccessSection.qml can derive its own left padding from the same
+        // tokens rather than hand-matching three style defaults (3-4).
+        leftMargin: Theme.tree.margin
+        spacing: Theme.tree.spacing
+        // Must be explicit: the stock value is indicator.width, and D1b keeps
+        // that at 20px, so shrinking the chevron glyph alone would leave the
+        // indentation at 20 (3-9).
+        indentation: Theme.tree.indent
+
+        // The rounded pill of Windows 11's navigation pane (3-1). Insets move
+        // the background rectangle only -- padding, and therefore the hit area
+        // and the label position, are untouched, so a click still lands
+        // anywhere across the full row width.
+        leftInset: Theme.spacing.sm
+        rightInset: Theme.spacing.sm
+
         readonly property bool isCurrent: root.navController ? (treeDelegate.isRoot
                                                                 ? root.navController.atRoot : (
                                                                       !root.navController.atRoot
@@ -107,24 +141,45 @@ TreeView {
                                                                       === root.navController.currentHandle)) :
                                                                false
 
+        // Basic's own indicator with the arrow PNG swapped for an icon-font
+        // chevron. Only the glyph shrinks (D1b): the Item stays 20px wide
+        // because it *is* the stock expand/collapse hit area the file-header
+        // comment above describes, and because indentation is derived from its
+        // width upstream. D7 hides the glyph and never the Item -- hiding the
+        // Item would take expansion down with it.
+        indicator: Item {
+            readonly property real __indicatorIndent: treeDelegate.leftMargin + (treeDelegate.depth
+                                                                                 * treeDelegate.indentation)
+            x: __indicatorIndent
+            y: (treeDelegate.height - height) / 2
+            implicitWidth: Theme.tree.indicatorWidth
+            // The token, not treeDelegate.height: the row's height comes from
+            // the implicitHeight above, so binding back to it would loop.
+            implicitHeight: Theme.rowHeight.compact
+
+            Label {
+                anchors.centerIn: parent
+                font.family: Theme.font.iconFamily
+                font.pixelSize: Theme.font.caption
+                color: Theme.color.textSecondary
+                text: treeDelegate.expanded ? Theme.glyph.chevronDown : Theme.glyph.chevronRight
+                visible: root.paneHovered
+            }
+        }
+
         // No selectionModel is set on the TreeView -- the highlight follows
         // navigation state, not a click-driven selection -- so the style's
-        // own highlighted/selected painting is replaced wholesale here.
-        //
-        // Nothing about the row's *height* can be said from here: the
-        // TreeViewDelegate this resolves to is Basic's (FluentWinUI3 ships no
-        // TreeViewDelegate of its own), and its implicitHeight formula --
-        // max(indicator.height, implicitContentHeight) * 1.25 -- has no
-        // background term at all. An implicitHeight written here is simply
-        // ignored; the 40px click area of the stock indicator is what sets
-        // the row height.
+        // own highlighted/selected painting is replaced wholesale here. Hover
+        // has to be painted here too, for the same reason.
         background: Rectangle {
-            color: treeDelegate.isCurrent ? Qt.rgba(sysPalette.highlight.r, sysPalette.highlight.g, sysPalette.highlight.b,
-                                                    0.35) : "transparent"
+            radius: Theme.radius.sm
+            color: treeDelegate.isCurrent ? Theme.color.selection : (treeDelegate.hovered
+                                                                     ? Theme.color.subtleHover :
+                                                                       "transparent")
             // Outlined rather than filled, so the drop target stays legible on
             // the row that also happens to be the current folder.
-            border.width: dropArea.accepting ? 2 : 0
-            border.color: sysPalette.highlight
+            border.width: dropArea.accepting ? Theme.border.drop : 0
+            border.color: Theme.color.accent
         }
 
         // Restated from Basic's own contentItem purely to hang a tooltip off
@@ -135,8 +190,7 @@ TreeView {
         // highlighted needs a selectionModel, which this TreeView has none of.
         // The icon (S4) stays clear of the indicator: the chevron is the
         // style's own hit area and the file-header comment above explains why
-        // that must not be taken over. Row height is unaffected -- Basic sizes
-        // the row off the 40px indicator, which this 16px row does not reach.
+        // that must not be taken over.
         contentItem: RowLayout {
             spacing: Theme.spacing.md
             visible: !treeDelegate.editing
@@ -150,7 +204,11 @@ TreeView {
                 Layout.fillWidth: true
                 text: treeDelegate.name
                 elide: Text.ElideRight
-                color: treeDelegate.palette.buttonText
+                // Both stated outright rather than inherited from the style
+                // (D1a): the tree and the pins agreeing today is a coincidence
+                // of two styles' defaults, and a style update would part them.
+                font.pixelSize: Theme.font.body
+                color: Theme.color.text
 
                 ToolTip.text: treeDelegate.name
                 ToolTip.delay: 500

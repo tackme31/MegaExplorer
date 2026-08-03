@@ -124,3 +124,29 @@ TEST(FolderTreeServiceTest, FailurePropagates)
     EXPECT_FALSE(captured.result.success);
     EXPECT_EQ(captured.result.errorCode, 3);
 }
+
+TEST(FolderTreeServiceTest, HasSubfoldersPassesTheHandleAndRootSentinelThrough)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, hasSubfolders(0, true))
+        .WillOnce(::testing::Return(Result<bool>::ok(true)));
+    EXPECT_CALL(*mockClient, hasSubfolders(7, false))
+        .WillOnce(::testing::Return(Result<bool>::ok(false)));
+
+    FolderTreeService service(mockClient);
+
+    EXPECT_TRUE(service.hasSubfolders(0, true));
+    EXPECT_FALSE(service.hasSubfolders(7, false));
+}
+
+TEST(FolderTreeServiceTest, HasSubfoldersReadsAFailureAsNoChildren)
+{
+    // A handle that no longer resolves must not leave an expand arrow behind.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, hasSubfolders(7, false))
+        .WillOnce(::testing::Return(Result<bool>::fail("gone", -9 /* kENoEnt */)));
+
+    FolderTreeService service(mockClient);
+
+    EXPECT_FALSE(service.hasSubfolders(7, false));
+}

@@ -102,12 +102,13 @@ bool FolderTreeModel::hasChildren(const QModelIndex& parent) const
     TreeNode* node = nodeForIndex(parent);
     if (!node)
         return false;
-    // Unknown children yet -- assume yes, so the expand arrow shows before
-    // the first fetch. See the known-limitation note on the empty-folder
-    // case in ensureLoaded().
-    if (node->state != LoadState::Loaded)
-        return true;
-    return !node->children.empty();
+    if (node->state == LoadState::Loaded)
+        return !node->children.empty();
+    // Not loaded yet, so ask the SDK's in-memory node tree directly rather
+    // than assuming yes: assuming put an expand arrow on every childless
+    // folder, and there was no later correction for it -- TreeView's internal
+    // proxy isn't guaranteed to re-query hasChildren() after a dataChanged().
+    return mService->hasSubfolders(node->handle, node->isRoot);
 }
 
 bool FolderTreeModel::canFetchMore(const QModelIndex& parent) const
@@ -170,12 +171,11 @@ void FolderTreeModel::ensureLoaded(const QModelIndex& index)
                 }
                 else
                 {
-                    // beginInsertRows with an empty range is invalid, so
-                    // just flip the state and notify -- TreeView's internal
-                    // proxy isn't guaranteed to re-query hasChildren() after
-                    // a plain dataChanged(), so an empty folder's expand
-                    // arrow can linger (matches Explorer's own long-standing
-                    // behavior here, see docs/PROGRESS.md's Phase 10 entry).
+                    // beginInsertRows with an empty range is invalid, so just
+                    // flip the state and notify. Nothing depends on the view
+                    // acting on that dataChanged(): hasChildren() consults the
+                    // SDK for unloaded nodes, so a childless folder never grew
+                    // an expand arrow that would now need retracting.
                     node->state = LoadState::Loaded;
                     const QModelIndex idx = indexForNode(node);
                     emit dataChanged(idx, idx);

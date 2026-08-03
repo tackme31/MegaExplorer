@@ -43,7 +43,6 @@ public:
     // round-trip. Fails if not currently logged in.
     virtual Result<std::string> currentSessionToken() const = 0;
 
-
     // MegaApi::getMyUserHandleBinary equivalent. Synchronous, same rationale as
     // currentSessionToken(). Fails if not currently logged in. Used to scope
     // per-account persisted state (quick-access pins) without account identity
@@ -120,12 +119,12 @@ public:
     // (MegaTransferListener, not MegaRequestListener): onProgress may fire
     // zero or more times with (transferredBytes, totalBytes), onDone fires
     // exactly once, terminally.
-    virtual void upload(
-        const std::string& localPath,
-        std::uint64_t parentHandle,
-        bool parentIsRoot,
-        std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
-        std::function<void(Result<UploadOutcome>)> onDone) = 0;
+    virtual void
+    upload(const std::string& localPath,
+           std::uint64_t parentHandle,
+           bool parentIsRoot,
+           std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
+           std::function<void(Result<UploadOutcome>)> onDone) = 0;
 
     // Fetches the server-side thumbnail of the node identified by handle into
     // the exact local file path destinationPath, same caller-resolves-the-path
@@ -179,8 +178,7 @@ public:
     // rather than destroying it (MegaApi::remove() would be the permanent
     // one, deliberately not exposed here). A node already in the Rubbish bin
     // is moved to its top level again, which is harmless.
-    virtual void moveToRubbish(std::uint64_t handle,
-                               std::function<void(Result<void>)> onDone) = 0;
+    virtual void moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone) = 0;
 
     // Reparents the node identified by handle under newParentHandle
     // (newParentIsRoot makes newParentHandle meaningless, same sentinel
@@ -208,9 +206,8 @@ public:
     // node's current parent as a no-op. It belongs here because an
     // implementation is the only thing that can see a node's actual parent
     // handle; a caller pointing at the root has only the isRoot sentinel.
-    virtual Result<void> checkMove(std::uint64_t handle,
-                                   std::uint64_t newParentHandle,
-                                   bool newParentIsRoot) const = 0;
+    virtual Result<void>
+    checkMove(std::uint64_t handle, std::uint64_t newParentHandle, bool newParentIsRoot) const = 0;
 
     // Whether upload() into this folder would be accepted. Synchronous for
     // the same reason as checkMove -- a drag hovering over a drop target
@@ -240,4 +237,15 @@ public:
     findChildFiles(std::uint64_t parentHandle,
                    bool parentIsRoot,
                    const std::vector<std::string>& names) const = 0;
+
+    // Whether (handle, isRoot) has at least one *folder* child -- the folder
+    // tree's own question, since files never appear in the side panel. False
+    // for a node that is itself a file.
+    //
+    // Synchronous, the sixth exception here after checkMove/checkUpload/
+    // findChildFiles and for the same reason: an in-memory count over the
+    // already-fetched node tree, no API round-trip. It has to be, because
+    // QAbstractItemModel::hasChildren() answers the view on the spot and has
+    // nowhere to put a callback.
+    virtual Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const = 0;
 };

@@ -27,6 +27,15 @@ Rectangle {
 
     color: Theme.color.surfaceAlt
 
+    // The single hover source behind D7's "chevrons only while the pointer is
+    // in the pane". One handler for the whole panel, never one per row: see
+    // FolderTreePanel.qml's paneHovered for what a row-level version breaks.
+    // Explorer scopes this the same way -- hovering the quick-access half also
+    // brings out the tree's chevrons.
+    HoverHandler {
+        id: paneHover
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -48,6 +57,9 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: Theme.border.thin
+            // The tree used to start on the very next row (3-7).
+            Layout.topMargin: Theme.spacing.sm
+            Layout.bottomMargin: Theme.spacing.sm
             visible: quickAccessModel.count > 0
             color: Theme.color.stroke
         }
@@ -57,6 +69,7 @@ Rectangle {
             Layout.fillHeight: true
             navController: root.navController
             dragProxy: root.dragProxy
+            paneHovered: paneHover.hovered
         }
     }
 }

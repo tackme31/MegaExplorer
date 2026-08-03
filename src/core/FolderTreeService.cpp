@@ -31,3 +31,9 @@ void FolderTreeService::loadSubfolders(std::uint64_t handle,
     else
         mClient->getChildren(handle, order, std::move(filterFolders));
 }
+
+bool FolderTreeService::hasSubfolders(std::uint64_t handle, bool isRoot) const
+{
+    const Result<bool> result = mClient->hasSubfolders(handle, isRoot);
+    return result.success && result.value;
+}
