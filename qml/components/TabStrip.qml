@@ -34,7 +34,7 @@ RowLayout {
     // tab is never wider than maxTabWidth however few tabs there are
     // (Explorer/Chrome both cap it), and never narrower than minTabWidth
     // however many -- past that the bar scrolls instead of shrinking further.
-    readonly property int maxTabWidth: 200
+    readonly property int maxTabWidth: 240
     readonly property int minTabWidth: 80
 
     // What CaptionBar sizes us to when the caption row has the space, so the
