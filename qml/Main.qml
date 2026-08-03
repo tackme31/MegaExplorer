@@ -29,6 +29,12 @@ ApplicationWindow {
     // launch until this was deferred.
     visible: false
     title: qsTr("MegaExplorer")
+    // The file-list surface (D3). Set on the window rather than per view
+    // because every region on that side of the UI -- both file views, the tab
+    // pane, the breadcrumb, LoginView -- draws no background of its own and
+    // falls through to here. The two chrome regions that must not be this
+    // colour (side panel, footer) paint themselves.
+    color: Theme.color.surface
 
     // QWindowKit's window agent (Phase 17a): takes the native caption away
     // from Windows and hands it to captionBar below, while keeping the real
@@ -42,6 +48,21 @@ ApplicationWindow {
         id: winAgent
     }
 
+    // QWindowKit hardcodes dark-mode = true for the native 1px window border
+    // (windows10borderhandler_p.h's setupNecessaryAttributes), so in the light
+    // theme the frame stays dark unless we override it per scheme. Must run
+    // after setup() -- the agent's context does not exist before that.
+    function applyFrameTheme(): void {
+    winAgent.setWindowAttribute("dark-mode", !Theme.isLight);
+}
+
+    Connections {
+        target: Theme
+        function onIsLightChanged() {
+            window.applyFrameTheme();
+        }
+    }
+
     // setup() must precede every setTitleBar/setSystemButton call -- the
     // agent's internal context is only created here, and the register calls
     // dereference it unguarded. Component.onCompleted fires innermost-first,
@@ -50,6 +71,7 @@ ApplicationWindow {
     Component.onCompleted: {
         winAgent.setup(window);
         captionBar.registerWithAgent();
+        window.applyFrameTheme();
 
         // Showing a frameless window hands the pixels the native caption used
         // to occupy back to the client area, so window.height jumps by the
@@ -154,9 +176,17 @@ ApplicationWindow {
             // this row and has to continue into it, so the two must be the same
             // surface. Fluent's default ToolBar background happens to match in
             // dark, but is the panel shade in light, which would show the seam.
-            // S3 adds the 1px rule under this row.
             background: Rectangle {
                 color: Theme.color.surface
+
+                // Carries the whole boundary on its own in light, where this
+                // row and the content below it are both `surface`.
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    width: parent.width
+                    height: Theme.border.thin
+                    color: Theme.color.stroke
+                }
             }
 
             RowLayout {
@@ -227,6 +257,19 @@ ApplicationWindow {
         id: footerComponent
 
         ToolBar {
+            // Chrome, like the caption row and the side panel -- not part of
+            // the file-list surface (D3 leaves the footer's side unstated).
+            background: Rectangle {
+                color: Theme.color.surfaceAlt
+
+                Rectangle {
+                    anchors.top: parent.top
+                    width: parent.width
+                    height: Theme.border.thin
+                    color: Theme.color.stroke
+                }
+            }
+
             RowLayout {
                 anchors.fill: parent
 
@@ -445,6 +488,36 @@ ApplicationWindow {
         SplitView {
             id: splitView
             anchors.fill: parent
+
+            // Fluent's stock handle is a 2px fill that differs from the
+            // surrounding surface by 4/255 -- invisible, and no wider than the
+            // line it draws. Split the two concerns instead: a transparent
+            // grab strip wide enough to hit, with a 1px rule down its middle.
+            handle: Rectangle {
+                id: splitHandle
+                implicitWidth: 6
+                // Reads as an extension of the panel rather than a neutral gap,
+                // so the rule below lands exactly on the surface boundary. A
+                // transparent handle puts the window surface on both sides of
+                // the rule and the line looks 2px adrift into the content.
+                color: Theme.color.surfaceAlt
+
+                // SplitHandle attaches to the handle item itself; a child
+                // reading it would get its own (never-set) attachment.
+                readonly property bool active: SplitHandle.hovered || SplitHandle.pressed
+
+                // A custom delegate loses the style's resize cursor.
+                HoverHandler {
+                    cursorShape: Qt.SplitHCursor
+                }
+
+                Rectangle {
+                    anchors.right: parent.right
+                    height: parent.height
+                    width: splitHandle.active ? Theme.border.drop : Theme.border.thin
+                    color: splitHandle.active ? Theme.color.accent : Theme.color.stroke
+                }
+            }
 
             SidePanel {
                 id: treePanel

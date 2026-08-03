@@ -701,9 +701,15 @@ def draw_grid(img: Image.Image, step: int) -> Image.Image:
 # --------------------------------------------------------------------------
 
 
-def _launch_env() -> dict:
+def _launch_env(theme: str | None = None) -> dict:
     env = dict(os.environ)
     env["PATH"] = os.pathsep.join([str(QT_BIN), str(VCPKG_BIN), env.get("PATH", "")])
+    # main.cpp turns this into QStyleHints::setColorScheme(), so light/dark can
+    # be checked without flipping the real Windows theme.  "system" means "no
+    # override", which also has to clear an inherited value from the shell.
+    env.pop("MEGAEXPLORER_COLOR_SCHEME", None)
+    if theme in ("light", "dark"):
+        env["MEGAEXPLORER_COLOR_SCHEME"] = theme
     return env
 
 
@@ -756,11 +762,16 @@ def do_launch(args) -> None:
         preset_window_size(*size)
         session["size"] = list(size)
 
+    # Remembered like --size, so a follow-up `cycle` keeps the same theme
+    # instead of silently reverting to the OS one mid-comparison.
+    theme = args.theme or session.get("theme")
+    session["theme"] = theme
+
     started = time.time()
     process = subprocess.Popen(
         [str(EXE_PATH)],
         cwd=str(EXE_PATH.parent),
-        env=_launch_env(),
+        env=_launch_env(theme),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -793,7 +804,8 @@ def do_launch(args) -> None:
     backup_note = "settings-backed-up" if fresh_backup else "settings-backup-reused"
     print(
         f"launched pid={process.pid} hwnd=0x{hwnd:X} client={width}x{height} "
-        f"dpi={dpi_scale(hwnd):.2f} ready={state} in {time.time() - started:.1f}s ({backup_note})"
+        f"dpi={dpi_scale(hwnd):.2f} theme={theme or 'system'} ready={state} "
+        f"in {time.time() - started:.1f}s ({backup_note})"
     )
 
 
@@ -958,7 +970,9 @@ def do_cycle(args) -> None:
         if not do_build(build_args):
             die("build failed -- app not relaunched, fix the errors above")
 
-    launch_args = argparse.Namespace(size=args.size, pos=args.pos, timeout=args.timeout)
+    launch_args = argparse.Namespace(
+        size=args.size, pos=args.pos, timeout=args.timeout, theme=args.theme
+    )
     do_launch(launch_args)
 
     shot_args = argparse.Namespace(
@@ -1169,6 +1183,14 @@ def crop_type(text: str):
     return tuple(int(p) for p in parts)
 
 
+def add_theme_option(parser) -> None:
+    parser.add_argument(
+        "--theme",
+        choices=["light", "dark", "system"],
+        help="force the app's colour scheme (default: last used, else the OS one)",
+    )
+
+
 def add_shot_options(parser) -> None:
     parser.add_argument("--crop", type=crop_type, help="x,y,w,h in screenshot pixels")
     parser.add_argument("--max-width", type=int, default=0, help="downscale if wider than this")
@@ -1180,6 +1202,15 @@ def add_shot_options(parser) -> None:
 def main() -> None:
     _make_dpi_aware()
 
+    # Build diagnostics quote source lines, which carry non-ASCII (QML strings,
+    # MSVC's U+FFFD for bytes it could not decode). Printing those to a cp932
+    # console raises UnicodeEncodeError and loses the whole build summary.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(prog="ui_shot", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1187,6 +1218,7 @@ def main() -> None:
     p.add_argument("--size", help="WxH client size (default: last used)")
     p.add_argument("--pos", help="X,Y screen position")
     p.add_argument("--timeout", type=float, default=45.0)
+    add_theme_option(p)
     p.set_defaults(func=do_launch)
 
     p = subparsers.add_parser("shot", help="capture the window")
@@ -1214,6 +1246,7 @@ def main() -> None:
     p.add_argument("--reconfigure", action="store_true")
     p.add_argument("--no-build", action="store_true")
     p.add_argument("--window", action="store_true")
+    add_theme_option(p)
     add_shot_options(p)
     p.set_defaults(func=do_cycle)
 

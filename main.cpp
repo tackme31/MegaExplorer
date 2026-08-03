@@ -27,6 +27,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QStandardPaths>
+#include <QStyleHints>
 
 #include <memory>
 
@@ -43,6 +44,21 @@ int main(int argc, char* argv[])
     // WIN32_EXECUTABLE, so qWarning()/qCWarning() output reaches no visible
     // destination at all on a normal launch until this installs a file sink.
     installLogging();
+
+    // Style-tuning aid: check the light theme without flipping the Windows
+    // setting. One call covers both halves of the UI -- FluentWinUI3 and
+    // Theme.qml's isLight both read styleHints.colorScheme, which this
+    // overrides application-wide. Unset (or any other value) keeps the
+    // default behaviour of following the OS.
+    const QByteArray colorScheme = qgetenv("MEGAEXPLORER_COLOR_SCHEME").toLower();
+    if (colorScheme == "light")
+    {
+        app.styleHints()->setColorScheme(Qt::ColorScheme::Light);
+    }
+    else if (colorScheme == "dark")
+    {
+        app.styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+    }
 
     auto client = std::make_shared<MegaSdkClient>();
 
@@ -91,8 +107,8 @@ int main(int argc, char* argv[])
     // this whenever a new tab is needed (initial tab, "+", middle-click-open,
     // "Open in new tab") -- it has no wiring knowledge of its own, per
     // docs/ARCHITECTURE.md's composition-root convention.
-    auto tabFactory = [client, thumbnailService, fileOperationService,
-                       &notifications]() -> TabContext {
+    auto tabFactory =
+        [client, thumbnailService, fileOperationService, &notifications]() -> TabContext {
         auto navigationService = std::make_shared<FolderNavigationService>(client);
         auto searchService = std::make_shared<SearchService>(client, navigationService);
         auto navigation = std::make_shared<FolderNavigationController>(

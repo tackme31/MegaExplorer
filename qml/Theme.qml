@@ -61,8 +61,6 @@ QtObject {
         readonly property color surface: root.isLight ? "#ffffff" : "#202020"
         readonly property color surfaceAlt: root.isLight ? "#f3f3f3" : "#272727"
         readonly property color stroke: root.isLight ? "#e5e5e5" : "#303030"
-        // Provisional -- D3 fixed `stroke` only. Confirm on screen during S3.
-        readonly property color strokeSubtle: root.isLight ? "#ebebeb" : "#2d2d2d"
 
         readonly property color text: root.sysPalette.text
         // De-emphasis by colour, not item opacity, so it stays clean when the
@@ -85,8 +83,8 @@ QtObject {
         // feedback identical to the untouched Fluent controls beside it.
         readonly property color subtleHover: root.isLight ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(1, 1, 1,
                                                                                              0.06)
-        readonly property color subtlePressed: root.isLight ? Qt.rgba(0, 0, 0,
-                                                                      0.02) : Qt.rgba(1, 1, 1, 0.04)
+        readonly property color subtlePressed: root.isLight ? Qt.rgba(0, 0, 0, 0.02) : Qt.rgba(1, 1,
+                                                                                               1, 0.04)
 
         // Windows-mandated close-button colours. Kept out of the theme-following
         // group deliberately: these must not track light/dark.

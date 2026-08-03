@@ -61,6 +61,18 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.color.surfaceAlt
+
+        // Declared before TabStrip on purpose: the active tab's background is
+        // opaque `surface` and sits flush on this edge, so it paints over the
+        // rule and the line breaks under the selected tab -- the Explorer 11 /
+        // Chrome look, and the only way to keep S2's "the active tab is
+        // continuous with the toolbar row below" intact.
+        Rectangle {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            height: Theme.border.thin
+            color: Theme.color.stroke
+        }
     }
 
     TabStrip {
@@ -122,7 +134,9 @@ Item {
             // Windows' own close button turns red on hover; the style has no
             // notion of that, so the background is replaced outright.
             background: Rectangle {
-                color: closeButton.pressed ? Theme.color.closePressed : (closeButton.hovered ? Theme.color.closeHover : "transparent")
+                color: closeButton.pressed ? Theme.color.closePressed : (closeButton.hovered
+                                                                         ? Theme.color.closeHover :
+                                                                           "transparent")
             }
             contentItem: Label {
                 color: closeButton.hovered ? Theme.color.closeGlyphOn : palette.buttonText

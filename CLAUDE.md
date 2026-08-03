@@ -201,6 +201,11 @@ opens the window at a given size. Options and failure modes: the skill's `refere
 `drive` subcommand (click/keystroke injection) hijacks the real mouse — **ask the user before
 running it**.
 
+Light/dark is checked without touching the Windows theme setting: the env var
+`MEGAEXPLORER_COLOR_SCHEME=light|dark` (read in `main.cpp`, applied via
+`QStyleHints::setColorScheme()`), or `launch`/`cycle`'s `--theme light|dark|system` which sets it
+for you.
+
 ## Architecture
 
 `main.cpp` is the composition root and QML bootstrap; `Main.qml` is the root `ApplicationWindow`

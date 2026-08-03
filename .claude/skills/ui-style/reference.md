@@ -11,15 +11,29 @@ python .claude/skills/ui-style/scripts/ui_shot.py
 
 | Command | Purpose |
 | --- | --- |
-| `launch [--size WxH] [--pos X,Y] [--timeout 45]` | Snapshot the settings registry key, preset the geometry, start the app, wait until the scene stops changing. Refuses to run if a window is already open. |
+| `launch [--size WxH] [--pos X,Y] [--theme T] [--timeout 45]` | Snapshot the settings registry key, preset the geometry, start the app, wait until the scene stops changing. Refuses to run if a window is already open. |
 | `shot [NAME] [capture opts] [--window]` | Capture and save `.screenshots/NNN-NAME.png`. |
-| `cycle [NAME] [--size WxH] [--target T] [--reconfigure] [--no-build] [capture opts]` | `close` → `build` → `launch` → `shot` in one call. Aborts before relaunching if the build fails. |
+| `cycle [NAME] [--size WxH] [--theme T] [--target T] [--reconfigure] [--no-build] [capture opts]` | `close` → `build` → `launch` → `shot` in one call. Aborts before relaunching if the build fails. |
 | `build [--target appMegaExplorer] [--reconfigure]` | Build and print a summary. Exit code 1 on failure. |
 | `close [--force] [--keep-settings]` | `WM_CLOSE`, wait up to 12s, then rewind the registry snapshot. |
 | `resize WxH` / `move X,Y` | Adjust the live window. `resize` compensates for the non-client delta so the *client* area matches. |
 | `info` | Window handle/title/class, pid, client size, screen origin, DPI scale, foreground flag, whether a settings backup is pending. |
 | `drive "STEPS"` | Inject input. **Ask the user first.** |
 | `restore-settings` | Rewind the registry from a stale backup left by an interrupted run. |
+
+## Light/dark (`launch`, `cycle`)
+
+`--theme light|dark|system` sets `MEGAEXPLORER_COLOR_SCHEME` for the launched
+process; `main.cpp` turns it into `QStyleHints::setColorScheme()`. That
+overrides the scheme application-wide, so both FluentWinUI3 and `Theme.qml`'s
+`isLight` follow it — **no need to flip the real Windows theme to check the
+light side.** `system` (or omitting the flag on a fresh session) restores OS
+following.
+
+Like `--size`, the value is remembered in `.screenshots/.session.json`, so a
+follow-up `cycle` stays on the same theme instead of reverting mid-comparison.
+The `launch` output line reports `theme=...` so a screenshot's scheme is
+recoverable afterwards.
 
 ## Capture options (`shot`, `cycle`, `drive`)
 

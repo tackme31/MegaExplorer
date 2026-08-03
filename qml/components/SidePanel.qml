@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Layouts
 
 // No QtQuick.Controls.FluentWinUI3 import, unlike its siblings in this
-// directory: this file instantiates no Controls type of its own (only a
-// ColumnLayout, a Rectangle and the two panel components below), and qmllint
+// directory: this file instantiates no Controls type of its own (only
+// Rectangles, a ColumnLayout and the two panel components below), and qmllint
 // flags the import as unused. The style still applies -- the files that do use
 // Controls types import it themselves.
 
@@ -14,7 +14,10 @@ import QtQuick.Layouts
 // with its Phase 10 design notes intact. Main.qml's SplitView now holds this
 // item, which means SplitView's attached size properties and the persisted-
 // width one-shot read moved here too.
-ColumnLayout {
+// A Rectangle rather than the bare ColumnLayout it used to be: D3 puts this
+// panel on the lighter surface of Explorer 11's two-surface split, and a
+// layout cannot paint one.
+Rectangle {
     id: root
 
     required property var navController
@@ -22,33 +25,38 @@ ColumnLayout {
     // drop targets for a move drag started in a file view.
     required property var dragProxy
 
-    spacing: 0
+    color: Theme.color.surfaceAlt
 
-    SystemPalette {
-        id: sysPalette
-    }
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 0
 
-    QuickAccessSection {
-        Layout.fillWidth: true
-        navController: root.navController
-        dragProxy: root.dragProxy
-        // This panel's height is set by SplitView, independent of its own
-        // contents, so it's safe for the section to cap itself against it.
-        availableHeight: root.height
-    }
+        QuickAccessSection {
+            Layout.fillWidth: true
+            navController: root.navController
+            dragProxy: root.dragProxy
+            // This panel's height is set by SplitView, independent of its own
+            // contents, so it's safe for the section to cap itself against it.
+            availableHeight: root.height
+        }
 
-    // Only drawn when there's a pin section above it to separate from.
-    Rectangle {
-        Layout.fillWidth: true
-        Layout.preferredHeight: 1
-        visible: quickAccessModel.count > 0
-        color: sysPalette.mid
-    }
+        // Only drawn when there's a pin section above it to separate from.
+        // Full `stroke`, despite dividing two sections of one surface rather
+        // than two surfaces: measured against surfaceAlt, anything weaker
+        // lands under 6/255 and stays as invisible as the SystemPalette.mid
+        // this replaces (3-7).
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: Theme.border.thin
+            visible: quickAccessModel.count > 0
+            color: Theme.color.stroke
+        }
 
-    FolderTreePanel {
-        Layout.fillWidth: true
-        Layout.fillHeight: true
-        navController: root.navController
-        dragProxy: root.dragProxy
+        FolderTreePanel {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            navController: root.navController
+            dragProxy: root.dragProxy
+        }
     }
 }
