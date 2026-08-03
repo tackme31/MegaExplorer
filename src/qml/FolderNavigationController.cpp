@@ -72,6 +72,11 @@ QString FolderNavigationController::currentFolderName() const
     return mBreadcrumb.last().toMap().value(QStringLiteral("name")).toString();
 }
 
+bool FolderNavigationController::canGoUp() const
+{
+    return mBreadcrumb.size() >= 2;
+}
+
 bool FolderNavigationController::atRoot() const
 {
     if (mBreadcrumb.isEmpty())
@@ -115,6 +120,15 @@ void FolderNavigationController::goBack()
                              applyResult(std::move(result));
                          });
                      });
+}
+
+void FolderNavigationController::goUp()
+{
+    if (!canGoUp())
+        return;
+    const QVariantMap parent = mBreadcrumb.at(mBreadcrumb.size() - 2).toMap();
+    navigateTo(parent.value(QStringLiteral("handle")).toULongLong(),
+               parent.value(QStringLiteral("isRoot")).toBool());
 }
 
 void FolderNavigationController::navigateTo(quint64 handle, bool isRoot)

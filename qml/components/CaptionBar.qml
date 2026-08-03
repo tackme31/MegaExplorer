@@ -39,7 +39,10 @@ Item {
     // It briefly was Fluent's own 48 (padding 4/4 around a 40px TabButton),
     // which showed the indicator correctly but left the row 8px thicker than
     // Explorer's.
-    implicitHeight: 40
+    //
+    // The token is shared with Main.qml's toolbar row, which has to match this
+    // height for the two to read as one band (S7-c).
+    implicitHeight: Theme.rowHeight.bar
 
     // Called by Main.qml's own Component.onCompleted rather than run from
     // ours: every call below needs windowAgent.setup() to have happened

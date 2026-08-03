@@ -39,6 +39,8 @@ class FolderNavigationController : public QObject,
     Q_OBJECT
     Q_PROPERTY(QObject* fileListModel READ fileListModel CONSTANT)
     Q_PROPERTY(bool canGoBack READ canGoBack NOTIFY canGoBackChanged)
+    // Derived from mBreadcrumb like atRoot below, hence the shared NOTIFY.
+    Q_PROPERTY(bool canGoUp READ canGoUp NOTIFY breadcrumbChanged)
     // Elements are QVariantMap{"name", "handle", "isRoot"}, root-first,
     // current folder last -- QML composes display labels itself (e.g. the
     // root's "Cloud Drive" label), C++ only supplies structured fields.
@@ -73,6 +75,10 @@ public:
 
     bool canGoBack() const;
 
+    // False both before the breadcrumb has resolved and at the root, so the
+    // "up" button is disabled in exactly the cases where there's no parent.
+    bool canGoUp() const;
+
     QVariantList breadcrumb() const;
 
     QString currentFolderName() const;
@@ -85,6 +91,12 @@ public:
 
     Q_INVOKABLE void openFolder(quint64 handle);
     Q_INVOKABLE void goBack();
+
+    // Navigates to the breadcrumb's second-to-last entry, i.e. the current
+    // folder's parent. No-op when !canGoUp(). Routed through navigateTo, so
+    // it's pushed onto the back-stack -- Explorer's "up" is undoable by
+    // "back" too.
+    Q_INVOKABLE void goUp();
 
     // Breadcrumb segment click. isRoot mirrors PathSegment::isRoot -- handle
     // is meaningless when it's true (same sentinel convention used

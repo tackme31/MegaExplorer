@@ -7,8 +7,8 @@ import QtQuick.Controls.FluentWinUI3
 // Windows-Explorer-style breadcrumb trail. model is
 // FolderNavigationController::breadcrumb -- a QVariantList of
 // {name, handle, isRoot}, root-first, current folder last. Each delegate is
-// a label (clickable, navigates there) plus its own independent separator
-// ">" element -- kept separate now so a later phase can attach a
+// a segment (clickable, navigates there) plus its own independent chevron
+// separator -- kept separate now so a later phase can attach a
 // TapHandler/Menu to just the separator (subfolder dropdown) without
 // restructuring the delegate.
 //
@@ -27,10 +27,6 @@ Item {
     property alias model: repeater.model
 
     implicitHeight: row.implicitHeight
-
-    SystemPalette {
-        id: sysPalette
-    }
 
     // Index of the first (leftmost) segment still shown; segments before it
     // are hidden and represented by the "«" indicator. The last segment
@@ -70,8 +66,8 @@ Item {
             id: overflowIndicator
             visible: root.firstVisibleIndex > 0
             verticalAlignment: Text.AlignVCenter
-            leftPadding: 4
-            rightPadding: 2
+            leftPadding: Theme.spacing.sm
+            rightPadding: Theme.spacing.sm
             text: "«"
         }
 
@@ -87,31 +83,74 @@ Item {
 
                 visible: delegateRoot.index >= root.firstVisibleIndex
 
-                Label {
-                    verticalAlignment: Text.AlignVCenter
-                    leftPadding: 4
-                    rightPadding: 2
-                    elide: Text.ElideRight
-                    text: delegateRoot.modelData.isRoot ? qsTr("Cloud Drive") :
-                                                          delegateRoot.modelData.name
+                // The last segment is the current folder: nothing to navigate
+                // to, so it gets neither the hover pill nor a separator after
+                // it. Same condition the TapHandler below is gated on.
+                readonly property bool navigable: delegateRoot.index < repeater.count - 1
 
-                    // Drop feedback. Label has no background of its own, and a
-                    // plain child would paint over the text -- hence z: -1.
+                Item {
+                    id: segment
+                    // Sized off the inner Row rather than the other way round,
+                    // so this stays a plain Item the pill can anchors.fill.
+                    implicitWidth: segmentContent.implicitWidth + 2 * Theme.spacing.sm
+                    implicitHeight: segmentContent.implicitHeight
+
+                    // Hover pill and drop feedback in one rectangle -- two
+                    // stacked backgrounds would double the border in the state
+                    // where both are on. Label has no background of its own and
+                    // a plain child would paint over the text, hence z: -1;
                     // anchors.fill keeps it out of relayout()'s implicitWidth
                     // sum, which the overflow cutoff depends on.
+                    //
+                    // The vertical margins are negative so the pill is taller
+                    // than the text without the segment itself getting taller:
+                    // every other child of `row` is a bare Label, and Row has no
+                    // vertical alignment to re-centre them with if this one
+                    // grows.
                     Rectangle {
                         anchors.fill: parent
+                        anchors.topMargin: -Theme.spacing.xs
+                        anchors.bottomMargin: -Theme.spacing.xs
                         z: -1
-                        color: "transparent"
-                        border.width: dropArea.accepting ? 2 : 0
-                        border.color: sysPalette.highlight
+                        radius: Theme.radius.sm
+                        color: (hoverHandler.hovered && delegateRoot.navigable)
+                               ? Theme.color.subtleHover : "transparent"
+                        border.width: dropArea.accepting ? Theme.border.drop : 0
+                        border.color: Theme.color.accent
+                    }
+
+                    Row {
+                        id: segmentContent
+                        anchors.centerIn: parent
+                        spacing: Theme.spacing.sm
+
+                        // Inside the delegate rather than beside the trail: when
+                        // overflow folds the root away behind "«", the icon has
+                        // to go with it (S7-d).
+                        Label {
+                            visible: delegateRoot.modelData.isRoot
+                            verticalAlignment: Text.AlignVCenter
+                            font.family: Theme.font.iconFamily
+                            font.pixelSize: Theme.iconSize.sm
+                            color: Theme.color.textSecondary
+                            text: Theme.glyph.cloud
+                        }
+
+                        Label {
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            text: delegateRoot.modelData.isRoot ? qsTr("Cloud Drive") :
+                                                                  delegateRoot.modelData.name
+                        }
+                    }
+
+                    HoverHandler {
+                        id: hoverHandler
                     }
 
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
-                        // The last segment is the current folder -- nothing
-                        // to navigate to.
-                        enabled: delegateRoot.index < repeater.count - 1
+                        enabled: delegateRoot.navigable
                         onTapped: root.navController.navigateTo(delegateRoot.modelData.handle,
                                                                 delegateRoot.modelData.isRoot)
                     }
@@ -168,10 +207,9 @@ Item {
                                                               delegateRoot.modelData.handle,
                                                               delegateRoot.modelData.isRoot);
                                 } else {
-                                    root.dragProxy.sourceNav.moveHandlesTo(
-                                                root.dragProxy.handles,
-                                                delegateRoot.modelData.handle,
-                                                delegateRoot.modelData.isRoot);
+                                    root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
+                                                                           delegateRoot.modelData.handle,
+                                                                           delegateRoot.modelData.isRoot);
                                 }
                             }
                             dropArea.accepting = false;
@@ -179,13 +217,24 @@ Item {
                     }
                 }
 
-                // Independent element (not part of the label above) so a
+                // Independent element (not part of the segment above) so a
                 // later phase can hang a subfolder-listing TapHandler/Menu
-                // off just this separator without touching the label.
+                // off just this separator without touching it.
                 Label {
-                    visible: delegateRoot.index < repeater.count - 1
+                    visible: delegateRoot.navigable
+                    // Row top-aligns its children, and this one is shorter than
+                    // the segment beside it, so it has to be stretched to match
+                    // before verticalAlignment can centre the glyph.
+                    height: segment.height
                     verticalAlignment: Text.AlignVCenter
-                    text: ">"
+                    leftPadding: Theme.spacing.xs
+                    rightPadding: Theme.spacing.xs
+                    font.family: Theme.font.iconFamily
+                    // Deliberately below body size: the chevron is a separator,
+                    // not a peer of the names either side of it.
+                    font.pixelSize: Theme.font.caption
+                    color: Theme.color.textSecondary
+                    text: Theme.glyph.chevronRight
                 }
             }
         }

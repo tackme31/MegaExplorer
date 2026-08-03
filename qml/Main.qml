@@ -132,6 +132,23 @@ ApplicationWindow {
         property alias treePanelWidth: window.treePanelWidth
     }
 
+    // Toolbar-row button: a square, glyph-only ToolButton with a tooltip
+    // standing in for the label it no longer has (S7). Declared inline rather
+    // than as its own file -- same call as CaptionBar.qml's CaptionButton, and
+    // footerComponent below is in this same file, so S9's view-mode toggles can
+    // reuse it without a new import.
+    component ToolbarIconButton: ToolButton {
+        // Without this, clicking one of these while the grid is showing (view
+        // mode doesn't change, so no StackLayout focus handoff fires) leaves
+        // focus on the button and arrow keys dead until the view is re-clicked.
+        focusPolicy: Qt.NoFocus
+        implicitWidth: 32
+        implicitHeight: 32
+        font.family: Theme.font.iconFamily
+        ToolTip.delay: 500
+        ToolTip.visible: hovered
+    }
+
     // Logged-in chrome (header/footer/central StackLayout) only exists while
     // authController.authState === LoggedIn; otherwise the window shows just
     // LoginView, no header/footer. Header/footer are Loader-driven (Loader
@@ -172,6 +189,10 @@ ApplicationWindow {
         // strip onto the caption row itself (see CaptionBar.qml), leaving the
         // wrapper with a single child and no reason to exist.
         ToolBar {
+            // Matches the caption row above it so the two read as one band
+            // (S7-c); the default would be whatever the tallest child asks for.
+            implicitHeight: Theme.rowHeight.bar
+
             // The active tab's rounded background ends flush against the top of
             // this row and has to continue into it, so the two must be the same
             // surface. Fluent's default ToolBar background happens to match in
@@ -191,54 +212,88 @@ ApplicationWindow {
 
             RowLayout {
                 anchors.fill: parent
+                // Horizontal only: the children are 32px inside a 40px row and
+                // centre themselves in what's left, so a vertical margin here
+                // would just make them overflow the layout it created.
+                anchors.leftMargin: Theme.spacing.md
+                anchors.rightMargin: Theme.spacing.md
+                spacing: Theme.spacing.sm
 
-                ToolButton {
-                    text: qsTr("← Back")
+                ToolbarIconButton {
+                    text: Theme.glyph.back
+                    ToolTip.text: qsTr("Back")
                     // tabsController.currentNavigation is only null
                     // during the brief login/logout state transition
                     // (see AuthController.authState's Connections below)
                     // -- ?./?? guard against that window.
                     enabled: tabsController.currentNavigation?.canGoBack ?? false
-                    // Without this, clicking here while the grid is showing
-                    // (view mode doesn't change, so no StackLayout focus
-                    // handoff fires) leaves focus on the button and arrow
-                    // keys dead until the view is re-clicked.
-                    focusPolicy: Qt.NoFocus
                     onClicked: tabsController.currentNavigation?.goBack()
                 }
 
-                // 7:3 against the search field below. Qt Quick Layouts
+                // Goes to the current folder's parent, and -- unlike a "forward"
+                // button -- pushes that onto the back stack like any other
+                // navigation, so "back" undoes it (S7-a).
+                ToolbarIconButton {
+                    text: Theme.glyph.up
+                    ToolTip.text: qsTr("Up")
+                    enabled: tabsController.currentNavigation?.canGoUp ?? false
+                    onClicked: tabsController.currentNavigation?.goUp()
+                }
+
+                // 700:300 against the search field below. Qt Quick Layouts
                 // distributes space between fillWidth items in the ratio of
                 // their preferred sizes ("If there are multiple items with
                 // fillWidth set to true, the layout will grow or shrink the
                 // items relative to the ratio of their preferred size" --
-                // Qt 6.11 Layout docs), so the literal 7/3 below are that
-                // ratio, not pixel values. minimumWidth: 0 is spelled out
-                // (it's already the default for a non-layout item) because
-                // "no minimum width" is a deliberate requirement here.
+                // Qt 6.11 Layout docs), so the literals below are that ratio,
+                // not pixel values. They were a bare 7 and 3 until S7 gave the
+                // search field a minimumWidth: a preferred size below an item's
+                // own minimum is silently raised to it, which turned the ratio
+                // into 7:160 and left the breadcrumb three characters wide.
+                // Both numbers therefore have to stay clear of that minimum.
+                // minimumWidth: 0 is spelled out (it's already the default for
+                // a non-layout item) because "no minimum width" is a deliberate
+                // requirement here.
                 Breadcrumb {
                     navController: tabsController.currentNavigation
                     dragProxy: moveDragProxy
                     model: tabsController.currentNavigation?.breadcrumb ?? []
                     Layout.fillWidth: true
-                    Layout.preferredWidth: 7
+                    Layout.preferredWidth: 700
                     Layout.minimumWidth: 0
                     Layout.fillHeight: true
                 }
 
-                TextField {
+                // Qt 6.10's own search control, so the magnifier and the clear
+                // button come from the style rather than from us (S7-b). It has
+                // no placeholderText, which is the price of that.
+                SearchField {
                     Layout.fillWidth: true
-                    Layout.preferredWidth: 3
-                    Layout.minimumWidth: 0
-                    placeholderText: qsTr("Search in this folder")
+                    Layout.preferredWidth: 300
+                    // Unlike the breadcrumb beside it, this must not collapse to
+                    // nothing: below roughly this the two indicators leave no
+                    // room to type in.
+                    Layout.minimumWidth: 160
                     // MegaApi::search() blocks the GUI thread synchronously, so
-                    // search on Enter only rather than on every keystroke.
-                    onAccepted: tabsController.currentNavigation?.search(text)
+                    // search on Enter only rather than on every keystroke --
+                    // live: true would freeze the UI once per keystroke.
+                    live: false
+                    // Enter (searchTriggered) and the magnifier
+                    // (searchButtonPressed) are separate signals; only the first
+                    // is gated by live.
+                    onSearchTriggered: tabsController.currentNavigation?.search(text)
+                    onSearchButtonPressed: tabsController.currentNavigation?.search(text)
+                    // The style draws this button but doesn't empty the field,
+                    // so clearing the text is ours to do as well.
+                    onClearButtonPressed: {
+                        text = "";
+                        tabsController.currentNavigation?.search("");
+                    }
                 }
 
-                ToolButton {
-                    text: "≡"
-                    focusPolicy: Qt.NoFocus
+                ToolbarIconButton {
+                    text: Theme.glyph.more
+                    ToolTip.text: qsTr("More")
                     onClicked: signOutMenu.popup()
 
                     Menu {

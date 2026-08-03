@@ -43,6 +43,9 @@ QtObject {
     readonly property QtObject rowHeight: QtObject {
         readonly property int compact: 28 // tree + pin rows (D1a)
         readonly property int normal: 32  // detail view rows and header (S6)
+        // Caption row and the toolbar row directly under it (S7-c): the two
+        // read as one band only while they're the same height.
+        readonly property int bar: 40
     }
 
     // Tree-row geometry, shared so the pin rows can derive the same numbers
@@ -99,6 +102,13 @@ QtObject {
         // diagonal outline (Pin) rather than E840 Pinned, which is upright and
         // filled -- Explorer draws the diagonal one.
         readonly property string pin: "\uE718" // Pin
+        // Toolbar row (S7). more replaces the typed-out identical-to sign the
+        // overflow button used to draw; cloud sits inside the breadcrumb's root
+        // segment so it disappears with it when the trail overflows.
+        readonly property string back: "\uE72B"  // Back
+        readonly property string up: "\uE74A"    // Up
+        readonly property string more: "\uE712"  // More
+        readonly property string cloud: "\uE753" // Cloud
     }
 
     readonly property QtObject color: QtObject {
