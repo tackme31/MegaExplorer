@@ -127,9 +127,9 @@ ColumnLayout {
         const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 
         // Internal (move) vs. external (upload), same split as
-        // FileGridView.qml's -- see FolderTreePanel.qml's DropArea for why the
-        // guard is dragProxy.active rather than drag.hasUrls.
-        if (root.dragProxy.active) {
+        // FileGridView.qml's -- see there for why the guard is sourceNav rather
+        // than dragProxy.active in the two views that a drag can start in.
+        if (!drag.hasUrls && root.dragProxy.sourceNav) {
             const nav = root.dragProxy.sourceNav;
             const handles = root.dragProxy.handles;
 

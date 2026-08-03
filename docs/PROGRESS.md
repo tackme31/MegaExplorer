@@ -1618,7 +1618,8 @@ being postponed to phase 16 here.
 2. **The hover handlers branch on `dragProxy.active`, not `drag.hasUrls`.** All five previously
    dereferenced `dragProxy.sourceNav` unconditionally, which would `TypeError` on an external drop.
    `hasUrls` is a claim about the *event*; `active` is a claim about the very object the internal
-   branch then dereferences.
+   branch then dereferences. (Correct for the three chrome drop areas, but it broke the two file
+   views — see the follow-up at the end of this phase.)
 3. **`onDropped` branches on `drop.hasUrls` instead** — a deliberate departure from the plan.
    `DragProxy.finish()` calls `Drag.drop()` to deliver that very event, and `Drag.active` is cleared
    as a side effect of the same call, so its value inside the handler depends on Qt's internal
@@ -1672,6 +1673,30 @@ The gesture itself remains manual-test-only — `tests/` is C++ gtest with no QM
 - **Parallel transfers.** One at a time, matching download.
 - **Dragging files *out* of the app** to Explorer.
 - **Per-file progress UI.** The footer shows the active file plus an "n remaining" count.
+
+### Follow-up: point 2 above silently killed 14a's in-view drops
+
+Found 2026-08-03, while chasing "drops onto the tree/pins/breadcrumb work, drops inside the grid or
+the list do nothing". Not a design-pass regression despite the timing — `FileGridView.qml`'s drag &
+drop code hadn't changed since 14b at all.
+
+`DragProxy.begin()`'s `Drag.active = true` delivers the DragEnter from *inside* the assignment, and
+the area under the cursor at that moment is the view the drag started in. `DragProxy.active` is a
+binding on `Drag.active`, and `activeChanged` is emitted *after* that delivery — so in that one
+event the property still reads `false`. The handler therefore took the external branch, found no
+URLs, and ran `drag.accepted = false`. Qt delivers nothing further to a drop area that rejected the
+DragEnter, so the view stayed dead for the rest of the gesture: no highlight, no `onDropped`, and
+`Drag.drop()` returning `Qt.IgnoreAction` at the end. The three chrome drop areas never see that
+first event, which is why only the two views were affected.
+
+Fixed by guarding on `!drag.hasUrls && dragProxy.sourceNav` in both views' `updateDropTarget()` —
+`begin()` assigns `sourceNav` *before* `Drag.active`, so it is the one payload signal already true
+in that first event. `FolderTreePanel`/`QuickAccessSection`/`Breadcrumb` keep the `active` guard;
+they can't be a gesture's starting point.
+
+Worth remembering generally: **a QML binding on `Drag.active` is not readable from a handler that
+the same assignment triggered.** The two `Drag.drop()`-ordering notes in point 3 above are the same
+hazard seen from the other end of the gesture.
 
 ## Phase 17a — frameless window + own caption row (done)
 

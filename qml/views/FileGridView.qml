@@ -158,12 +158,21 @@ GridView {
         const row = root.indexAt(pos.x, pos.y);
         const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 
-        // Internal (move) vs. external (upload) is decided on dragProxy.active,
-        // not on drag.hasUrls -- see FolderTreePanel.qml's DropArea for why.
+        // Internal (move) vs. external (upload). Decided on dragProxy.sourceNav
+        // rather than dragProxy.active, unlike FolderTreePanel.qml's DropArea:
+        // this view is where the gesture *starts*, so its own DragEnter is
+        // delivered from inside DragProxy.begin()'s `Drag.active = true`
+        // assignment -- before the binding behind DragProxy.active has
+        // re-evaluated, which leaves it reading false. begin() assigns sourceNav
+        // ahead of that, so it's the one payload signal already true here.
+        // Reading active instead sent this event down the external branch, where
+        // `drag.accepted = false` rejected the DragEnter outright and Qt then
+        // withheld every later position/drop event from this DropArea -- i.e.
+        // dropping anywhere in the view the drag came from silently did nothing.
         // Everything downstream (dropRow/dropOnCurrentFolder and the highlight
         // Rectangles they drive) is payload-agnostic; only the question being
         // asked here differs.
-        if (root.dragProxy.active) {
+        if (!drag.hasUrls && root.dragProxy.sourceNav) {
             const nav = root.dragProxy.sourceNav;
             const handles = root.dragProxy.handles;
 
