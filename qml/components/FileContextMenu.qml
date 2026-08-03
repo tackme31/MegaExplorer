@@ -41,6 +41,12 @@ Menu {
         root.selectionPinned = entries.length === 1 && quickAccessModel.isPinned(entries[0].handle);
     }
 
+    // Optional-chained: closing a tab clears the Repeater delegate's model role
+    // before the pane (and this menu with it) is actually deleted, so
+    // navController is null for the one binding re-evaluation in between.
+    readonly property var availableActions: root.navController?.fileListModel?.availableActions
+                                            ?? []
+
     function labelFor(actionId) {
         if (actionId === "togglePin")
             return root.selectionPinned ? qsTr("Unpin from Quick access") : qsTr(
@@ -59,8 +65,7 @@ Menu {
         // one disabled "None" row rather than an empty, unopenable menu --
         // [""] guarantees that, and also covers an unrecognized future
         // action ID that this map hasn't been updated for yet.
-        model: root.navController.fileListModel.availableActions.length > 0
-               ? root.navController.fileListModel.availableActions : [""]
+        model: root.availableActions.length > 0 ? root.availableActions : [""]
 
         delegate: MenuItem {
             required property string modelData

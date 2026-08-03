@@ -28,7 +28,10 @@ GridView {
     // (FileActionResolver's FoldersOnly/SingleOnly spec).
     signal openInNewTabRequested(var handle)
 
-    model: root.navController.fileListModel
+    // Optional-chained: closing a tab clears the Repeater delegate's model
+    // role before the pane is actually deleted, so navController is null for
+    // the one binding re-evaluation in between.
+    model: root.navController?.fileListModel ?? null
     clip: true
     // A cell is one tile plus the gap around it; the delegate still fills the
     // whole cell (so every hit test stays cell-sized) and insets its visible

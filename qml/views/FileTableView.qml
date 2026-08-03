@@ -555,7 +555,10 @@ ColumnLayout {
         // selectionModel to do anything, which this view doesn't set, so
         // this is currently a no-op -- but explicit in case that changes.
         keyNavigationEnabled: false
-        model: root.navController.fileListModel
+        // Optional-chained: closing a tab clears the Repeater delegate's model
+        // role before the pane is actually deleted, so navController is null
+        // for the one binding re-evaluation in between.
+        model: root.navController?.fileListModel ?? null
         onLayoutChanged: root.saveColumnWidths()
         // rows changes on every FileListModel::setEntries() reset (initial
         // post-login load and folder navigation) -- see
