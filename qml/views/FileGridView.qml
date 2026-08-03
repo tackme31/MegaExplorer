@@ -30,8 +30,24 @@ GridView {
 
     model: root.navController.fileListModel
     clip: true
-    cellWidth: 120
-    cellHeight: 120
+    // A cell is one tile plus the gap around it; the delegate still fills the
+    // whole cell (so every hit test stays cell-sized) and insets its visible
+    // tile by gap/2. Width is unchanged from the pre-S8 120 -- only the height
+    // grows, to make room for the fixed thumbnail frame and a two-line name.
+    cellWidth: Theme.grid.tileWidth + Theme.grid.gap
+    cellHeight: Theme.grid.tileHeight + Theme.grid.gap
+    // The other half of the gap at the top and bottom edges. Deliberately not
+    // leftMargin/rightMargin: GridView's column count is floor(width /
+    // cellWidth), which ignores those, so a horizontal margin just pushes the
+    // last column out of view. If the left edge ever reads too tight, widen
+    // Theme.grid.gap instead.
+    topMargin: Theme.grid.gap / 2
+    bottomMargin: Theme.grid.gap / 2
+    // An overlay, so it takes nothing off root.width and the column math in
+    // Keys.onPressed below stays right.
+    ScrollBar.vertical: ScrollBar {
+        policy: ScrollBar.AsNeeded
+    }
     // Same rationale as FileTableView.qml's TableView: Flickable defaults to
     // panning on left-drag, which since Phase 14a is how a move drag & drop
     // starts instead. NoButton disables drag/flick while leaving wheel
@@ -100,10 +116,10 @@ GridView {
             return;
         }
 
-        // Matches GridView's own FlowLeftToRight layout math; no ScrollBar
-        // is attached, so width is the full viewport width. Recomputed per
-        // key press rather than cached, so a window resize doesn't need
-        // separate handling.
+        // Matches GridView's own FlowLeftToRight layout math; the vertical
+        // ScrollBar is an overlay and takes nothing off the viewport width.
+        // Recomputed per key press rather than cached, so a window resize
+        // doesn't need separate handling.
         const columns = Math.max(1, Math.floor(root.width / root.cellWidth));
         let delta = 0;
         if (event.key === Qt.Key_Left)
@@ -122,6 +138,42 @@ GridView {
         if (row >= 0)
             root.positionViewAtIndex(row, GridView.Contain);
         event.accepted = true;
+    }
+
+    // Index under a point given in view (viewport) coordinates, -1 past the
+    // last tile. Shared by every hit test in this file -- tap, hover and drop
+    // must agree on which tile a position belongs to, or clicking and
+    // highlighting drift apart. The gap around a tile belongs to that tile's
+    // cell, same as Explorer.
+    function indexAtViewportPos(pos) {
+        const contentPos = root.contentItem.mapFromItem(root, pos);
+        return root.indexAt(contentPos.x, contentPos.y);
+    }
+
+    // Tile under the pointer (S8). Resolved once at the view level rather than
+    // with a HoverHandler per delegate, for the same reason as
+    // FileTableView.qml's hoverRow: a plain child of a Flickable is installed
+    // on contentItem, which scrolls away under a stationary pointer.
+    property int hoverIndex: -1
+
+    function refreshHoverIndex() {
+        if (!tileHover.hovered) {
+            root.hoverIndex = -1;
+            return;
+        }
+        root.hoverIndex = root.indexAtViewportPos(tileHover.point.position);
+    }
+
+    // Scrolling slides a different tile under a stationary pointer, which the
+    // handler can't see on its own (no point event is delivered).
+    onContentYChanged: root.refreshHoverIndex()
+
+    HoverHandler {
+        id: tileHover
+        // parent: root for the same reason as the TapHandler below.
+        parent: root
+        onPointChanged: root.refreshHoverIndex()
+        onHoveredChanged: root.refreshHoverIndex()
     }
 
     // Drag & drop (Phase 14a). Both halves live at the view level rather than
@@ -154,8 +206,7 @@ GridView {
     // else in -- but drag.source is typed QObject, so every field access
     // through it is an unchecked dynamic lookup.
     function updateDropTarget(drag) {
-        const pos = root.contentItem.mapFromItem(root, Qt.point(drag.x, drag.y));
-        const row = root.indexAt(pos.x, pos.y);
+        const row = root.indexAtViewportPos(Qt.point(drag.x, drag.y));
         const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 
         // Internal (move) vs. external (upload). Decided on dragProxy.sourceNav
@@ -270,13 +321,9 @@ GridView {
         anchors.fill: parent
         visible: root.dropOnCurrentFolder
         color: "transparent"
-        border.width: 2
-        border.color: sysPalette.highlight
-        radius: 4
-    }
-
-    SystemPalette {
-        id: sysPalette
+        border.width: Theme.border.drop
+        border.color: Theme.color.accent
+        radius: Theme.radius.sm
     }
 
     // Selection-driven, one instance for the whole view rather than one per
@@ -302,8 +349,7 @@ GridView {
         parent: root
         acceptedButtons: Qt.LeftButton
         onTapped: {
-            const pos = root.contentItem.mapFromItem(root, point.position);
-            const idx = root.indexAt(pos.x, pos.y);
+            const idx = root.indexAtViewportPos(point.position);
             // Passive grab, so this also fires for taps inside the active
             // rename field -- see FileTableView.qml's matching guard.
             if (root.renamingHandle !== 0 && idx === root.navController.fileListModel.cursorRow())
@@ -332,6 +378,15 @@ GridView {
 
         readonly property bool dropTarget: root.dropRow === gridDelegateItem.index
 
+        readonly property bool hovered: root.hoverIndex === gridDelegateItem.index
+
+        // Whether a real thumbnail image is what this tile shows. Folders never
+        // have one, and a file that does still has an empty path until the
+        // fetch below lands.
+        readonly property bool hasImage: gridDelegateItem.hasThumbnail &&
+                                         !gridDelegateItem.isFolder
+                                         && gridDelegateItem.thumbnailPath !== ""
+
         width: GridView.view.cellWidth
         height: GridView.view.cellHeight
 
@@ -340,69 +395,97 @@ GridView {
                 root.thumbController.requestThumbnail(gridDelegateItem.handle);
         }
 
+        // The visible tile: inset inside the cell so neighbours don't touch
+        // (S8). Everything below is its child, so the fill never reaches the
+        // gap even though the hit area does.
         Rectangle {
             anchors.fill: parent
-            radius: 4
-            color: gridDelegateItem.selected ? Qt.rgba(sysPalette.highlight.r,
-                                                       sysPalette.highlight.g,
-                                                       sysPalette.highlight.b, 0.35) : "transparent"
+            anchors.margins: Theme.grid.gap / 2
+            radius: Theme.radius.sm
+            color: gridDelegateItem.selected ? Theme.color.selection : (gridDelegateItem.hovered
+                                                                        ? Theme.color.subtleHover :
+                                                                          "transparent")
             // Outlined rather than filled, so a drop target that also happens
             // to be selected still reads as two distinct states.
-            border.width: gridDelegateItem.dropTarget ? 2 : 0
-            border.color: sysPalette.highlight
-        }
+            border.width: gridDelegateItem.dropTarget ? Theme.border.drop : 0
+            border.color: Theme.color.accent
 
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 4
-            spacing: 2
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: Theme.spacing.md
+                spacing: Theme.spacing.sm
 
-            Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                // Fixed size in every tile, which is the whole point (S8): a
+                // portrait and a landscape thumbnail used to be drawn at
+                // wildly different sizes and positions. Opaque, so the
+                // selection fill behind it never tints the image.
+                Rectangle {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: Theme.grid.thumbSize
+                    Layout.preferredHeight: Theme.grid.thumbSize
+                    radius: Theme.radius.sm
+                    clip: true
+                    color: gridDelegateItem.hasImage ? Theme.color.surface : "transparent"
+                    // The frame is what marks an image out as an image; an icon
+                    // tile is drawn bare, like Explorer's.
+                    border.width: gridDelegateItem.hasImage ? Theme.border.thin : 0
+                    border.color: gridDelegateItem.selected ? Theme.color.accent :
+                                                              Theme.color.stroke
 
-                Image {
-                    anchors.fill: parent
-                    visible: gridDelegateItem.hasThumbnail && !gridDelegateItem.isFolder
-                             && gridDelegateItem.thumbnailPath !== ""
-                    // thumbnailPath uses native (backslash-on-Windows)
-                    // separators -- normalize before building a URL.
-                    source: gridDelegateItem.thumbnailPath ? ("file:///"
-                                                              + gridDelegateItem.thumbnailPath.replace(
-                                                                  /\\/g, "/")) : ""
-                    fillMode: Image.PreserveAspectFit
-                    asynchronous: true
-                }
+                    Image {
+                        anchors.fill: parent
+                        visible: gridDelegateItem.hasImage
+                        // thumbnailPath uses native (backslash-on-Windows)
+                        // separators -- normalize before building a URL.
+                        source: gridDelegateItem.thumbnailPath ? ("file:///"
+                                                                  + gridDelegateItem.thumbnailPath.replace(
+                                                                      /\\/g, "/")) : ""
+                        // Fills the frame instead of letterboxing inside it, so
+                        // the drawn area is identical in every tile.
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                    }
 
-                FileIcon {
-                    anchors.centerIn: parent
-                    visible: !gridDelegateItem.hasThumbnail || gridDelegateItem.isFolder
-                             || gridDelegateItem.thumbnailPath === ""
-                    isFolder: gridDelegateItem.isFolder
-                    size: Theme.iconSize.lg
-                }
-            }
-
-            Label {
-                visible: !gridDelegateItem.renaming
-                Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-                elide: Text.ElideMiddle
-                text: gridDelegateItem.name
-            }
-
-            // Takes the name label's slot in the tile. Inline Component for the
-            // same required-property reason as FileTableView.qml's.
-            Loader {
-                Layout.fillWidth: true
-                active: gridDelegateItem.renaming
-                sourceComponent: Component {
-                    InlineRenameField {
-                        originalName: gridDelegateItem.name
+                    FileIcon {
+                        anchors.centerIn: parent
+                        visible: !gridDelegateItem.hasImage
                         isFolder: gridDelegateItem.isFolder
-                        onCommitted: newName => root.commitRename(gridDelegateItem.handle,
-                                                                  gridDelegateItem.name, newName)
-                        onCancelled: Qt.callLater(root.endRename)
+                        size: Theme.iconSize.lg
+                    }
+                }
+
+                Label {
+                    visible: !gridDelegateItem.renaming
+                    Layout.fillWidth: true
+                    // Fixed, not fillHeight: a one-line name must not pull the
+                    // thumbnail frame off the line its neighbours sit on.
+                    Layout.preferredHeight: Theme.grid.labelHeight
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignTop
+                    // Two lines then "...", rather than the single ElideMiddle
+                    // line that used to swallow all but a few characters of a
+                    // Japanese name.
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                    text: gridDelegateItem.name
+                }
+
+                // Takes the name label's slot in the tile. Inline Component for the
+                // same required-property reason as FileTableView.qml's.
+                Loader {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Theme.grid.labelHeight
+                    active: gridDelegateItem.renaming
+                    sourceComponent: Component {
+                        InlineRenameField {
+                            originalName: gridDelegateItem.name
+                            isFolder: gridDelegateItem.isFolder
+                            onCommitted: newName => root.commitRename(gridDelegateItem.handle,
+                                                                      gridDelegateItem.name,
+                                                                      newName)
+                            onCancelled: Qt.callLater(root.endRename)
+                        }
                     }
                 }
             }

@@ -73,7 +73,24 @@ QtObject {
 
     readonly property QtObject iconSize: QtObject {
         readonly property int sm: 16 // row leading icons (S4/S5)
-        readonly property int lg: 32 // grid tiles (S8)
+        // Grid tiles (S8), drawn in place of a thumbnail. Sized against the
+        // 80px thumbnail slot below rather than as a step in a scale -- S1's
+        // guessed 32 left the slot looking mostly empty.
+        readonly property int lg: 48
+    }
+
+    // Thumbnail-grid tile geometry (S8). The tile is inset inside its cell by
+    // gap/2 on every side, so neighbouring tiles end up a full gap apart and
+    // the view's own top/bottom margin only has to supply the other half.
+    readonly property QtObject grid: QtObject {
+        readonly property int gap: 8
+        readonly property int tileWidth: 112
+        // md 8 + thumb 80 + sm 4 + label 38 + md 8. Spelled out rather than
+        // summed from the other tokens so the tile can't silently change
+        // height when one of them is retuned for an unrelated consumer.
+        readonly property int tileHeight: 138
+        readonly property int thumbSize: 80
+        readonly property int labelHeight: 38 // two lines at font.body
     }
 
     // Segoe Fluent Icons code points, spelled as escapes: the raw glyphs sit in
