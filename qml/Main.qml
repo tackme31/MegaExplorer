@@ -150,6 +150,15 @@ ApplicationWindow {
         // strip onto the caption row itself (see CaptionBar.qml), leaving the
         // wrapper with a single child and no reason to exist.
         ToolBar {
+            // The active tab's rounded background ends flush against the top of
+            // this row and has to continue into it, so the two must be the same
+            // surface. Fluent's default ToolBar background happens to match in
+            // dark, but is the panel shade in light, which would show the seam.
+            // S3 adds the 1px rule under this row.
+            background: Rectangle {
+                color: Theme.color.surface
+            }
+
             RowLayout {
                 anchors.fill: parent
 

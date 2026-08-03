@@ -80,6 +80,14 @@ QtObject {
                                                    root.sysPalette.highlight.b, 0.85)
         readonly property color danger: root.isLight ? "#c42b1c" : "#ff99a4"
 
+        // Copied verbatim from FluentWinUI3/impl/ButtonBackground.qml's `subtle`
+        // branch, so a control we background ourselves keeps hover/press
+        // feedback identical to the untouched Fluent controls beside it.
+        readonly property color subtleHover: root.isLight ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(1, 1, 1,
+                                                                                             0.06)
+        readonly property color subtlePressed: root.isLight ? Qt.rgba(0, 0, 0,
+                                                                      0.02) : Qt.rgba(1, 1, 1, 0.04)
+
         // Windows-mandated close-button colours. Kept out of the theme-following
         // group deliberately: these must not track light/dark.
         readonly property color closeHover: "#e81123"

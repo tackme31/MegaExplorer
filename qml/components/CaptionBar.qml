@@ -29,16 +29,17 @@ Item {
     // draggable area of the window, so it can't be allowed to reach zero.
     readonly property int dragReserve: 120
 
-    // Fluent's own metric for the tab strip this row carries, not a number of
-    // our own: TabBar contributes 4px of vertical padding either side of a
-    // TabButton that is label(20) + 10 top + 10 bottom = 40px, so 48 is what
-    // the strip needs to show the active tab's indicator. The 36 this started
-    // at clipped that indicator away entirely.
+    // Explorer 11's caption+tab row, and the exact sum of what TabStrip.qml
+    // now pins down itself: TabBar topPadding 4 + TabButton 36 + TabBar
+    // bottomPadding 0. Every one of those three is written explicitly over
+    // there, so this is not a number to tune in isolation -- the zero bottom
+    // padding is what lets the active tab's bottom edge sit flush with y=40 and
+    // run into the toolbar row below it.
     //
-    // Explorer 11's caption+tab row is nearer 40px, but getting there means
-    // overriding the style's padding, which only makes sense once the tab's
-    // background is ours too (planned alongside the rounded-tab treatment).
-    implicitHeight: 48
+    // It briefly was Fluent's own 48 (padding 4/4 around a 40px TabButton),
+    // which showed the indicator correctly but left the row 8px thicker than
+    // Explorer's.
+    implicitHeight: 40
 
     // Called by Main.qml's own Component.onCompleted rather than run from
     // ours: every call below needs windowAgent.setup() to have happened
@@ -52,6 +53,15 @@ Item {
     root.windowAgent.setSystemButton(WindowAgent.Close, closeButton);
     tabStrip.registerWithAgent();
 }
+
+    // D3: the caption row is on the panel side of Explorer 11's two-surface
+    // split, so it is the lighter of the pair in dark mode and the darker in
+    // light. Until now this Item had no background at all and the window colour
+    // showed through, making the row indistinguishable from the content.
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.color.surfaceAlt
+    }
 
     TabStrip {
         id: tabStrip
@@ -112,11 +122,10 @@ Item {
             // Windows' own close button turns red on hover; the style has no
             // notion of that, so the background is replaced outright.
             background: Rectangle {
-                color: closeButton.pressed ? "#c42b1c" : (closeButton.hovered ? "#e81123" :
-                                                                                "transparent")
+                color: closeButton.pressed ? Theme.color.closePressed : (closeButton.hovered ? Theme.color.closeHover : "transparent")
             }
             contentItem: Label {
-                color: closeButton.hovered ? "white" : palette.buttonText
+                color: closeButton.hovered ? Theme.color.closeGlyphOn : palette.buttonText
                 font: closeButton.font
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
