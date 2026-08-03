@@ -173,6 +173,17 @@ user32.GetForegroundWindow.restype = wintypes.HWND
 user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
 user32.VkKeyScanW.argtypes = [wintypes.WCHAR]
 
+kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+kernel32.OpenProcess.restype = wintypes.HANDLE
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+kernel32.QueryFullProcessImageNameW.argtypes = [
+    wintypes.HANDLE,
+    wintypes.DWORD,
+    wintypes.LPWSTR,
+    ctypes.POINTER(wintypes.DWORD),
+]
+
 gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
 gdi32.CreateCompatibleDC.restype = wintypes.HDC
 gdi32.CreateDIBSection.argtypes = [
@@ -261,6 +272,17 @@ def _pid_of(hwnd: int) -> int:
     return pid.value
 
 
+def _image_name_of(pid: int) -> str:
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return ""
+    buf = ctypes.create_unicode_buffer(32768)
+    size = wintypes.DWORD(len(buf))
+    ok = kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size))
+    kernel32.CloseHandle(handle)
+    return Path(buf.value).name.lower() if ok else ""
+
+
 def _client_size(hwnd: int) -> tuple[int, int]:
     rect = wintypes.RECT()
     user32.GetClientRect(hwnd, ctypes.byref(rect))
@@ -281,9 +303,9 @@ def enum_candidate_windows(pid: int | None = None) -> list[int]:
             if _pid_of(hwnd) != pid:
                 return True
         else:
-            cls = _window_class(hwnd)
-            title = _window_title(hwnd)
-            if not cls.startswith("Qt") or "MegaExplorer" not in title:
+            # Match the exe, not the title: Qt Creator with this project open is
+            # also a "Qt*" window whose title contains "MegaExplorer".
+            if _image_name_of(_pid_of(hwnd)) != EXE_PATH.name.lower():
                 return True
         found.append(hwnd)
         return True
@@ -297,11 +319,16 @@ def find_window(required: bool = True) -> int | None:
     session = load_session()
 
     hwnd = session.get("hwnd")
-    if hwnd and user32.IsWindow(hwnd) and user32.IsWindowVisible(hwnd):
+    if (
+        hwnd
+        and user32.IsWindow(hwnd)
+        and user32.IsWindowVisible(hwnd)
+        and _image_name_of(_pid_of(hwnd)) == EXE_PATH.name.lower()
+    ):
         return hwnd
 
     pid = session.get("pid")
-    if pid and _process_alive(pid):
+    if pid and _process_alive(pid) and _image_name_of(pid) == EXE_PATH.name.lower():
         candidates = enum_candidate_windows(pid)
         if candidates:
             session["hwnd"] = candidates[0]
