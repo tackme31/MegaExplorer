@@ -63,12 +63,37 @@ ColumnLayout {
     required property real initialColumnWidthSize
 
     readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size")]
+    readonly property int lastColumn: root.columnLabels.length - 1
 
-    // Row under the pointer, shared by all three of its cells (S6). The
-    // delegate is a cell, so a HoverHandler on it lights that cell alone --
-    // every cell writes its own row here instead, and every cell reads it, so
-    // the fill spans the row the way Explorer's does.
+    // Right edge of the viewport in the content coordinates cell delegates are
+    // positioned in -- what the row fill and the drop outline extend to.
+    readonly property real viewportRight: tableView.contentX + tableView.width
+
+    // Row under the pointer, read by all three of its cells (S6). The delegate
+    // is a cell, so a HoverHandler on it lights that cell alone; resolving the
+    // row once at the viewport level makes the fill span the row the way
+    // Explorer's does, and covers the strip to the right of the last column,
+    // which belongs to the row but has no delegate (S6a).
     property int hoverRow: -1
+
+    // Written from the viewport HoverHandler below and from vertical
+    // scrolling, which slides a different row under a stationary pointer.
+    function refreshHoverRow() {
+        if (!rowHover.hovered) {
+            root.hoverRow = -1;
+            return;
+        }
+        root.hoverRow = root.rowAt(rowHover.point.position);
+    }
+
+    // Row under a point given in tableView (viewport) coordinates, -1 past the
+    // last row. x is clamped inside the last column so a position to its right
+    // still resolves to the row, matching Explorer's full-row hit area.
+    function rowAt(viewportPos) {
+        const pos = tableView.contentItem.mapFromItem(tableView, viewportPos);
+        const x = Math.min(pos.x, tableView.contentWidth - 1);
+        return tableView.cellAtPosition(Qt.point(x, pos.y), false).y;
+    }
 
     // Drag & drop (Phase 14a), the mirror of FileGridView.qml's -- see the
     // comments there. The one difference is hit-testing: this view's delegate
@@ -95,14 +120,11 @@ ColumnLayout {
 
     // Reads the payload off root.dragProxy rather than the event's own
     // drag.source, same reasoning as FileGridView.qml's.
-    function updateDropTarget(drag, dropArea) {
-        const pos = tableView.contentItem.mapFromItem(dropArea, Qt.point(drag.x, drag.y));
-        // x clamped inside the last column so a hover to its right still hits
-        // the row, matching the TapHandler's own full-row behavior. Clamping is
-        // payload-agnostic, so it stays ahead of the branch below.
-        const hit = tableView.cellAtPosition(Qt.point(Math.min(pos.x, tableView.contentWidth - 1),
-                                                      pos.y), false);
-        const entry = hit.y < 0 ? ({}) : root.navController.fileListModel.entryAt(hit.y);
+    function updateDropTarget(drag) {
+        // The DropArea fills the viewport, so drag.x/y are already in the
+        // coordinates rowAt() wants.
+        const row = root.rowAt(Qt.point(drag.x, drag.y));
+        const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 
         // Internal (move) vs. external (upload), same split as
         // FileGridView.qml's -- see FolderTreePanel.qml's DropArea for why the
@@ -112,7 +134,7 @@ ColumnLayout {
             const handles = root.dragProxy.handles;
 
             if (entry.isFolder && nav.canDropHandlesOn(handles, entry.handle, false)) {
-                root.dropRow = hit.y;
+                root.dropRow = row;
                 root.dropOnCurrentFolder = false;
                 return;
             }
@@ -131,7 +153,7 @@ ColumnLayout {
         }
 
         if (entry.isFolder && uploadController.canUploadTo(entry.handle, false)) {
-            root.dropRow = hit.y;
+            root.dropRow = row;
             root.dropOnCurrentFolder = false;
         } else {
             root.dropRow = -1;
@@ -165,6 +187,11 @@ ColumnLayout {
     // zero-width. Tune by feel later if these turn out wrong.
     readonly property var minColumnWidths: [100, 100, 60]
 
+    // Used until the user resizes a column. Name's is only ever seen when
+    // fitNameColumnOnce() below can't run (a zero-width viewport); normally
+    // that fit supersedes it on the very first layout.
+    readonly property var defaultColumnWidths: [220, 150, 100]
+
     // 0 = Name, 1 = Modified, 2 = Size -- matches FileListModel::columnCount()
     // and FolderNavigationController::setSortOrder()'s column mapping.
     // Plain literal defaults (not bound to initialSortColumn/initialColumnWidth*
@@ -177,9 +204,8 @@ ColumnLayout {
     property bool sortAscending: true
 
     // -1 = user has never explicitly resized this column (unset). In that
-    // case columnWidthProvider below falls back to its hardcoded
-    // [220, 150, 100]. real to match TableView.setColumnWidth()/
-    // explicitColumnWidth()'s numeric type.
+    // case columnWidthFor() below falls back to defaultColumnWidths. real to
+    // match TableView.setColumnWidth()/explicitColumnWidth()'s numeric type.
     property real columnWidthName: -1
     property real columnWidthModified: -1
     property real columnWidthSize: -1
@@ -200,16 +226,36 @@ ColumnLayout {
                                                        root.columnWidthModified,
                                                        root.columnWidthSize)
 
-    // Width of one of the two *fixed* columns -- persisted value if the user
-    // has resized it, hardcoded default otherwise, clamped to its floor either
-    // way. Column 0 is deliberately not expressible here; see
-    // columnWidthProvider below.
-    function fixedColumnWidth(column) {
+    // Width of any column -- persisted value if the user has resized it,
+    // default otherwise, clamped to its floor either way. All three go through
+    // here; see columnWidthProvider below for why none of them is derived from
+    // the viewport.
+    function columnWidthFor(column) {
         const w = tableView.explicitColumnWidth(column);
+        const fallback = root.defaultColumnWidths[column];
         // Math.max(min, w) pattern straight from Qt's own TableView docs
         // ("Row heights and column widths") for clamping a user-resizable
         // column to a floor.
-        return Math.max(root.minColumnWidths[column], w >= 0 ? w : [220, 150, 100][column]);
+        return Math.max(root.minColumnWidths[column], w >= 0 ? w : fallback);
+    }
+
+    // Fresh install (nothing persisted): Explorer opens with Name filling most
+    // of the window, not a 220px column and 700px of empty space to its right.
+    // Runs at most once, and only for Name -- afterwards the column is an
+    // ordinary user-resizable width like the other two, and the value lands in
+    // Settings through onColumnWidthNameChanged like any manual resize, so a
+    // second tab or a later session finds it already set and skips this.
+    property bool nameWidthInitialized: false
+
+    function fitNameColumnOnce() {
+        if (root.nameWidthInitialized || !root.completed || tableView.width <= 0)
+            return;
+        root.nameWidthInitialized = true;
+        if (root.columnWidthName >= 0)
+            return;
+        const rest = root.columnWidthFor(1) + root.columnWidthFor(2);
+        root.columnWidthName = Math.max(root.minColumnWidths[0], tableView.width - rest);
+        tableView.setColumnWidth(0, root.columnWidthName);
     }
 
     // Same column same click: toggle direction. Different column: switch to
@@ -253,7 +299,7 @@ ColumnLayout {
     // Only sets a column's explicit width when a value was actually
     // persisted (>= 0) -- passing the -1 "unset" sentinel to
     // setColumnWidth() resets the column to content-based auto-width,
-    // silently overriding columnWidthProvider's [220, 150, 100] fallback for
+    // silently overriding columnWidthFor()'s defaultColumnWidths fallback for
     // fresh installs.
     //
     // Called both from Component.onCompleted below and from
@@ -273,6 +319,11 @@ ColumnLayout {
             tableView.setColumnWidth(2, root.columnWidthSize);
     }
 
+    // Guards fitNameColumnOnce() against running before the persisted widths
+    // below have been copied in -- TableView.onWidthChanged is the other call
+    // site and there is no ordering guarantee between the two.
+    property bool completed: false
+
     // The initial* required properties (set by TabContentPane from the
     // single shared Settings instance) are copied in here -- assignment
     // first, then navController.setSortOrder()/restoreColumnWidths() so the
@@ -286,6 +337,8 @@ ColumnLayout {
         root.columnWidthSize = root.initialColumnWidthSize;
         root.navController.setSortOrder(root.sortColumn, root.sortAscending);
         root.restoreColumnWidths();
+        root.completed = true;
+        root.fitNameColumnOnce();
     }
 
     // Handle of the row currently being renamed in place, 0 when not renaming
@@ -510,39 +563,52 @@ ColumnLayout {
         // reapplying here, not just once at Component.onCompleted.
         onRowsChanged: root.restoreColumnWidths()
 
-        // Name takes whatever the viewport has left over; Modified and Size
-        // keep their own width. Two defects come out of the fixed-width
-        // alternative, and both close here:
+        // Every column is its own width, none derived from the viewport --
+        // Explorer's arrangement, and the only one where both resize handles
+        // work. S0 briefly had Name absorb the leftover width instead, which
+        // broke resizing outright: a handle writes the explicit width of the
+        // column *left* of the boundary, so a column the provider derives can
+        // never be dragged, and its neighbour appears to move the wrong way
+        // (DESIGN_IMPROVEMENT.md 4-5).
         //
-        //  - this view's delegate is a *cell*, so the selection highlight is
-        //    only ever as wide as the columns are. With fixed widths it ended
-        //    partway across a wide window and left a dead strip to its right,
-        //    which is also clickable (the TapHandler clamps into the last
-        //    column) but never painted.
-        //  - narrow windows had the opposite problem: the fixed total
-        //    overflowed the viewport, and with no horizontal scroll bar the
-        //    Size column simply could not be reached.
-        //
-        // The cost is that dragging Name's own edge no longer moves anything
-        // -- resizing the other two is what widens or narrows it now.
-        // columnWidthName is still saved and restored (that plumbing spans
-        // TabContentPane and Main.qml's Settings), it just isn't read here.
-        columnWidthProvider: function (column) {
-            if (column !== 0)
-                return root.fixedColumnWidth(column);
-            return Math.max(root.minColumnWidths[0], tableView.width - root.fixedColumnWidth(1) - root.fixedColumnWidth(
-                                2));
-
-        }
-        // The provider is only consulted during a layout pass, and resizing
-        // the window alone doesn't trigger one.
-        onWidthChanged: tableView.forceLayout()
+        // The two problems that arrangement had solved are handled elsewhere
+        // now: the row fill reaching past the last column is the delegate's
+        // `trailing` band below, and a total wider than the viewport is what
+        // the horizontal scroll bar is for.
+        columnWidthProvider: column => root.columnWidthFor(column)
+        onWidthChanged: root.fitNameColumnOnce()
 
         // Neither axis had one. Vertical: nothing indicated a folder had more
-        // rows than fit. Horizontal: still reachable above the floor case,
-        // when the user drags Modified or Size wide enough to overflow.
+        // rows than fit; the wheel still scrolls it whether or not the bar is
+        // showing, so the default fade-in-when-active behaviour is fine.
         ScrollBar.vertical: ScrollBar {}
-        ScrollBar.horizontal: ScrollBar {}
+        // Horizontal is not the same case: the wheel only scrolls vertically
+        // and drag-panning is off (acceptedButtons above), so this bar is the
+        // *only* way to reach a column past the right edge -- and a bar that
+        // only appears once the view is already moving can never be the thing
+        // that starts the movement. Pinned on whenever the columns overflow,
+        // which S6a made an ordinary state rather than an edge case (they no
+        // longer shrink to fit). Explorer 11 shows a persistent bar here too.
+        ScrollBar.horizontal: ScrollBar {
+            policy: tableView.contentWidth > tableView.width ? ScrollBar.AlwaysOn :
+                                                               ScrollBar.AlwaysOff
+        }
+
+        // Scrolling slides a different row under a stationary pointer, which
+        // the handler below can't see on its own (no point event is delivered).
+        onContentYChanged: root.refreshHoverRow()
+
+        // Viewport-level for the same reason as the TapHandler below: a plain
+        // child of a Flickable is installed on contentItem, which is only as
+        // tall as the content. S6 had one HoverHandler per cell writing a
+        // shared row instead; that can't reach the strip to the right of the
+        // last column, which S6a brought back (see columnWidthProvider).
+        HoverHandler {
+            id: rowHover
+            parent: tableView
+            onPointChanged: root.refreshHoverRow()
+            onHoveredChanged: root.refreshHoverRow()
+        }
 
         // The handler is declared inside TableView, which would install it on the
         // contentItem (Qt docs, TableView::cellAtPosition) -- i.e. it would never see
@@ -571,11 +637,11 @@ ColumnLayout {
             keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
 
             onEntered: drag => {
-                root.updateDropTarget(drag, tableDropArea);
+                root.updateDropTarget(drag);
                 autoScroller.track(drag.y);
             }
             onPositionChanged: drag => {
-                root.updateDropTarget(drag, tableDropArea);
+                root.updateDropTarget(drag);
                 autoScroller.track(drag.y);
             }
             onExited: {
@@ -619,11 +685,7 @@ ColumnLayout {
             parent: tableView
             acceptedButtons: Qt.LeftButton
             onTapped: {
-                const pos = tableView.contentItem.mapFromItem(tableView, point.position);
-                // x clamped inside the last column so a tap to its right still hits
-                // the row, matching Explorer's full-row selection.
-                const hit = tableView.cellAtPosition(Qt.point(Math.min(pos.x, tableView.contentWidth
-                                                                       - 1), pos.y), false);
+                const row = root.rowAt(point.position);
                 // This handler only takes a passive grab, so it also fires for
                 // taps that land inside the active rename field -- and
                 // forceActiveFocus() below would then commit the edit on the
@@ -631,14 +693,14 @@ ColumnLayout {
                 // cursor row by construction (see beginRename), so that's the
                 // one to stand down for; a tap on any other row falls through
                 // and commits via focus loss, which is the wanted behavior.
-                if (root.renamingHandle !== 0 && hit.y
-                        === root.navController.fileListModel.cursorRow())
+                if (root.renamingHandle !== 0 && row === root.navController.fileListModel.cursorRow(
+                            ))
                     return;
                 root.forceActiveFocus();
-                if (hit.y < 0)
+                if (row < 0)
                     root.navController.fileListModel.clearSelection();
                 else
-                    root.navController.fileListModel.selectRow(hit.y, point.modifiers);
+                    root.navController.fileListModel.selectRow(row, point.modifiers);
             }
         }
 
@@ -666,25 +728,36 @@ ColumnLayout {
                                                             ? Theme.color.subtleHover :
                                                               "transparent")
 
-            // Writes the shared row (see root.hoverRow): the last cell to lose
-            // the pointer clears it, and a cell that lost it after another one
-            // already claimed a different row leaves that claim alone.
-            HoverHandler {
-                id: cellHover
-                onHoveredChanged: {
-                    if (cellHover.hovered)
-                        root.hoverRow = cell.row;
-                    else if (root.hoverRow === cell.row)
-                        root.hoverRow = -1;
-                }
+            // Distance from the last column's right edge to the viewport's, 0
+            // for every other column and whenever the columns overflow. Cells
+            // sit in content coordinates, so the viewport's right edge is
+            // contentX + width.
+            readonly property real trailing: cell.column !== root.lastColumn ? 0 : Math.max(0,
+                                                                                            root.viewportRight
+                                                                                            - (cell.x
+                                                                                               + cell.width))
+
+            // Carries the row's fill across that strip. Without it the fill
+            // stops at the last column while the strip stays part of the row
+            // for hit-testing (see rowAt), which is what B6 originally
+            // reported. Nothing clips it: TableView's clip is on the viewport,
+            // not per delegate.
+            Rectangle {
+                x: parent.width
+                width: cell.trailing
+                height: parent.height
+                color: parent.color
             }
 
             // Outlined rather than filled, so a drop target that also happens
-            // to be selected still reads as two distinct states. Top/bottom
-            // only, so adjacent cells of the same row join into one band.
+            // to be selected still reads as two distinct states. Drawn once
+            // per row by its first cell, spanning to the viewport's right edge
+            // -- one per cell would put a vertical line at every column
+            // boundary and stop short of the row's end.
             Rectangle {
-                anchors.fill: parent
-                visible: root.dropRow === cell.row
+                visible: root.dropRow === cell.row && cell.column === 0
+                width: root.viewportRight - cell.x
+                height: parent.height
                 color: "transparent"
                 border.width: Theme.border.drop
                 border.color: Theme.color.accent
