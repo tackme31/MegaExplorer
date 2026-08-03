@@ -144,6 +144,11 @@ ApplicationWindow {
         focusPolicy: Qt.NoFocus
         implicitWidth: 32
         implicitHeight: 32
+        // Stated here rather than at each use site: these are 32px inside a
+        // 40px row, and a RowLayout's cross-axis placement for an item that
+        // can't fill the row is an engine default nobody should be relying on
+        // (S8a). Harmless if the button is ever used outside a layout.
+        Layout.alignment: Qt.AlignVCenter
         font.family: Theme.font.iconFamily
         ToolTip.delay: 500
         ToolTip.visible: hovered
@@ -193,6 +198,30 @@ ApplicationWindow {
             // (S7-c); the default would be whatever the tallest child asks for.
             implicitHeight: Theme.rowHeight.bar
 
+            // A ToolBar is a Pane, so the RowLayout declared below is not the
+            // contentItem -- it's a child of the implicit one the Pane creates,
+            // and that item is sized to contentWidth/contentHeight, which
+            // default to the *implicit* size of what's inside rather than the
+            // space available. Left alone, that meant the row got 34px (its
+            // tallest child, the SearchField) inside FluentWinUI3's 8px top
+            // padding: 8..42 in a 40px band, i.e. the search field spilling 2px
+            // past the row's own bottom stroke, and the breadcrumb -- the only
+            // child with Layout.fillHeight -- centring 4px above the 32px
+            // buttons beside it (S8a).
+            //
+            // So the band is stated three times over, each one closing a
+            // different gap: padding puts the content rect where we want it,
+            // contentWidth/contentHeight give the implicit item the whole rect,
+            // and the RowLayout's anchors.fill takes all of it. Dropping
+            // Fluent's SafeArea.margins term is deliberate -- it is 0 on
+            // desktop Windows.
+            topPadding: 0
+            bottomPadding: 0
+            leftPadding: Theme.spacing.md
+            rightPadding: Theme.spacing.md
+            contentWidth: availableWidth
+            contentHeight: availableHeight
+
             // The active tab's rounded background ends flush against the top of
             // this row and has to continue into it, so the two must be the same
             // surface. Fluent's default ToolBar background happens to match in
@@ -210,13 +239,11 @@ ApplicationWindow {
                 }
             }
 
+            // Fills the Pane's implicit content item, which the block above
+            // has already reduced to exactly the band minus its padding -- so
+            // unlike before S8a there are no margins to restate here.
             RowLayout {
                 anchors.fill: parent
-                // Horizontal only: the children are 32px inside a 40px row and
-                // centre themselves in what's left, so a vertical margin here
-                // would just make them overflow the layout it created.
-                anchors.leftMargin: Theme.spacing.md
-                anchors.rightMargin: Theme.spacing.md
                 spacing: Theme.spacing.sm
 
                 ToolbarIconButton {
@@ -274,6 +301,12 @@ ApplicationWindow {
                     // nothing: below roughly this the two indicators leave no
                     // room to type in.
                     Layout.minimumWidth: 160
+                    // Centred at its own 34px rather than stretched or pinned
+                    // to the buttons' 32: that height is max(background 32,
+                    // contentHeight + 10, searchIndicator 24 + 10) in
+                    // FluentWinUI3, and forcing it down would squeeze the
+                    // style's own 5px vertical padding and its two indicators.
+                    Layout.alignment: Qt.AlignVCenter
                     // MegaApi::search() blocks the GUI thread synchronously, so
                     // search on Enter only rather than on every keystroke --
                     // live: true would freeze the UI once per keystroke.

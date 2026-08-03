@@ -85,7 +85,18 @@ ColumnLayout {
             // style defaults, so the old literal 20 was quietly 8px out and
             // could not have been kept in step by hand (3-4).
             leftPadding: Theme.tree.contentIndent
-            rightPadding: Theme.tree.margin
+            // Inset (which moves the pill only) plus a gutter inside it, so the
+            // trailing pin glyph stops 8px short of the pill's own right edge
+            // instead of touching the panel border (S8a).
+            rightPadding: Theme.spacing.sm + Theme.spacing.md
+
+            // FluentWinUI3's ItemDelegate config carries topPadding/
+            // bottomPadding 8, which in the 28px row this delegate declares
+            // above leaves a 12px content box at y=8 -- too short for a 16px
+            // icon, so the whole row rendered 2px low (S8a). Any row whose
+            // height we set ourselves has to state its vertical padding too.
+            topPadding: 0
+            bottomPadding: 0
 
             // The rounded pill of Windows 11's navigation pane, same as the
             // tree rows (3-1).
@@ -107,12 +118,17 @@ ColumnLayout {
             contentItem: RowLayout {
                 spacing: Theme.spacing.md
 
+                // All three children state their own vertical centring rather
+                // than leaning on the layout engine's cross-axis default, the
+                // same way FileTableView.qml's row does (S8a).
                 FileIcon {
+                    Layout.alignment: Qt.AlignVCenter
                     isFolder: true
                 }
 
                 Label {
                     Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
                     text: pinDelegate.text
                     elide: Text.ElideRight
                     // Stated outright rather than inherited, same as the tree's
@@ -127,6 +143,7 @@ ColumnLayout {
                 // right-click menu.
                 Label {
                     Layout.preferredWidth: Theme.iconSize.sm
+                    Layout.alignment: Qt.AlignVCenter
                     horizontalAlignment: Text.AlignHCenter
                     font.family: Theme.font.iconFamily
                     font.pixelSize: Theme.iconSize.sm

@@ -65,6 +65,9 @@ Item {
         Label {
             id: overflowIndicator
             visible: root.firstVisibleIndex > 0
+            // Row has no vertical alignment of its own, so every direct child
+            // has to carry the same height or it drifts on its own (S8a).
+            height: Theme.rowHeight.compact
             verticalAlignment: Text.AlignVCenter
             leftPadding: Theme.spacing.sm
             rightPadding: Theme.spacing.sm
@@ -90,10 +93,15 @@ Item {
 
                 Item {
                     id: segment
-                    // Sized off the inner Row rather than the other way round,
-                    // so this stays a plain Item the pill can anchors.fill.
+                    // Width is sized off the inner Row rather than the other way
+                    // round, so this stays a plain Item the pill can
+                    // anchors.fill. Height is the token, *not* the content: Row
+                    // top-aligns its children, so a content-derived height left
+                    // the root segment (16px cloud glyph) 2px taller than the
+                    // rest and parted their baselines (S8a). One height for
+                    // every segment makes the alignment structural.
                     implicitWidth: segmentContent.implicitWidth + 2 * Theme.spacing.sm
-                    implicitHeight: segmentContent.implicitHeight
+                    implicitHeight: Theme.rowHeight.compact
 
                     // Hover pill and drop feedback in one rectangle -- two
                     // stacked backgrounds would double the border in the state
@@ -101,16 +109,8 @@ Item {
                     // a plain child would paint over the text, hence z: -1;
                     // anchors.fill keeps it out of relayout()'s implicitWidth
                     // sum, which the overflow cutoff depends on.
-                    //
-                    // The vertical margins are negative so the pill is taller
-                    // than the text without the segment itself getting taller:
-                    // every other child of `row` is a bare Label, and Row has no
-                    // vertical alignment to re-centre them with if this one
-                    // grows.
                     Rectangle {
                         anchors.fill: parent
-                        anchors.topMargin: -Theme.spacing.xs
-                        anchors.bottomMargin: -Theme.spacing.xs
                         z: -1
                         radius: Theme.radius.sm
                         color: (hoverHandler.hovered && delegateRoot.navigable)

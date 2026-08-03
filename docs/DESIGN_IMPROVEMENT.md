@@ -219,6 +219,76 @@ C++ は 1 行も触れておらず、変更は QML 5 ファイル（`TabStrip.qm
       2. `contentItem.mapFromItem()` → `indexAt()` の 2 行が 3 箇所（タップ / ドロップ / 新しい
          ホバー）に重複するので `indexAtViewportPos()` に集約した。計画には無かったが、
          「クリックは選択されるのにホバーは光らない」ズレを構造的に防ぐ意味がある
+- [x] **S8a** 細かいマージン / 縦位置揃えの後始末（**ユーザーが実機スクリーンショットで指摘した
+      6 件**。S6a と同じく「S8 までの作業の後に見つかった、意匠ではなく仕上げの精度の問題」)
+      → **2026-08-04 完了**。変更は QML 6 ファイル（`Main.qml` / `Breadcrumb.qml` /
+      `QuickAccessSection.qml` / `FolderTreePanel.qml` / `TabContentPane.qml` /
+      `FileGridView.qml`）、**`Theme.qml` は無変更**（新トークン 0 個 —— 既存の
+      `rowHeight.compact` / `spacing.*` / `grid.gap` の再利用だけで足りた）、C++ 0 行、
+      `CMakeLists.txt` 無変更なのでリコンフィグ不要
+
+      指摘 6 件のうち **3 件が同じ根本原因**だった: **Qt スタイル側の縦パディング既定値が、
+      こちらが `implicitHeight` で行高を上書きした行の中で辻褄を失っていた**。
+
+      1. **検索欄のはみ出し + ツールバー行の縦揃え**（§2-4）— `ToolBar` は `Pane` なので、
+         そこに書いた `RowLayout` は contentItem では**なく**、Pane が暗黙に作る contentItem の
+         *子*。その暗黙アイテムは `contentWidth`/`contentHeight` に合わせられ、既定値は
+         「中身の implicit サイズ」＝この行では一番背の高い子（`SearchField` の 34px）。
+         そこに FluentWinUI3 の `toolbar` config が持つ **4 辺 padding 8** が乗って `y=8..42`
+         となり、40px 帯の下端ストロークを **2px 突き抜けていた**。同時に、`Layout.fillHeight`
+         を持つ唯一の子であるパンくずだけが 34px に収まって中心 y=25、隣の 32px ボタンは
+         中心 y=24.5 —— これが「パンくずが揃わない」の正体。修正は帯を 3 重に言い切ること:
+         `topPadding`/`bottomPadding: 0` + 左右 `spacing.md`、`contentWidth: availableWidth` /
+         `contentHeight: availableHeight`、そして `RowLayout` の `anchors.fill: parent`（これは
+         **残す**）。加えて `ToolbarIconButton` 本体と `SearchField` に
+         `Layout.alignment: Qt.AlignVCenter` を明示（レイアウトエンジンの交差軸既定に頼らない）
+      2. **クイックアクセス行**（§3-1）— FluentWinUI3 `ItemDelegate` config の
+         `topPadding`/`bottomPadding: 8`。28px 行では contentItem 枠が `y=8, height=12` になり
+         16px アイコンが収まらず全体が 2px 下がっていた → **両方 0 に**。ピンの右余白は
+         `rightPadding` を `tree.margin`(4) から **`spacing.sm + spacing.md`(12)** へ
+         （`rightInset: 4` は背景ピルしか動かさないので、コンテンツの余白にはならない）
+      3. **ツリー行**（§3-1）— Basic `TreeViewDelegate.qml` が
+         `topPadding: (height - contentItem.implicitHeight) / 2` を持つのに **`bottomPadding` は
+         0 のまま**という非対称。`y=4, height=24` で 2px 下がる。**シェブロンだけ揃って見えて
+         いたのは、`indicator` が自前の `y: (height - height)/2` を書いているから**（S5 で
+         入れた行）→ ここも両方 0 に。`leftPadding` は Basic が
+         `leftMargin + __contentIndent` から導いておりインデントそのものなので**触っていない**
+      4. **一覧/グリッドと左ペインの間のマージン**（§3-1）— `TabContentPane.qml` の
+         `StackLayout` に `Layout.leftMargin: Theme.spacing.md`。`SplitView` は
+         `QQuickLayout` ではないので、Main.qml 側の第 2 子には `Layout.leftMargin` が効かない
+      5. **グリッドのタイル間の不感帯**（§5）— 塗りは S8 で 4px インセット済みだったが、
+         **当たり判定がセル単位**（`indexAt` はセル全体で index を返す）で、「どのタイルにも
+         ホバーしない位置」が存在しなかった。`indexAtViewportPos()` を
+         **タイル矩形基準**に変更（`itemAtIndex()` の実ジオメトリと突き合わせ、`gap/2` の帯なら
+         `-1`）。**ホバーだけでなくタップ / ドロップも**同じ関数を通るので 3 者は一致したまま
+         —— 隙間タップは選択解除、隙間ドロップは現在フォルダ宛て。`Theme.grid.gap` は 8px
+         据え置き（セル 120x146 と列数は不変）
+      6. **パンくずセグメントの縦揃え** — `Row` は子を上揃えするので、セグメント高＝文字高だと
+         Cloud アイコン付きのルートだけ 2px 高くベースラインが割れる。高さを
+         `Theme.rowHeight.compact`(28) に固定して**構造的に**解決。副産物としてホバーのピルが
+         約 23→28px（Explorer 寄り、事前に合意済み）。負マージンでピルだけ伸ばしていた小細工は
+         存在理由が消えたので削除
+
+      実測（1200x800 ライト / ダーク、800x600）: ツールバー行は帯 `y=40..79` に対し検索欄
+      `y=43..76`（**上下 3px / 2px、ストロークにかからない**）、`…` ボタン右端が
+      `x=1192` ＝ 右パディング 8px ちょうど（修正前は約 70px 手前で切れていた）。ピン行は
+      アイコン / ラベル / ピンの ink 中心が **117.5 / 118.0 / 117.5**（行 `y=104..132` の中心
+      118）で一致。ツリー行は行 `y=201..228`（中心 214.5）にアイコン 214.5 / ラベル 215。
+      詳細表示のヘッダ下線が `x=229` から始まる ＝ SplitView ストローク `x=220` + **8px**。
+      グリッドはタイル上でのみ `subtleHover` が乗り、**横 8px の隙間でも行間の隙間でも
+      どのタイルも光らない**（`drive` でポインタを置いて確認）
+
+      **計画から外れた点 1 件**: 当初の見立ては「`anchors.fill` と `QQuickControl::resizeContent()`
+      が競合して padding 側が勝っている」だったが、実機で `padding: 0` にしても行は縮んだまま
+      だった。真因は上記 1 の **Pane の `contentWidth`/`contentHeight` が「中身の implicit
+      サイズ」を既定にしている**ことで、競合ではなく単に**誰も帯いっぱいのサイズを与えて
+      いなかった**。したがって `anchors.fill` は削除ではなく**存置**が正解で、`contentWidth` /
+      `contentHeight` の 2 行を足す必要があった
+
+      **未検証で残したもの**: ピン行 / パンくずセグメントへのドラッグ&ドロップ枠（padding と
+      セグメント高を変えたため）。S7 と同じく実アカウントのノードを動かす必要があるので
+      ユーザーの手動確認に回した。**S9 への申し送り**: `footerComponent` の `ToolBar` も同じ
+      Pane の性質を持つので、フッターを縮めるときは `contentHeight` を確認すること
 - [ ] **S9** ステータスバーの縮小 + 項目数表示 — [6](#6-フッター--ステータスバー--mainqml220-295)
 - [ ] **S10** トーストのスタック化 — [7](#7-ポップアップトーストダイアログ)
 - [ ] **S11** ログイン画面 / レスポンシブ — [8](#8-ログイン画面--loginviewqml) / [9](#9-レスポンシブ800x600-で実測)
@@ -569,6 +639,12 @@ x≈1155、≡ が x≈1176 で、ウィンドウ端まで 20px 程度しかな�
   アイコンボタンに畳む。
 - 検索アイコンがない。→ 先頭に虫眼鏡、入力中はクリア（×）を出す。
 
+> **S8a 追記（2026-08-04）**: S7 で `SearchField` に置き換えた後、**欄がツールバー行の下端
+> ストロークを 2px 突き抜け、右端も約 70px 手前で切れていた**（ユーザー指摘）。原因は検索欄
+> ではなく `ToolBar` 側 —— Pane の `contentWidth`/`contentHeight` が「中身の implicit サイズ」
+> を既定にしているため、行が帯いっぱいに広がっていなかった。詳細と修正はチェックリストの
+> S8a の項。
+
 ### 2-5. 「≡」（サインアウト）ボタン
 
 テキストの ≡ でフォントサイズ既定（`Main.qml:201`）。アイコンフォント化し、Explorer の
@@ -595,6 +671,15 @@ padding（= ラベル位置）にもクリック判定にも影響しない —�
 
 ホバー塗り（`Theme.color.subtleHover`）もここで入れた。従来ツリー行にはホバー表現が一切なく、
 背景を自前化したせいでスタイル既定のそれも失われていた（§0-3 / §0-1 の `subtleHover` の項）。
+
+> **S8a 追記（2026-08-04）**: S5 で片付いたのは*横*方向だけで、**縦は両方ともズレたままだった**
+> （ユーザー指摘）。ツリー行はアイコンとラベルが 2px 下がり（Basic `TreeViewDelegate` の
+> `topPadding` だけが計算式で `bottomPadding` は 0 という非対称。シェブロンだけ揃って見えたのは
+> S5 の `indicator` が自前で `y` を書いていたから）、ピン行も同じく 2px 下がっていた
+> （FluentWinUI3 `ItemDelegate` の `topPadding`/`bottomPadding: 8` が 28px 行に収まらない）。
+> どちらも**縦パディングを 0 にして `contentItem` の子に `Layout.alignment: Qt.AlignVCenter` を
+> 明示**して解決。ピンの右余白（`rightPadding` 4→12）と、**一覧/グリッドと左ペインの間の 8px**
+> （`TabContentPane.qml`）も同時に。詳細はチェックリストの S8a の項。
 
 ### 3-2. ツリー行が 50px と高すぎる ★ユーザー指摘（原因を式レベルで特定）
 
@@ -1154,6 +1239,12 @@ into one band」というコメントに反して**列境界に縦線が出て�
 > **残件**: 2 行 + 省略でも収まらない長い名前に対するツールチップは入れていない
 > （ツリー行は B4 で入れてある）。グリッドは名前を 2 行使える分ツリーより切れにくいので、
 > 必要になってから足す。
+>
+> **S8a 追記（2026-08-04）**: S8 の「タイル間 8px」は*塗り*だけの話で、**当たり判定はセル単位の
+> まま**だった —— つまりポインタがどこにあっても必ずどれかのタイルが光り、隣へ移るときの
+> 「何も選ばれていない」瞬間が存在しなかった（ユーザー指摘）。`indexAtViewportPos()` を
+> タイル矩形基準にして解消。ホバーだけでなくタップ / ドロップも同じ関数を通るので、
+> S8 が気にしていた「クリックとハイライトのズレ」は起きない。
 
 実測（グリッド表示のスクリーンショット）:
 
@@ -1257,6 +1348,7 @@ into one band」というコメントに反して**列境界に縦線が出て�
 | **S6a** | 列リサイズの破綻を直す（4-5）。**S6 の後に判明した S0 由来の不具合**で、意匠ではなく操作性の問題。(A) / (B) の選択が先 | `FileTableView.qml`（(B) なら描画層も） | S0, S6 |
 | **S7** | ツールバー行の余白・パンくず・アイコンボタン化（2-1〜2-5）+ **「上へ」ボタン追加**（D4） | `Main.qml`, `Breadcrumb.qml`, `FolderNavigationController` | S1, S4 |
 | ~~**S8**~~ | ~~グリッド表示のタイル設計見直し（5）~~ **完了 2026-08-03**。ホバー無し（ユーザー指摘）の修正も同時に | `Theme.qml`, `FileGridView.qml` | S1, S4 |
+| ~~**S8a**~~ | ~~細かいマージン / 縦位置揃えの後始末（2-4, 3-1, 5）。**S8 の後にユーザーが指摘した 6 件**で、3 件は「スタイル既定の縦パディング vs 自前で決めた行高」という同一原因~~ **完了 2026-08-04** | `Main.qml`, `Breadcrumb.qml`, `QuickAccessSection.qml`, `FolderTreePanel.qml`, `TabContentPane.qml`, `FileGridView.qml` | S5, S7, S8 |
 | **S9** | ステータスバーの縮小 + 項目数表示（6） | `Main.qml` | S1 |
 | **S10** | トーストのスタック化（7） | `DownloadSnackbar.qml`, `OperationSnackbar.qml`, `ErrorToast.qml` | S0 |
 | **S11** | ログイン画面（8）、レスポンシブ（9、D5 により最小幅の調整のみ・挙動変更なし） | `LoginView.qml`, `Main.qml` | S1 |

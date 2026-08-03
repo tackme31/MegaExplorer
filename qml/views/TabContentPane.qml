@@ -78,6 +78,11 @@ ColumnLayout {
         id: stackLayout
         Layout.fillWidth: true
         Layout.fillHeight: true
+        // Breathing room between the SplitView's rule and the file views, which
+        // otherwise start flush against it (S8a). It lives here rather than on
+        // Main.qml's SplitView because SplitView is not a QQuickLayout, so
+        // Layout.leftMargin on its second child would be ignored.
+        Layout.leftMargin: Theme.spacing.md
         currentIndex: pane.viewMode
 
         FileTableView {

@@ -117,6 +117,16 @@ TreeView {
         // is silently ignored (which is what the old code did).
         implicitHeight: Theme.rowHeight.compact
 
+        // Basic's TreeViewDelegate derives topPadding from
+        // (height - contentItem.implicitHeight) / 2 but leaves bottomPadding at
+        // 0, so the content box landed at y=4 with height 24 in this 28px row
+        // and everything in it rendered 2px low. The chevron escaped that only
+        // because the indicator below positions itself with its own y (S8a).
+        // leftPadding is deliberately left alone: Basic derives it from
+        // leftMargin + __contentIndent, which is where the indentation lives.
+        topPadding: 0
+        bottomPadding: 0
+
         // Spelled out even where they match Basic's defaults, so
         // QuickAccessSection.qml can derive its own left padding from the same
         // tokens rather than hand-matching three style defaults (3-4).
@@ -195,13 +205,17 @@ TreeView {
             spacing: Theme.spacing.md
             visible: !treeDelegate.editing
 
+            // Both children state their own vertical centring, same as the pin
+            // rows' contentItem and FileTableView.qml's row (S8a).
             FileIcon {
+                Layout.alignment: Qt.AlignVCenter
                 isFolder: true
             }
 
             Label {
                 id: nameLabel
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
                 text: treeDelegate.name
                 elide: Text.ElideRight
                 // Both stated outright rather than inherited from the style

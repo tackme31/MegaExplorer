@@ -33,10 +33,12 @@ GridView {
     // the one binding re-evaluation in between.
     model: root.navController?.fileListModel ?? null
     clip: true
-    // A cell is one tile plus the gap around it; the delegate still fills the
-    // whole cell (so every hit test stays cell-sized) and insets its visible
-    // tile by gap/2. Width is unchanged from the pre-S8 120 -- only the height
-    // grows, to make room for the fixed thumbnail frame and a two-line name.
+    // A cell is one tile plus the gap around it; the delegate fills the whole
+    // cell and insets its visible tile by gap/2. That gap is dead space, not
+    // part of the tile: indexAtViewportPos() below rejects it, so there is a
+    // position between any two tiles where nothing is hovered (S8a). Width is
+    // unchanged from the pre-S8 120 -- only the height grows, to make room for
+    // the fixed thumbnail frame and a two-line name.
     cellWidth: Theme.grid.tileWidth + Theme.grid.gap
     cellHeight: Theme.grid.tileHeight + Theme.grid.gap
     // The other half of the gap at the top and bottom edges. Deliberately not
@@ -144,13 +146,29 @@ GridView {
     }
 
     // Index under a point given in view (viewport) coordinates, -1 past the
-    // last tile. Shared by every hit test in this file -- tap, hover and drop
-    // must agree on which tile a position belongs to, or clicking and
-    // highlighting drift apart. The gap around a tile belongs to that tile's
-    // cell, same as Explorer.
+    // last tile *and* anywhere in the gap around one. Shared by every hit test
+    // in this file -- tap, hover and drop must agree on which tile a position
+    // belongs to, or clicking and highlighting drift apart, so the dead band
+    // is resolved here rather than in the hover path alone (S8a). Every caller
+    // already handles -1: a tap clears the selection, a drop falls back to the
+    // folder this view is showing.
     function indexAtViewportPos(pos) {
         const contentPos = root.contentItem.mapFromItem(root, pos);
-        return root.indexAt(contentPos.x, contentPos.y);
+        const idx = root.indexAt(contentPos.x, contentPos.y);
+        if (idx < 0)
+            return -1;
+        // Tested against the delegate's real geometry rather than by taking
+        // contentPos modulo cellWidth/cellHeight, which would silently assume
+        // the cell grid starts at content (0, 0).
+        const item = root.itemAtIndex(idx);
+        if (!item)
+            return idx; // not realized; nothing to refine against
+        const inset = Theme.grid.gap / 2;
+        const dx = contentPos.x - item.x;
+        const dy = contentPos.y - item.y;
+        const insideTile = dx >= inset && dx < item.width - inset && dy >= inset && dy < item.height
+              - inset;
+        return insideTile ? idx : -1;
     }
 
     // Tile under the pointer (S8). Resolved once at the view level rather than
@@ -400,7 +418,8 @@ GridView {
 
         // The visible tile: inset inside the cell so neighbours don't touch
         // (S8). Everything below is its child, so the fill never reaches the
-        // gap even though the hit area does.
+        // gap -- and since S8a the hit test doesn't either, the same inset
+        // being what indexAtViewportPos() rejects.
         Rectangle {
             anchors.fill: parent
             anchors.margins: Theme.grid.gap / 2
