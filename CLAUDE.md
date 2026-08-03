@@ -19,17 +19,34 @@ session lives in companion docs, linked from the relevant section below rather t
 
 Check current file contents before assuming a feature exists — don't trust the roadmap alone.
 
-## Tooling: use Serena MCP proactively
+## Tooling: use `ast-outline` on the docs, not `Read`
 
-Serena MCP (`mcp__serena__*`) is available and should be the default way to navigate/edit this
-codebase — prefer it over `Read`ing whole files or shelling out to `grep`/`find`, to keep token
-usage down. Use `get_symbols_overview`/`find_symbol` to locate classes/methods instead of reading
-entire `.h`/`.cpp` files top to bottom, `find_referencing_symbols` instead of a broad text search
-when tracing callers, and `replace_symbol_body`/`insert_after_symbol`/`insert_before_symbol` for
-targeted edits instead of rewriting a whole file. This matters especially around
-`third_party/sdk`/`third_party/vcpkg` — large vendored trees where a naive `Read`/`grep` sweep is
-expensive. Call `initial_instructions` at the start of a session if it hasn't been read yet (per
-Serena's own MCP server instructions).
+The companion docs above are long — `docs/DESIGN_IMPROVEMENT.md` alone is ~15k tokens, and
+`docs/PROGRESS.md` is comparable. Reading one whole just to answer a question about one stage
+burns most of a session's budget on text that isn't needed. Use `ast-outline` (a CLI on `PATH`,
+`~/.local/bin`) instead: it parses Markdown structurally — headings become symbols, with line
+ranges — so a section can be pulled out without the file around it. Same tool works on source
+files, but for code Serena's symbolic tools are still the better fit; this section is about the
+docs.
+
+The three subcommands, in the order they're normally used:
+
+```
+ast-outline outline docs/DESIGN_IMPROVEMENT.md      # heading tree + line ranges + token estimate
+ast-outline grep 'S7' docs/DESIGN_IMPROVEMENT.md    # hits, each annotated with its heading scope
+ast-outline show docs/DESIGN_IMPROVEMENT.md '2-1. 行全体に左右マージンがない' '2-4. 検索欄'
+```
+
+Tips:
+
+- `show` matches heading text **exactly**, so run `outline` or `grep` first to get the real string —
+  don't guess it from memory.
+- `grep` is the one to reach for when a topic is scattered (an S* stage typically appears in the
+  checklist, the decision table, the implementation order, and the acceptance criteria). Its
+  heading-scope annotation tells you which hits are worth a `show`.
+- `show` takes several headings in one call — batch them rather than calling it per section.
+- Falling back to `Read` is fine when the answer really does need the whole file, or for short docs
+  where the outline round-trip costs more than it saves.
 
 ## What this project is
 
