@@ -10,8 +10,8 @@ session lives in companion docs, linked from the relevant section below rather t
   `docs/MEMO.md`'s former roadmap section moved here (2026-07-28, to end dual-tracking drift between
   the two files).
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
-  and the per-stage log for S0–S11 (S0–S8 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
-  the three C++ changes it caused are cross-linked from both.
+  and the per-stage log for S0–S11 (S0–S9 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
+  the four C++ changes it caused are cross-linked from both.
 - `docs/ARCHITECTURE.md` — directory layout detail + the ports-and-adapters/DI design.
 - `docs/BUILD.md` — rationale behind each build gotcha below (why VS generator, why
   `CMakePresets.json`, the FFmpeg link fix, etc.).
@@ -144,7 +144,7 @@ targets' external-drop path and Main.qml's two upload confirmation dialogs (Phas
 system buttons, registered with QWindowKit's `WindowAgent` (exposed to QML by the header-only
 `src/qml/WindowAgentForeign.h`, `QML_FOREIGN`) from `Main.qml`'s root `Component.onCompleted`,
 Phase 17a/17b — the `qml/Theme.qml` design-token singleton and `qml/components/FileIcon.qml` that
-the UI-polish pass (S0–S8, `docs/DESIGN_IMPROVEMENT.md`) introduced — and cross-cutting app
+the UI-polish pass (S0–S9, `docs/DESIGN_IMPROVEMENT.md`) introduced — and cross-cutting app
 infrastructure — categorized logging + a MEGA SDK logger bridge (`src/app`, `src/mega`) and a shared
 `NotificationController`/`ErrorToast.qml` for user-facing failures (`src/qml`, `qml/`) — see
 `docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md` for what each phase actually built

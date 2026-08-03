@@ -31,6 +31,9 @@ class FileListModel : public QAbstractTableModel
     Q_OBJECT
     Q_PROPERTY(QVariantList selectedHandles READ selectedHandlesVariant NOTIFY selectionChanged)
     Q_PROPERTY(QStringList availableActions READ availableActions NOTIFY selectionChanged)
+    // rowCount() is Q_INVOKABLE on its own, but has no NOTIFY, so a QML
+    // binding on it would never re-evaluate. The status bar needs one.
+    Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
 
 public:
     enum Role
@@ -128,6 +131,7 @@ public:
 
 signals:
     void selectionChanged();
+    void countChanged();
 
 private:
     // Drops selected/anchor handles no longer present in mEntries. Handles

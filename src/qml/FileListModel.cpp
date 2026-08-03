@@ -84,6 +84,7 @@ void FileListModel::setEntries(std::vector<FileEntry> entries)
     mEntries = std::move(entries);
     mThumbnailPaths.assign(mEntries.size(), QString());
     endResetModel();
+    emit countChanged(); // the only place the row count ever changes
 
     pruneSelection();
 }

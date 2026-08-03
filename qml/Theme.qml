@@ -48,6 +48,10 @@ QtObject {
         // same surface, but Explorer 11 measures 48 here and 40 there, and the
         // breadcrumb frame added in S8b needs the extra room to sit inside.
         readonly property int toolbar: 48
+        // Status bar. Explorer 11 measures 24-28 here; matching `compact`
+        // above is a coincidence, not a shared decision -- S8b had to split
+        // one shared token back into caption/toolbar for exactly that reason.
+        readonly property int status: 28
     }
 
     // Tree-row geometry, shared so the pin rows can derive the same numbers
@@ -100,8 +104,8 @@ QtObject {
     // Every one of these also exists at the same code point in Windows 10's
     // Segoe MDL2 Assets (checked against both fonts' cmap), so no fallback path
     // is needed -- the same conclusion CaptionBar.qml records for the window
-    // buttons. Later phases add their glyphs here (S6 sort arrows, S7
-    // breadcrumb chevron and nav buttons, S9 view-mode toggles).
+    // buttons. Later phases add their glyphs here, re-running that cmap check
+    // first (docs/DESIGN_IMPROVEMENT.md section 11 has the script).
     // The folder is E8D5 FolderFill, a solid shape -- closest to Explorer's own
     // filled yellow folder, which is a raster asset out of imageres.dll rather
     // than a glyph. file stays an outline; the font has no filled page that
@@ -128,6 +132,15 @@ QtObject {
         readonly property string up: "\uE74A"    // Up
         readonly property string more: "\uE712"  // More
         readonly property string cloud: "\uE753" // Cloud
+        // Status bar's view-mode toggles (S9), replacing the typed-out box
+        // and hamburger characters that were the last non-ASCII glyphs left
+        // in the QML. Not E80A Tiles, the obvious partner to List: that one
+        // carries COLR colour layers, which Qt honours, so it painted as a
+        // full-colour icon in the middle of an otherwise monochrome bar.
+        // Presence in the cmap is necessary but not sufficient -- check how
+        // a new glyph actually paints.
+        readonly property string viewList: "\uE8FD" // List
+        readonly property string viewGrid: "\uE8A9" // ViewAll
     }
 
     readonly property QtObject color: QtObject {

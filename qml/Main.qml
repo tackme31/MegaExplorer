@@ -134,9 +134,7 @@ ApplicationWindow {
 
     // Toolbar-row button: a square, glyph-only ToolButton with a tooltip
     // standing in for the label it no longer has (S7). Declared inline rather
-    // than as its own file -- same call as CaptionBar.qml's CaptionButton, and
-    // footerComponent below is in this same file, so S9's view-mode toggles can
-    // reuse it without a new import.
+    // than as its own file -- same call as CaptionBar.qml's CaptionButton.
     component ToolbarIconButton: ToolButton {
         // Without this, clicking one of these while the grid is showing (view
         // mode doesn't change, so no StackLayout focus handoff fires) leaves
@@ -152,6 +150,66 @@ ApplicationWindow {
         font.family: Theme.font.iconFamily
         ToolTip.delay: 500
         ToolTip.visible: hovered
+    }
+
+    // The status bar's counterpart to ToolbarIconButton: 24px instead of 32,
+    // and it paints its own background. Sitting beside ToolbarIconButton rather
+    // than deriving from it (which S7-e anticipated) keeps the header row --
+    // measured and signed off in S7/S8b -- out of the blast radius, since the
+    // two properties that matter here, size and checked appearance, are exactly
+    // the ones that would have to change.
+    //
+    // Fluent draws `checked` as an accent slab, far too loud for a status bar
+    // (S9). Explorer's own view-mode buttons use a subtle fill with an accent
+    // underline, which is what the background below is.
+    component StatusIconButton: ToolButton {
+        id: statusButton
+
+        // Without this, clicking the button for the mode already showing
+        // changes nothing, so no StackLayout focus handoff fires and focus
+        // stays here -- leaving arrow keys dead until the view is re-clicked.
+        focusPolicy: Qt.NoFocus
+        implicitWidth: 24
+        implicitHeight: 24
+        Layout.alignment: Qt.AlignVCenter
+        font.family: Theme.font.iconFamily
+        // Stated, unlike ToolbarIconButton's, because the default body size in
+        // a 24px button leaves the glyph looking incidental. Same 16 as the
+        // row-leading icons.
+        font.pixelSize: Theme.iconSize.sm
+        ToolTip.delay: 500
+        ToolTip.visible: hovered
+
+        // Fluent flips the label to highlighted-text while checked, which goes
+        // with the accent slab it would otherwise be sitting on. Having taken
+        // that slab away, the glyph has to be told to stay ink-coloured --
+        // otherwise the checked button is white on near-white in light mode.
+        contentItem: Text {
+            text: statusButton.text
+            font: statusButton.font
+            color: Theme.color.text
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+
+        background: Rectangle {
+            radius: Theme.radius.sm
+            color: statusButton.pressed ? Theme.color.subtlePressed : (statusButton.hovered
+                                                                       || statusButton.checked)
+                                          ? Theme.color.subtleHover : "transparent"
+
+            Rectangle {
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: Theme.spacing.sm
+                anchors.rightMargin: Theme.spacing.sm
+                height: Theme.border.drop
+                radius: height / 2
+                color: Theme.color.accent
+                visible: statusButton.checked
+            }
+        }
     }
 
     // Logged-in chrome (header/footer/central StackLayout) only exists while
@@ -354,6 +412,22 @@ ApplicationWindow {
         id: footerComponent
 
         ToolBar {
+            // Explorer 11's status bar, measured (S9). Left alone this row was
+            // 48px -- the height of the buttons in it plus Fluent's padding.
+            implicitHeight: Theme.rowHeight.status
+
+            // Same three-way statement of the band as the header row above,
+            // for the same reason: a ToolBar is a Pane, so the RowLayout below
+            // is a child of the implicit content item, and that item is sized
+            // to contentWidth/contentHeight -- which default to what's inside
+            // rather than to what's available (S8a's hand-off note to S9).
+            topPadding: 0
+            bottomPadding: 0
+            leftPadding: Theme.spacing.md
+            rightPadding: Theme.spacing.md
+            contentWidth: availableWidth
+            contentHeight: availableHeight
+
             // Chrome, like the caption row and the side panel -- not part of
             // the file-list surface (D3 leaves the footer's side unstated).
             background: Rectangle {
@@ -369,15 +443,42 @@ ApplicationWindow {
 
             RowLayout {
                 anchors.fill: parent
+                spacing: Theme.spacing.sm
 
+                // Explorer's own wording: the item count is always there, the
+                // selection only while there is one. Reached through
+                // window.currentPane like the view-mode buttons below, so the
+                // whole footer reads the active tab by one route -- ?./?? for
+                // the brief login/logout window with no current tab (see the
+                // header row's Back button).
+                Label {
+                    readonly property var listModel: window.currentPane?.navController
+                                                     ?.fileListModel ?? null
+                    readonly property int selectedCount: listModel?.selectedHandles.length ?? 0
+
+                    Layout.alignment: Qt.AlignVCenter
+                    color: Theme.color.textSecondary
+                    font.pixelSize: Theme.font.caption
+                    text: !listModel ? "" : selectedCount > 0 ? qsTr("%1 items  |  %2 selected").arg(
+                                                                    listModel.count).arg(
+                                                                    selectedCount) : qsTr(
+                                                                    "%1 items").arg(listModel.count)
+                }
+
+                // Every item in this row states its own vertical placement:
+                // none of them can fill a 28px band, and a RowLayout's default
+                // for that case is not something to lean on (S8a).
                 Label {
                     Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
                     visible: downloadController.downloadActive
                     elide: Text.ElideMiddle
+                    font.pixelSize: Theme.font.caption
                     text: downloadController.activeFileName
                 }
                 ProgressBar {
                     Layout.preferredWidth: 160
+                    Layout.alignment: Qt.AlignVCenter
                     visible: downloadController.downloadActive
                     from: 0
                     to: 1
@@ -389,8 +490,10 @@ ApplicationWindow {
                 // progress cue a serial queue offers beyond the active file.
                 Label {
                     Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
                     visible: uploadController.uploadActive
                     elide: Text.ElideMiddle
+                    font.pixelSize: Theme.font.caption
                     text: uploadController.pendingCount > 1 ? qsTr("↑ %1 (%2 remaining)").arg(
                                                                   uploadController.activeFileName).arg(
                                                                   uploadController.pendingCount
@@ -399,6 +502,7 @@ ApplicationWindow {
                 }
                 ProgressBar {
                     Layout.preferredWidth: 160
+                    Layout.alignment: Qt.AlignVCenter
                     visible: uploadController.uploadActive
                     from: 0
                     to: 1
@@ -419,24 +523,28 @@ ApplicationWindow {
                 // via TabContentPane's viewModeWriteBack (see
                 // mainContentComponent below), not the on-screen state of
                 // any particular tab.
-                ToolButton {
-                    text: "☰"
-                    checkable: true
+                // checkable stays false on both, with `checked` a pure display
+                // binding and onClicked the only thing that changes anything --
+                // the same shape, and the same reason, as TabStrip.qml's tab
+                // buttons. With checkable true, AbstractButton writes `checked`
+                // itself on release; the binding survives but its value is
+                // overridden until something it depends on notifies. Clicking
+                // the mode already showing assigns the viewMode it already has,
+                // so nothing notifies, and the button sits there un-highlighted
+                // until the other one is clicked.
+                StatusIconButton {
+                    text: Theme.glyph.viewList
+                    ToolTip.text: qsTr("Details")
+                    checkable: false
                     checked: (window.currentPane?.viewMode ?? 0) === 0
-                    // Clicking ⊞->☰ while already on the grid changes
-                    // viewMode, which does trigger the StackLayout focus
-                    // handoff -- but the symmetric case (clicking ☰ while
-                    // already on the list) doesn't, so both buttons need
-                    // this for consistency.
-                    focusPolicy: Qt.NoFocus
                     onClicked: if (window.currentPane)
                                    window.currentPane.viewMode = 0
                 }
-                ToolButton {
-                    text: "⊞"
-                    checkable: true
+                StatusIconButton {
+                    text: Theme.glyph.viewGrid
+                    ToolTip.text: qsTr("Extra large icons")
+                    checkable: false
                     checked: (window.currentPane?.viewMode ?? 0) === 1
-                    focusPolicy: Qt.NoFocus
                     onClicked: if (window.currentPane)
                                    window.currentPane.viewMode = 1
                 }

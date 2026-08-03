@@ -1853,11 +1853,11 @@ size), so `clamp(80, 200, tabBar.availableWidth / tabBar.count)` decides, and th
 
 ---
 
-## UI polish pass S0–S5 (done) — the C++ half
+## UI polish pass S0–S9 (done) — the C++ half
 
 The UI-tidying stages themselves are logged in `docs/DESIGN_IMPROVEMENT.md` (findings, decisions,
 per-stage measurements), not here: they are QML work with no phase-level architecture to record.
-Two of them did reach C++, and those belong next to the rest of the interface's history.
+Four of them did reach C++, and those belong next to the rest of the interface's history.
 
 **S3** added `MEGAEXPLORER_COLOR_SCHEME=light|dark`, read in `main.cpp` right after
 `QGuiApplication` is constructed and applied via `QStyleHints::setColorScheme()` (Qt 6.8+). One call
@@ -1892,3 +1892,17 @@ would have had to leave it meaningless.
 > children". `FolderTreeModelTest::SetUp` carries a blanket `EXPECT_CALL` for it — same shape as
 > `UploadServiceTest`'s for `checkUpload`, and the same failure mode if it's missing: unrelated
 > assertions fail, with nothing pointing at the cause.
+
+**S7** added `FolderNavigationController::goUp()` / `canGoUp` for the address bar's new "up" button
+(D4). The alternative — having QML read the second-to-last `breadcrumb` entry and call
+`navigateTo()` — was rejected to keep navigation vocabulary in one place: `breadcrumb` is declared
+as a *display* structure, and deriving movement from it would make its `"handle"`/`"isRoot"` keys
+serve two contracts at once. "Up" pushes onto the back stack like any other navigation, so "back"
+undoes it.
+
+**S9** added `FileListModel`'s `count` property — `Q_PROPERTY(int count READ rowCount NOTIFY
+countChanged)`, emitted from `setEntries()` right after `endResetModel()`, which is the only place
+the row count moves. The inherited `rowCount()` is `Q_INVOKABLE` but carries no NOTIFY, so the
+status bar's new item-count binding would have gone stale on the first navigation. Same shape as
+`QuickAccessModel::count` and `TabsController::count`. The selection half of that readout needed
+nothing new: `selectedHandles` was already a `Q_PROPERTY` with `NOTIFY selectionChanged`.
