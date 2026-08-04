@@ -34,9 +34,10 @@ are post-MVP, sequenced by priority/dependency.
 | 14a | Move via drag & drop | done |
 | 14b | Upload (drag & drop) | done |
 | 17 | Title-bar-integrated tabs (Windows, QWindowKit) | done (pulled forward) |
+| 18 | Login loading screen + SDK cache location | planned (next up) |
 | 15 | In-app preview (side panel, `getPreview`) | planned |
 | 16 | Real-time remote-change reflection | future, post-MVP |
-| 18+ | Undecided | full bidirectional local sync stays out of scope |
+| 19+ | Undecided | full bidirectional local sync stays out of scope |
 
 ### Phase 6 — local cache + open-folder background refresh
 
@@ -148,6 +149,44 @@ with preview or remote-change reflection, and the investigation memo it implemen
 window + own caption row, tabs left where they were) and 17b (tab strip moved onto that caption
 row), so the shared cost landed and stabilised before the risky part. See both implementation-log
 entries.
+
+### Phase 18 — login loading screen + SDK cache location
+
+Ahead of 15/16: the login screen currently shows **nothing** between submitting the form and the
+Cloud Drive appearing (`LoginView.qml` gates its indicator on `authState === Restoring` only), and
+on a large account that gap was **measured at 6 minutes 25 seconds**. Self-contained — auth path
+plus one composition-root line, shares nothing with preview or remote-change reflection.
+
+Design, measurements and the reasoning behind every decision below live in
+`docs/FETCHNODES_PROGRESS_INVESTIGATION.md` (read 追記2 first — it supersedes the earlier
+predictions). Do not re-derive them here; this is only the checklist.
+
+- [ ] **`basePath` を `AppLocalDataLocation` に固定** (`main.cpp:63` / `MegaSdkClient.h:21`, now
+      `"."` = the launch CWD). Independent of everything below and the single biggest win: with the
+      SDK state-cache DB found, the same account's fetchNodes was **619 ms instead of 384.8 s**.
+      A changing CWD silently costs a full re-fetch.
+- [ ] **`IMegaClient::fetchNodes` に `onProgress(transferred, total)` を追加** — same two-callback
+      shape `download`/`upload` already use. Fakes/mocks under `tests/` follow.
+- [ ] **`AuthService` の 3 メソッド**（`restoreSession`/`login`/`loginWithTwoFactor`）が進捗を
+      素通しする。
+- [ ] **`AuthController` に読み込み段階の状態を持たせる** — stage enum（認証 / 準備 /
+      ダウンロード / 復号）、受信・総バイト数、経過秒。SDK スレッドからの値は
+      `DownloadController.cpp:26` と同じ `QMetaObject::invokeMethod(qApp, …, Qt::QueuedConnection)`
+      で GUI スレッドへ。
+- [ ] **「ダウンロード完了」判定に無更新タイムアウトのフォールバック**を入れる（実測でログに
+      残った最後の値は 99.44%。100% ちょうどが観測できる保証がない）。
+- [ ] **`LoginView.qml` をローディング対応にする** — 現在 `Restoring` にしか出していないので
+      `LoggingIn`/`VerifyingTwoFactor` でも出す。ダウンロード中のみ確定バー、復号中は不定 +
+      経過時間 + 「初回のみ数分かかります」。
+- [ ] ついでに **S11 の「フォームとインジケータが同じ `ColumnLayout` にあって高さが跳ねる」**
+      （`docs/DESIGN_IMPROVEMENT.md` 8 節）をここで `StackLayout` にして解消する。
+
+やらないと決めたもの: 全体を 1 本の % で見せること（ダウンロードは全体の 42% でしかなく、残り
+57% は進捗を出す手段が SDK に無い）、ノード件数の表示（`getNumNodes()` はルート確定まで 0）、
+`EVENT_REQSTAT_PROGRESS`（`reqstat` リクエスト自体が失敗しており実質使えない）。
+
+別件として拾ったもの（このフェーズの範囲外）: `MegaApi::logout` は状態キャッシュ DB を破棄する
+ので、**サインアウト 1 回のコストが 6 分半**になる。導線に警告を出すかどうかは未決。
 
 ### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
