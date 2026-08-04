@@ -129,6 +129,7 @@ qt_add_qml_module(appMegaExplorer
         qml/Theme.qml
         qml/components/AboutDialog.qml
         qml/components/ActionMenu.qml
+        qml/components/BandSelector.qml
         qml/components/Breadcrumb.qml
         qml/components/CaptionBar.qml
         qml/components/ConfirmRubbishDialog.qml

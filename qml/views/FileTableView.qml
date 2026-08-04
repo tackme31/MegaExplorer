@@ -100,6 +100,31 @@ ColumnLayout {
         return tableView.cellAtPosition(Qt.point(x, pos.y), false).y;
     }
 
+    // Rows a band rectangle (content coordinates) covers, as the {firstRow,
+    // lastRow} pair FileListModel's updateBandSelection() takes -- (-1, -1)
+    // when it covers none.
+    //
+    // Arithmetic rather than rowAt()/cellAtPosition(), which only resolve
+    // loaded cells: a band that auto-scrolls reaches rows that were never
+    // loaded. Rows are uniform (the delegate's implicitHeight is the only
+    // thing that sets their height) and the first one starts at content y 0 --
+    // the header is a separate view above this one, not a header row inside it.
+    //
+    // x is deliberately not consulted: a row is a full-width target here, the
+    // same rule rowAt() encodes by clamping x into the last column.
+    function bandRows(contentRect) {
+        const rowHeight = Theme.rowHeight.normal;
+        const firstRow = Math.max(0, Math.floor(contentRect.y / rowHeight));
+        const lastRow = Math.ceil((contentRect.y + contentRect.height) / rowHeight) - 1;
+        return lastRow < firstRow ? {
+                                        "firstRow": -1,
+                                        "lastRow": -1
+                                    } : {
+            "firstRow": firstRow,
+            "lastRow": lastRow
+        };
+    }
+
     // Drag & drop (Phase 14a), the mirror of FileGridView.qml's -- see the
     // comments there. The one difference is hit-testing: this view's delegate
     // is a cell, so a row is resolved through TableView.cellAtPosition rather
@@ -727,6 +752,33 @@ ColumnLayout {
                 root.navController.fileListModel.clearSelection();
                 backgroundMenu.popup();
             }
+        }
+
+        // Rubber-band selection (Phase 21). The strip right of the last column
+        // is empty space for this gesture even though rowAt() treats it as
+        // part of the row for clicks: it carries no delegate and no
+        // DragHandler, so a press-drag there has nothing else to mean.
+        BandSelector {
+            id: bandSelector
+            view: tableView
+            suppressed: root.renamingHandle !== 0
+            isOnItem: pos => {
+                const contentPos = tableView.contentItem.mapFromItem(tableView, pos);
+                if (contentPos.x >= tableView.contentWidth)
+                    return false;
+                return tableView.cellAtPosition(contentPos, false).y >= 0;
+            }
+
+            onBandStarted: additive => {
+                root.forceActiveFocus();
+                root.navController.fileListModel.beginBandSelection(additive);
+            }
+            onBandChanged: contentRect => {
+                const rows = root.bandRows(contentRect);
+                root.navController.fileListModel.updateBandSelection(rows.firstRow, rows.lastRow);
+            }
+            onBandFinished: root.navController.fileListModel.endBandSelection()
+            onBandCanceled: root.navController.fileListModel.cancelBandSelection()
         }
 
         delegate: Rectangle {

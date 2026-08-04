@@ -132,6 +132,32 @@ public:
     // from QML -- the Role enum above isn't exposed there.
     Q_INVOKABLE QVariantMap entryAt(int row) const;
 
+    // Rubber-band (rectangle) selection, Phase 21. A gesture is a session:
+    // begin once on press, update on every move, end (or cancel) on release.
+    // The band's covered rows are recomputed from scratch each update, so
+    // shrinking the rectangle deselects again -- what the band adds is layered
+    // on top of mBandBase, the selection as it was when the drag started
+    // (empty unless additive, i.e. Ctrl held).
+    Q_INVOKABLE void beginBandSelection(bool additive);
+
+    // List view: the band covers the contiguous rows [firstRow, lastRow].
+    // Pass (-1, -1) for a band that currently covers nothing.
+    Q_INVOKABLE void updateBandSelection(int firstRow, int lastRow);
+
+    // Grid view: the band covers a rectangular block of the grid, where
+    // model row = gridRow * columns + gridColumn. Same (-1, -1) convention.
+    Q_INVOKABLE void updateBandSelectionGrid(
+        int firstGridRow, int lastGridRow, int columns, int firstColumn, int lastColumn);
+
+    // Ends the session, leaving the selection as it stands and putting the
+    // anchor/cursor on the band's first/last covered row -- so a Shift+click
+    // right after a band extends from where the band started.
+    Q_INVOKABLE void endBandSelection();
+
+    // Ends the session by restoring the selection the drag started from
+    // (the DragHandler's onCanceled path).
+    Q_INVOKABLE void cancelBandSelection();
+
 signals:
     void selectionChanged();
     void countChanged();
@@ -151,6 +177,17 @@ private:
     // a full-table dataChanged(SelectedRole) so both views repaint.
     void notifySelectionChanged();
 
+    // Same, restricted to rows [firstRow, lastRow]. Band updates run once per
+    // mouse move, and repainting every row of a 600k-row folder per frame is
+    // exactly what the rectangle's own bookkeeping already avoids.
+    void notifySelectionChanged(int firstRow, int lastRow);
+
+    // Shared body of both updateBandSelection* overloads: rebuilds the
+    // selection as mBandBase plus the covered block, then emits only over the
+    // rows whose selected state actually flipped.
+    void applyBandSelection(
+        int firstGridRow, int lastGridRow, int columns, int firstColumn, int lastColumn);
+
     std::vector<FileEntry> mEntries;
     // Parallel to mEntries (same index, resized alongside it in setEntries).
     // Kept out of FileEntry itself since it's a session-local, GUI-populated
@@ -159,4 +196,10 @@ private:
     std::unordered_set<quint64> mSelectedHandles;
     std::optional<quint64> mAnchorHandle; // last click anchor, for Shift-range
     std::optional<quint64> mCursorHandle; // last-touched row, for keyboard nav
+
+    // Rubber-band session state (Phase 21), all meaningless while inactive.
+    bool mBandActive = false;
+    std::unordered_set<quint64> mBandBase;   // selection at press, for Ctrl+band
+    std::optional<quint64> mBandFirstHandle; // first/last row the band covers,
+    std::optional<quint64> mBandLastHandle;  // become anchor/cursor on end
 };

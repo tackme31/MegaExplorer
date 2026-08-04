@@ -192,6 +192,48 @@ GridView {
         return insideTile ? idx : -1;
     }
 
+    // Grid block a band rectangle (content coordinates) covers, as the
+    // {firstRow, lastRow, columns, firstColumn, lastColumn} FileListModel's
+    // updateBandSelectionGrid() takes -- (-1, -1) rows when it covers nothing.
+    //
+    // Arithmetic rather than indexAt()/itemAtIndex(): a band that auto-scrolls
+    // reaches rows that were never realized, which those can't resolve. The
+    // assumption that comes with it is that the cell grid starts at content
+    // (0, 0) -- true for a GridView with no header, whose top/bottom margins
+    // move the scroll range rather than the first cell.
+    //
+    // A tile is the cell minus the gap ring around it, the same inset every
+    // other hit test in this file uses (S8a), so brushing the gutter between
+    // two tiles selects neither.
+    function bandBlock(contentRect) {
+        const columns = Math.max(1, Math.floor(root.width / root.cellWidth));
+        const inset = Theme.grid.gap / 2;
+
+        const firstRow = Math.max(0, Math.floor((contentRect.y + inset) / root.cellHeight));
+        const lastRow = Math.ceil((contentRect.y + contentRect.height - inset) / root.cellHeight)
+              - 1;
+        const firstColumn = Math.max(0, Math.floor((contentRect.x + inset) / root.cellWidth));
+        const lastColumn = Math.min(columns - 1, Math.ceil((contentRect.x + contentRect.width
+                                                            - inset) / root.cellWidth) - 1);
+
+        if (lastRow < firstRow || lastColumn < firstColumn)
+            return {
+                "firstRow": -1,
+                "lastRow": -1,
+                "columns": columns,
+                "firstColumn": 0,
+                "lastColumn": 0
+            };
+
+        return {
+            "firstRow": firstRow,
+            "lastRow": lastRow,
+            "columns": columns,
+            "firstColumn": firstColumn,
+            "lastColumn": lastColumn
+        };
+    }
+
     // Tile under the pointer (S8). Resolved once at the view level rather than
     // with a HoverHandler per delegate, for the same reason as
     // FileTableView.qml's hoverRow: a plain child of a Flickable is installed
@@ -423,6 +465,29 @@ GridView {
         }
     }
 
+    // Rubber-band selection (Phase 21). The gesture itself lives in the
+    // component; what stays here is the grid geometry it can't know about.
+    BandSelector {
+        id: bandSelector
+        view: root
+        suppressed: root.renamingHandle !== 0
+        isOnItem: pos => root.indexAtViewportPos(pos) >= 0
+
+        onBandStarted: additive => {
+            root.takeFocus();
+            root.navController.fileListModel.beginBandSelection(additive);
+        }
+        onBandChanged: contentRect => {
+            const block = root.bandBlock(contentRect);
+            root.navController.fileListModel.updateBandSelectionGrid(block.firstRow, block.lastRow,
+                                                                     block.columns,
+                                                                     block.firstColumn,
+                                                                     block.lastColumn);
+        }
+        onBandFinished: root.navController.fileListModel.endBandSelection()
+        onBandCanceled: root.navController.fileListModel.cancelBandSelection()
+    }
+
     FolderBackgroundMenu {
         id: backgroundMenu
         navController: root.navController
@@ -467,6 +532,7 @@ GridView {
         // gap -- and since S8a the hit test doesn't either, the same inset
         // being what indexAtViewportPos() rejects.
         Rectangle {
+            id: tile
             anchors.fill: parent
             anchors.margins: Theme.grid.gap / 2
             radius: Theme.radius.sm
@@ -578,8 +644,14 @@ GridView {
         // Passing the threshold makes this take the exclusive grab, which
         // cancels the view-level TapHandler's pending tap; that is what keeps
         // a drag off an already-selected tile from collapsing the selection.
+        //
+        // parent: tile, not the whole cell (Phase 21): the gap around a tile
+        // is empty space for tap, hover and drop (S8a), so a drag starting
+        // there has to fall through to the band selector rather than pick this
+        // tile up. The handler stays declared here, beside its siblings.
         DragHandler {
             id: dragHandler
+            parent: tile
             target: null
 
             onActiveChanged: {

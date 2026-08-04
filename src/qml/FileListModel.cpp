@@ -86,6 +86,14 @@ void FileListModel::setEntries(std::vector<FileEntry> entries)
     endResetModel();
     emit countChanged(); // the only place the row count ever changes
 
+    // Rows the band was measured against are gone; the gesture's remaining
+    // updates would address different items, so drop the session and let the
+    // selection stand as pruned.
+    mBandActive = false;
+    mBandBase.clear();
+    mBandFirstHandle.reset();
+    mBandLastHandle.reset();
+
     pruneSelection();
 }
 
@@ -344,4 +352,121 @@ void FileListModel::notifySelectionChanged()
     emit selectionChanged();
     if (!mEntries.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {SelectedRole});
+}
+
+void FileListModel::notifySelectionChanged(int firstRow, int lastRow)
+{
+    emit selectionChanged();
+    if (firstRow >= 0 && lastRow >= firstRow)
+        emit dataChanged(index(firstRow, 0), index(lastRow, columnCount() - 1), {SelectedRole});
+}
+
+void FileListModel::beginBandSelection(bool additive)
+{
+    mBandActive = true;
+    mBandBase = additive ? mSelectedHandles : std::unordered_set<quint64>{};
+    mBandFirstHandle.reset();
+    mBandLastHandle.reset();
+}
+
+void FileListModel::updateBandSelection(int firstRow, int lastRow)
+{
+    // One column of one item per row is the same block as a list.
+    applyBandSelection(firstRow, lastRow, 1, 0, 0);
+}
+
+void FileListModel::updateBandSelectionGrid(
+    int firstGridRow, int lastGridRow, int columns, int firstColumn, int lastColumn)
+{
+    applyBandSelection(firstGridRow, lastGridRow, columns, firstColumn, lastColumn);
+}
+
+void FileListModel::applyBandSelection(
+    int firstGridRow, int lastGridRow, int columns, int firstColumn, int lastColumn)
+{
+    if (!mBandActive)
+        return;
+
+    const int rows = static_cast<int>(mEntries.size());
+    std::unordered_set<quint64> next = mBandBase;
+    std::optional<quint64> bandFirst;
+    std::optional<quint64> bandLast;
+
+    const bool covers = firstGridRow >= 0 && lastGridRow >= firstGridRow && columns > 0 &&
+                        firstColumn >= 0 && lastColumn >= firstColumn && rows > 0;
+    if (covers)
+    {
+        // Clamped before multiplying, so a band dragged far past the last row
+        // can't overflow gridRow * columns.
+        const int lastValidGridRow = (rows - 1) / columns;
+        const int loRow = std::min(firstGridRow, lastValidGridRow);
+        const int hiRow = std::min(lastGridRow, lastValidGridRow);
+        const int hiColumn = std::min(lastColumn, columns - 1);
+
+        for (int gridRow = loRow; gridRow <= hiRow; ++gridRow)
+        {
+            for (int column = firstColumn; column <= hiColumn; ++column)
+            {
+                const int row = gridRow * columns + column;
+                if (row < 0 || row >= rows)
+                    continue;
+                const quint64 handle =
+                    static_cast<quint64>(mEntries[static_cast<std::size_t>(row)].handle);
+                next.insert(handle);
+                if (!bandFirst)
+                    bandFirst = handle;
+                bandLast = handle;
+            }
+        }
+    }
+
+    // Single pass over the rows: builds the repaint range and decides whether
+    // anything changed at all, without an extra set comparison.
+    int firstChanged = -1;
+    int lastChanged = -1;
+    for (int row = 0; row < rows; ++row)
+    {
+        const quint64 handle = static_cast<quint64>(mEntries[static_cast<std::size_t>(row)].handle);
+        if (next.count(handle) == mSelectedHandles.count(handle))
+            continue;
+        if (firstChanged < 0)
+            firstChanged = row;
+        lastChanged = row;
+    }
+
+    mBandFirstHandle = bandFirst;
+    mBandLastHandle = bandLast;
+
+    if (firstChanged < 0)
+        return; // band moved, but over nothing that flips a row
+
+    mSelectedHandles = std::move(next);
+    notifySelectionChanged(firstChanged, lastChanged);
+}
+
+void FileListModel::endBandSelection()
+{
+    if (!mBandActive)
+        return;
+
+    mBandActive = false;
+    mBandBase.clear();
+
+    // An empty band is the drag equivalent of a click on empty space.
+    mAnchorHandle = mBandFirstHandle;
+    mCursorHandle = mBandLastHandle;
+    mBandFirstHandle.reset();
+    mBandLastHandle.reset();
+}
+
+void FileListModel::cancelBandSelection()
+{
+    if (!mBandActive)
+        return;
+
+    applyBandSelection(-1, -1, 0, 0, 0); // empty band -> back to mBandBase
+    mBandActive = false;
+    mBandBase.clear();
+    mBandFirstHandle.reset();
+    mBandLastHandle.reset();
 }

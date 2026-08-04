@@ -166,9 +166,19 @@ embedded via `qt_add_qml_module`'s `RESOURCES` (the project's first qrc use) and
 `src/qml/LicenseModel`, the codebase's second true QML singleton. Licenses require the license text
 to *accompany the distribution*, not merely be reachable, so a link can't substitute — but copying
 `LICENSE`/`THIRD-PARTY-NOTICES.txt` into the build/install output is **still outstanding** and
-recorded as such in the Phase 20b log. The full
-roadmap — next up is the rest of the 21–23 detail pass (rubber-band
-selection, quick-access/tab reordering + drop-onto-tab, copy/cut/paste), all pulled forward ahead of
+recorded as such in the Phase 20b log. Phase 21 then added rubber-band (rectangle) selection to both
+file views: `qml/components/BandSelector.qml` owns the gesture (pointer, content-coordinate origin so
+the band keeps growing while `DragAutoScroller` scrolls under it, and the rectangle itself), each view
+supplies the geometry — a `isOnItem(viewPos)` start rule plus a rect→rows conversion done by
+*arithmetic*, since `itemAtIndex`/`cellAtPosition` only resolve realized delegates and an
+auto-scrolling band outruns them — and `FileListModel` gained a band *session*
+(`beginBandSelection`/`updateBandSelection`(`Grid`)/`endBandSelection`/`cancelBandSelection`) whose
+`mBandBase` is what makes Ctrl+band additive, plus a row-range `dataChanged` so a drag doesn't repaint
+the whole table per frame. Two hit-test rules changed with it: the grid delegate's `DragHandler` moved
+onto the inset tile so the inter-tile gap starts a band (matching S8a's tap/hover/drop rule), and the
+list's strip right of the last column starts one too. The full
+roadmap — next up is the rest of the 22–23 detail pass (quick-access/tab reordering + drop-onto-tab,
+copy/cut/paste), all pulled forward ahead of
 phases 15–16 (in-app preview, real-time remote-change reflection) — lives in `docs/PROGRESS.md`'s
 Roadmap section; see the companion-docs list above.
 `docs/MEMO.md` keeps only non-roadmap notes. Undo and full bidirectional local sync stay out of

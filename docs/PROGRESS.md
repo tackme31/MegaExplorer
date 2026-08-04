@@ -244,13 +244,17 @@ a nicety.
 The inventory turned out to be generated rather than written, and came to 36 components — see the
 log below.
 
-### Phase 21 — rubber-band (rectangle) selection
+### Phase 21 — rubber-band (rectangle) selection (done)
 
 Drag on empty space to select the items the rectangle covers, in both the grid and the list view.
 Continues Phase 13a's selection model, which needs a range-by-rows entry point (`selectRow` is
 per-row and modifier-driven). The load-bearing decision is where the gesture starts: on empty space
 it's a rubber band, on an item it's Phase 14a's move drag. Edge auto-scroll can reuse
 `DragAutoScroller`.
+
+Both halves of that decision moved, in the end: the grid's inter-tile gap became empty space (it
+wasn't, for drags) and the list's strip right of the last column became empty space too — see the
+log below.
 
 ### Phase 22a — quick-access reordering
 
@@ -2596,3 +2600,130 @@ Also left:
   `qsTr()`, clickable links, and the version interpolated. `ABOUT.txt` was rewritten by hand to stop
   claiming Qt and the MEGA SDK are the only dependencies, and now points at the generated file.
 - No "copy all" button. The text is selectable, and the flat file exists.
+
+## Phase 21 — rubber-band (rectangle) selection (done)
+
+Press on empty space in either file view and drag: a rectangle follows the pointer and selects
+everything it covers. Ctrl adds to the selection that was already there; without it the band
+replaces it. Dragging to the top/bottom edge auto-scrolls, and the rectangle keeps growing over the
+rows that scroll into it.
+
+### The gesture had a free slot, and one that only looked free
+
+Phase 14a set `Flickable.acceptedButtons: Qt.NoButton` on both views so a left-drag would start a
+move instead of panning. That is also what left a press-drag on empty space unclaimed: nothing had
+to be taken away from Flickable to add this, and the two gestures can't collide because one starts
+on an item and the other doesn't.
+
+"On an item" was the part that needed work. Since S8a the grid's hit test (`indexAtViewportPos`)
+deliberately returns -1 inside the 8px gap ring around a tile, so tap, hover and drop all agree that
+the gutter is empty space. The delegate's `DragHandler` never got that memo: it sat on the delegate
+`Item`, which is the whole *cell*, gap included, so a drag starting in the gutter picked up the
+neighbouring tile — and selected it first on the way. Fixing it is one line (`parent: tile`, pointing
+the handler at the inset `Rectangle` S8 introduced), and it makes the band's start rule and the
+view's own hit test the same rule.
+
+The list view's mirror case went the other way. The strip right of the last column belongs to the
+row for clicks — `rowAt()` clamps x into the last column on purpose (Explorer's full-row hit area,
+S6a) — but it carries no delegate and no `DragHandler`, so a press-drag there meant nothing at all.
+It became band space rather than growing a move drag: the strip is visually empty, and it is the one
+place in the list where a band can be started without landing on a row first.
+
+### `BandSelector.qml` owns the gesture, the views own the geometry
+
+The split is: the component knows about pointers, coordinates and auto-scroll; the host view knows
+what its items are. Two required properties carry the second half — `isOnItem(viewPos)` for the
+start rule, and the host's handler for `bandChanged(contentRect)`, which turns a rectangle into
+rows. Nothing about tiles or columns leaks into the component.
+
+Three details are load-bearing:
+
+- **The origin is kept in content coordinates, the pointer in view coordinates.** Auto-scroll moves
+  the content under a stationary pointer; if both ends were in view coordinates the band would slide
+  with the view instead of growing. The mapping is written out as `pointerView + contentX/Y` rather
+  than `contentItem.mapFromItem()` for a binding reason: the arithmetic form re-evaluates when
+  `contentX`/`contentY` change, so one `onContentRectChanged` handler covers pointer moves and
+  scroll steps alike, and the rectangle and the selection can never disagree.
+- **`parent: root.view` on both the `DragHandler` and the rectangle.** The same idiom the views'
+  own view-level handlers and `DropArea`s already spell out: an `Item` child of a `Flickable` lands
+  in `contentItem`, which scrolls and is only as tall as the content, so it would never see a press
+  below the last row. As a side effect the rectangle becomes a sibling of `contentItem` created
+  after it, which is exactly the stacking it needs — above the delegates.
+- **The start rule is checked on activation, not bound.** A `DragHandler` can't decline a grab it
+  has already taken, so when the press turns out to be on an item (or the view is renaming) the
+  handler simply stays inert for the rest of the gesture. In practice the delegate's own handler
+  took the exclusive grab long before this runs — a `DragHandler` can't take over from another one
+  of the same type — so this is the second line of defence, not the first.
+
+### Rows are computed, not hit-tested
+
+Neither view's existing hit test can answer "which rows does this rectangle cover".
+`indexAtViewportPos` needs `itemAtIndex()` and `rowAt()` needs `cellAtPosition()`, and both only
+resolve *realized* delegates — but a band that auto-scrolls asks about rows that were never
+realized. So both views do the arithmetic instead:
+
+- Grid: `columns = floor(width / cellWidth)` (the same expression `Keys.onPressed` uses, recomputed
+  rather than cached for the same reason), tiles inset by `gap / 2`, and the band's row/column range
+  solved from that. The assumption that comes with dropping `itemAtIndex()` is that the cell grid
+  starts at content (0, 0) — true for a `GridView` with no header, whose margins move the scroll
+  range rather than the first cell. `indexAtViewportPos` avoids that assumption on purpose; here it
+  is stated instead.
+- List: uniform 32px rows (`Theme.rowHeight.normal`, the delegate's `implicitHeight` and the only
+  thing that sets a row's height), first row at content y 0 — the header is a separate view above
+  the `TableView`, not a header row inside it. x is not consulted at all, matching `rowAt()`'s clamp.
+
+### The model: a session, not a range call
+
+`FileListModel` gained `beginBandSelection(additive)` / `updateBandSelection*` /
+`endBandSelection()` / `cancelBandSelection()`. The session exists for two reasons. Ctrl+band is a
+union with *the selection as it was at press time*, so that set has to be captured once and kept
+(`mBandBase`) rather than re-derived from a selection the band itself keeps rewriting. And the band
+is recomputed from scratch on every update, which is what makes shrinking the rectangle deselect
+again — `selectRow`'s Shift branch, the only pre-existing range code, always cleared first and could
+only ever grow a replacement.
+
+Two update overloads rather than one: the list passes a contiguous `(firstRow, lastRow)`, the grid a
+block `(firstGridRow, lastGridRow, columns, firstColumn, lastColumn)`. A grid band is not a
+contiguous run of model rows — a tall narrow rectangle over one column selects every *n*th row — and
+the alternative, a row *list*, would mean marshalling thousands of ints per mouse move. The block
+form is O(covered) and clamps the grid row against the entry count *before* multiplying, so a band
+dragged far past the end can't overflow the index.
+
+`endBandSelection()` puts the anchor on the band's first covered row and the cursor on its last, so
+a Shift+click straight after a band extends from where the band started — the same relationship a
+click leaves behind. An empty band clears both, which is the drag equivalent of clicking empty
+space.
+
+`notifySelectionChanged()` gained a row-range overload, and the band uses it. The existing one emits
+`dataChanged` over the whole table, which is fine for a click but means a full-table repaint per
+frame during a drag; the band's diff pass already knows which rows flipped, so the range comes for
+free. If nothing flipped, nothing is emitted at all — a band dragged through empty space below the
+last row is silent.
+
+`setEntries()` drops any live session (the rows it was measured against are gone), next to the
+`pruneSelection()` call that was already there.
+
+### Testing
+
+11 new `FileListModelTest` cases, all pure C++: replace vs. additive, shrinking, the empty band, the
+grid block including the partial last row and the past-the-end clamp, anchor/cursor after the end
+(asserted through a following Shift+click rather than by reading them back), cancel, updates
+arriving after the session ended, `setEntries` during a band, and the `dataChanged` range. 260 tests
+pass.
+
+The gesture itself was checked in the running app with the `ui-style` skill's `drive`: a band in the
+grid's empty space, one started in the inter-tile gutter (which before this phase would have started
+a move drag), and in the list one from the trailing strip and one from below the last row. Ctrl+band
+and edge auto-scroll are the two paths `drive` can't reach — it has no key-hold primitive, and the
+folder used for the check fit on one screen.
+
+### Deliberately not done
+
+- **Horizontal auto-scroll.** `DragAutoScroller` writes `contentY` only, so a list whose columns
+  overflow won't scroll sideways during a band. Adding it would change Phase 14a's drop-drag
+  behaviour too, which is a separate decision.
+- **Esc to cancel a band.** `cancelBandSelection()` exists and is wired to the handler's
+  `onCanceled`, but nothing presses it from the keyboard — that needs the handler to give up its
+  grab on demand.
+- **Bands in the side panel.** The folder tree and quick-access list are single-selection.
+- **Touch.** The handler is `Qt.LeftButton`-only.

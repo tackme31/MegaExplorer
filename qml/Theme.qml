@@ -178,6 +178,11 @@ QtObject {
         readonly property color dragGhost: Qt.rgba(root.sysPalette.highlight.r,
                                                    root.sysPalette.highlight.g,
                                                    root.sysPalette.highlight.b, 0.85)
+        // Rubber-band rectangle (Phase 21). Much fainter than `selection`
+        // above: the band is drawn over rows that already carry that fill, and
+        // two comparable alphas stacked read as a third, darker state.
+        readonly property color band: Qt.rgba(root.sysPalette.highlight.r, root.sysPalette.highlight.g,
+                                              root.sysPalette.highlight.b, 0.15)
         readonly property color danger: root.isLight ? "#c42b1c" : "#ff99a4"
 
         // The folder is the one coloured thing in an otherwise monochrome icon

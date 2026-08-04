@@ -349,3 +349,162 @@ TEST(FileListModelTest, SelectedEntriesIsEmptyWithNoSelection)
 
     EXPECT_TRUE(model.selectedEntries().isEmpty());
 }
+
+// -- Rubber-band selection (Phase 21) ----------------------------------------
+
+TEST(FileListModelTest, BandReplacesSelectionWhenNotAdditive)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(6));
+    model.selectRow(5, 0);
+
+    model.beginBandSelection(false);
+    model.updateBandSelection(1, 3);
+    model.endBandSelection();
+
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{1, 2, 3}));
+}
+
+TEST(FileListModelTest, AdditiveBandKeepsSelectionFromBeforeTheDrag)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(6));
+    model.selectRow(5, 0);
+
+    model.beginBandSelection(true);
+    model.updateBandSelection(1, 2);
+    model.endBandSelection();
+
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{1, 2, 5}));
+}
+
+TEST(FileListModelTest, ShrinkingBandDeselectsAgainButKeepsTheBase)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(6));
+    model.selectRow(5, 0);
+
+    model.beginBandSelection(true);
+    model.updateBandSelection(0, 4);
+    model.updateBandSelection(0, 1);
+
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{0, 1, 5}));
+}
+
+TEST(FileListModelTest, EmptyBandLeavesNothingSelected)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(4));
+    model.selectRow(2, 0);
+
+    model.beginBandSelection(false);
+    model.updateBandSelection(-1, -1);
+    model.endBandSelection();
+
+    EXPECT_TRUE(selectedHandlesSorted(model).empty());
+    EXPECT_EQ(model.cursorRow(), -1);
+}
+
+TEST(FileListModelTest, GridBandSelectsOnlyTheCoveredBlock)
+{
+    // 9 rows over 3 columns: rows 1-2 of the grid, columns 0-1 -> model rows
+    // 3, 4, 6, 7.
+    FileListModel model;
+    model.setEntries(makeEntries(9));
+
+    model.beginBandSelection(false);
+    model.updateBandSelectionGrid(1, 2, 3, 0, 1);
+    model.endBandSelection();
+
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{3, 4, 6, 7}));
+}
+
+TEST(FileListModelTest, GridBandClampsPastTheLastPartialRow)
+{
+    // 5 entries over 3 columns: the last grid row holds rows 3 and 4 only, and
+    // a band dragged well past the end must not address anything beyond them.
+    FileListModel model;
+    model.setEntries(makeEntries(5));
+
+    model.beginBandSelection(false);
+    model.updateBandSelectionGrid(1, 99, 3, 0, 2);
+    model.endBandSelection();
+
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{3, 4}));
+}
+
+TEST(FileListModelTest, BandLeavesAnchorAndCursorOnItsFirstAndLastRow)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(8));
+
+    model.beginBandSelection(false);
+    model.updateBandSelection(2, 4);
+    model.endBandSelection();
+
+    EXPECT_EQ(model.cursorRow(), 4);
+
+    // Shift+click extends from the band's first row, not its last.
+    model.selectRow(6, kShift);
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{2, 3, 4, 5, 6}));
+}
+
+TEST(FileListModelTest, CancelledBandRestoresTheSelectionItStartedFrom)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(6));
+    model.selectRow(5, 0);
+
+    model.beginBandSelection(true);
+    model.updateBandSelection(0, 3);
+    model.cancelBandSelection();
+
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{5}));
+}
+
+TEST(FileListModelTest, BandUpdatesAfterTheSessionEndedAreIgnored)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(4));
+
+    model.beginBandSelection(false);
+    model.updateBandSelection(0, 1);
+    model.endBandSelection();
+    model.updateBandSelection(2, 3);
+
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{0, 1}));
+}
+
+TEST(FileListModelTest, SetEntriesDropsTheBandSession)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(4));
+
+    model.beginBandSelection(false);
+    model.updateBandSelection(0, 1);
+    model.setEntries(makeEntries(4)); // same handles: the selection survives
+    model.updateBandSelection(2, 3);  // ... but this addresses a dead session
+
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{0, 1}));
+}
+
+TEST(FileListModelTest, BandRepaintsOnlyTheRowsThatChanged)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(100));
+
+    int firstChanged = -1;
+    int lastChanged = -1;
+    QObject::connect(&model,
+                     &FileListModel::dataChanged,
+                     [&](const QModelIndex& topLeft, const QModelIndex& bottomRight, auto) {
+                         firstChanged = topLeft.row();
+                         lastChanged = bottomRight.row();
+                     });
+
+    model.beginBandSelection(false);
+    model.updateBandSelection(10, 12);
+
+    EXPECT_EQ(firstChanged, 10);
+    EXPECT_EQ(lastChanged, 12);
+}
