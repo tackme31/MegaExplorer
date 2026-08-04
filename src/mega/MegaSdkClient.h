@@ -18,7 +18,12 @@ class MegaSdkLogger;
 class MegaSdkClient : public IMegaClient
 {
 public:
-    explicit MegaSdkClient(std::string basePath = ".", std::string userAgent = "MegaExplorer");
+    // basePath is where the SDK unconditionally creates its state-cache DB.
+    // Deliberately has no default: it used to be "." (the launch CWD), which
+    // silently moved the DB whenever the app was started from a different
+    // directory, and a missed DB means re-downloading the entire node tree
+    // (measured: 385s vs 0.6s on a 640k-node account).
+    explicit MegaSdkClient(std::string basePath, std::string userAgent = "MegaExplorer");
     ~MegaSdkClient() override;
 
     void login(const std::string& email,
@@ -39,7 +44,9 @@ public:
 
     Result<std::uint64_t> currentUserHandle() const override;
 
-    void fetchNodes(std::function<void(Result<void>)> onDone) override;
+    void fetchNodes(
+        std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
+        std::function<void(Result<void>)> onDone) override;
 
     void getRootChildren(SortOrder order,
                          std::function<void(Result<std::vector<FileEntry>>)> onDone) override;

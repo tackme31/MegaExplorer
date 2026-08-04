@@ -10,7 +10,11 @@ public:
                 login,
                 (const std::string&, const std::string&, std::function<void(Result<void>)>),
                 (override));
-    MOCK_METHOD(void, fetchNodes, (std::function<void(Result<void>)>), (override));
+    MOCK_METHOD(void,
+                fetchNodes,
+                (std::function<void(std::uint64_t, std::uint64_t)>,
+                 std::function<void(Result<void>)>),
+                (override));
     MOCK_METHOD(void,
                 loginWithSession,
                 (const std::string&, std::function<void(Result<void>)>),

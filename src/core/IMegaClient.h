@@ -50,7 +50,27 @@ public:
     virtual Result<std::uint64_t> currentUserHandle() const = 0;
 
     // Must be called after a successful login(), before getRootChildren().
-    virtual void fetchNodes(std::function<void(Result<void>)> onDone) = 0;
+    //
+    // Takes the same two-callback shape as download()/upload() below, for the
+    // same reason in reverse: MegaRequestListener::onRequestUpdate exists for
+    // exactly one request type, TYPE_FETCH_NODES (megaapi.h:9261).
+    //
+    // What onProgress reports is narrower than it looks, and callers must
+    // treat it as such:
+    //   - It is the HTTP download progress of the `f` API response body, not
+    //     "nodes processed". The decrypt/tree-build/DB-write work that
+    //     follows the download has no progress signal of any kind, and on a
+    //     640k-node account it was 57% of the total wall time (162s download
+    //     vs. 218s afterwards). Do not present the bytes as overall progress.
+    //   - It may fire zero times. When the SDK's local state-cache DB is
+    //     valid, fetchNodes reads from it instead of hitting the network and
+    //     no progress event is ever emitted (measured: 0 events, 619ms).
+    //   - The final event is not guaranteed to be exactly 100%; the last one
+    //     observed in practice was 99.44%.
+    // Full measurements: docs/FETCHNODES_PROGRESS_INVESTIGATION.md.
+    virtual void fetchNodes(
+        std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
+        std::function<void(Result<void>)> onDone) = 0;
 
     // Must be called after a successful fetchNodes(). Synchronous under the
     // hood, but kept callback-shaped for interface consistency. order is

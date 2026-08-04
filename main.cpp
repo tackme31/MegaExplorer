@@ -60,12 +60,19 @@ int main(int argc, char* argv[])
         app.styleHints()->setColorScheme(Qt::ColorScheme::Dark);
     }
 
-    auto client = std::make_shared<MegaSdkClient>();
-
     // AppLocalDataLocation, not AppDataLocation: same non-roaming rationale
     // as Logging.cpp's log file (see installLogging()).
     const QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(cacheDir);
+
+    // Computed before the client because MegaSdkClient's basePath decides
+    // where the SDK's state-cache DB lives, and that DB is what makes a
+    // session restore take 0.6s instead of re-fetching the whole node tree
+    // (measured: 385s on a 640k-node account -- docs/PROGRESS.md Phase 18).
+    // toNativeSeparators because the SDK appends its own path components with
+    // backslashes, and a mixed-separator path breaks as soon as anything
+    // prefixes it with \\?\ for long-path support.
+    auto client = std::make_shared<MegaSdkClient>(QDir::toNativeSeparators(cacheDir).toStdString());
     auto sessionStore =
         std::make_shared<WindowsSessionStore>((cacheDir + "/session.dat").toStdString());
 

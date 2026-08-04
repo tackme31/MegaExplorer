@@ -35,9 +35,11 @@ namespace
 {
 
 // Shared by every SDK call whose completion is a bare success/failure with
-// no extra payload (login, loginWithSession, multiFactorAuthLogin, logout,
-// fetchNodes) -- LoginListener and FetchNodesListener used to duplicate this
-// verbatim before being merged here.
+// no extra payload (login, loginWithSession, multiFactorAuthLogin, logout)
+// -- LoginListener and FetchNodesListener used to duplicate this verbatim
+// before being merged here. fetchNodes has since moved back out to its own
+// FetchNodesListener below, because it is the one request type that also
+// reports progress and the other four must not pay for that.
 class SimpleResultListener : public mega::MegaRequestListener
 {
 public:
@@ -62,6 +64,53 @@ public:
     }
 
 private:
+    std::function<void(Result<void>)> mOnDone;
+};
+
+// SimpleResultListener plus onRequestUpdate, which the SDK documents as
+// firing for TYPE_FETCH_NODES only (megaapi.h:9261) and which reports the
+// `f` response's HTTP download progress. See IMegaClient::fetchNodes for the
+// three ways that progress is narrower than it looks; nothing here tries to
+// smooth over them, they are the caller's to handle.
+class FetchNodesListener : public mega::MegaRequestListener
+{
+public:
+    FetchNodesListener(std::function<void(std::uint64_t, std::uint64_t)> onProgress,
+                       std::function<void(Result<void>)> onDone)
+        : mOnProgress(std::move(onProgress)), mOnDone(std::move(onDone))
+    {}
+
+    void onRequestUpdate(mega::MegaApi* /*api*/, mega::MegaRequest* request) override
+    {
+        // Both getters return long long and both can still be at their -1
+        // default here: the SDK only calls setTotalBytes once the response
+        // length is known (megaapi_impl.cpp:16150), so early updates can
+        // carry an unknown total. Casting -1 straight to uint64_t would hand
+        // the UI 1.8e19 and pin its bar at zero forever.
+        const long long transferred = request->getTransferredBytes();
+        const long long total = request->getTotalBytes();
+        mOnProgress(transferred > 0 ? static_cast<std::uint64_t>(transferred) : 0,
+                    total > 0 ? static_cast<std::uint64_t>(total) : 0);
+    }
+
+    void onRequestFinish(mega::MegaApi* /*api*/,
+                         mega::MegaRequest* /*request*/,
+                         mega::MegaError* e) override
+    {
+        int code = e->getErrorCode();
+        if (code == mega::MegaError::API_OK)
+        {
+            mOnDone(Result<void>::ok());
+        }
+        else
+        {
+            mOnDone(Result<void>::fail(e->getErrorString(), code));
+        }
+        delete this;
+    }
+
+private:
+    std::function<void(std::uint64_t, std::uint64_t)> mOnProgress;
     std::function<void(Result<void>)> mOnDone;
 };
 
@@ -294,9 +343,11 @@ Result<std::uint64_t> MegaSdkClient::currentUserHandle() const
     return Result<std::uint64_t>::ok(static_cast<std::uint64_t>(handle));
 }
 
-void MegaSdkClient::fetchNodes(std::function<void(Result<void>)> onDone)
+void MegaSdkClient::fetchNodes(
+    std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
+    std::function<void(Result<void>)> onDone)
 {
-    mApi->fetchNodes(new SimpleResultListener(std::move(onDone)));
+    mApi->fetchNodes(new FetchNodesListener(std::move(onProgress), std::move(onDone)));
 }
 
 void MegaSdkClient::getRootChildren(SortOrder order,

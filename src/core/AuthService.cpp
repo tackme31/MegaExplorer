@@ -23,7 +23,8 @@ AuthService::AuthService(std::shared_ptr<IMegaClient> client,
     : mClient(std::move(client)), mSessionStore(std::move(sessionStore))
 {}
 
-void AuthService::restoreSession(std::function<void(Result<void>)> onDone)
+void AuthService::restoreSession(FetchProgressCallback onFetchProgress,
+                                 std::function<void(Result<void>)> onDone)
 {
     Result<std::string> stored = mSessionStore->loadSession();
     if (!stored.success)
@@ -41,7 +42,7 @@ void AuthService::restoreSession(std::function<void(Result<void>)> onDone)
         return;
     }
 
-    mClient->loginWithSession(stored.value, [this, onDone](Result<void> result) {
+    mClient->loginWithSession(stored.value, [this, onFetchProgress, onDone](Result<void> result) {
         if (!result.success)
         {
             if (isSessionDefinitivelyInvalid(result.errorCode))
@@ -49,37 +50,40 @@ void AuthService::restoreSession(std::function<void(Result<void>)> onDone)
             onDone(std::move(result));
             return;
         }
-        finishLoginSuccess(onDone);
+        finishLoginSuccess(onFetchProgress, onDone);
     });
 }
 
 void AuthService::login(const std::string& email,
                         const std::string& password,
+                        FetchProgressCallback onFetchProgress,
                         std::function<void(Result<void>)> onDone)
 {
-    mClient->login(email, password, [this, onDone](Result<void> result) {
+    mClient->login(email, password, [this, onFetchProgress, onDone](Result<void> result) {
         if (!result.success)
         {
             onDone(std::move(result));
             return;
         }
-        finishLoginSuccess(onDone);
+        finishLoginSuccess(onFetchProgress, onDone);
     });
 }
 
 void AuthService::loginWithTwoFactor(const std::string& email,
                                      const std::string& password,
                                      const std::string& pin,
+                                     FetchProgressCallback onFetchProgress,
                                      std::function<void(Result<void>)> onDone)
 {
-    mClient->multiFactorAuthLogin(email, password, pin, [this, onDone](Result<void> result) {
-        if (!result.success)
-        {
-            onDone(std::move(result));
-            return;
-        }
-        finishLoginSuccess(onDone);
-    });
+    mClient->multiFactorAuthLogin(
+        email, password, pin, [this, onFetchProgress, onDone](Result<void> result) {
+            if (!result.success)
+            {
+                onDone(std::move(result));
+                return;
+            }
+            finishLoginSuccess(onFetchProgress, onDone);
+        });
 }
 
 void AuthService::logout(std::function<void(Result<void>)> onDone)
@@ -92,9 +96,10 @@ void AuthService::logout(std::function<void(Result<void>)> onDone)
     });
 }
 
-void AuthService::finishLoginSuccess(std::function<void(Result<void>)> onDone)
+void AuthService::finishLoginSuccess(FetchProgressCallback onFetchProgress,
+                                     std::function<void(Result<void>)> onDone)
 {
-    mClient->fetchNodes([this, onDone](Result<void> result) {
+    mClient->fetchNodes(onFetchProgress, [this, onDone](Result<void> result) {
         if (!result.success)
         {
             if (isSessionDefinitivelyInvalid(result.errorCode))

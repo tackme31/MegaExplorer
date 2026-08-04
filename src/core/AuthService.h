@@ -3,6 +3,7 @@
 #include "ISessionStore.h"
 #include "Result.h"
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -36,6 +37,18 @@ bool isSessionDefinitivelyInvalid(int errorCode);
 class AuthService
 {
 public:
+    // Progress of the node fetch that every successful auth ends with, passed
+    // straight through from IMegaClient::fetchNodes with nothing added --
+    // read its caveats there. In particular it covers a download that is only
+    // part of the wait, it can fire zero times, and an event may carry
+    // totalBytes == 0 when the response length isn't known yet.
+    //
+    // Required, not optional: it is handed to the SDK adapter, which calls it
+    // unconditionally. An empty std::function here crashes six minutes into a
+    // login, so callers pass an explicit no-op instead of leaving it default.
+    using FetchProgressCallback =
+        std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)>;
+
     AuthService(std::shared_ptr<IMegaClient> client, std::shared_ptr<ISessionStore> sessionStore);
 
     // Attempts to resume a previously persisted session. onDone's Result:
@@ -48,7 +61,8 @@ public:
     //   - fail, any other errorCode -> transient failure (e.g. offline); the
     //     stored session was left untouched, caller should surface a
     //     "couldn't connect" message rather than a login error.
-    void restoreSession(std::function<void(Result<void>)> onDone);
+    void restoreSession(FetchProgressCallback onFetchProgress,
+                        std::function<void(Result<void>)> onDone);
 
     // Fresh email/password login. On success, persists the resulting
     // session token (best-effort -- failure to persist doesn't fail the
@@ -59,6 +73,7 @@ public:
     // code -- interpreting it is the caller's (AuthController's) job.
     void login(const std::string& email,
                const std::string& password,
+               FetchProgressCallback onFetchProgress,
                std::function<void(Result<void>)> onDone);
 
     // Resubmits email/password alongside a 2FA pin, after login() failed
@@ -66,6 +81,7 @@ public:
     void loginWithTwoFactor(const std::string& email,
                             const std::string& password,
                             const std::string& pin,
+                            FetchProgressCallback onFetchProgress,
                             std::function<void(Result<void>)> onDone);
 
     // Always succeeds from the caller's perspective (onDone's Result is
@@ -82,7 +98,8 @@ private:
     // persists the new session token. A fetchNodes failure that is itself
     // definitively-invalid (e.g. the account got blocked between auth and
     // fetch) also clears any previously stored session.
-    void finishLoginSuccess(std::function<void(Result<void>)> onDone);
+    void finishLoginSuccess(FetchProgressCallback onFetchProgress,
+                            std::function<void(Result<void>)> onDone);
 
     std::shared_ptr<IMegaClient> mClient;
     std::shared_ptr<ISessionStore> mSessionStore;

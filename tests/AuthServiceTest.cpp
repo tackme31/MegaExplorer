@@ -4,8 +4,25 @@
 #include "MockMegaClient.h"
 #include "MockSessionStore.h"
 
+#include <cstdint>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <utility>
+#include <vector>
+
+namespace
+{
+
+// AuthService::FetchProgressCallback has no default: it is handed straight to
+// IMegaClient::fetchNodes, which invokes it unconditionally, so an empty
+// std::function would crash mid-login. Tests that don't assert on progress
+// pass this explicit no-op.
+AuthService::FetchProgressCallback noProgress()
+{
+    return [](std::uint64_t, std::uint64_t) {};
+}
+
+} // namespace
 
 TEST(AuthServiceTest, RestoreSessionWithNothingStoredSkipsLoginWithSession)
 {
@@ -21,7 +38,7 @@ TEST(AuthServiceTest, RestoreSessionWithNothingStoredSkipsLoginWithSession)
     Result<void> captured;
 
     // Act
-    service.restoreSession([&](Result<void> result) {
+    service.restoreSession(noProgress(), [&](Result<void> result) {
         captured = std::move(result);
     });
 
@@ -40,8 +57,8 @@ TEST(AuthServiceTest, RestoreSessionWithStoredTokenSucceedsAndSavesToken)
         .WillOnce(::testing::Return(Result<std::string>::ok("stored-token")));
     EXPECT_CALL(*mockClient, loginWithSession("stored-token", ::testing::_))
         .WillOnce(::testing::InvokeArgument<1>(Result<void>::ok()));
-    EXPECT_CALL(*mockClient, fetchNodes(::testing::_))
-        .WillOnce(::testing::InvokeArgument<0>(Result<void>::ok()));
+    EXPECT_CALL(*mockClient, fetchNodes(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(Result<void>::ok()));
     EXPECT_CALL(*mockClient, currentSessionToken())
         .WillOnce(::testing::Return(Result<std::string>::ok("stored-token")));
     EXPECT_CALL(*mockSessionStore, saveSession("stored-token"))
@@ -51,7 +68,7 @@ TEST(AuthServiceTest, RestoreSessionWithStoredTokenSucceedsAndSavesToken)
     Result<void> captured;
 
     // Act
-    service.restoreSession([&](Result<void> result) {
+    service.restoreSession(noProgress(), [&](Result<void> result) {
         captured = std::move(result);
     });
 
@@ -71,13 +88,13 @@ TEST(AuthServiceTest, RestoreSessionDefinitivelyInvalidClearsStoredSession)
         .WillOnce(::testing::InvokeArgument<1>(
             Result<void>::fail("invalid session", MegaErrorCode::kESid)));
     EXPECT_CALL(*mockSessionStore, clearSession()).WillOnce(::testing::Return(Result<void>::ok()));
-    EXPECT_CALL(*mockClient, fetchNodes(::testing::_)).Times(0);
+    EXPECT_CALL(*mockClient, fetchNodes(::testing::_, ::testing::_)).Times(0);
 
     AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
-    service.restoreSession([&](Result<void> result) {
+    service.restoreSession(noProgress(), [&](Result<void> result) {
         captured = std::move(result);
     });
 
@@ -103,7 +120,7 @@ TEST(AuthServiceTest, RestoreSessionTransientFailureLeavesStoredSessionUntouched
     Result<void> captured;
 
     // Act
-    service.restoreSession([&](Result<void> result) {
+    service.restoreSession(noProgress(), [&](Result<void> result) {
         captured = std::move(result);
     });
 
@@ -127,7 +144,7 @@ TEST(AuthServiceTest, RestoreSessionCorruptSessionFileSelfHealsByClearing)
     Result<void> captured;
 
     // Act
-    service.restoreSession([&](Result<void> result) {
+    service.restoreSession(noProgress(), [&](Result<void> result) {
         captured = std::move(result);
     });
 
@@ -145,9 +162,9 @@ TEST(AuthServiceTest, LoginSuccessCallsFetchNodesThenCurrentSessionTokenThenSave
         .WillOnce(::testing::InvokeArgument<2>(Result<void>::ok()));
 
     ::testing::Sequence seq;
-    EXPECT_CALL(*mockClient, fetchNodes(::testing::_))
+    EXPECT_CALL(*mockClient, fetchNodes(::testing::_, ::testing::_))
         .InSequence(seq)
-        .WillOnce(::testing::InvokeArgument<0>(Result<void>::ok()));
+        .WillOnce(::testing::InvokeArgument<1>(Result<void>::ok()));
     EXPECT_CALL(*mockClient, currentSessionToken())
         .InSequence(seq)
         .WillOnce(::testing::Return(Result<std::string>::ok("token123")));
@@ -159,7 +176,7 @@ TEST(AuthServiceTest, LoginSuccessCallsFetchNodesThenCurrentSessionTokenThenSave
     Result<void> captured;
 
     // Act
-    service.login("user@example.com", "pw", [&](Result<void> result) {
+    service.login("user@example.com", "pw", noProgress(), [&](Result<void> result) {
         captured = std::move(result);
     });
 
@@ -175,8 +192,8 @@ TEST(AuthServiceTest, LoginFetchNodesFailureSkipsSaveSession)
 
     EXPECT_CALL(*mockClient, login(::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<2>(Result<void>::ok()));
-    EXPECT_CALL(*mockClient, fetchNodes(::testing::_))
-        .WillOnce(::testing::InvokeArgument<0>(
+    EXPECT_CALL(*mockClient, fetchNodes(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(
             Result<void>::fail("network error", MegaErrorCode::kEAgain)));
     EXPECT_CALL(*mockSessionStore, saveSession(::testing::_)).Times(0);
 
@@ -184,12 +201,52 @@ TEST(AuthServiceTest, LoginFetchNodesFailureSkipsSaveSession)
     Result<void> captured;
 
     // Act
-    service.login("e", "p", [&](Result<void> result) {
+    service.login("e", "p", noProgress(), [&](Result<void> result) {
         captured = std::move(result);
     });
 
     // Assert
     EXPECT_FALSE(captured.success);
+}
+
+TEST(AuthServiceTest, LoginForwardsFetchNodesProgressToCallerUntouched)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    auto mockSessionStore = std::make_shared<MockSessionStore>();
+
+    EXPECT_CALL(*mockClient, login("e", "p", ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<void>::ok()));
+    // Stands in for MegaApi's onRequestUpdate: a couple of byte updates
+    // during the fetch, then completion.
+    EXPECT_CALL(*mockClient, fetchNodes(::testing::_, ::testing::_))
+        .WillOnce([](std::function<void(std::uint64_t, std::uint64_t)> onProgress,
+                     std::function<void(Result<void>)> onDone) {
+            onProgress(0, 0); // total not known yet
+            onProgress(64, 183);
+            onDone(Result<void>::ok());
+        });
+    EXPECT_CALL(*mockClient, currentSessionToken())
+        .WillOnce(::testing::Return(Result<std::string>::ok("token")));
+    EXPECT_CALL(*mockSessionStore, saveSession("token"))
+        .WillOnce(::testing::Return(Result<void>::ok()));
+
+    AuthService service(mockClient, mockSessionStore);
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> progress;
+
+    // Act
+    service.login(
+        "e",
+        "p",
+        [&](std::uint64_t transferredBytes, std::uint64_t totalBytes) {
+            progress.emplace_back(transferredBytes, totalBytes);
+        },
+        [](Result<void>) {});
+
+    // Assert -- AuthService adds nothing of its own to the progress stream.
+    ASSERT_EQ(progress.size(), 2u);
+    EXPECT_EQ(progress[0], std::make_pair(std::uint64_t{0}, std::uint64_t{0}));
+    EXPECT_EQ(progress[1], std::make_pair(std::uint64_t{64}, std::uint64_t{183}));
 }
 
 TEST(AuthServiceTest, LoginMfaRequiredPropagatesErrorCodeUnmodified)
@@ -201,13 +258,13 @@ TEST(AuthServiceTest, LoginMfaRequiredPropagatesErrorCodeUnmodified)
     EXPECT_CALL(*mockClient, login(::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<2>(
             Result<void>::fail("2fa required", MegaErrorCode::kEMfaRequired)));
-    EXPECT_CALL(*mockClient, fetchNodes(::testing::_)).Times(0);
+    EXPECT_CALL(*mockClient, fetchNodes(::testing::_, ::testing::_)).Times(0);
 
     AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
-    service.login("e", "p", [&](Result<void> result) {
+    service.login("e", "p", noProgress(), [&](Result<void> result) {
         captured = std::move(result);
     });
 
@@ -226,8 +283,8 @@ TEST(AuthServiceTest, LoginWithTwoFactorSuccessCompletesLikeLogin)
 
     EXPECT_CALL(*mockClient, multiFactorAuthLogin("e", "p", "123456", ::testing::_))
         .WillOnce(::testing::InvokeArgument<3>(Result<void>::ok()));
-    EXPECT_CALL(*mockClient, fetchNodes(::testing::_))
-        .WillOnce(::testing::InvokeArgument<0>(Result<void>::ok()));
+    EXPECT_CALL(*mockClient, fetchNodes(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(Result<void>::ok()));
     EXPECT_CALL(*mockClient, currentSessionToken())
         .WillOnce(::testing::Return(Result<std::string>::ok("token")));
 
@@ -235,7 +292,7 @@ TEST(AuthServiceTest, LoginWithTwoFactorSuccessCompletesLikeLogin)
     Result<void> captured;
 
     // Act
-    service.loginWithTwoFactor("e", "p", "123456", [&](Result<void> result) {
+    service.loginWithTwoFactor("e", "p", "123456", noProgress(), [&](Result<void> result) {
         captured = std::move(result);
     });
 
@@ -253,13 +310,13 @@ TEST(AuthServiceTest, LoginWithTwoFactorFailurePropagates)
                 multiFactorAuthLogin(::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(
             ::testing::InvokeArgument<3>(Result<void>::fail("bad pin", MegaErrorCode::kENoEnt)));
-    EXPECT_CALL(*mockClient, fetchNodes(::testing::_)).Times(0);
+    EXPECT_CALL(*mockClient, fetchNodes(::testing::_, ::testing::_)).Times(0);
 
     AuthService service(mockClient, mockSessionStore);
     Result<void> captured;
 
     // Act
-    service.loginWithTwoFactor("e", "p", "000000", [&](Result<void> result) {
+    service.loginWithTwoFactor("e", "p", "000000", noProgress(), [&](Result<void> result) {
         captured = std::move(result);
     });
 

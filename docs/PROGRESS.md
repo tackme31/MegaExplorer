@@ -150,10 +150,10 @@ window + own caption row, tabs left where they were) and 17b (tab strip moved on
 row), so the shared cost landed and stabilised before the risky part. See both implementation-log
 entries.
 
-### Phase 18 — login loading screen + SDK cache location
+### Phase 18 — login loading screen + SDK cache location (done)
 
-Ahead of 15/16: the login screen currently shows **nothing** between submitting the form and the
-Cloud Drive appearing (`LoginView.qml` gates its indicator on `authState === Restoring` only), and
+Ahead of 15/16: the login screen showed **nothing** between submitting the form and the
+Cloud Drive appearing (`LoginView.qml` gated its indicator on `authState === Restoring` only), and
 on a large account that gap was **measured at 6 minutes 25 seconds**. Self-contained — auth path
 plus one composition-root line, shares nothing with preview or remote-change reflection.
 
@@ -161,25 +161,26 @@ Design, measurements and the reasoning behind every decision below live in
 `docs/FETCHNODES_PROGRESS_INVESTIGATION.md` (read 追記2 first — it supersedes the earlier
 predictions). Do not re-derive them here; this is only the checklist.
 
-- [ ] **`basePath` を `AppLocalDataLocation` に固定** (`main.cpp:63` / `MegaSdkClient.h:21`, now
+- [x] **`basePath` を `AppLocalDataLocation` に固定** (`main.cpp` / `MegaSdkClient.h`, was
       `"."` = the launch CWD). Independent of everything below and the single biggest win: with the
       SDK state-cache DB found, the same account's fetchNodes was **619 ms instead of 384.8 s**.
       A changing CWD silently costs a full re-fetch.
-- [ ] **`IMegaClient::fetchNodes` に `onProgress(transferred, total)` を追加** — same two-callback
+- [x] **`IMegaClient::fetchNodes` に `onProgress(transferred, total)` を追加** — same two-callback
       shape `download`/`upload` already use. Fakes/mocks under `tests/` follow.
-- [ ] **`AuthService` の 3 メソッド**（`restoreSession`/`login`/`loginWithTwoFactor`）が進捗を
+- [x] **`AuthService` の 3 メソッド**（`restoreSession`/`login`/`loginWithTwoFactor`）が進捗を
       素通しする。
-- [ ] **`AuthController` に読み込み段階の状態を持たせる** — stage enum（認証 / 準備 /
-      ダウンロード / 復号）、受信・総バイト数、経過秒。SDK スレッドからの値は
-      `DownloadController.cpp:26` と同じ `QMetaObject::invokeMethod(qApp, …, Qt::QueuedConnection)`
-      で GUI スレッドへ。
-- [ ] **「ダウンロード完了」判定に無更新タイムアウトのフォールバック**を入れる（実測でログに
+- [x] **`AuthController` に読み込み段階の状態を持たせる** — stage enum、進捗率、
+      整形済みバイト文字列。SDK スレッドからの値は
+      `DownloadController.cpp` と同じ `QMetaObject::invokeMethod(qApp, …, Qt::QueuedConnection)`
+      で GUI スレッドへ。**「準備」段階は実装時に落とした** — 下記ログ参照。
+- [x] **「ダウンロード完了」判定に無更新タイムアウトのフォールバック**を入れる（実測でログに
       残った最後の値は 99.44%。100% ちょうどが観測できる保証がない）。
-- [ ] **`LoginView.qml` をローディング対応にする** — 現在 `Restoring` にしか出していないので
-      `LoggingIn`/`VerifyingTwoFactor` でも出す。ダウンロード中のみ確定バー、復号中は不定 +
-      経過時間 + 「初回のみ数分かかります」。
-- [ ] ついでに **S11 の「フォームとインジケータが同じ `ColumnLayout` にあって高さが跳ねる」**
-      （`docs/DESIGN_IMPROVEMENT.md` 8 節）をここで `StackLayout` にして解消する。
+- [x] **`LoginView.qml` をローディング対応にする** — `Restoring` に加えて
+      `LoggingIn`/`VerifyingTwoFactor`/`LoggingOut` でも出す。ダウンロード中のみ確定バー、
+      復号中は不定 + 補足文言（**経過時間は実機確認後にユーザー判断で削除**、下記ログ参照）。
+- [x] ついでに **S11 の「フォームとインジケータが同じ `ColumnLayout` にあって高さが跳ねる」**
+      （`docs/DESIGN_IMPROVEMENT.md` 8 節）を `StackLayout` にして解消。同節 1 番目
+      （`"crimson"` ハードコード）も同時に消化した。
 
 やらないと決めたもの: 全体を 1 本の % で見せること（ダウンロードは全体の 42% でしかなく、残り
 57% は進捗を出す手段が SDK に無い）、ノード件数の表示（`getNumNodes()` はルート確定まで 0）、
@@ -1945,3 +1946,120 @@ the row count moves. The inherited `rowCount()` is `Q_INVOKABLE` but carries no 
 status bar's new item-count binding would have gone stale on the first navigation. Same shape as
 `QuickAccessModel::count` and `TabsController::count`. The selection half of that readout needed
 nothing new: `selectedHandles` was already a `Q_PROPERTY` with `NOTIFY selectionChanged`.
+
+## Phase 18 — login loading screen + SDK cache location (done)
+
+Two independent changes that happen to share a screen: the SDK state-cache DB now lives at a fixed
+path (which removes most of the wait), and the wait that remains is explained instead of shown as a
+blank panel. The measurements behind every decision are in
+`docs/FETCHNODES_PROGRESS_INVESTIGATION.md`; only what was actually built is here.
+
+### `basePath` — the change that matters most
+
+`main.cpp` constructed `MegaSdkClient` with its default `basePath = "."`, i.e. the launch CWD. The
+SDK unconditionally creates its state-cache DB there (`megaapi_impl.cpp`'s `MegaDbAccess`), so
+starting the app from Qt Creator and from the exe directly used *different* caches, and a cache miss
+means re-downloading the whole node tree: **384.8 s vs 619 ms** on the 640k-node account. It now
+gets `AppLocalDataLocation`, the same directory `session.dat` already used.
+
+Three details that are easy to get wrong:
+
+- `QDir().mkpath(cacheDir)` has to run **before** the client is constructed, not after. `MegaApi`'s
+  constructor builds the DB layer immediately and sqlite only asserts the path is absolute, never
+  that it exists — get the order wrong and it fails silently, with the symptom six minutes away.
+- The path is passed through `QDir::toNativeSeparators`. `QStandardPaths` returns forward slashes
+  and the SDK appends with backslashes; the mix survives plain Win32 calls but not a `\?\` prefix.
+- `MegaSdkClient`'s `basePath` parameter **lost its default value**. There is exactly one caller, and
+  a default that silently means "wherever you happened to launch from" is what caused this.
+
+Two consequences worth remembering: existing `megaclient_statecache15_*.db*` files in the repo root
+are now orphaned (gitignored, delete at will), and anyone who *did* have a working cache under a
+stable CWD pays one full re-fetch on the upgrade.
+
+### Stages: three, not the four that were planned
+
+The plan had a "preparing your account" stage between authentication and download, detected by
+having `AuthService` fire the progress callback once with `(0, 0)` before starting the fetch. That
+was dropped during implementation: the SDK only calls `setTotalBytes` once the response length is
+known (`megaapi_impl.cpp:16150`), so a **genuine** update can also arrive as `(0, 0)` — the marker
+was never unique, and the comment describing it as one would have been false. Rather than add a
+second callback to three methods, the stage went away: the investigation itself had already judged
+that region (1.1 s of account info + 3.0 s to first byte) not worth its own wording.
+
+So `AuthController::LoadingStage` is `Authenticating → DownloadingNodes → DecryptingNodes`, plus
+`SigningOut` and `NotLoading`. `AuthService` now adds nothing to the progress stream at all; it
+forwards `IMegaClient::fetchNodes`'s two callbacks and that is the whole change there.
+
+### The download → decrypt handover
+
+There is no event marking the end of the download. Byte progress simply stops, and the last value
+observed in practice was 99.44%, so waiting for an exact 100% would leave the bar frozen for the
+remaining 3.5 minutes. The handover is therefore a quiet-period timeout (`kStallTimeoutMs`, 8 s
+against a measured ~1.15 s average interval), and it is **not a one-way latch**: a later progress
+event moves the stage back to `DownloadingNodes`. That distinction is the whole design — a genuinely
+stalled connection recovers on its own instead of being stuck showing the wrong message, which is
+what a "only advance past 90%" threshold would have produced.
+
+What makes the timeout sound rather than a guess: the SDK's `request_response_progress` early-returns
+unless the fetchnodes CS request is still pending, so once the response is complete no further update
+is structurally possible.
+
+### Two hazards in the plumbing
+
+- **`getTransferredBytes()`/`getTotalBytes()` return `long long` and can still be `-1`.** Casting
+  straight to `std::uint64_t` (which is what copying `DownloadListener` verbatim would do) yields
+  1.8e19 and pins the bar at zero forever. `FetchNodesListener` clamps both to 0.
+- **Stale events across a re-login.** A logout or re-login while a fetch is in flight leaves queued
+  progress events behind. `AuthController` stamps each attempt with an `mLoadGeneration` counter that
+  the progress lambda captures; mismatches are dropped.
+
+Loading state is reset from inside `setState()` rather than at each call site, deriving the stage
+from the new `AuthState`. Five terminal paths never reach `fetchNodes` at all (wrong password,
+`kEMfaRequired`, wrong 2FA code, `cancelTwoFactor`, a transient restore failure) and any of them
+could otherwise have left a timer running.
+
+`fetchProgress` (`qreal`) and `fetchProgressText` (`QString`) mirror `DownloadController`'s
+`activeProgress`: QML has no `formattedDataSize` equivalent, so the "3.1 MB / 183.3 MB" string is
+built in C++ with `QLocale::system().formattedDataSize(..., DataSizeTraditionalFormat)`, same as
+`FileListModel`'s size column.
+
+### `LoginView.qml`: StackLayout, and the S11 pickup
+
+The three pages (credentials / 2FA / loading) are a `StackLayout` because its implicit size is the
+maximum over **all** children, which is exactly the fix S11 wanted for the height jumping on every
+state change. Three things this refactor depends on:
+
+- Pages must **not** carry `visible:` bindings of their own — `StackLayout` drives that property
+  imperatively and the two fight.
+- `StackLayout` children default `Layout.fillWidth`/`fillHeight` to **true**, unlike every other
+  layout. Each page pads itself with `Layout.fillHeight` spacers to stay vertically centred, and the
+  credentials fields now stretch to the full 320px (a deliberate visual change).
+- The `BusyIndicator` is gated on `StackLayout.isCurrentItem`, not just `visible`. Whether the style
+  stops animating a hidden indicator is style-private, and `LoginView` is never destroyed while
+  logged out, so a stuck animation would drive the render loop for the entire session.
+
+The now-redundant `enabled:` bindings on the form fields went away with it: the page switch is the
+single gate, and two gates that have to agree is the worse design. S11's `color: "crimson"` →
+`Theme.color.danger` was picked up here too; the rest of S11 (app name/logo, field labels,
+section 9's responsive work) is untouched.
+
+### Deliberately not done
+
+- **No cancel.** Once a first sign-in starts the user is committed for the duration, and
+  `session.dat` is only written inside the `fetchNodes` success callback — so killing the app
+  mid-fetch costs both the session *and* the state-cache DB, i.e. the full wait again next launch.
+  The copy on screen deliberately does not imply that closing is safe.
+- **No "later sign-ins are fast" promise.** That holds only while the state-cache DB survives, and
+  `MegaApi::logout` destroys it. The decrypt-stage text says "This can take a few minutes the first
+  time you sign in." and stops there.
+- **No `AuthControllerTest`.** `src/qml` controllers are untested by convention; the stage machine
+  was verified on the real account instead. `AuthServiceTest` gained one test asserting that
+  `AuthService` forwards the progress stream untouched.
+- **No elapsed-time readout during decryption.** It was built and shipped in the first cut, then
+  removed after the user tried it: an animating indicator already says "still working", and a
+  counter next to it is one more number to read for no decision it helps make. The `QTimer` and the
+  `decryptElapsedSeconds` property went with it rather than staying unused.
+
+> **All timings quoted here are from a Debug build.** The 218 s tail is CPU-bound decrypt/tree-build
+> work, so a Release build could move the 42:57 split noticeably. The design doesn't depend on that
+> ratio, but the "a few minutes" wording should be re-checked once there is a Release measurement.

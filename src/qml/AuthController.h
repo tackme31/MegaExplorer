@@ -3,7 +3,9 @@
 
 #include <QObject>
 #include <QString>
+#include <QTimer>
 
+#include <cstdint>
 #include <memory>
 #include <QtQml/qqmlregistration.h>
 #include <string>
@@ -51,6 +53,33 @@ public:
     };
     Q_ENUM(AuthErrorKind)
 
+    // What the login screen is waiting on right now. AuthState alone can't
+    // say: LoggingIn covers both the authentication round-trip and the node
+    // fetch that follows it, and on a large account that fetch was measured
+    // at 6m25s of blank screen (docs/FETCHNODES_PROGRESS_INVESTIGATION.md).
+    //
+    // Only DownloadingNodes has a real percentage, and it accounts for just
+    // ~42% of the wait -- the decrypt/tree-build phase after it has no
+    // progress signal in the SDK at all. Hence separate stages rather than
+    // one blended bar: a bar labelled "downloading" reaching 100% and
+    // handing over to a different message is honest, a bar labelled
+    // "loading" freezing at 100% for another three minutes is not.
+    //
+    // There is deliberately no stage between Authenticating and
+    // DownloadingNodes: the account-info round-trip that sits there is 1.1s
+    // and the wait for the first byte 3.0s, which the investigation itself
+    // judged not worth its own wording -- and the only way to detect the
+    // boundary was an in-band marker the SDK can emit for real.
+    enum LoadingStage
+    {
+        NotLoading,
+        Authenticating,
+        DownloadingNodes,
+        DecryptingNodes,
+        SigningOut
+    };
+    Q_ENUM(LoadingStage)
+
     Q_PROPERTY(AuthState authState READ authState NOTIFY authStateChanged)
     Q_PROPERTY(AuthErrorKind authErrorKind READ authErrorKind NOTIFY authErrorKindChanged)
     // Only ever populated for UnknownError -- every other AuthErrorKind maps
@@ -58,6 +87,13 @@ public:
     // LoginView.qml's describeError()), same "C++ passes structured fields,
     // QML composes text" convention as NotificationController/ToastStack.qml.
     Q_PROPERTY(QString rawErrorMessage READ rawErrorMessage NOTIFY authErrorKindChanged)
+
+    // One signal for the whole loading cluster, same grouping as
+    // authErrorKind/rawErrorMessage above and DownloadController's
+    // downloadActiveChanged.
+    Q_PROPERTY(LoadingStage loadingStage READ loadingStage NOTIFY loadingStateChanged)
+    Q_PROPERTY(qreal fetchProgress READ fetchProgress NOTIFY loadingStateChanged)
+    Q_PROPERTY(QString fetchProgressText READ fetchProgressText NOTIFY loadingStateChanged)
 
     explicit AuthController(std::shared_ptr<AuthService> authService, QObject* parent = nullptr);
 
@@ -74,19 +110,49 @@ public:
     AuthErrorKind authErrorKind() const;
     QString rawErrorMessage() const;
 
+    LoadingStage loadingStage() const;
+    qreal fetchProgress() const; // 0.0-1.0, 0.0 while the total is unknown
+    // Locale-formatted "62.0 MB / 183.3 MB", empty until a total is known.
+    // Formatted here rather than in QML for the same reason as
+    // FileListModel's size column: QML has no formattedDataSize equivalent.
+    QString fetchProgressText() const;
+
 signals:
     void authStateChanged();
     void authErrorKindChanged();
+    void loadingStateChanged();
 
 private:
     void setState(AuthState state);
     void setError(AuthErrorKind kind, const QString& rawMessage = QString());
     AuthErrorKind classifyError(int errorCode) const;
 
+    void setLoadingStage(LoadingStage stage);
+    // Builds the callback handed to AuthService for one login attempt. The
+    // returned lambda hops to the GUI thread and ignores events from an
+    // earlier attempt (see mLoadGeneration).
+    AuthService::FetchProgressCallback makeFetchProgressCallback();
+    void handleFetchProgress(std::uint64_t transferredBytes, std::uint64_t totalBytes);
+
     std::shared_ptr<AuthService> mAuthService;
     AuthState mState = Restoring;
     AuthErrorKind mErrorKind = NoError;
     QString mRawErrorMessage;
+
+    LoadingStage mLoadingStage = Authenticating; // matches mState's Restoring
+    std::uint64_t mTransferredBytes = 0;
+    std::uint64_t mTotalBytes = 0;
+    // Bumped at the start of every login attempt. A fetch abandoned by a
+    // logout/re-login can still have queued progress events in flight; they
+    // carry the old generation and are dropped.
+    std::uint64_t mLoadGeneration = 0;
+    // Fires when the byte progress has gone quiet, which is how the download
+    // -> decrypt handover is detected (the last event observed in practice
+    // was 99.44%, so waiting for an exact 100% would hang the bar). Not a
+    // one-way latch: a later event moves the stage back to DownloadingNodes,
+    // so a genuinely stalled connection recovers instead of being stuck
+    // showing the wrong message.
+    QTimer mStallTimer;
     // Held between login()'s kEMfaRequired failure and the matching
     // submitTwoFactorCode()/cancelTwoFactor() -- cleared on either path.
     std::string mPendingEmail;

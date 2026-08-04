@@ -111,7 +111,15 @@ vacuous here since uploads only create files. Phase 17 was then also pulled forw
 style, by vendoring **QWindowKit** (`third_party/qwindowkit`, Apache-2.0, tag 1.5.0) — 17a makes the
 window frameless and replaces the native caption with `qml/components/CaptionBar.qml` (no visible
 change by design), 17b then moves `TabStrip` onto that caption row. Windows-only, no
-`#ifdef Q_OS_WIN` fallback. Tab drag-to-reorder / tear-off is explicitly **not** in scope. The full
+`#ifdef Q_OS_WIN` fallback. Tab drag-to-reorder / tear-off is explicitly **not** in scope. Phase 18
+was pulled forward on the same grounds and fixes the login screen's blank 6m25s wait: the SDK's
+state-cache DB moves from the launch CWD to `AppLocalDataLocation` (which alone turns a 384.8s
+fetchNodes into 619ms on the same account), and the wait that remains gets a staged loading screen —
+`IMegaClient::fetchNodes` gained an `onProgress` callback, `AuthController` gained a `LoadingStage`
+state machine (authenticating → downloading, with a determinate bar → decrypting, indeterminate),
+and `LoginView.qml` became a three-page `StackLayout`. The bar is labelled
+"downloading" and never rescaled into an overall percentage, because the decrypt phase after it is
+~57% of the wall time and the SDK exposes no progress for it at all. The full
 roadmap — phases 15–16+ (in-app preview, real-time remote-change reflection, ...) — lives in
 `docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
 `docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional local sync stays out of scope.
