@@ -37,7 +37,7 @@ are post-MVP, sequenced by priority/dependency.
 | 18 | Login loading screen + SDK cache location | done (pulled forward) |
 | 19 | Menu-action redesign + new folder | done (pulled forward) |
 | 20a | Per-tab busy indicator + refresh that really refreshes | done (pulled forward) |
-| 20b | About / License dialogs | planned (pulled forward) |
+| 20b | About / License dialogs | done (pulled forward) |
 | 21 | Rubber-band (rectangle) selection | planned (pulled forward) |
 | 22a | Quick-access reordering | planned (pulled forward) |
 | 22b | Tab reordering + drop-onto-tab move | planned (pulled forward) |
@@ -232,7 +232,7 @@ Planned as "…while that tab's *listing* is being fetched", to close out Phase 
 **That premise turned out to be false** and the phase was re-scoped before implementation — see the
 log below.
 
-### Phase 20b — About / License dialogs
+### Phase 20b — About / License dialogs (done)
 
 Two entries in `Main.qml`'s existing "More" menu (currently Sign out only). About: version (from
 `PROJECT_VERSION`, passed down as a compile definition) plus a link to the GitHub repo. License:
@@ -240,6 +240,9 @@ this app's own GPLv3 plus third-party notices — Qt, MEGA SDK (BSD-2), QWindowK
 FreeImage, FFmpeg, pdfium and the rest of the vcpkg set. The dialogs are small; the real work is the
 notice inventory, and with Qt + FFmpeg in the link line this is a shipping prerequisite rather than
 a nicety.
+
+The inventory turned out to be generated rather than written, and came to 36 components — see the
+log below.
 
 ### Phase 21 — rubber-band (rectangle) selection
 
@@ -2441,3 +2444,155 @@ leaves those tests testing row bookkeeping exactly as before.
   which is Phase 16's territory.
 - Thumbnail loading is not counted. Each tile has its own placeholder; a whole-tab spinner would be
   the wrong granularity.
+
+## Phase 20b — About / License dialogs (done)
+
+Two entries in the "More" menu, backed by an inventory of every third-party component the binary
+carries, with each component's full license text embedded in the executable.
+
+### Why the text has to be *in* the product, not linked from it
+
+The question the phase opened with was whether third-party licenses need to be user-visible at all.
+The answer that shaped the design: what the licenses actually require is not visibility but
+*accompaniment*. BSD-3 §2 wants the notice reproduced "in the documentation and/or other materials
+provided with the distribution", Apache-2.0 §4(a) wants recipients given "a copy of this License",
+GPLv3 §4 the same. A URL is not a copy, so the fact that this app is useless offline — the obvious
+argument for linking instead of embedding — turns out to be beside the point.
+
+That still leaves the choice of *where* the copy lives, and a `THIRD-PARTY-NOTICES.txt` next to the
+executable would satisfy it. It is embedded in the binary as well because a user copying just the
+`.exe` out of the archive is normal behaviour, and the notices would silently come off. Two things
+genuinely want to be in the running program rather than in a file: Qt's requirement that the user be
+told Qt is used under the (L)GPL, and FFmpeg's requirement (ffmpeg.org/legal.html) of a specific
+sentence in the about box. Links are used for the one thing licenses do accept a link for — where to
+get the source (GPLv3 §6 allows a network server).
+
+### The inventory is generated, and that decision has consequences
+
+`scripts/gen_third_party_notices.py` is the repo's first script and produces four committed
+artifacts from one pass: `licenses/manifest.json`, `licenses/texts/<id>.txt` (36 files),
+`licenses/licenses.cmake`, and a re-rendered `THIRD-PARTY-NOTICES.txt`. The dialog and the flat file
+therefore cannot disagree — they are the same data rendered twice.
+
+**It is run by hand, not at build time**, for two reasons that are worth keeping:
+
+- `qt_add_qml_module`'s `RESOURCES` list has to be known at configure time. A build-time generator
+  would mean listing files that do not exist yet, or a `file(GLOB)` that goes stale until the next
+  reconfigure.
+- The input is `build/msvc-debug/vcpkg_installed/`, which is under `.gitignore`'s `/build*/` and is
+  absent on a clean clone *and* at configure time. A build-time generator would quietly emit a
+  binary with no notices in it — the worst available failure mode for this particular feature.
+
+Committing the output also means a dependency bump shows up as "these license texts changed" in
+`git diff`, which is where a human is supposed to look at it. `--check` re-renders and exits
+non-zero on any difference, including a leftover text file for a dropped dependency; there is no CI
+to run it from yet.
+
+The bulk of the input is free: vcpkg materializes `share/<port>/copyright` and `vcpkg.spdx.json` for
+every port. Only directories carrying an spdx file are walked — the rest (`WebP`, `jpeg`, `png`,
+`lcms2`, `unofficial-*`) are aliases that would otherwise be counted twice.
+
+### What needed human judgement anyway
+
+Seven ports could not be taken at face value, and the reasoning lives in `LICENSE_OVERRIDES` next to
+each entry:
+
+| port | vcpkg says | recorded as | why |
+|---|---|---|---|
+| ffmpeg | `LicenseRef-vcpkg-null` | LGPL-2.1-or-later | copyright file is the LGPL-2.1 text; the port's `gpl` feature is not requested |
+| jasper | `LicenseRef-vcpkg-null` | JasPer-2.0 | named in the copyright file's first line |
+| liblzma | `LicenseRef-vcpkg-null` | 0BSD | XZ Utils 5.8's core |
+| freeimage | GPL-2.0 OR GPL-3.0 OR FreeImage | GPL-3.0-only | matches this app |
+| zstd | BSD-3-Clause OR GPL-2.0-only | BSD-3-Clause | permissive side |
+| freetype | FTL OR GPL-2.0-or-later | FTL | permissive side |
+| libraw | LGPL-2.1-only OR CDDL-1.0 | LGPL-2.1-only | CDDL is GPL-incompatible; LGPL-2.1 §3 relicenses up to the GPL this app ships under |
+
+`gtest` is excluded (test-only, never in the distribution). Of the SDK's seven vendored libraries
+only five are listed: `third_party/sdk/third_party/CMakeLists.txt` gates `evt-tls` behind
+`USE_LIBUV` (OFF here) and `glob` behind `NOT WIN32`, so neither is linked and neither is
+distributed. `glob` ships no license file at all, which would have to be chased upstream if it ever
+became reachable.
+
+Qt is the one entry whose text is hand-written: it is an external install with no license file in
+the repo, and its own bundled third-party set is far too large to reproduce, so the entry carries
+the GPLv3 pointer plus the URL to Qt's published list.
+
+### `LicenseModel` and why the text is not a role
+
+`src/qml/LicenseModel` is a `QAbstractListModel` reading the manifest from
+`:/qt/qml/MegaExplorer/licenses/`, and the codebase's second true QML singleton — same test as
+`MenuActions`: no injected dependencies, unchanging for the process lifetime, so `main.cpp` needs no
+wiring. A missing or malformed manifest logs and yields an empty model rather than asserting.
+
+The license *text* is deliberately `Q_INVOKABLE licenseText(int)` and not a role. The texts total
+several hundred KB, and a role would pull every one of them in the moment the view instantiates its
+delegates. QML calls it once per selection change, and the results are cached in a `mutable QHash`.
+
+### The blank-pane bug, which cost most of the QML time
+
+Switching components after scrolling painted an empty right-hand pane. Three fixes were tried and
+failed before the cause was found, so the sequence is worth recording:
+
+1. `ScrollBar.vertical.position = 0` after assigning the text — no effect.
+2. An explicit `Flickable` instead of `ScrollView`, so `contentY` could be set unambiguously — no
+   effect.
+3. Resetting `contentY` *before* the assignment as well as after — no effect.
+
+Temporary logging then showed the state was entirely correct at the moment of failure: `contentY` 0,
+`contentHeight` 306, `implicitHeight` 306, the text 883 characters. Nothing was mis-scrolled; the
+text simply was not being painted, and no amount of subsequent scrolling brought it back. The cause
+is `TextEdit`'s viewport optimization — it builds scene-graph nodes only for the stretch of text
+near its enclosing flickable's viewport, and replacing a scrolled 34KB document with a short one in
+a single pass leaves that node range where the old document had it.
+
+The fix is three ordered steps in `showLicense()`: clear the text (dropping every node), reset
+`contentY` against the now-empty document, and assign the real text a frame later via
+`Qt.callLater`. All three are load-bearing; the comment there says so.
+
+The `TextArea`'s own background is suppressed and the frame drawn by a parent `Rectangle` — a
+background inside the flickable scrolls away with the text.
+
+### Version wiring
+
+`project()` gained its missing PATCH component (`0.1` → `0.1.0`) and the repo's first
+`target_compile_definitions` passes `MEGAEXPLORER_VERSION` to `main.cpp`, which forwards it to
+`QCoreApplication::setApplicationVersion`. QML reads `Qt.application.version`. No `AppInfo` type was
+introduced: Qt already owns a path for exactly this, and the only other thing About might want —
+the Qt version — is already a row in the license list.
+
+### Tests
+
+`tests/LicenseModelTest.cpp` reads the working copy's `licenses/` through a second, test-only
+constructor (`MEGAEXPLORER_LICENSE_DIR`); `MegaExplorerTests` embeds no qrc, and the generated files
+are the subject anyway. It guards only invariants that compile cleanly, stay invisible until someone
+opens the dialog, and are compliance problems when they break: row 0 is this app, **every** row's
+text is non-empty (a manifest entry whose file is missing is also missing from the qrc), names are
+unique, no row's license id still contains `LicenseRef-`, out-of-range rows return empty, and a
+missing manifest yields an empty model instead of a crash.
+
+The generator has no unit tests — there is no Python test infrastructure here and `--check` covers
+the same ground more cheaply.
+
+### Follow-up: shipping the notices alongside the binary
+
+**Deliberately out of scope, and the real remaining obligation.** `LICENSE` and
+`THIRD-PARTY-NOTICES.txt` are not yet copied to the build/install output. What the licenses require
+is accompaniment of the *distribution*; the in-binary copy is belt-and-braces on top of that, not a
+substitute for it. This wants an `install(FILES ...)` and a decision about what the distributable
+archive actually looks like, neither of which exists yet.
+
+Also left:
+
+- Qt's own bundled third-party components (harfbuzz, pcre2, …) are covered by a pointer to
+  doc.qt.io rather than enumerated. Qt ships `sbom/*.spdx.json` if that is ever wanted properly.
+- FFmpeg under the LGPL requires that the user be able to relink against a modified FFmpeg. Shipping
+  it as DLLs satisfies this in practice, but it is not written down anywhere.
+- `gen_third_party_notices.py --check` should run in CI. There is no CI.
+
+### Deliberately not done
+
+- No search/filter in the license list. 36 rows fit in one scroll.
+- The About dialog's text is hand-written in QML rather than generated from `ABOUT.txt`: it needs
+  `qsTr()`, clickable links, and the version interpolated. `ABOUT.txt` was rewritten by hand to stop
+  claiming Qt and the MEGA SDK are the only dependencies, and now points at the generated file.
+- No "copy all" button. The text is selectable, and the flat file exists.

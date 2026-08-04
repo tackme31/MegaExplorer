@@ -39,6 +39,9 @@ int main(int argc, char* argv[])
     // initialize (Status code 1) and every read/write silently no-ops.
     QCoreApplication::setOrganizationName("MegaExplorer");
     QCoreApplication::setApplicationName("MegaExplorer");
+    // Reaches the About dialog as QML's Qt.application.version, so no separate
+    // type has to exist just to carry one string.
+    QCoreApplication::setApplicationVersion(QStringLiteral(MEGAEXPLORER_VERSION));
 
     // Must run before any other logging call: appMegaExplorer is
     // WIN32_EXECUTABLE, so qWarning()/qCWarning() output reaches no visible

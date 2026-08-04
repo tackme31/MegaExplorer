@@ -156,8 +156,18 @@ against a new `UploadController::isUploadingTo(handle, isRoot)`, so a tab is bus
 showing an upload destination. It also fixed the toolbar refresh button, which re-read the in-memory tree and so
 guaranteed nothing about freshness: `IMegaClient::syncPendingChanges` (`MegaApi::catchup`, the sixth
 mutating-side method) now runs before the re-read, with `refreshIfShowing` deliberately split off so
-the post-upload fan-out doesn't sync once per tab. The full
-roadmap — next up is the rest of the 20b–23 detail pass (About/License, rubber-band
+the post-upload fan-out doesn't sync once per tab. Phase 20b then added the "More" menu's About and
+"Open source licenses" dialogs, on top of a generated inventory of all 36 third-party components:
+`scripts/gen_third_party_notices.py` (the repo's first script, **run by hand — re-run it after any
+dependency bump**) turns vcpkg's per-port `copyright`/`vcpkg.spdx.json` plus a hand-maintained table
+for the non-vcpkg entries into `licenses/manifest.json` + `licenses/texts/*.txt` +
+`licenses/licenses.cmake` + a re-rendered `THIRD-PARTY-NOTICES.txt`, all committed. Those files are
+embedded via `qt_add_qml_module`'s `RESOURCES` (the project's first qrc use) and read by
+`src/qml/LicenseModel`, the codebase's second true QML singleton. Licenses require the license text
+to *accompany the distribution*, not merely be reachable, so a link can't substitute — but copying
+`LICENSE`/`THIRD-PARTY-NOTICES.txt` into the build/install output is **still outstanding** and
+recorded as such in the Phase 20b log. The full
+roadmap — next up is the rest of the 21–23 detail pass (rubber-band
 selection, quick-access/tab reordering + drop-onto-tab, copy/cut/paste), all pulled forward ahead of
 phases 15–16 (in-app preview, real-time remote-change reflection) — lives in `docs/PROGRESS.md`'s
 Roadmap section; see the companion-docs list above.

@@ -1,0 +1,20 @@
+The Qt Toolkit is Copyright (C) 2026 The Qt Company Ltd. and other
+contributors.
+Contact: https://www.qt.io/licensing/
+
+MEGA Explorer uses the Qt Community Edition under the terms of the GNU
+General Public License, version 3 (GPLv3).
+
+You may use, distribute and copy the Qt libraries used by this application
+under the terms of the GNU General Public License version 3, the full text
+of which is reproduced in the "MegaExplorer" entry of this document and in
+the accompanying "LICENSE" file of this distribution.
+
+Qt itself bundles certain third-party code that is licensed under separate
+terms from their original authors, independent of the LGPL/GPL terms above.
+The full list and texts of these components are published by The Qt Company
+at:
+  https://doc.qt.io/qt-6/licenses-used-in-qt.html
+
+Qt is a trademark of The Qt Company Ltd. in Finland and/or other countries
+worldwide.

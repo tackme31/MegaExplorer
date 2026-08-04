@@ -43,6 +43,8 @@ Windowsエクスプローラー風のUIを持つ、MEGA向けの独自デスク�
 - MEGAsync本体のソース(`meganz/MEGAsync`)は別の制限的ライセンス(Code Review Licence)であり、参考にする場合もコピー&ペーストせず、あくまでSDKの使い方の参考程度に留める
 - MEGAの利用規約(ToS)に従う必要があり、appKeyの取得・レート制限順守が必須
 - QWindowKit(`stdware/qwindowkit`、Phase 17aでベンダリング)は **Apache-2.0**。GPLv3と両立する(Apache-2.0はGPLv3互換)ので、本体がQt経由でGPLv3であることと矛盾しない
+- 依存全体(36コンポーネント)の権利表記は Phase 20b で機械生成に移行した。`scripts/gen_third_party_notices.py` を**手動実行**して `licenses/` と `THIRD-PARTY-NOTICES.txt` を再生成する。依存を bump したら必ず実行すること。デュアルライセンスの選択(freeimage→GPL-3.0、libraw→LGPL-2.1 など)はスクリプト内の override 表に根拠つきで記録
+- 表示義務の本質は「見えること」ではなく「ライセンス文の複製が頒布物に同梱されること」(BSD-3 §2 / Apache-2.0 §4(a) / GPLv3 §4)。URLでの代替は不可。**ビルド成果物への `LICENSE`/`THIRD-PARTY-NOTICES.txt` の同梱は未対応**(Phase 20b のログ参照)
 
 ## 既知の技術的懸念事項
 

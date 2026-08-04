@@ -25,6 +25,7 @@ add_executable(MegaExplorerTests
     FolderTreeModelTest.cpp
     QuickAccessServiceTest.cpp
     QuickAccessModelTest.cpp
+    LicenseModelTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/FileListModel.h
@@ -43,6 +44,8 @@ add_executable(MegaExplorerTests
     ${CMAKE_SOURCE_DIR}/src/qml/FolderTreeModel.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/QuickAccessModel.h
     ${CMAKE_SOURCE_DIR}/src/qml/QuickAccessModel.cpp
+    ${CMAKE_SOURCE_DIR}/src/qml/LicenseModel.h
+    ${CMAKE_SOURCE_DIR}/src/qml/LicenseModel.cpp
     MockMegaClient.h
     MockSessionStore.h
     MockPinnedFolderStore.h
@@ -61,6 +64,12 @@ target_link_libraries(MegaExplorerTests PRIVATE
     GTest::gtest_main
     GTest::gmock
 )
+
+# LicenseModelTest reads the working copy's licenses/ directly rather than the
+# qrc copy: this target embeds no resources, and the point of the test is to
+# check the generated files that qrc is built *from*.
+target_compile_definitions(MegaExplorerTests PRIVATE
+    MEGAEXPLORER_LICENSE_DIR="${CMAKE_SOURCE_DIR}/licenses")
 
 include(GoogleTest)
 gtest_discover_tests(MegaExplorerTests)

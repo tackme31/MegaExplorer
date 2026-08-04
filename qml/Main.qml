@@ -410,10 +410,19 @@ ApplicationWindow {
                 ToolbarIconButton {
                     text: Theme.glyph.more
                     ToolTip.text: qsTr("More")
-                    onClicked: signOutMenu.popup()
+                    onClicked: moreMenu.popup()
 
                     Menu {
-                        id: signOutMenu
+                        id: moreMenu
+                        MenuItem {
+                            text: qsTr("About MegaExplorer")
+                            onTriggered: aboutDialog.open()
+                        }
+                        MenuItem {
+                            text: qsTr("Open source licenses")
+                            onTriggered: licenseDialog.open()
+                        }
+                        MenuSeparator {}
                         MenuItem {
                             text: qsTr("Sign out")
                             onTriggered: signOutConfirmDialog.open()
@@ -580,6 +589,16 @@ ApplicationWindow {
                                                                                           "Sign out? (transfer in progress)") :
                                                                                       qsTr("Sign out?")
         onAccepted: authController.logout()
+    }
+
+    // One instance each for the whole app -- nothing about them is per-tab.
+    AboutDialog {
+        id: aboutDialog
+        onLicensesRequested: licenseDialog.open()
+    }
+
+    LicenseDialog {
+        id: licenseDialog
     }
 
     // Raised when a quick-access pin turns out to point at a folder that no
