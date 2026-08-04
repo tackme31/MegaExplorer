@@ -176,8 +176,16 @@ auto-scrolling band outruns them — and `FileListModel` gained a band *session*
 `mBandBase` is what makes Ctrl+band additive, plus a row-range `dataChanged` so a drag doesn't repaint
 the whole table per frame. Two hit-test rules changed with it: the grid delegate's `DragHandler` moved
 onto the inset tile so the inter-tile gap starts a band (matching S8a's tap/hover/drop rule), and the
-list's strip right of the last column starts one too. The full
-roadmap — next up is the rest of the 22–23 detail pass (quick-access/tab reordering + drop-onto-tab,
+list's strip right of the last column starts one too. Phase 22a then made quick-access pins
+drag-reorderable, and **dropped the roadmap's own premise** while doing it: the gesture never starts
+a Qt drag (it never leaves `pinList`), so the planned second `Drag.keys` value to tell it apart from
+14a's node drag was unnecessary and no drop target's accept logic changed. `DragProxy` gained a
+`ghostOnly` mode (`beginGhost`/`finishGhost`, `Drag.active` untouched) so the reorder can borrow just
+the ghost; the insertion point is arithmetic like Phase 21's band. `QuickAccessService::move` +
+`QuickAccessModel::move` (handle-keyed, `beginMoveRows`) back it, and `QuickAccessModel::validateAll`
+was reworked to commit against the *current* pin list rather than replaying its own start-of-sweep
+snapshot — which would have silently undone a reorder (and, already, a mid-sweep `pin()`). The full
+roadmap — next up is the rest of the 22–23 detail pass (tab reordering + drop-onto-tab,
 copy/cut/paste), all pulled forward ahead of
 phases 15–16 (in-app preview, real-time remote-change reflection) — lives in `docs/PROGRESS.md`'s
 Roadmap section; see the companion-docs list above.

@@ -164,6 +164,91 @@ TEST_F(QuickAccessModelTest, ReloadWithNothingChangedDoesNotRewriteTheStore)
     EXPECT_EQ(model->count(), 1);
 }
 
+TEST_F(QuickAccessModelTest, MoveReordersRowsAndPersists)
+{
+    givenStoredPins({makePin("Photos", 11), makePin("Work", 22), makePin("Docs", 33)});
+    // Captured and never fired: this test is about the drag, not the sweep.
+    EXPECT_CALL(*client, getNodeInfo(_, _)).Times(3);
+    model->reload();
+
+    int movedCount = 0;
+    QObject::connect(model.get(), &QAbstractItemModel::rowsMoved, model.get(), [&]() {
+        ++movedCount;
+    });
+    EXPECT_CALL(*store,
+                save(_,
+                     std::vector<PinnedFolder>{makePin("Work", 22), makePin("Photos", 11),
+                                               makePin("Docs", 33)}))
+        .WillOnce(Return(Result<void>::ok()));
+
+    model->move(11, 1);
+
+    // A move is announced as one, not as a remove plus an insert: the view
+    // keeps its delegates, which is what stops the list flashing mid-drag.
+    EXPECT_EQ(movedCount, 1);
+    EXPECT_EQ(handleAt(0), 22u);
+    EXPECT_EQ(handleAt(1), 11u);
+    EXPECT_EQ(nameAt(1), QStringLiteral("Photos"));
+}
+
+TEST_F(QuickAccessModelTest, MoveIgnoresAnUnknownHandleOrANoOpDestination)
+{
+    givenStoredPins({makePin("Photos", 11), makePin("Work", 22)});
+    EXPECT_CALL(*client, getNodeInfo(_, _)).Times(2);
+    model->reload();
+
+    EXPECT_CALL(*store, save(_, _)).Times(0);
+
+    model->move(99, 0); // never pinned
+    model->move(11, 0); // already there
+
+    EXPECT_EQ(handleAt(0), 11u);
+    EXPECT_EQ(handleAt(1), 22u);
+}
+
+TEST_F(QuickAccessModelTest, MoveClampsADestinationPastTheEndOntoTheLastRow)
+{
+    givenStoredPins({makePin("Photos", 11), makePin("Work", 22)});
+    EXPECT_CALL(*client, getNodeInfo(_, _)).Times(2);
+    model->reload();
+
+    EXPECT_CALL(*store, save(_, _)).WillOnce(Return(Result<void>::ok()));
+
+    // What a drag released below the last row asks for.
+    model->move(11, 99);
+
+    EXPECT_EQ(handleAt(0), 22u);
+    EXPECT_EQ(handleAt(1), 11u);
+}
+
+TEST_F(QuickAccessModelTest, AValidationSweepPreservesAReorderMadeWhileItWasInFlight)
+{
+    givenStoredPins({makePin("Photos", 11), makePin("Work", 22)});
+    std::function<void(Result<NodeInfo>)> photosDone;
+    std::function<void(Result<NodeInfo>)> workDone;
+    EXPECT_CALL(*client, getNodeInfo(11u, _)).WillOnce(SaveArg<1>(&photosDone));
+    EXPECT_CALL(*client, getNodeInfo(22u, _)).WillOnce(SaveArg<1>(&workDone));
+
+    model->reload();
+
+    // The drag lands before either resolveFolder has answered.
+    EXPECT_CALL(*store,
+                save(_, std::vector<PinnedFolder>{makePin("Work", 22), makePin("Photos", 11)}))
+        .WillOnce(Return(Result<void>::ok()));
+    model->move(11, 1);
+
+    // The sweep confirms both pins, so it has nothing to contribute -- and must
+    // not write its own snapshot's order back over the reorder.
+    EXPECT_CALL(*store, save(_, _)).Times(0);
+    photosDone(liveFolder("Photos", 11));
+    workDone(liveFolder("Work", 22));
+    flushQueuedEvents();
+
+    ASSERT_EQ(model->count(), 2);
+    EXPECT_EQ(handleAt(0), 22u);
+    EXPECT_EQ(handleAt(1), 11u);
+}
+
 TEST_F(QuickAccessModelTest, ActivateEmitsActivatedForALivePin)
 {
     givenStoredPins({makePin("Photos", 11)});

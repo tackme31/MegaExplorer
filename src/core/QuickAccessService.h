@@ -3,6 +3,7 @@
 #include "IPinnedFolderStore.h"
 #include "PinnedFolder.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -42,13 +43,19 @@ public:
 
     bool isPinned(std::uint64_t handle) const;
 
-    // Appends to the end -- pin order is insertion order, there's no
-    // reordering UI. Returns false (and writes nothing) if handle is already
-    // pinned.
+    // Appends to the end. Returns false (and writes nothing) if handle is
+    // already pinned. Reordering afterwards is move()'s job (Phase 22a).
     bool pin(const PinnedFolder& folder);
 
     // Returns false (and writes nothing) if handle isn't pinned.
     bool unpin(std::uint64_t handle);
+
+    // Moves one pin so that it ends up *at* index `to` in the resulting list
+    // -- i.e. `to` is a final position, not an insertion point in the old
+    // coordinates. Returns false (and writes nothing) for an out-of-range
+    // index or a no-op move, same "rejected means unpersisted" rule as
+    // pin()/unpin().
+    bool move(std::size_t from, std::size_t to);
 
     // Wholesale replacement, for committing the login-time validation sweep's
     // result in one write instead of one per dropped/renamed pin.

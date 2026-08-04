@@ -35,6 +35,12 @@ Item {
 
     readonly property bool active: root.Drag.active
 
+    // Ghost-only mode (Phase 22a): the quick-access reorder wants the same
+    // visual but must not start a Qt drag -- it's confined to one ListView, and
+    // any DragEnter reaching the five node-move DropAreas would be noise. So
+    // active stays false throughout and only the ghost is borrowed.
+    property bool ghostOnly: false
+
     // Filters out anything that isn't this app's own node drag. Nothing else
     // produces this key today, but a DropArea declaring it can never be
     // confused by a future external (file/URL) drop.
@@ -46,7 +52,7 @@ Item {
 
     width: ghost.width
     height: ghost.height
-    visible: root.active
+    visible: root.active || root.ghostOnly
     // Must not intercept anything: it sits under the cursor for the whole
     // gesture, and DropAreas below it still have to see the drag.
     enabled: false
@@ -89,9 +95,22 @@ Item {
     }
 
     function moveTo(scenePos) {
-        if (!root.active)
+        if (!root.active && !root.ghostOnly)
             return;
         root.positionAt(scenePos);
+    }
+
+    // Ghost-only counterparts of begin()/finish(): no payload, no Drag.active,
+    // so nothing downstream of this item can tell a gesture is running.
+    function beginGhost(text, scenePos) {
+        root.label = text;
+        root.positionAt(scenePos);
+        root.ghostOnly = true;
+    }
+
+    function finishGhost() {
+        root.ghostOnly = false;
+        root.label = "";
     }
 
     // Ends the gesture. Drag.drop() delivers the drop event to whichever

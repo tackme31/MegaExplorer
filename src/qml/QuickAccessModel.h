@@ -54,6 +54,11 @@ public:
     Q_INVOKABLE void pin(quint64 handle, const QString& name);
     Q_INVOKABLE void unpin(quint64 handle);
 
+    // Drag reordering (Phase 22a). handle-keyed like everything else here;
+    // toRow is the row the pin should end up on, clamped into range. A no-op
+    // move emits nothing, so a drag that ends where it started is free.
+    Q_INVOKABLE void move(quint64 handle, int toRow);
+
     // Checks the target still exists before navigating, then reports back via
     // activated() or missing(). Covers the pin going stale *during* a session
     // (deleted on another device), which the login-time sweep can't catch.

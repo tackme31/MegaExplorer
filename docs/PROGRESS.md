@@ -39,7 +39,7 @@ are post-MVP, sequenced by priority/dependency.
 | 20a | Per-tab busy indicator + refresh that really refreshes | done (pulled forward) |
 | 20b | About / License dialogs | done (pulled forward) |
 | 21 | Rubber-band (rectangle) selection | done (pulled forward) |
-| 22a | Quick-access reordering | planned (pulled forward) |
+| 22a | Quick-access reordering | done (pulled forward) |
 | 22b | Tab reordering + drop-onto-tab move | planned (pulled forward) |
 | 23 | Copy / cut / paste | planned (pulled forward) |
 | 15 | In-app preview (side panel, `getPreview`) | planned |
@@ -256,12 +256,15 @@ Both halves of that decision moved, in the end: the grid's inter-tile gap became
 wasn't, for drags) and the list's strip right of the last column became empty space too — see the
 log below.
 
-### Phase 22a — quick-access reordering
+### Phase 22a — quick-access reordering (done)
 
 Drag a pin up/down to reorder it. Persistence is already ordered-list-shaped and
 `QuickAccessService::replaceAll` already exists, so this is a `QuickAccessModel` move operation plus
 the QML gesture. `QuickAccessSection` is also a *drop target* for node moves (14a), so the two drags
 have to be told apart — `DragProxy`'s `Drag.keys` is the existing mechanism for exactly that.
+
+Landed differently on that last point: the gesture never starts a Qt drag at all, so there was
+nothing to tell apart. See its implementation-log entry.
 
 ### Phase 22b — tab reordering + drop-onto-tab move
 
@@ -2727,3 +2730,107 @@ folder used for the check fit on one screen.
   grab on demand.
 - **Bands in the side panel.** The folder tree and quick-access list are single-selection.
 - **Touch.** The handler is `Qt.LeftButton`-only.
+
+## Phase 22a — quick-access pin reordering (done)
+
+Drag a pinned folder up or down in the side panel to change its order. The dragged pin's name
+follows the cursor as a ghost, a 2px accent line shows where it will land, and the row itself stays
+put until the drop.
+
+### The roadmap's premise didn't survive contact
+
+The plan was to reuse `DragProxy` with a second `Drag.keys` value, so the five existing node-move
+`DropArea`s could tell a pin-reorder drag from 14a's node drag. That turned out to solve a problem
+this gesture doesn't have: reordering never leaves `pinList`, so it doesn't need to be a Qt drag in
+the first place. Not starting one means no `DragEnter` ever reaches the folder tree, the breadcrumb,
+the two file views or the pin rows themselves, and **not one line of 14a/14b's accept logic was
+touched**. The new key would only have created work — every one of those `DropArea`s would have had
+to learn to ignore it.
+
+So the gesture is a `DragHandler` on the pin delegate with `target: null`, and the insertion point
+is computed by arithmetic (`Math.round((viewY + contentY) / Theme.rowHeight.compact)`) rather than
+by `itemAt`. Same reasoning as Phase 21's band selector: an auto-scrolling list outruns delegate
+realization, and rounding rather than flooring is what puts the boundary at each row's midpoint —
+which is what makes the line land *between* rows instead of on one.
+
+**`xAxis.enabled: false` is a trap, and it shipped in the first cut.** It reads like the obvious
+constraint for a one-column list, and the docs describe it as being about *dragging range* ("if
+enabled is true, horizontal dragging is allowed"), which sounds like it only bounds what gets
+applied to `target`. It also gates **activation**: with x disabled, a sideways drag never takes the
+exclusive grab, so the ghost doesn't appear at all — and after a sideways excursion the pointer then
+has to travel the drag threshold *vertically* before anything happens, which reads as a broken
+gesture. The handler's `onGrabChanged` log is what settled it: a horizontal drag went
+`GrabPassive` → `UngrabPassive` with no `GrabExclusive` in between, while a vertical one took the
+exclusive grab 13px in. Both axes are now left enabled and the logic simply ignores x; a horizontal
+drag becomes a reorder that resolves to the row it started on, i.e. a no-op.
+
+Worth recording how *not* to check this: an isolated `qmltestrunner` harness first said horizontal
+activation worked fine with x disabled — because `xAxis.enabled` was being bound to a property that
+evaluated to `undefined` in the delegate, leaving it at its default of `true`. QML printed
+`Unable to assign [undefined] to bool` and the harness happily measured the wrong configuration. The
+running app plus `console.warn` in `onGrabChanged` was both faster and correct.
+
+`pinList` also had to give up the left button (`acceptedButtons: Qt.NoButton`, the Flickable
+property `FolderTreePanel.qml` already uses): without it the list's own click-drag panning steals
+the gesture the moment the list is tall enough to scroll. Wheel scrolling is unaffected, so the
+existing `interactive: contentHeight > height` rule stands.
+
+### `DragProxy` gained a ghost-only mode
+
+The ghost is worth reusing — it's the same "what am I dragging" affordance — but the payload and
+`Drag.active` are not. So `DragProxy` grew `ghostOnly` plus `beginGhost()`/`finishGhost()`:
+`visible` becomes `Drag.active || ghostOnly`, `moveTo()` stops early-returning when only the ghost
+is live, and `active`/`sourceNav`/`handles` are left strictly alone. Every existing drop target
+branches on `dragProxy.active` (or, in the two views, `sourceNav`), so all of them stay blind to a
+reorder by construction rather than by a new rule.
+
+The insertion line is `parent: pinList`, not a plain child — an `Item` declared inside a `Flickable`
+lands in its `contentItem` and would scroll away with the rows, the trap `BandSelector.qml` already
+documents. Its `y` is additionally clamped to `pinList.height - height`: the "after the last pin"
+insertion point lands exactly on the bottom edge, where the list's own `clip` swallowed the line
+entirely (caught in the running app, not in review).
+
+### C++: one service method, one model method — and a sweep that had to be rewritten
+
+`QuickAccessService::move(from, to)` is a `std::rotate` plus the same write-through every other
+mutator does, with `to` defined as a **final position** rather than an insertion point in the old
+coordinates. `QuickAccessModel::move(handle, toRow)` is handle-keyed like everything else in that
+class, clamps `toRow` into range (so a drag released below the last row means "last"), and announces
+the change with `beginMoveRows`/`endMoveRows` — a move, not a remove-plus-insert, so the view keeps
+its delegates. `beginMoveRows`' destination is an insertion point in the *pre-move* coordinates, so
+moving down has to name `to + 1`; that off-by-one is the only subtle part.
+
+The login-time validation sweep then had to change, and this is the part that wasn't in the original
+sketch. It used to commit **the snapshot it started from**, in that snapshot's order — so a reorder
+landing mid-sweep would be silently undone (as would a `pin()`; the same latent bug predates this
+phase). It now walks `mService->pins()` — the *current* list — and uses the sweep only as a
+handle-keyed source of refreshed names and drops; a handle the sweep never saw passes through
+unchecked. The dropped-pin marker changed with it: zeroing the handle made the pin unfindable by
+handle, so `Sweep` carries a parallel `std::vector<bool> usable` instead.
+
+Bumping `mGeneration` in `move()` would have been a one-liner alternative, and was rejected:
+`activate()`'s callbacks read the same guard, so a drag started right after a click would swallow
+that click's navigation.
+
+### Testing
+
+5 new service/model cases (reorder down and up with the exact persisted vectors, out-of-range and
+no-op rejection without a save, `rowsMoved` emitted once, unknown handle ignored, past-the-end
+clamped to the last row) plus one for the sweep rework — a reorder committed between `reload()` and
+the resolve callbacks must survive them. 266 tests pass.
+
+The gesture was checked in the running app with `ui-style`'s `drive`: dragging the first pin below
+the last reorders it, a plain click straight afterwards still navigates (the exclusive grab cancels
+the `ItemDelegate`'s pending click, so nothing extra was needed for that), and dragging it back
+restores the order. The ghost and the insertion line can't be captured — `drive` has no
+press/release primitive, so there's no way to hold a drag open across a screenshot.
+
+### Deliberately not done
+
+- **Reorder from the keyboard or the context menu.** "Move up"/"Move down" in `FolderPinMenu` was
+  considered and dropped: `MenuSite::FolderRow` is shared with the folder tree's rows, so the two
+  items would need a "only when this is a pin row" rule threaded through `MenuActionResolver` and
+  `ActionCatalog` — a bigger change than the gesture itself, for a menu Explorer doesn't have either.
+- **Dragging a pin out of the panel.** Still not a thing: a pin is a shortcut, and unpinning stays
+  in the right-click menu.
+- **Reordering the folder tree.** It reflects the real node tree; there's no order to own.

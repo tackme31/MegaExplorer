@@ -5,6 +5,8 @@
 #include <QCoreApplication>
 #include <QMetaObject>
 
+#include <algorithm>
+#include <cstddef>
 #include <utility>
 #include <vector>
 
@@ -21,10 +23,12 @@ void invokeOnGuiThread(std::function<void()> fn)
 // to arrive can commit the reconciled list in a single write.
 struct Sweep
 {
-    // Snapshot of the pins at sweep start, in order. A surviving pin gets its
-    // name refreshed in place; a dangling one has its handle zeroed, which is
-    // never a real node handle and so doubles as the "dropped" marker.
+    // Snapshot of the pins at sweep start. A surviving pin gets its name
+    // refreshed in place; usable[i] is what says whether it survived at all.
+    // Handles stay intact even for dropped pins, because the commit looks
+    // results up by handle rather than by position.
     std::vector<PinnedFolder> resolved;
+    std::vector<bool> usable;
     int remaining = 0;
 };
 } // namespace
@@ -126,6 +130,23 @@ void QuickAccessModel::unpin(quint64 handle)
     emit countChanged();
 }
 
+void QuickAccessModel::move(quint64 handle, int toRow)
+{
+    const int from = rowFor(handle);
+    if (from < 0)
+        return;
+
+    const int to = std::clamp(toRow, 0, rowCount() - 1);
+    if (to == from)
+        return;
+
+    // beginMoveRows' destination is an insertion point in the *pre-move*
+    // coordinates, so moving down has to name the row after the target.
+    beginMoveRows(QModelIndex(), from, from, QModelIndex(), to > from ? to + 1 : to);
+    mService->move(static_cast<std::size_t>(from), static_cast<std::size_t>(to));
+    endMoveRows();
+}
+
 void QuickAccessModel::activate(quint64 handle, bool inNewTab)
 {
     // Captured now: if the pin turns out to be gone, missing() reports the
@@ -154,6 +175,7 @@ void QuickAccessModel::validateAll()
 
     auto sweep = std::make_shared<Sweep>();
     sweep->resolved = snapshot;
+    sweep->usable.assign(snapshot.size(), false);
     sweep->remaining = static_cast<int>(snapshot.size());
 
     const std::uint64_t generation = mGeneration;
@@ -172,24 +194,39 @@ void QuickAccessModel::validateAll()
                         // A handle is stable across moves and renames, so
                         // re-reading the name is all it takes to follow one.
                         pin.name = resolved.value.name;
+                        sweep->usable[i] = true;
                     }
                     else
                     {
                         qCInfo(lcQuickAccess)
                             << "dropping dangling quick-access pin"
                             << QString::fromStdString(pin.name) << "handle=" << pin.handle;
-                        pin.handle = 0;
                     }
 
                     if (--sweep->remaining > 0)
                         return;
 
+                    // Committed against the *current* list rather than the
+                    // snapshot's order: a reorder (Phase 22a) or a pin() may
+                    // have landed while the sweep was in flight, and replaying
+                    // the snapshot would undo it. The sweep contributes only
+                    // names and drops, both keyed by handle; a handle it never
+                    // saw passes through unchecked.
+                    const std::vector<PinnedFolder>& current = mService->pins();
                     std::vector<PinnedFolder> survivors;
-                    survivors.reserve(sweep->resolved.size());
-                    for (PinnedFolder& candidate : sweep->resolved)
+                    survivors.reserve(current.size());
+                    for (const PinnedFolder& pinned : current)
                     {
-                        if (candidate.handle != 0)
-                            survivors.push_back(std::move(candidate));
+                        const auto found =
+                            std::find_if(sweep->resolved.begin(), sweep->resolved.end(),
+                                         [&pinned](const PinnedFolder& candidate) {
+                                             return candidate.handle == pinned.handle;
+                                         });
+                        if (found == sweep->resolved.end())
+                            survivors.push_back(pinned);
+                        else if (sweep->usable[static_cast<std::size_t>(
+                                     found - sweep->resolved.begin())])
+                            survivors.push_back(*found);
                     }
 
                     // Skip the model reset when the sweep changed nothing,

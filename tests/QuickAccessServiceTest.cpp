@@ -134,6 +134,42 @@ TEST_F(QuickAccessServiceTest, UnpinOfAnUnknownHandleDoesNothing)
     EXPECT_FALSE(service->unpin(99));
 }
 
+TEST_F(QuickAccessServiceTest, MoveReordersAndPersists)
+{
+    EXPECT_CALL(*store, load(_))
+        .WillOnce(Return(Result<std::vector<PinnedFolder>>::ok(
+            {makePin("Photos", 11), makePin("Work", 22), makePin("Docs", 33)})));
+    service->load();
+
+    // Downwards: the pins between source and destination shift up by one.
+    const std::vector<PinnedFolder> afterDown = {makePin("Work", 22), makePin("Docs", 33),
+                                                 makePin("Photos", 11)};
+    EXPECT_CALL(*store, save(_, afterDown)).WillOnce(Return(Result<void>::ok()));
+    EXPECT_TRUE(service->move(0, 2));
+    EXPECT_EQ(service->pins(), afterDown);
+
+    // Upwards, back to the original order.
+    const std::vector<PinnedFolder> afterUp = {makePin("Photos", 11), makePin("Work", 22),
+                                               makePin("Docs", 33)};
+    EXPECT_CALL(*store, save(_, afterUp)).WillOnce(Return(Result<void>::ok()));
+    EXPECT_TRUE(service->move(2, 0));
+    EXPECT_EQ(service->pins(), afterUp);
+}
+
+TEST_F(QuickAccessServiceTest, MoveRejectsAnOutOfRangeOrNoOpIndexWithoutSaving)
+{
+    const std::vector<PinnedFolder> stored = {makePin("Photos", 11), makePin("Work", 22)};
+    EXPECT_CALL(*store, load(_)).WillOnce(Return(Result<std::vector<PinnedFolder>>::ok(stored)));
+    service->load();
+
+    EXPECT_CALL(*store, save(_, _)).Times(0);
+
+    EXPECT_FALSE(service->move(0, 2));
+    EXPECT_FALSE(service->move(5, 0));
+    EXPECT_FALSE(service->move(1, 1));
+    EXPECT_EQ(service->pins(), stored);
+}
+
 TEST_F(QuickAccessServiceTest, IsPinnedTracksTheCurrentList)
 {
     EXPECT_CALL(*store, load(_))

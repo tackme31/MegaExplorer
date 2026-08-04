@@ -57,6 +57,26 @@ bool QuickAccessService::unpin(std::uint64_t handle)
     return true;
 }
 
+bool QuickAccessService::move(std::size_t from, std::size_t to)
+{
+    if (from >= mPins.size() || to >= mPins.size() || from == to)
+        return false;
+
+    const auto first = mPins.begin();
+    const auto at = [first](std::size_t i) {
+        return first + static_cast<std::vector<PinnedFolder>::difference_type>(i);
+    };
+
+    if (from < to)
+        std::rotate(at(from), at(from + 1), at(to + 1));
+    else
+        std::rotate(at(to), at(from), at(from + 1));
+
+    if (!mAccountKey.empty())
+        mStore->save(mAccountKey, mPins);
+    return true;
+}
+
 void QuickAccessService::replaceAll(std::vector<PinnedFolder> pins)
 {
     mPins = std::move(pins);
