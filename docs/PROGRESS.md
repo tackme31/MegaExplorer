@@ -38,7 +38,7 @@ are post-MVP, sequenced by priority/dependency.
 | 19 | Menu-action redesign + new folder | done (pulled forward) |
 | 20a | Per-tab busy indicator + refresh that really refreshes | done (pulled forward) |
 | 20b | About / License dialogs | done (pulled forward) |
-| 21 | Rubber-band (rectangle) selection | planned (pulled forward) |
+| 21 | Rubber-band (rectangle) selection | done (pulled forward) |
 | 22a | Quick-access reordering | planned (pulled forward) |
 | 22b | Tab reordering + drop-onto-tab move | planned (pulled forward) |
 | 23 | Copy / cut / paste | planned (pulled forward) |
