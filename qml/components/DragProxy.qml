@@ -1,7 +1,7 @@
 import QtQuick
 // Must be imported before any other QtQuick.Controls import (compile-time
 // style selection per Qt docs' "Styling Qt Quick Controls"), same rule as
-// Main.qml/ErrorToast.qml.
+// Main.qml/ToastStack.qml.
 import QtQuick.Controls.FluentWinUI3
 
 // The single scene-wide carrier for a move drag & drop gesture (Phase 14a).

@@ -56,7 +56,7 @@ public:
     // Only ever populated for UnknownError -- every other AuthErrorKind maps
     // to a fixed, localized sentence composed entirely in QML (see
     // LoginView.qml's describeError()), same "C++ passes structured fields,
-    // QML composes text" convention as NotificationController/ErrorToast.qml.
+    // QML composes text" convention as NotificationController/ToastStack.qml.
     Q_PROPERTY(QString rawErrorMessage READ rawErrorMessage NOTIFY authErrorKindChanged)
 
     explicit AuthController(std::shared_ptr<AuthService> authService, QObject* parent = nullptr);

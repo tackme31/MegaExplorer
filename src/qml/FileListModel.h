@@ -22,7 +22,7 @@
 //
 // No headerData() override: column header text is Japanese, and this
 // codebase's convention is "C++ passes structured fields, QML composes
-// user-facing text" (see NotificationController/ErrorToast.qml) -- also
+// user-facing text" (see NotificationController/ToastStack.qml) -- also
 // sidesteps an MSVC codepage gotcha with non-ASCII literals in .cpp/.h files
 // (see FileKind.h). FileTableView.qml's header delegate hardcodes the
 // labels instead.

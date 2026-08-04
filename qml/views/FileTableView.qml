@@ -15,7 +15,7 @@ import "../components"
 // server-side, not in-memory). Column header labels are hardcoded here
 // rather than sourced from the model's headerData() -- this codebase's
 // convention is "C++ passes structured fields, QML composes user-facing
-// text" (see NotificationController/ErrorToast.qml), which also sidesteps an
+// text" (see NotificationController/ToastStack.qml), which also sidesteps an
 // MSVC codepage gotcha with Japanese literals in .cpp/.h files.
 //
 // Clicking a header sorts by that column (first click ascending, repeat

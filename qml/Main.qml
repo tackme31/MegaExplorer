@@ -4,7 +4,7 @@ import QtQuick
 import QtQuick.Controls.FluentWinUI3
 import QtQuick.Layouts
 import QtCore
-// Directory import for DownloadSnackbar.qml/TabStrip.qml -- the CMake-generated
+// Directory import for ToastStack.qml/TabStrip.qml -- the CMake-generated
 // qmldir merge (QTP0004) resolves this at build time regardless, but static
 // tooling (Qt Creator's classic QML/JS model, qmllint without the build dir)
 // only knows about the plain-QML directory-import mechanism, not that
@@ -832,25 +832,20 @@ ApplicationWindow {
         parent: Overlay.overlay
     }
 
-    DownloadSnackbar {
-        id: downloadSnackbar
-        parent: Overlay.overlay
-    }
-
-    ErrorToast {
-        id: errorToast
-        parent: Overlay.overlay
-    }
-
-    OperationSnackbar {
-        id: operationSnackbar
-        parent: Overlay.overlay
+    // One stack for all three kinds of notification (S10). Deliberately NOT
+    // parented to Overlay.overlay the way the three Popups it replaces were:
+    // the overlay spans the whole window, so a bottom-pinned stack rides on top
+    // of the status bar. Left in contentItem it lands between header and
+    // footer, and being declared after the content Loader above puts it over
+    // the file views. Modal dialogs still cover it -- they are on the overlay.
+    ToastStack {
+        id: toastStack
     }
 
     Connections {
         target: downloadController
         function onDownloadFinished(success, fileName, localPath, errorMessage, alreadyPresent) {
-            downloadSnackbar.show(success, fileName, localPath, errorMessage, alreadyPresent);
+            toastStack.showDownload(success, fileName, localPath, errorMessage, alreadyPresent);
         }
     }
 
@@ -880,10 +875,10 @@ ApplicationWindow {
     Connections {
         target: notificationController
         function onErrorOccurred(context, errorMessage) {
-            errorToast.show(context, errorMessage);
+            toastStack.showError(context, errorMessage);
         }
         function onOperationFinished(context, succeeded, failed) {
-            operationSnackbar.show(context, succeeded, failed);
+            toastStack.showOperation(context, succeeded, failed);
         }
     }
 

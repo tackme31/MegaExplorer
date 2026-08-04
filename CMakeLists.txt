@@ -123,19 +123,17 @@ qt_add_qml_module(appMegaExplorer
         qml/components/Breadcrumb.qml
         qml/components/CaptionBar.qml
         qml/components/ConfirmRubbishDialog.qml
-        qml/components/DownloadSnackbar.qml
         qml/components/DragAutoScroller.qml
         qml/components/DragProxy.qml
-        qml/components/ErrorToast.qml
         qml/components/FileContextMenu.qml
         qml/components/FileIcon.qml
         qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
         qml/components/InlineRenameField.qml
-        qml/components/OperationSnackbar.qml
         qml/components/QuickAccessSection.qml
         qml/components/SidePanel.qml
         qml/components/TabStrip.qml
+        qml/components/ToastStack.qml
         qml/views/FileGridView.qml
         qml/views/FileTableView.qml
         qml/views/LoginView.qml

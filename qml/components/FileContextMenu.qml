@@ -15,7 +15,7 @@ Menu {
     // Display text for each stable action ID from
     // FileListModel::availableActions (see FileActionResolver::fileActionId).
     // C++ passes structured IDs, QML supplies user-facing text -- same split
-    // as NotificationController/ErrorToast.qml.
+    // as NotificationController/ToastStack.qml.
     readonly property var actionLabels: ({
                                              "download": qsTr("Download"),
                                              "openInNewTab": qsTr("Open in new tab"),

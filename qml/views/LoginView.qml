@@ -10,7 +10,7 @@ import QtQuick.Layouts
 // authController.authState !== AuthController.LoggedIn. All user-facing text
 // is composed here from authController's structured authErrorKind/
 // rawErrorMessage -- same "C++ passes fields, QML composes text" convention
-// as NotificationController/ErrorToast.qml. describeError() varies its
+// as NotificationController/ToastStack.qml. describeError() varies its
 // wording by the current state too, since e.g. InvalidCredentials reads
 // differently on the password step vs. the 2FA code step.
 Item {

@@ -14,7 +14,7 @@ import QtQuick.Controls
 //
 // The message is composed here from the selection count rather than passed in
 // pre-formatted -- same "C++ supplies structured fields, QML supplies wording"
-// split as NotificationController/ErrorToast.qml.
+// split as NotificationController/ToastStack.qml.
 Dialog {
     id: root
 

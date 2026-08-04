@@ -141,6 +141,9 @@ QtObject {
         // a new glyph actually paints.
         readonly property string viewList: "\uE8FD" // List
         readonly property string viewGrid: "\uE8A9" // ViewAll
+        // Toast dismiss (S10). No cmap check needed: TabStrip's tab-close and
+        // CaptionBar's window-close already paint this one.
+        readonly property string close: "\uE8BB" // ChromeClose
     }
 
     readonly property QtObject color: QtObject {
@@ -198,5 +201,14 @@ QtObject {
         readonly property int maxWidth: 320
         readonly property int margin: 16
         readonly property int dismissMs: 6000
+        // Beyond this the oldest card is dropped rather than queued: a stack
+        // tall enough to reach the toolbar stops being a notification.
+        readonly property int maxVisible: 3
+    }
+
+    // Transition durations. Distinct from toast.dismissMs above, which is a
+    // wait, not a movement.
+    readonly property QtObject motion: QtObject {
+        readonly property int fast: 150
     }
 }
