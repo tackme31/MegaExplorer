@@ -75,8 +75,20 @@ public:
     Q_INVOKABLE void
     uploadSkippingExisting(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
+    // Whether anything is still queued or in flight for (handle, isRoot).
+    // Not QML-facing: TabsController reads it to fold uploads into a tab's
+    // busy role, since an upload has no owning tab of its own (see the class
+    // comment) and so can't drive FolderNavigationController::busy the way
+    // that tab's own mutations do.
+    bool isUploadingTo(quint64 handle, bool isRoot) const;
+
 signals:
     void uploadActiveChanged();
+
+    // The set isUploadingTo() answers from gained or lost a destination.
+    // Membership only -- not emitted per file, since nothing binds to the
+    // count.
+    void activeDestinationsChanged();
 
     // The drop contained folderCount folders, which this app can't upload.
     // filePaths carries the uploadable remainder and destinationHandle/
@@ -122,6 +134,11 @@ private:
         int pendingJobs = 0;
         int pendingReplaces = 0; // Rubbish-bin moves still in flight
         std::set<Destination> destinations;
+        // Unfinished work per destination, for isUploadingTo(). Separate from
+        // destinations above, which is deliberately success-only (it drives
+        // the refresh fan-out) and populated only once a job lands -- a
+        // spinner has to go up when the work is *enqueued*.
+        std::map<Destination, int> pendingByDestination;
     };
 
     void enqueueAll(const QStringList& localPaths,
@@ -137,6 +154,13 @@ private:
 
     void refreshActiveJob();
     void flushBatchIfDone();
+
+    // The only two places pendingByDestination changes. Each enqueued job is
+    // retained once and released once -- a replace hands its release over to
+    // the Rubbish-bin move that follows it, so the destination keeps spinning
+    // until the old node is actually gone.
+    void retainDestination(const Destination& destination, int count);
+    void releaseDestination(const Destination& destination);
 
     std::shared_ptr<UploadService> mService;
     std::shared_ptr<FileOperationService> mFileOps;

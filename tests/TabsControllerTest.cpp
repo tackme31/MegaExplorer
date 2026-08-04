@@ -7,6 +7,7 @@
 #include "qml/FolderNavigationController.h"
 #include "qml/NotificationController.h"
 #include "qml/ThumbnailController.h"
+#include "qml/UploadController.h"
 
 #include <gtest/gtest.h>
 
@@ -33,6 +34,12 @@ protected:
     void SetUp() override
     {
         client = std::make_shared<MockMegaClient>();
+        // Real one rather than a stub: TabsController only reads
+        // isUploadingTo() off it, and with nothing ever enqueued that answer is
+        // a constant false -- what's under test here is row bookkeeping.
+        uploads = std::make_unique<UploadController>(std::make_shared<UploadService>(client),
+                                                     std::make_shared<FileOperationService>(client),
+                                                     &notifications);
     }
 
     TabContext makeTabContext()
@@ -53,13 +60,16 @@ protected:
 
     std::unique_ptr<TabsController> makeController()
     {
-        return std::make_unique<TabsController>([this]() {
-            return makeTabContext();
-        });
+        return std::make_unique<TabsController>(
+            [this]() {
+                return makeTabContext();
+            },
+            uploads.get());
     }
 
     std::shared_ptr<MockMegaClient> client;
     NotificationController notifications;
+    std::unique_ptr<UploadController> uploads;
 };
 
 } // namespace

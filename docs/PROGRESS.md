@@ -36,7 +36,7 @@ are post-MVP, sequenced by priority/dependency.
 | 17 | Title-bar-integrated tabs (Windows, QWindowKit) | done (pulled forward) |
 | 18 | Login loading screen + SDK cache location | done (pulled forward) |
 | 19 | Menu-action redesign + new folder | done (pulled forward) |
-| 20a | Per-tab loading indicator | planned (pulled forward) |
+| 20a | Per-tab busy indicator + refresh that really refreshes | done (pulled forward) |
 | 20b | About / License dialogs | planned (pulled forward) |
 | 21 | Rubber-band (rectangle) selection | planned (pulled forward) |
 | 22a | Quick-access reordering | planned (pulled forward) |
@@ -222,13 +222,15 @@ hand-built inverse (rename↔rename, rubbish→move back, copy→delete, create�
 every mutating path, and a policy for when the history has to be thrown away. That is a phase in its
 own right, and with 23 in place the practical need for it is small. Not deferred — out of scope.
 
-### Phase 20a — per-tab loading indicator
+### Phase 20a — per-tab busy indicator + refresh that really refreshes (done)
 
-Swap the tab's folder icon for a spinner while that tab's listing is being fetched. Also closes out
-Phase 7b's stated follow-up: removing the node cache put a network round-trip in front of every
-navigation and nothing on screen covers it. `FolderNavigationController` has no loading/busy
-property today, so that's the addition; `TabStrip.qml`'s `FileIcon` is the consumer. Needs a short
-delay before the spinner appears so a fast folder doesn't flash it.
+Swap the tab's folder icon for a spinner while that tab has work in flight, with a short delay
+before it appears so a fast operation doesn't flash it.
+
+Planned as "…while that tab's *listing* is being fetched", to close out Phase 7b's stated follow-up
+(removing the node cache was said to have put a network round-trip in front of every navigation).
+**That premise turned out to be false** and the phase was re-scoped before implementation — see the
+log below.
 
 ### Phase 20b — About / License dialogs
 
@@ -2291,3 +2293,151 @@ never sees taps below the last row.
 - `FolderNavigationController` gained no test, keeping that file's stated "bent for exactly one
   thing" convention intact; the branch logic is covered one layer down in
   `FileOperationServiceTest`.
+
+## Phase 20a — per-tab busy indicator + refresh that really refreshes (done)
+
+### The premise this phase was planned on was wrong
+
+Phase 7b's log (and the roadmap entry it fed) says removing the node cache "put a network latency in
+front of every navigation" that a busy indicator should cover. It doesn't. `IMegaClient.h` states it
+outright for the four listing getters — "Synchronous under the hood, but kept callback-shaped for
+interface consistency" — and `MegaSdkClient.cpp` bears it out: `search()` calls `mApi->search(...)`
+and then `onDone(...)` on the very next line, `getPath()` walks parents in a loop and calls `onDone`
+at the end. The SDK holds the entire node tree in memory after `fetchNodes`, so `getChildren` is a
+lookup, not a request.
+
+So navigation, search, sorting and breadcrumb resolution all block the GUI thread and finish inside
+one event-loop turn. A spinner for them could not have painted even once — the blocking happens
+inside the synchronous call, before anything gets a chance to repaint. Had this phase been built as
+written, it would have shipped a control that is never visible.
+
+What actually has latency is the `MegaRequestListener`-backed half of `IMegaClient`: `renameNode`,
+`createFolder`, `moveNode`, `moveToRubbish`, `upload`, `getThumbnail`. So the indicator covers
+mutations instead of listings, and the property is called `busy`, not `loading`.
+
+### `refresh()` was covering for the same misconception
+
+The toolbar refresh button and F5 went through the same in-memory path, which commit 46bdb7e already
+recorded when it added them ("a re-read of the SDK's already-fetched node tree, not a server
+round-trip"). It re-reads whatever the SDK happens to have been told already and guarantees nothing
+about freshness — the one action whose entire purpose is freshness.
+
+`MegaApi::catchup()` is the fix: a real request whose completion the SDK documents as "the SDK is
+guaranteed to be up to date (as for the time this function is called)". It becomes
+`IMegaClient::syncPendingChanges` (implemented in one line over the existing `SimpleResultListener`)
+and a passthrough `FolderNavigationService::syncWithServer` — routed through that service rather
+than injected as a fourth dependency into `FolderNavigationController`, since it is the only one of
+the controller's three services holding an `IMegaClient`. `refresh()` now syncs, then re-reads.
+
+That also gives the spinner a second, more frequent occasion to appear, which is what made the two
+halves worth doing in one phase.
+
+**A failed sync still re-reads the listing**, and toasts under a new `"refresh"` context. Withholding
+what the SDK already has would punish the user for the network being down, in response to them asking
+to see the folder.
+
+`refreshIfShowing` was split off rather than left delegating to `refresh()`. Its callers
+(`UploadController::destinationChanged` → `TabContentPane.qml`) are reporting a change *this app just
+made*, which the SDK necessarily already knows about, and it fires once per tab showing the
+destination — so delegating would have meant N pointless round-trips per upload. Both now share a new
+private `refreshListingIfLoaded()` (the old `refresh()` body, `mHasLoadedOnce` guard included).
+
+### Counting, not flagging
+
+`busy` is backed by an `int mBusyCount`, not a bool: `moveSelectionToRubbish`/`moveHandlesTo` fan out
+to N independent SDK calls, and the tab is busy until the last one lands. Two private choke points,
+`beginBusyOperation`/`endBusyOperation`, are the only places that touch it — one pair per SDK call,
+never per user gesture.
+
+Two traps the code comments call out:
+
+- **`endBusyOperation` goes at the very top of each callback, above its own branching.** `createFolder`
+  has four outcomes (success, `kEExist`, `kEArgs`, other) and each of them returns; decrementing per
+  branch would have been four chances to leak the count.
+- **`reset()` zeroes the count while operations are still in flight** (logout), so those callbacks
+  arrive with nothing left to subtract. `endBusyOperation` clamps at zero rather than going negative
+  — a negative count would stop any later `beginBusyOperation` from ever reaching 1 again, silently
+  killing the indicator for the rest of the session.
+
+The published value is `mBusyVisible`, which only turns true once a 250ms single-shot `QTimer` fires
+— the "short delay" the phase called for, and the reason a fast operation shows nothing at all.
+Structured after `AuthController`'s `mStallTimer` (timer by value, configured in the constructor,
+interval as a documented `constexpr` in the anonymous namespace).
+
+Deliberately **no** minimum-visible duration: an operation finishing just past 250ms will flash the
+spinner briefly. That's a second timer and a second piece of state for a problem not yet observed;
+if it shows up in practice it can be added then.
+
+### QML: a fixed box, for the same reason the close button sits outside `contentItem`
+
+`TabsController` gained a `BusyRole`, and the row-lookup-by-pointer loop that `breadcrumbChanged`
+used moved into a private `emitRowChangedFor(navigation, roles)` now that two signals need it.
+
+In `TabStrip.qml` the bare `FileIcon` became an `Item` pinned to `Theme.iconSize.sm` holding both the
+icon and a `BusyIndicator`, one visible at a time. The pinning is load-bearing and is the same hazard
+the file already documents for its close button: `TabButton` takes its `implicitHeight` from
+`contentItem`, and `BusyIndicator`'s own implicit size is the style's ~32px, which would have grown
+every tab from 36px. `running` is bound to `busy` rather than left default, per the lesson
+`LoginView.qml` records — whether a style stops animating a hidden indicator is style-private, and a
+stuck one drives the render loop for as long as the tab lives.
+
+`FileIcon.qml` was left alone. A `loading` property there would have appeared on all four other call
+sites (tree panel, quick access, grid, table) that can never use it.
+
+### Uploads: the one mutation with no owning tab
+
+Not in the plan, added straight after it on the observation that the destination tab sat still
+through an upload — the only *long* mutation in the app, and the one where a spinner is worth most.
+It couldn't go through `beginBusyOperation` like the other four, because `UploadController` is
+app-global by design (three of the five drop targets are shared chrome, see its class comment) and so
+has no tab to charge the operation to. Pushing a begin/end pair into "whichever tabs are showing the
+destination" would also leak: a tab that navigates away mid-upload would never receive its `end`.
+
+So it's folded in one level up instead, as a pure function of state rather than a counter:
+`TabsController::data(BusyRole)` returns `navigation->busy() || uploads->isUploadingTo(currentHandle,
+atRoot)`. Nothing to pair, nothing to leak — a tab that navigates away simply stops matching, and one
+that navigates *in* starts. That second direction is why `breadcrumbChanged` now invalidates
+`BusyRole` too, alongside the new whole-column invalidation on
+`UploadController::activeDestinationsChanged`.
+
+`UploadController` answers `isUploadingTo` from a new `pendingByDestination` map, counted at
+*enqueue* time. The existing `Batch::destinations` set couldn't be reused for this: it is
+success-only and filled when a job *lands*, because it drives the refresh fan-out — a spinner has to
+go up when the work is queued, and come down whether the upload succeeded or not. A replace hands its
+release over to the Rubbish-bin move that follows it, so the destination keeps spinning until the old
+node is actually gone (matching the batch flush, which waits for the same thing).
+
+Consciously left inconsistent with the other four: **no 250ms delay** on this path. The delay exists
+to hide sub-perceptual operations, and a network file transfer is never one.
+
+### Tests
+
+`tests/FolderNavigationControllerTest.cpp` bends the "src/qml is untested by convention" rule for
+bookkeeping, which is exactly what the busy count is. Six tests added: the sync-before-re-read
+ordering, the failed sync still re-reading, `refreshIfShowing` not syncing, the count surviving a
+bulk fan-out, a failing `createFolder` still clearing it, and `reset()` mid-flight followed by a
+fresh operation that must still show the indicator.
+
+Two things worth knowing before touching this file:
+
+- **A new pure virtual on `IMegaClient` silently breaks existing tests.** gMock's default for an
+  unstubbed void method is to do nothing, so `refresh()` handed its callback to a mock that dropped
+  it and the re-read never happened. `SetUp` now carries a `WillRepeatedly` default for
+  `syncPendingChanges`; tests wanting a failure set their own, which gMock matches first.
+- **No `QSignalSpy`** — it lives in Qt6::Test, which this target deliberately doesn't link (the same
+  note is in `UploadControllerTest`). The busy tests have to let real time pass for the 250ms timer,
+  so there's a local `waitForBusy()` helper built from `QEventLoop` + `QTimer` instead.
+
+`tests/UploadControllerTest.cpp` covers the retain/release pairing with three more: busy from enqueue
+until the queue drains (and for that destination only), still cleared when every job fails, and still
+set while a replaced node is being binned. `TabsControllerTest` now builds a real `UploadController`
+to satisfy the new constructor argument — with nothing enqueued its answer is a constant false, which
+leaves those tests testing row bookkeeping exactly as before.
+
+### Deliberately not done
+
+- Making the listing getters genuinely async. A recursive `search()` over a large account still
+  blocks the GUI thread, and no indicator fixes that — it needs the SDK calls off the GUI thread,
+  which is Phase 16's territory.
+- Thumbnail loading is not counted. Each tile has its own placeholder; a whole-tab spinner would be
+  the wrong granularity.

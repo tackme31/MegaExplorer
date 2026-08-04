@@ -141,8 +141,23 @@ views' selection menu still uses `FileListModel::availableActions`. On that base
 `IMegaClient::createFolder` (fourth mutating method) plus `FolderNavigationController::createFolder`
 back a per-tab `NewFolderDialog`, where the *only* duplicate-name check is the server's
 `API_EEXIST` — that and an invalid name keep the dialog open with red inline text, every other
-failure closes it and reports by toast. Like 14a it refreshes only the creating tab. The full
-roadmap — next up is the 20a–23 detail pass (tab loading indicator, About/License, rubber-band
+failure closes it and reports by toast. Like 14a it refreshes only the creating tab. Phase 20a then
+opened the 20a–23 detail pass with a per-tab busy indicator, after finding that **the phase's own
+premise was false**: the SDK holds the whole node tree in memory after `fetchNodes`, so
+`getChildren`/`search`/`getPath` are synchronous in-memory reads (`IMegaClient.h` says so outright)
+and a spinner for "the listing is loading" could never have painted — Phase 7b's claim of a
+per-navigation network round-trip was wrong. So `FolderNavigationController` gained a delayed `busy`
+property (a *count*, not a flag, since the bulk fan-outs issue N calls; published only after a 250ms
+`QTimer`) covering the genuinely async work — rename / createFolder / move / moveToRubbish — surfaced
+via a new `TabsController` `BusyRole` and a `BusyIndicator` pinned to 16px beside `TabStrip.qml`'s
+`FileIcon`. Uploads were then folded into that same role — not through the controller's counter,
+since `UploadController` is app-global and owns no tab, but as a pure OR in `TabsController::data`
+against a new `UploadController::isUploadingTo(handle, isRoot)`, so a tab is busy exactly while it is
+showing an upload destination. It also fixed the toolbar refresh button, which re-read the in-memory tree and so
+guaranteed nothing about freshness: `IMegaClient::syncPendingChanges` (`MegaApi::catchup`, the sixth
+mutating-side method) now runs before the re-read, with `refreshIfShowing` deliberately split off so
+the post-upload fan-out doesn't sync once per tab. The full
+roadmap — next up is the rest of the 20b–23 detail pass (About/License, rubber-band
 selection, quick-access/tab reordering + drop-onto-tab, copy/cut/paste), all pulled forward ahead of
 phases 15–16 (in-app preview, real-time remote-change reflection) — lives in `docs/PROGRESS.md`'s
 Roadmap section; see the companion-docs list above.

@@ -2,17 +2,28 @@
 
 #include "FolderNavigationController.h"
 #include "ThumbnailController.h"
+#include "UploadController.h"
 
 #include <QQmlEngine>
 
 #include <algorithm>
 
-TabsController::TabsController(std::function<TabContext()> factory, QObject* parent)
-    : QAbstractListModel(parent), mFactory(std::move(factory))
+TabsController::TabsController(std::function<TabContext()> factory,
+                               UploadController* uploads,
+                               QObject* parent)
+    : QAbstractListModel(parent), mFactory(std::move(factory)), mUploads(uploads)
 {
     // One tab up front, before QML ever attaches to this model -- no
     // begin/endInsertRows needed for a mutation nothing has observed yet.
     mTabs.push_back(createTab());
+
+    // Which tabs an upload makes busy depends on where each one is standing,
+    // so any change to the destination set is a change to every row.
+    connect(mUploads, &UploadController::activeDestinationsChanged, this, [this]() {
+        if (mTabs.empty())
+            return;
+        emit dataChanged(index(0), index(static_cast<int>(mTabs.size()) - 1), {BusyRole});
+    });
 }
 
 int TabsController::rowCount(const QModelIndex& parent) const
@@ -41,6 +52,12 @@ QVariant TabsController::data(const QModelIndex& index, int role) const
         case ThumbnailsRole:
             return QVariant::fromValue(static_cast<QObject*>(
                 mTabs[static_cast<std::size_t>(index.row())].thumbnails.get()));
+        case BusyRole:
+            // An upload has no owning tab, so it can't drive the per-tab
+            // controller's own busy the way that tab's mutations do -- fold it
+            // in here instead, for whichever tabs are showing the destination.
+            return navigation->busy() ||
+                   mUploads->isUploadingTo(navigation->currentHandle(), navigation->atRoot());
     }
     return QVariant();
 }
@@ -52,6 +69,7 @@ QHash<int, QByteArray> TabsController::roleNames() const
         {AtRootRole, "atRoot"},
         {NavigationRole, "navigation"},
         {ThumbnailsRole, "thumbnails"},
+        {BusyRole, "busy"},
     };
 }
 
@@ -169,25 +187,35 @@ TabContext TabsController::createTab()
     QQmlEngine::setObjectOwnership(context.navigation.get(), QQmlEngine::CppOwnership);
     QQmlEngine::setObjectOwnership(context.thumbnails.get(), QQmlEngine::CppOwnership);
 
-    // Relays this tab's title-affecting changes into a per-row dataChanged()
-    // so TabStrip.qml's TabButton delegates update without needing their own
-    // Connections. Looked up by pointer rather than a captured index: tabs
-    // can be inserted/removed after this connection is made, which would
-    // otherwise leave a stale row number behind.
+    // Relays this tab's own changes into a per-row dataChanged() so
+    // TabStrip.qml's TabButton delegates update without needing their own
+    // Connections.
     FolderNavigationController* navigation = context.navigation.get();
     connect(navigation, &FolderNavigationController::breadcrumbChanged, this, [this, navigation]() {
-        for (std::size_t i = 0; i < mTabs.size(); ++i)
-        {
-            if (mTabs[i].navigation.get() == navigation)
-            {
-                const QModelIndex idx = index(static_cast<int>(i));
-                emit dataChanged(idx, idx, {TitleRole, AtRootRole});
-                break;
-            }
-        }
+        // BusyRole too: it's partly a function of where this tab is standing
+        // (see data()), so navigating into or out of an upload destination
+        // changes it without any operation of this tab's own starting.
+        emitRowChangedFor(navigation, {TitleRole, AtRootRole, BusyRole});
+    });
+    connect(navigation, &FolderNavigationController::busyChanged, this, [this, navigation]() {
+        emitRowChangedFor(navigation, {BusyRole});
     });
 
     return context;
+}
+
+void TabsController::emitRowChangedFor(const FolderNavigationController* navigation,
+                                       const QList<int>& roles)
+{
+    for (std::size_t i = 0; i < mTabs.size(); ++i)
+    {
+        if (mTabs[i].navigation.get() == navigation)
+        {
+            const QModelIndex idx = index(static_cast<int>(i));
+            emit dataChanged(idx, idx, roles);
+            return;
+        }
+    }
 }
 
 void TabsController::collapseToSingleTab()

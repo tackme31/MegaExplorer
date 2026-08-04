@@ -6,6 +6,7 @@
 #include "FileListModel.h"
 
 #include <QObject>
+#include <QTimer>
 #include <QVariantList>
 
 #include <memory>
@@ -57,6 +58,15 @@ class FolderNavigationController : public QObject,
     // hasn't resolved yet or the current location is the root (meaningless
     // sentinel handle, same convention as PathSegment::isRoot).
     Q_PROPERTY(quint64 currentHandle READ currentHandle NOTIFY breadcrumbChanged)
+    // True while this tab has a mutating operation or a server sync in flight
+    // -- backs TabStrip.qml's per-tab spinner (TabsController relays the
+    // signal into a per-row dataChanged(), same as breadcrumbChanged above).
+    // Deliberately NOT set by folder listing / search / breadcrumb fetches:
+    // those are synchronous in-memory reads of the SDK's node tree
+    // (IMegaClient::getChildren) and finish before anything could repaint.
+    // Uploads aren't here either, for the opposite reason -- they belong to no
+    // tab, so TabsController ORs them into the role by destination instead.
+    Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
 
 public:
     explicit FolderNavigationController(std::shared_ptr<FolderNavigationService> navigationService,
@@ -74,6 +84,8 @@ public:
     FileListModel* fileListModelForThumbnails();
 
     bool canGoBack() const;
+
+    bool busy() const;
 
     // False both before the breadcrumb has resolved and at the root, so the
     // "up" button is disabled in exactly the cases where there's no parent.
@@ -164,21 +176,28 @@ public:
     Q_INVOKABLE bool
     canDropHandlesOn(const QVariantList& handles, quint64 target, bool targetIsRoot) const;
 
-    // Toolbar refresh button / F5. Re-fetches whatever this tab is showing;
-    // no-op until the first successful load (see mHasLoadedOnce). Deliberately
-    // refreshVisibleListing, not refreshCurrentFolder: a tab that happens to be
-    // searching must not be dropped out of its search.
+    // Toolbar refresh button / F5. Asks the API for anything it hasn't told us
+    // yet (FolderNavigationService::syncWithServer), then re-reads whatever
+    // this tab is showing; no-op until the first successful load (see
+    // mHasLoadedOnce). The sync is what makes this more than a re-read of the
+    // node tree we already have -- getChildren alone can only ever return what
+    // the SDK happens to have been told already, so without it the button
+    // guarantees nothing about freshness.
     Q_INVOKABLE void refresh();
 
-    // refresh(), but only if this tab is the one showing (handle, isRoot), so
-    // an app-global controller can fan a "something changed in folder X"
-    // notification out to every tab and let each tab decide for itself (see
-    // UploadController::destinationChanged).
+    // Re-reads the listing, but only if this tab is the one showing
+    // (handle, isRoot), so an app-global controller can fan a "something
+    // changed in folder X" notification out to every tab and let each tab
+    // decide for itself (see UploadController::destinationChanged).
+    // Not refresh(): the caller is reporting a change this app just made, so
+    // the SDK already knows about it, and syncing once per showing tab would
+    // be that many pointless round-trips.
     Q_INVOKABLE void refreshIfShowing(quint64 handle, bool isRoot);
 
 signals:
     void canGoBackChanged();
     void breadcrumbChanged();
+    void busyChanged();
 
     void folderCreated();
     // reason is a structured selector, not a message: "exists" (a folder of
@@ -199,6 +218,19 @@ private:
     // show a stale one). Shared by setSortOrder and by the Phase 12 mutations,
     // which must not silently drop the user out of a search.
     void refreshVisibleListing();
+
+    // refreshVisibleListing() behind the mHasLoadedOnce guard -- the old body
+    // of refresh(), split out when refresh() grew its server sync so that
+    // refreshIfShowing could keep the plain re-read.
+    void refreshListingIfLoaded();
+
+    // The only two places mBusyCount is allowed to change. Every mutating
+    // entry point pairs exactly one begin with one end per SDK call it makes
+    // (so a bulk fan-out of N calls is N pairs), the end going at the very top
+    // of the callback, before any of its own branching -- createFolder's four
+    // outcomes would otherwise be four chances to leak the count.
+    void beginBusyOperation();
+    void endBusyOperation();
 
     // Resolves the current location's ancestor chain and updates
     // mBreadcrumb. Called at the end of applyResult's success path (loadRoot
@@ -242,4 +274,11 @@ private:
     // erroring out) before login/fetchNodes have ever run. Set true once
     // applyResult sees its first success; reset back to false by reset().
     bool mHasLoadedOnce = false;
+    // In-flight mutating operations / server syncs. Separate from the
+    // published busy() below, which only turns true once mBusyDelayTimer has
+    // fired: an operation that finishes inside the delay never shows a
+    // spinner at all, which is the point.
+    int mBusyCount = 0;
+    bool mBusyVisible = false;
+    QTimer mBusyDelayTimer;
 };

@@ -95,6 +95,7 @@ RowLayout {
                 required property int index
                 required property string title
                 required property bool atRoot
+                required property bool busy
 
                 checkable: false
                 checked: tabButton.index === tabsController.currentIndex
@@ -184,10 +185,35 @@ RowLayout {
                 contentItem: RowLayout {
                     spacing: Theme.spacing.md
 
-                    // Explorer puts a folder on every tab; a tab always shows a
-                    // folder's contents, so there is nothing to switch on (S4).
-                    FileIcon {
-                        isFolder: true
+                    // The fixed box is load-bearing for the same reason the
+                    // close button sits outside contentItem (see above):
+                    // BusyIndicator's own implicit size is the style's ~32px,
+                    // which would set the tab's height. Pinning both children
+                    // to the icon size keeps the 36px above standing.
+                    Item {
+                        Layout.preferredWidth: Theme.iconSize.sm
+                        Layout.preferredHeight: Theme.iconSize.sm
+
+                        // Explorer puts a folder on every tab; a tab always
+                        // shows a folder's contents, so there is nothing to
+                        // switch on (S4). It gives way to the spinner while
+                        // this tab has an operation in flight (Phase 20a).
+                        FileIcon {
+                            anchors.fill: parent
+                            isFolder: true
+                            visible: !tabButton.busy
+                        }
+
+                        BusyIndicator {
+                            anchors.fill: parent
+                            visible: tabButton.busy
+                            // Gated the way LoginView.qml gates its own:
+                            // whether the style stops animating a hidden
+                            // indicator is style-private, and a stuck
+                            // animation drives the render loop for as long as
+                            // the tab lives.
+                            running: tabButton.busy
+                        }
                     }
 
                     Label {

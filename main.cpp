@@ -127,7 +127,7 @@ int main(int argc, char* argv[])
                           std::move(navigation),
                           std::move(thumbnails)};
     };
-    TabsController tabs(tabFactory);
+    TabsController tabs(tabFactory, &uploadController);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("tabsController", &tabs);

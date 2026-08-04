@@ -361,4 +361,49 @@ TEST_F(UploadControllerTest, WholeBatchLostToAMissingDestinationGetsItsOwnMessag
     EXPECT_EQ(destinationChanges, 0);
 }
 
+TEST_F(UploadControllerTest, IsUploadingToCoversTheDestinationFromEnqueueUntilTheQueueDrains)
+{
+    EXPECT_CALL(*client, upload(_, _, _, _, _))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{1})));
+
+    // Act: the finished notifications are still queued at this point
+    controller->dropUrls(
+        {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
+
+    // Assert: busy for this destination only
+    EXPECT_TRUE(controller->isUploadingTo(7, false));
+    EXPECT_FALSE(controller->isUploadingTo(7, true));
+    EXPECT_FALSE(controller->isUploadingTo(9, false));
+
+    flushQueuedEvents();
+    EXPECT_FALSE(controller->isUploadingTo(7, false));
+}
+
+TEST_F(UploadControllerTest, IsUploadingToClearsEvenWhenEveryJobFails)
+{
+    EXPECT_CALL(*client, checkUpload(7, false))
+        .WillRepeatedly(Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
+
+    controller->dropUrls({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
+    flushQueuedEvents();
+
+    EXPECT_FALSE(controller->isUploadingTo(7, false));
+}
+
+TEST_F(UploadControllerTest, IsUploadingToOutlastsTheUploadWhileTheReplacedNodeIsStillBeingBinned)
+{
+    EXPECT_CALL(*client, findChildFiles(7, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
+    EXPECT_CALL(*client, upload(_, _, _, _, _))
+        .WillRepeatedly(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{1})));
+    // Never answered, so the replace stays in flight.
+    EXPECT_CALL(*client, moveToRubbish(55, _)).Times(1);
+
+    controller->uploadReplacingExisting({makeFile("a.txt")}, 7, false);
+    flushQueuedEvents();
+
+    EXPECT_TRUE(controller->isUploadingTo(7, false));
+}
+
 } // namespace

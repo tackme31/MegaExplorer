@@ -108,3 +108,8 @@ void FolderNavigationService::resolveCurrentPath(
 {
     mClient->getPath(mCurrent.handle, mCurrent.isRoot, std::move(onDone));
 }
+
+void FolderNavigationService::syncWithServer(std::function<void(Result<void>)> onDone)
+{
+    mClient->syncPendingChanges(std::move(onDone));
+}

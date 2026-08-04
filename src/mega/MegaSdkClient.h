@@ -48,6 +48,8 @@ public:
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<void>)> onDone) override;
 
+    void syncPendingChanges(std::function<void(Result<void>)> onDone) override;
+
     void getRootChildren(SortOrder order,
                          std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 

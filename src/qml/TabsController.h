@@ -10,6 +10,7 @@ class FolderNavigationService;
 class SearchService;
 class FolderNavigationController;
 class ThumbnailController;
+class UploadController;
 
 // Everything one tab needs to be self-contained: its own navigation/search
 // scope (back-stack, current folder, last search query) and its own
@@ -66,9 +67,15 @@ public:
         AtRootRole,                   // true if this tab is showing the root
         NavigationRole,               // FolderNavigationController* (QObject*)
         ThumbnailsRole,               // ThumbnailController* (QObject*)
+        BusyRole,                     // that tab has an operation in flight
     };
 
-    explicit TabsController(std::function<TabContext()> factory, QObject* parent = nullptr);
+    // uploads is app-global and non-owning (main.cpp outlives this): it's
+    // folded into BusyRole rather than into the per-tab controller because an
+    // upload belongs to no tab -- see the BusyRole case in data().
+    explicit TabsController(std::function<TabContext()> factory,
+                            UploadController* uploads,
+                            QObject* parent = nullptr);
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     QVariant data(const QModelIndex& index, int role) const override;
@@ -126,7 +133,14 @@ private:
     // surviving tab's navigation controller.
     void collapseToSingleTab();
 
+    // Emits dataChanged for whichever row currently holds navigation. Looked
+    // up by pointer rather than a captured index: tabs can be inserted or
+    // removed after the connection that calls this was made, which would
+    // otherwise leave a stale row number behind. No-op if the tab is gone.
+    void emitRowChangedFor(const FolderNavigationController* navigation, const QList<int>& roles);
+
     std::function<TabContext()> mFactory;
+    UploadController* mUploads;
     std::vector<TabContext> mTabs;
     int mCurrentIndex = 0;
 };

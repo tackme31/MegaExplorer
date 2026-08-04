@@ -13,6 +13,12 @@
 namespace
 {
 
+// How long an operation has to stay in flight before the tab shows a spinner.
+// Every operation the busy count covers is a server round-trip, so most land
+// well inside this and never flash one; the ones that don't are the ones
+// worth reporting.
+constexpr int kBusyIndicatorDelayMs = 250;
+
 // Service callbacks may fire on an SDK-internal background thread (see
 // IMegaClient.h), so touching the QML-facing model/property from there must
 // go through a queued invoke onto the GUI thread. Same idiom as main.cpp's
@@ -44,7 +50,19 @@ FolderNavigationController::FolderNavigationController(
     : QObject(parent), mService(std::move(navigationService)),
       mSearchService(std::move(searchService)), mFileOps(std::move(fileOperationService)),
       mNotifications(notifications)
-{}
+{
+    mBusyDelayTimer.setSingleShot(true);
+    mBusyDelayTimer.setInterval(kBusyIndicatorDelayMs);
+    connect(&mBusyDelayTimer, &QTimer::timeout, this, [this]() {
+        // The timer is stopped by endBusyOperation, so this normally can't
+        // fire with nothing left in flight -- guarded anyway rather than
+        // relying on that ordering.
+        if (mBusyCount == 0 || mBusyVisible)
+            return;
+        mBusyVisible = true;
+        emit busyChanged();
+    });
+}
 
 QObject* FolderNavigationController::fileListModel()
 {
@@ -59,6 +77,36 @@ FileListModel* FolderNavigationController::fileListModelForThumbnails()
 bool FolderNavigationController::canGoBack() const
 {
     return mService->canGoBack();
+}
+
+bool FolderNavigationController::busy() const
+{
+    return mBusyVisible;
+}
+
+void FolderNavigationController::beginBusyOperation()
+{
+    if (++mBusyCount == 1)
+        mBusyDelayTimer.start();
+}
+
+void FolderNavigationController::endBusyOperation()
+{
+    // reset() zeroes the count with operations still in flight, so their
+    // callbacks arrive here with nothing left to subtract. Clamping rather
+    // than letting the count go negative, which would stop a later
+    // beginBusyOperation from ever reaching 1 again.
+    if (mBusyCount == 0)
+        return;
+
+    if (--mBusyCount > 0)
+        return;
+
+    mBusyDelayTimer.stop();
+    if (!mBusyVisible)
+        return;
+    mBusyVisible = false;
+    emit busyChanged();
 }
 
 QVariantList FolderNavigationController::breadcrumb() const
@@ -298,11 +346,13 @@ void FolderNavigationController::refreshVisibleListing()
 
 void FolderNavigationController::renameEntry(quint64 handle, const QString& newName)
 {
+    beginBusyOperation();
     mFileOps->rename(
         static_cast<std::uint64_t>(handle),
         newName.toStdString(),
         [this, self = shared_from_this()](Result<void> result) {
             invokeOnGuiThread(this, [this, result = std::move(result)]() {
+                endBusyOperation();
                 if (!result.success)
                 {
                     qCWarning(lcFileOps)
@@ -319,12 +369,17 @@ void FolderNavigationController::renameEntry(quint64 handle, const QString& newN
 
 void FolderNavigationController::createFolder(const QString& name)
 {
+    beginBusyOperation();
     mFileOps->createFolder(
         static_cast<std::uint64_t>(currentHandle()),
         atRoot(),
         name.toStdString(),
         [this, self = shared_from_this()](Result<void> result) {
             invokeOnGuiThread(this, [this, result = std::move(result)]() {
+                // Above the four-way branching below on purpose: each of those
+                // outcomes returns, so anything lower would be four chances to
+                // leak the count.
+                endBusyOperation();
                 if (result.success)
                 {
                     refreshVisibleListing();
@@ -368,10 +423,12 @@ void FolderNavigationController::moveSelectionToRubbish()
     for (const QVariant& entry : entries)
     {
         const quint64 handle = entry.toMap().value(QStringLiteral("handle")).toULongLong();
+        beginBusyOperation();
         mFileOps->moveToRubbish(static_cast<std::uint64_t>(handle),
                                 [this, self = shared_from_this(), batch](Result<void> result) {
                                     invokeOnGuiThread(
                                         this, [this, batch, result = std::move(result)]() {
+                                            endBusyOperation();
                                             accountForBulkOutcome(batch, result, "moveToRubbish");
                                         });
                                 });
@@ -390,11 +447,13 @@ void FolderNavigationController::moveHandlesTo(const QVariantList& handles,
 
     for (const QVariant& handle : handles)
     {
+        beginBusyOperation();
         mFileOps->move(static_cast<std::uint64_t>(handle.toULongLong()),
                        static_cast<std::uint64_t>(target),
                        targetIsRoot,
                        [this, self = shared_from_this(), batch](Result<void> result) {
                            invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
+                               endBusyOperation();
                                accountForBulkOutcome(batch, result, "move");
                            });
                        });
@@ -420,11 +479,36 @@ bool FolderNavigationController::canDropHandlesOn(const QVariantList& handles,
     return true;
 }
 
-void FolderNavigationController::refresh()
+void FolderNavigationController::refreshListingIfLoaded()
 {
     if (!mHasLoadedOnce)
         return;
     refreshVisibleListing();
+}
+
+void FolderNavigationController::refresh()
+{
+    if (!mHasLoadedOnce)
+        return;
+
+    beginBusyOperation();
+    mService->syncWithServer([this, self = shared_from_this()](Result<void> result) {
+        invokeOnGuiThread(this, [this, result = std::move(result)]() {
+            endBusyOperation();
+            if (!result.success)
+            {
+                qCWarning(lcNavigation)
+                    << "server sync failed:" << QString::fromStdString(result.errorMessage)
+                    << "code=" << result.errorCode;
+                mNotifications->notifyError(QStringLiteral("refresh"),
+                                            QString::fromStdString(result.errorMessage));
+            }
+            // Re-read either way. The user asked for the folder to be
+            // refreshed; failing to reach the API is worth a toast, but it is
+            // no reason to withhold what the SDK already has.
+            refreshListingIfLoaded();
+        });
+    });
 }
 
 void FolderNavigationController::refreshIfShowing(quint64 handle, bool isRoot)
@@ -433,7 +517,7 @@ void FolderNavigationController::refreshIfShowing(quint64 handle, bool isRoot)
         return;
     if (!isRoot && currentHandle() != handle)
         return;
-    refresh();
+    refreshListingIfLoaded();
 }
 
 void FolderNavigationController::accountForBulkOutcome(
@@ -467,6 +551,15 @@ void FolderNavigationController::reset()
     mLastSearchQuery.clear();
     mHasLoadedOnce = false;
     mBreadcrumb.clear();
+    // Abandons the count rather than waiting the in-flight operations out:
+    // this is a logout, their callbacks will find nothing left to refresh, and
+    // without this a spinner would keep turning on a signed-out window.
+    mBusyCount = 0;
+    mBusyDelayTimer.stop();
+    const bool wasBusy = mBusyVisible;
+    mBusyVisible = false;
     emit canGoBackChanged();
     emit breadcrumbChanged();
+    if (wasBusy)
+        emit busyChanged();
 }

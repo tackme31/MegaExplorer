@@ -352,6 +352,11 @@ void MegaSdkClient::fetchNodes(
     mApi->fetchNodes(new FetchNodesListener(std::move(onProgress), std::move(onDone)));
 }
 
+void MegaSdkClient::syncPendingChanges(std::function<void(Result<void>)> onDone)
+{
+    mApi->catchup(new SimpleResultListener(std::move(onDone)));
+}
+
 void MegaSdkClient::getRootChildren(SortOrder order,
                                     std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {

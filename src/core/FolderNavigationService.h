@@ -84,6 +84,13 @@ public:
     // Read-only: never touches the back-stack or mCurrent.
     void resolveCurrentPath(std::function<void(Result<std::vector<PathSegment>>)> onDone);
 
+    // Straight passthrough to IMegaClient::syncPendingChanges, and location-
+    // agnostic despite living here: this service is the only one of the three
+    // FolderNavigationController holds that owns an IMegaClient, and a
+    // user-initiated refresh is the only caller. Routing it through here
+    // rather than injecting a fourth dependency into that controller.
+    void syncWithServer(std::function<void(Result<void>)> onDone);
+
 private:
     struct Location
     {

@@ -40,32 +40,37 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
     mService->setOnJobFinished([this](UploadJob job) {
         invokeOnGuiThread([this, job = std::move(job)]() mutable {
             --mBatch.pendingJobs;
+            const Destination destination{static_cast<quint64>(job.parentHandle), job.parentIsRoot};
+            bool replaceStarted = false;
             if (job.state == UploadState::Completed)
             {
                 ++mBatch.succeeded;
-                mBatch.destinations.insert(
-                    Destination{static_cast<quint64>(job.parentHandle), job.parentIsRoot});
+                mBatch.destinations.insert(destination);
 
                 if (job.replaceHandle != 0)
                 {
+                    replaceStarted = true;
                     // MEGA has no native overwrite, so "replace" is upload
                     // first, then bin the old node -- never the reverse, which
                     // would lose data if the transfer failed. The batch flush
                     // waits for this so a refreshed listing can't show both.
                     ++mBatch.pendingReplaces;
-                    mFileOps->moveToRubbish(job.replaceHandle, [this](Result<void> result) {
-                        invokeOnGuiThread([this, result = std::move(result)] {
-                            --mBatch.pendingReplaces;
-                            if (!result.success)
-                            {
-                                ++mBatch.replaceFailed;
-                                qCWarning(lcUpload) << "failed to remove the replaced file:"
-                                                    << QString::fromStdString(result.errorMessage)
-                                                    << "code=" << result.errorCode;
-                            }
-                            flushBatchIfDone();
+                    mFileOps->moveToRubbish(
+                        job.replaceHandle, [this, destination](Result<void> result) {
+                            invokeOnGuiThread([this, destination, result = std::move(result)] {
+                                --mBatch.pendingReplaces;
+                                releaseDestination(destination);
+                                if (!result.success)
+                                {
+                                    ++mBatch.replaceFailed;
+                                    qCWarning(lcUpload)
+                                        << "failed to remove the replaced file:"
+                                        << QString::fromStdString(result.errorMessage)
+                                        << "code=" << result.errorCode;
+                                }
+                                flushBatchIfDone();
+                            });
                         });
-                    });
                 }
             }
             else
@@ -79,6 +84,9 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
                     << "upload failed for" << QString::fromStdString(job.name) << ":"
                     << QString::fromStdString(job.errorMessage) << "code=" << job.errorCode;
             }
+
+            if (!replaceStarted)
+                releaseDestination(destination);
 
             refreshActiveJob(); // reflect whatever's now at the front (or nothing)
             flushBatchIfDone();
@@ -107,6 +115,34 @@ qreal UploadController::activeProgress() const
 int UploadController::pendingCount() const
 {
     return static_cast<int>(mService->queueLength());
+}
+
+bool UploadController::isUploadingTo(quint64 handle, bool isRoot) const
+{
+    return mBatch.pendingByDestination.find(Destination{handle, isRoot}) !=
+           mBatch.pendingByDestination.end();
+}
+
+void UploadController::retainDestination(const Destination& destination, int count)
+{
+    if (count <= 0)
+        return;
+    const bool wasIdle =
+        mBatch.pendingByDestination.find(destination) == mBatch.pendingByDestination.end();
+    mBatch.pendingByDestination[destination] += count;
+    if (wasIdle)
+        emit activeDestinationsChanged();
+}
+
+void UploadController::releaseDestination(const Destination& destination)
+{
+    auto it = mBatch.pendingByDestination.find(destination);
+    if (it == mBatch.pendingByDestination.end())
+        return;
+    if (--it->second > 0)
+        return;
+    mBatch.pendingByDestination.erase(it);
+    emit activeDestinationsChanged();
 }
 
 bool UploadController::canUploadTo(quint64 target, bool targetIsRoot) const
@@ -224,6 +260,7 @@ void UploadController::enqueueAll(const QStringList& localPaths,
     // or the second Rubbish-bin move would just fail with kENoEnt.
     std::set<quint64> claimedReplaceHandles;
     mBatch.pendingJobs += static_cast<int>(localPaths.size());
+    retainDestination(Destination{target, targetIsRoot}, static_cast<int>(localPaths.size()));
     for (const QString& path : localPaths)
     {
         QFileInfo info(path);

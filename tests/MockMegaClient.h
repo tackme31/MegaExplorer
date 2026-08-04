@@ -29,6 +29,7 @@ public:
     MOCK_METHOD(void, logout, (std::function<void(Result<void>)>), (override));
     MOCK_METHOD(Result<std::string>, currentSessionToken, (), (const, override));
     MOCK_METHOD(Result<std::uint64_t>, currentUserHandle, (), (const, override));
+    MOCK_METHOD(void, syncPendingChanges, (std::function<void(Result<void>)>), (override));
     MOCK_METHOD(void,
                 getRootChildren,
                 (SortOrder, std::function<void(Result<std::vector<FileEntry>>)>),

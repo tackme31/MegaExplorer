@@ -72,6 +72,13 @@ public:
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<void>)> onDone) = 0;
 
+    // Asks the API for action packets not yet applied, so the node tree the
+    // getters below read is current as of this call. Unlike those getters this
+    // is a genuine server round-trip (MegaApi::catchup) -- it is what makes a
+    // user-initiated refresh mean anything, since the getters alone only ever
+    // re-read what the SDK happens to have been told already.
+    virtual void syncPendingChanges(std::function<void(Result<void>)> onDone) = 0;
+
     // Must be called after a successful fetchNodes(). Synchronous under the
     // hood, but kept callback-shaped for interface consistency. order is
     // forwarded to MegaApi::getChildren's own order argument (server-side
