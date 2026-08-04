@@ -95,6 +95,11 @@ public:
                   bool newParentIsRoot,
                   std::function<void(Result<void>)> onDone) override;
 
+    void createFolder(std::uint64_t parentHandle,
+                      bool parentIsRoot,
+                      const std::string& name,
+                      std::function<void(Result<void>)> onDone) override;
+
     Result<void> checkMove(std::uint64_t handle,
                            std::uint64_t newParentHandle,
                            bool newParentIsRoot) const override;

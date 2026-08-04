@@ -137,6 +137,18 @@ public:
     // with (see docs/PROGRESS.md's Phase 12 log).
     Q_INVOKABLE void moveSelectionToRubbish();
 
+    // Creates a folder inside the one this tab is showing (NewFolderDialog.qml
+    // -> the FolderBackground menu). The parent is read off currentHandle()/
+    // atRoot() rather than passed in: unlike a drag & drop destination, this
+    // action can only ever target the view it was opened from.
+    //
+    // Reports through folderCreated/folderCreationFailed *and* the usual
+    // NotificationController, split by whose problem it is: the two failures
+    // the user can fix by editing the name (kEExist, kEArgs) only get the
+    // signal, so the dialog can stay open and say so inline, while everything
+    // else gets a toast and lets the dialog close.
+    Q_INVOKABLE void createFolder(const QString& name);
+
     // Drag & drop's move. handles is the selection snapshot taken when the drag
     // gesture started, passed in explicitly rather than read back off
     // mFileListModel like moveSelectionToRubbish does: a drop can land on the
@@ -167,6 +179,14 @@ public:
 signals:
     void canGoBackChanged();
     void breadcrumbChanged();
+
+    void folderCreated();
+    // reason is a structured selector, not a message: "exists" (a folder of
+    // that name is already there -- the server's answer, see
+    // IMegaClient::createFolder), "invalidName", or "other". Same
+    // C++-supplies-structure / QML-supplies-wording split as
+    // NotificationController's context strings.
+    void folderCreationFailed(QString reason);
 
 private:
     void applyResult(Result<std::vector<FileEntry>> result);

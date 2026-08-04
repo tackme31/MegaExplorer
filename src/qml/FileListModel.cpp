@@ -1,6 +1,6 @@
 #include "FileListModel.h"
 
-#include "core/FileActionResolver.h"
+#include "core/MenuActionResolver.h"
 
 #include <QLocale>
 #include <QVariantMap>
@@ -186,8 +186,9 @@ SelectionSummary FileListModel::selectionSummary() const
 QStringList FileListModel::availableActions() const
 {
     QStringList actions;
-    for (FileAction action : resolveFileActions(selectionSummary()))
-        actions.append(QString::fromLatin1(fileActionId(action)));
+    const MenuContext context{MenuSite::FileSelection, selectionSummary()};
+    for (MenuAction action : resolveMenuActions(context))
+        actions.append(QString::fromLatin1(menuActionId(action)));
     return actions;
 }
 

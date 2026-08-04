@@ -128,6 +128,13 @@ Item {
         case "uploadDestinationGone":
             text = qsTr("The upload destination folder no longer exists");
             break;
+            // Always exactly one folder, so no count and no partial-failure
+            // wording -- and the failing cases the user can fix (a duplicate
+            // name, an invalid one) never reach a toast at all, they stay in
+            // NewFolderDialog.
+        case "createFolder":
+            text = qsTr("Folder created");
+            break;
         }
         if (text !== "")
             root.push(text, "", "");
@@ -153,6 +160,9 @@ Item {
             break;
         case "rename":
             text = qsTr("Failed to rename: %1").arg(errorMessage);
+            break;
+        case "createFolder":
+            text = qsTr("Failed to create folder: %1").arg(errorMessage);
             break;
         case "uploadNothingToUpload":
             text = qsTr("Nothing to upload — folders and non-file items can't be uploaded");

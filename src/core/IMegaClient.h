@@ -183,8 +183,8 @@ public:
     virtual void getNodeInfo(std::uint64_t handle,
                              std::function<void(Result<NodeInfo>)> onDone) = 0;
 
-    // First two mutating calls in this interface -- everything above only
-    // reads. Both are MegaRequestListener-based, so they keep the
+    // First of the mutating calls in this interface -- everything above only
+    // reads. All are MegaRequestListener-based, so they keep the
     // single-Result<T>-callback shape; Result<void> because neither reports
     // anything beyond success/failure. Must be called after a successful
     // fetchNodes(). Unlike the read methods above these are genuinely
@@ -208,6 +208,26 @@ public:
                           std::uint64_t newParentHandle,
                           bool newParentIsRoot,
                           std::function<void(Result<void>)> onDone) = 0;
+
+    // Creates an empty folder under parentHandle (parentIsRoot is the same
+    // sentinel convention as above).
+    //
+    // The duplicate-name check is the *server's*: if the parent already
+    // contains a folder of that name, the API rejects the request and onDone
+    // reports MegaErrorCode::kEExist. That is deliberately the only such
+    // check -- an in-memory pre-check against the fetched node tree could go
+    // stale between the check and the call, and would be redundant with this
+    // one. Note MEGA lets a file and a folder share a name, so an existing
+    // *file* called the same thing is not a conflict.
+    //
+    // The new folder's handle is not reported: the SDK does return it, but no
+    // caller needs it (creation is followed by a listing refresh, not by
+    // addressing the new node), and Result<void> keeps this on the shared
+    // SimpleResultListener path in MegaSdkClient.
+    virtual void createFolder(std::uint64_t parentHandle,
+                              bool parentIsRoot,
+                              const std::string& name,
+                              std::function<void(Result<void>)> onDone) = 0;
 
     // Whether moveNode() with the same arguments would be accepted. Synchronous
     // -- third exception in this interface after currentSessionToken/

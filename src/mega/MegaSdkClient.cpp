@@ -25,6 +25,8 @@ static_assert(MegaErrorCode::kENoEnt == mega::MegaError::API_ENOENT,
               "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kEAccess == mega::MegaError::API_EACCESS,
               "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kEExist == mega::MegaError::API_EEXIST,
+              "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kESid == mega::MegaError::API_ESID, "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kEBlocked == mega::MegaError::API_EBLOCKED,
               "MegaErrorCodes.h out of sync");
@@ -580,6 +582,25 @@ void MegaSdkClient::moveNode(std::uint64_t handle,
     }
 
     mApi->moveNode(node.get(), parent.get(), new SimpleResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::createFolder(std::uint64_t parentHandle,
+                                 bool parentIsRoot,
+                                 const std::string& name,
+                                 std::function<void(Result<void>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
+    if (!parent)
+    {
+        onDone(Result<void>::fail("No parent folder with the given handle (nodes not "
+                                  "fetched / folder deleted)",
+                                  MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    // No pre-check for an existing same-named folder: the API answers that
+    // itself with API_EEXIST (see IMegaClient::createFolder).
+    mApi->createFolder(name.c_str(), parent.get(), new SimpleResultListener(std::move(onDone)));
 }
 
 Result<void> MegaSdkClient::checkMove(std::uint64_t handle,

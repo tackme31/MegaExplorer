@@ -25,8 +25,13 @@ GridView {
     signal activateRequested(bool isFolder, var handle, string name, var sizeBytes)
     // Middle-click on a folder delegate below -- ignored for files, same
     // restriction as the "Open in new tab" context-menu action
-    // (FileActionResolver's FoldersOnly/SingleOnly spec).
+    // (MenuActionResolver's FoldersOnly/SingleOnly spec).
     signal openInNewTabRequested(var handle)
+
+    // Raised by the empty-space context menu, relayed by TabContentPane.qml to
+    // the tab's single NewFolderDialog (one per tab, not per view -- see that
+    // dialog's own comment).
+    signal newFolderRequested
 
     // Optional-chained: closing a tab clears the Repeater delegate's model
     // role before the pane is actually deleted, so navController is null for
@@ -397,6 +402,31 @@ GridView {
             else
                 root.navController.fileListModel.selectRow(idx, point.modifiers);
         }
+    }
+
+    // Right-click on empty space targets the folder this view is showing, not
+    // the selection -- so it gets its own menu, and clears the selection first
+    // the way the left-button handler above does. The delegates' own
+    // right-button handlers take only a passive grab and therefore fire *as
+    // well as* this one, so a tap that lands on a tile has to bail out here;
+    // the hit test is the same one drag & drop uses, keeping tap, hover and
+    // drop in agreement.
+    TapHandler {
+        parent: root
+        acceptedButtons: Qt.RightButton
+        onTapped: {
+            if (root.indexAtViewportPos(point.position) >= 0)
+                return;
+            root.takeFocus();
+            root.navController.fileListModel.clearSelection();
+            backgroundMenu.popup();
+        }
+    }
+
+    FolderBackgroundMenu {
+        id: backgroundMenu
+        navController: root.navController
+        onNewFolderRequested: root.newFolderRequested()
     }
 
     delegate: Item {

@@ -51,9 +51,9 @@ add_library(MegaExplorerCore STATIC
     src/core/Result.h
     src/core/SortOrder.h
     src/core/PathSegment.h
-    src/core/FileAction.h
-    src/core/FileActionResolver.h
-    src/core/FileActionResolver.cpp
+    src/core/MenuAction.h
+    src/core/MenuActionResolver.h
+    src/core/MenuActionResolver.cpp
     src/core/FolderNavigationService.h
     src/core/FolderNavigationService.cpp
     src/core/FileOperationService.h
@@ -113,13 +113,16 @@ qt_add_executable(appMegaExplorer
 # pragma Singleton alone does not put a `singleton` line in the generated
 # qmldir -- this property does, and it has to be set before the module is
 # created.
-set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/Theme.qml qml/ActionCatalog.qml
+                            PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(appMegaExplorer
     URI MegaExplorer
     QML_FILES
         qml/Main.qml
+        qml/ActionCatalog.qml
         qml/Theme.qml
+        qml/components/ActionMenu.qml
         qml/components/Breadcrumb.qml
         qml/components/CaptionBar.qml
         qml/components/ConfirmRubbishDialog.qml
@@ -127,9 +130,11 @@ qt_add_qml_module(appMegaExplorer
         qml/components/DragProxy.qml
         qml/components/FileContextMenu.qml
         qml/components/FileIcon.qml
+        qml/components/FolderBackgroundMenu.qml
         qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
         qml/components/InlineRenameField.qml
+        qml/components/NewFolderDialog.qml
         qml/components/QuickAccessSection.qml
         qml/components/SidePanel.qml
         qml/components/TabStrip.qml
@@ -141,6 +146,8 @@ qt_add_qml_module(appMegaExplorer
     SOURCES
         src/qml/AuthController.h
         src/qml/AuthController.cpp
+        src/qml/MenuActions.h
+        src/qml/MenuActions.cpp
         src/qml/WindowAgentForeign.h
 )
 

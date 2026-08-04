@@ -1,6 +1,6 @@
 #pragma once
-#include "core/FileAction.h"
 #include "core/FileEntry.h"
+#include "core/MenuAction.h"
 
 #include <QAbstractTableModel>
 #include <QStringList>
@@ -107,13 +107,16 @@ public:
         return mSelectedHandles;
     }
 
-    // Typed accessor feeding FileActionResolver -- counts, doesn't collect,
+    // Typed accessor feeding MenuActionResolver -- counts, doesn't collect,
     // since the resolver only needs file/folder tallies.
     SelectionSummary selectionSummary() const;
 
-    // Stable action IDs (see FileActionResolver::fileActionId) for the
-    // current selection, in menu display order. Backs the availableActions
-    // Q_PROPERTY that FileContextMenu.qml drives its Instantiator off.
+    // Stable action IDs (see MenuActionResolver::menuActionId) for the
+    // MenuSite::FileSelection site, in menu display order. Backs the
+    // availableActions Q_PROPERTY that FileContextMenu.qml drives its
+    // Instantiator off. The other sites have no model and no change signal,
+    // so they go through the MenuActions singleton (src/qml/MenuActions.h)
+    // instead.
     QStringList availableActions() const;
 
     // Row-ordered {handle, name, sizeBytes, isFolder} maps for every selected

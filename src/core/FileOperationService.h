@@ -40,13 +40,22 @@ public:
               bool newParentIsRoot,
               std::function<void(Result<void>)> onDone);
 
+    // Creates an empty folder under parentHandle. Rejects an invalid name the
+    // same way rename() does -- without touching the SDK -- but tags that
+    // failure with MegaErrorCode::kEArgs so a caller can tell it apart from a
+    // server-side rejection (notably kEExist for a same-named folder, which
+    // is the only duplicate check there is; see IMegaClient::createFolder).
+    void createFolder(std::uint64_t parentHandle,
+                      bool parentIsRoot,
+                      const std::string& name,
+                      std::function<void(Result<void>)> onDone);
+
     // Synchronous pre-check, the move counterpart to isValidName() above:
     // "would move() be accepted?", answered without an API round-trip so a drag
     // hovering over a drop target can query it continuously. Failures carry a
     // MegaErrorCodes.h code (kENoEnt / kECircular / kEAccess), not just text.
-    Result<void> canMove(std::uint64_t handle,
-                         std::uint64_t newParentHandle,
-                         bool newParentIsRoot) const;
+    Result<void>
+    canMove(std::uint64_t handle, std::uint64_t newParentHandle, bool newParentIsRoot) const;
 
     // Single definition of the naming rule, static so QML-side pre-validation
     // could share it later. Deliberately minimal: MEGA permits duplicate names

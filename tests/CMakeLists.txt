@@ -20,7 +20,7 @@ add_executable(MegaExplorerTests
     FolderNavigationControllerTest.cpp
     WindowsSessionStoreTest.cpp
     FileListModelTest.cpp
-    FileActionResolverTest.cpp
+    MenuActionResolverTest.cpp
     TabsControllerTest.cpp
     FolderTreeModelTest.cpp
     QuickAccessServiceTest.cpp

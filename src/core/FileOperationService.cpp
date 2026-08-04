@@ -1,5 +1,7 @@
 #include "FileOperationService.h"
 
+#include "MegaErrorCodes.h"
+
 FileOperationService::FileOperationService(std::shared_ptr<IMegaClient> client)
     : mClient(std::move(client))
 {}
@@ -24,6 +26,21 @@ void FileOperationService::rename(std::uint64_t handle,
     }
 
     mClient->renameNode(handle, newName, std::move(onDone));
+}
+
+void FileOperationService::createFolder(std::uint64_t parentHandle,
+                                        bool parentIsRoot,
+                                        const std::string& name,
+                                        std::function<void(Result<void>)> onDone)
+{
+    if (!isValidName(name))
+    {
+        onDone(Result<void>::fail("Invalid name: empty, or contains a path separator",
+                                  MegaErrorCode::kEArgs));
+        return;
+    }
+
+    mClient->createFolder(parentHandle, parentIsRoot, name, std::move(onDone));
 }
 
 void FileOperationService::moveToRubbish(std::uint64_t handle,
