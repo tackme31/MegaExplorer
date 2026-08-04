@@ -132,6 +132,9 @@ QtObject {
         readonly property string up: "\uE74A"    // Up
         readonly property string more: "\uE712"  // More
         readonly property string cloud: "\uE753" // Cloud
+        // The toolbar's refresh button (added after S7); same cmap check
+        // re-run for it, present in both fonts.
+        readonly property string refresh: "\uE72C" // Refresh
         // Status bar's view-mode toggles (S9), replacing the typed-out box
         // and hamburger characters that were the last non-ASCII glyphs left
         // in the QML. Not E80A Tiles, the obvious partner to List: that one

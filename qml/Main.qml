@@ -132,6 +132,13 @@ ApplicationWindow {
         property alias treePanelWidth: window.treePanelWidth
     }
 
+    // A window-level Shortcut is fine here, unlike FileTableView's Ctrl+A: F5
+    // means nothing to a focused text field, so ignoring focus costs nothing.
+    Shortcut {
+        sequence: StandardKey.Refresh
+        onActivated: tabsController.currentNavigation?.refresh()
+    }
+
     // Toolbar-row button: a square, glyph-only ToolButton with a tooltip
     // standing in for the label it no longer has (S7). Declared inline rather
     // than as its own file -- same call as CaptionBar.qml's CaptionButton.
@@ -325,6 +332,15 @@ ApplicationWindow {
                     ToolTip.text: qsTr("Up")
                     enabled: tabsController.currentNavigation?.canGoUp ?? false
                     onClicked: tabsController.currentNavigation?.goUp()
+                }
+
+                // No enabled binding, unlike the two above: there's no state
+                // where refreshing is meaningless to the user, and refresh()
+                // is itself a no-op before the first load.
+                ToolbarIconButton {
+                    text: Theme.glyph.refresh
+                    ToolTip.text: qsTr("Refresh")
+                    onClicked: tabsController.currentNavigation?.refresh()
                 }
 
                 // 700:300 against the search field below. Qt Quick Layouts

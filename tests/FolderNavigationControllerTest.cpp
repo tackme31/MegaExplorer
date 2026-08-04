@@ -326,3 +326,60 @@ TEST_F(FolderNavigationControllerTest, RenameEntryRefetchesOnSuccess)
     EXPECT_EQ(errorCalls, 0);
     EXPECT_EQ(rootFetches - fetchesBefore, 1);
 }
+
+TEST_F(FolderNavigationControllerTest, RefreshRefetchesTheCurrentFolder)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    const int fetchesBefore = rootFetches;
+
+    controller->refresh();
+    flush();
+
+    EXPECT_EQ(errorCalls, 0);
+    EXPECT_EQ(rootFetches - fetchesBefore, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, RefreshDoesNothingBeforeTheFirstLoad)
+{
+    givenRootListing({entry("a", 1)});
+
+    controller->refresh();
+    flush();
+
+    EXPECT_EQ(rootFetches, 0);
+}
+
+TEST_F(FolderNavigationControllerTest, RefreshReRunsTheActiveSearch)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    int searches = 0;
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _))
+        .WillRepeatedly(
+            Invoke([&searches](std::uint64_t,
+                               bool,
+                               const std::string&,
+                               SortOrder,
+                               std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                ++searches;
+                onDone(Result<std::vector<FileEntry>>::ok({entry("a", 1)}));
+            }));
+
+    controller->search(QStringLiteral("q"));
+    flush();
+    const int searchesBefore = searches;
+    const int fetchesBefore = rootFetches;
+
+    controller->refresh();
+    flush();
+
+    // The search is re-run rather than dropped, and the folder listing behind
+    // it is refreshed too so clearing the search afterwards isn't stale.
+    EXPECT_EQ(searches - searchesBefore, 1);
+    EXPECT_EQ(rootFetches - fetchesBefore, 1);
+}
