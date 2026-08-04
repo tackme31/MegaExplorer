@@ -36,9 +36,15 @@ are post-MVP, sequenced by priority/dependency.
 | 17 | Title-bar-integrated tabs (Windows, QWindowKit) | done (pulled forward) |
 | 18 | Login loading screen + SDK cache location | done (pulled forward) |
 | 19 | Menu-action redesign + new folder | done (pulled forward) |
+| 20a | Per-tab loading indicator | planned (pulled forward) |
+| 20b | About / License dialogs | planned (pulled forward) |
+| 21 | Rubber-band (rectangle) selection | planned (pulled forward) |
+| 22a | Quick-access reordering | planned (pulled forward) |
+| 22b | Tab reordering + drop-onto-tab move | planned (pulled forward) |
+| 23 | Copy / cut / paste | planned (pulled forward) |
 | 15 | In-app preview (side panel, `getPreview`) | planned |
 | 16 | Real-time remote-change reflection | future, post-MVP |
-| 20+ | Undecided | full bidirectional local sync stays out of scope |
+| 24+ | Undecided | undo and full bidirectional local sync both stay out of scope |
 
 ### Phase 6 — local cache + open-folder background refresh
 
@@ -199,6 +205,82 @@ selection unconditionally, and empty space *is* an empty selection. Rather than 
 mechanism on beside it, the resolver gained the missing dimension (which menu) and all three menus
 were moved onto it. See the implementation-log entry below.
 
+### Phases 20a–23 — the detail pass (all pulled forward, ahead of 15)
+
+Same "self-contained" reasoning as 13a/13b/14a/17/18/19, but this time as a block: with the feature
+set broadly in place, the remaining rough edges are worth more than the biggest remaining feature.
+Phase 15 is the highest-effort item on the whole list and its absence costs the least (download→open
+already covers "view the file"), so it moves behind all of these.
+
+Ordered by cost and by which of them touch the same input handling. 20a/20b are additive and land
+first; 21 is a self-contained input change; 22a/22b are the drag-and-drop group; 23 is the only one
+that adds an SDK-mutating call.
+
+**Undo is deliberately not on this list.** It was considered alongside 23 (they're one request:
+copy/cut/paste/undo) and dropped: MEGA has no native undo, so every operation would need a
+hand-built inverse (rename↔rename, rubbish→move back, copy→delete, create→delete), a record hook in
+every mutating path, and a policy for when the history has to be thrown away. That is a phase in its
+own right, and with 23 in place the practical need for it is small. Not deferred — out of scope.
+
+### Phase 20a — per-tab loading indicator
+
+Swap the tab's folder icon for a spinner while that tab's listing is being fetched. Also closes out
+Phase 7b's stated follow-up: removing the node cache put a network round-trip in front of every
+navigation and nothing on screen covers it. `FolderNavigationController` has no loading/busy
+property today, so that's the addition; `TabStrip.qml`'s `FileIcon` is the consumer. Needs a short
+delay before the spinner appears so a fast folder doesn't flash it.
+
+### Phase 20b — About / License dialogs
+
+Two entries in `Main.qml`'s existing "More" menu (currently Sign out only). About: version (from
+`PROJECT_VERSION`, passed down as a compile definition) plus a link to the GitHub repo. License:
+this app's own GPLv3 plus third-party notices — Qt, MEGA SDK (BSD-2), QWindowKit (Apache-2.0),
+FreeImage, FFmpeg, pdfium and the rest of the vcpkg set. The dialogs are small; the real work is the
+notice inventory, and with Qt + FFmpeg in the link line this is a shipping prerequisite rather than
+a nicety.
+
+### Phase 21 — rubber-band (rectangle) selection
+
+Drag on empty space to select the items the rectangle covers, in both the grid and the list view.
+Continues Phase 13a's selection model, which needs a range-by-rows entry point (`selectRow` is
+per-row and modifier-driven). The load-bearing decision is where the gesture starts: on empty space
+it's a rubber band, on an item it's Phase 14a's move drag. Edge auto-scroll can reuse
+`DragAutoScroller`.
+
+### Phase 22a — quick-access reordering
+
+Drag a pin up/down to reorder it. Persistence is already ordered-list-shaped and
+`QuickAccessService::replaceAll` already exists, so this is a `QuickAccessModel` move operation plus
+the QML gesture. `QuickAccessSection` is also a *drop target* for node moves (14a), so the two drags
+have to be told apart — `DragProxy`'s `Drag.keys` is the existing mechanism for exactly that.
+
+### Phase 22b — tab reordering + drop-onto-tab move
+
+Two features, one phase, deliberately: both take over pointer input on a `TabButton`, and building
+one without the other means rewriting its gesture handling when the second arrives.
+
+- **Reorder**: drag a tab along the strip. `TabsController` is a `QAbstractListModel` and gains a
+  move operation; the QML side computes the insertion point itself, since `TabStrip.qml`'s buttons
+  carry explicit widths (see its comment on why).
+- **Drop onto a tab**: drag nodes over a tab, dwell, and that tab activates — then drop into the
+  view as usual. A `DropArea` plus a dwell timer per tab; the move itself is 14a's
+  `canDropHandlesOn`/`moveHandlesTo`, and the destination tab's refresh is 14b's `refreshIfShowing`.
+
+Phase 17b listed reordering as not-done because it fights caption dragging. That's the problem to
+solve here, and the ground is better than it looks: `tabBar` is already registered hit-test-visible
+with QWindowKit, so a drag starting on a tab shouldn't reach the window-move path — to be confirmed
+first. Tearing a tab off into a new window stays out of scope.
+
+### Phase 23 — copy / cut / paste
+
+The first *non-move* duplication: `IMegaClient::copyNode` (fifth mutating method), an app-global
+clipboard holding node handles plus a copy/cut mode, and paste into the current folder. Cut is
+14a's `moveNode` reused, so it costs almost nothing beside copy. Phase 19's `MenuActionResolver` +
+`ActionCatalog` split is what makes the three menu entries cheap, and Phase 19's own leftover —
+Refresh / Select all / paste on the background menu — is picked up here. Same-name collisions on
+paste follow 14b's precedent (server's `API_EEXIST`, plus the replace/skip dialog if warranted).
+Ctrl+C/X/V accelerators included.
+
 ### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
 Lowest priority; explicitly deferred in Phase 4 since download→open already covers "view the file".
@@ -209,9 +291,10 @@ Format-specific rendering (image/PDF/text/...) makes this the highest-effort ite
 Reflect other devices' changes via the SDK's push-notification mechanism into whatever listing is
 open. Additive on top of phase 6's refresh.
 
-### Phase 20+ — undecided
+### Phase 24+ — undecided
 
-Full bidirectional local sync stays out of scope for the foreseeable future.
+Undo (see the 20a–23 preamble) and full bidirectional local sync both stay out of scope for the
+foreseeable future.
 
 ## Phase 0 — SDK build & CLI login (done)
 

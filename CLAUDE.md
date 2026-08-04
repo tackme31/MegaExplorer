@@ -16,6 +16,17 @@ session lives in companion docs, linked from the relevant section below rather t
 - `docs/BUILD.md` — rationale behind each build gotcha below (why VS generator, why
   `CMakePresets.json`, the FFmpeg link fix, etc.).
 - `docs/TROUBLESHOOTING.md` — recurring environment issues (e.g. stale git `index.lock`).
+- `docs/*_INVESTIGATION.md` — standing feasibility studies, written before the phase they feed and
+  kept afterwards (Japanese). Read the relevant one *before* planning that phase; each states its
+  own conclusion up front, so the outline + first section is usually enough:
+  - `TITLEBAR_TABS_INVESTIGATION.md` — fed Phase 17 (frameless window + caption-row tabs).
+  - `FETCHNODES_PROGRESS_INVESTIGATION.md` — fed Phase 18; carries the measured 600k-node timings
+    and the reason the decrypt phase can't show progress.
+  - `CROSS_TAB_DND_INVESTIGATION.md` — spring-loaded tabs, i.e. the drop-onto-tab half of the
+    planned Phase 22b. Not yet implemented.
+  - `CROSS_PLATFORM_INVESTIGATION.md` — whether the MSVC/vcpkg-only build could go
+    Linux/macOS. No phase attached; conclusion is that `WindowsSessionStore` (DPAPI) is the real
+    work, not the build files.
 
 Check current file contents before assuming a feature exists — don't trust the roadmap alone.
 
@@ -131,9 +142,12 @@ views' selection menu still uses `FileListModel::availableActions`. On that base
 back a per-tab `NewFolderDialog`, where the *only* duplicate-name check is the server's
 `API_EEXIST` — that and an invalid name keep the dialog open with red inline text, every other
 failure closes it and reports by toast. Like 14a it refreshes only the creating tab. The full
-roadmap — phases 15–16+ (in-app preview, real-time remote-change reflection, ...) — lives in
-`docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
-`docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional local sync stays out of scope.
+roadmap — next up is the 20a–23 detail pass (tab loading indicator, About/License, rubber-band
+selection, quick-access/tab reordering + drop-onto-tab, copy/cut/paste), all pulled forward ahead of
+phases 15–16 (in-app preview, real-time remote-change reflection) — lives in `docs/PROGRESS.md`'s
+Roadmap section; see the companion-docs list above.
+`docs/MEMO.md` keeps only non-roadmap notes. Undo and full bidirectional local sync stay out of
+scope.
 
 Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`), `AuthService`/
 `FolderNavigationService`/`SearchService`/`DownloadService`/`UploadService`/`ThumbnailService`/
