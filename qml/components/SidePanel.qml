@@ -42,6 +42,9 @@ Rectangle {
 
         QuickAccessSection {
             Layout.fillWidth: true
+            // Replaces the section's former "Quick access" header: without it
+            // the first pin row would sit flush against the panel's top edge.
+            Layout.topMargin: Theme.spacing.md
             navController: root.navController
             dragProxy: root.dragProxy
             // This panel's height is set by SplitView, independent of its own

@@ -32,26 +32,13 @@ ColumnLayout {
 
     spacing: 0
 
-    // Hidden entirely, header included, while nothing is pinned -- an empty
-    // labeled box above the tree would just be dead space.
+    // Hidden entirely while nothing is pinned -- an empty box above the tree
+    // would just be dead space. The gap that separates this section from the
+    // window edge above it belongs to SidePanel.qml, not here.
     visible: quickAccessModel.count > 0
 
     FolderPinMenu {
         id: pinMenu
-    }
-
-    // Windows 11 renders a section header as slightly smaller and weakly
-    // coloured, not bold (3-6). De-emphasis by colour rather than opacity, so
-    // it doesn't go muddy against surfaceAlt.
-    Label {
-        Layout.fillWidth: true
-        Layout.leftMargin: Theme.spacing.lg
-        Layout.topMargin: Theme.spacing.sm
-        Layout.bottomMargin: Theme.spacing.sm
-        text: qsTr("Quick access")
-        font.pixelSize: Theme.font.caption
-        color: Theme.color.textSecondary
-        elide: Text.ElideRight
     }
 
     ListView {
