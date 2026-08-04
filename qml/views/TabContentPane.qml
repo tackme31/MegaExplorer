@@ -108,6 +108,7 @@ ColumnLayout {
                                                                                       handle, name,
                                                                                       sizeBytes)
             onOpenInNewTabRequested: handle => tabsController.addTabAt(handle, false)
+            onNewFolderRequested: newFolderDialog.prompt()
             onSortOrderChanged: (column, ascending) => pane.sortOrderWriteBack(column, ascending)
             onColumnWidthsChanged: (nameWidth, modifiedWidth, sizeWidth)
                                    => pane.columnWidthsWriteBack(nameWidth, modifiedWidth,
@@ -126,7 +127,17 @@ ColumnLayout {
                                                                                       handle, name,
                                                                                       sizeBytes)
             onOpenInNewTabRequested: handle => tabsController.addTabAt(handle, false)
+            onNewFolderRequested: newFolderDialog.prompt()
         }
+    }
+
+    // One per tab rather than per view: it reports through this tab's
+    // navController, which both views share, so a second instance would react
+    // to the same signals. Dialog is a Popup, not an Item, so it isn't laid
+    // out by this ColumnLayout.
+    NewFolderDialog {
+        id: newFolderDialog
+        navController: pane.navController
     }
 
     // uploadController is app-global (three of the five drop targets are shared

@@ -34,10 +34,11 @@ are post-MVP, sequenced by priority/dependency.
 | 14a | Move via drag & drop | done |
 | 14b | Upload (drag & drop) | done |
 | 17 | Title-bar-integrated tabs (Windows, QWindowKit) | done (pulled forward) |
-| 18 | Login loading screen + SDK cache location | planned (next up) |
+| 18 | Login loading screen + SDK cache location | done (pulled forward) |
+| 19 | Menu-action redesign + new folder | done (pulled forward) |
 | 15 | In-app preview (side panel, `getPreview`) | planned |
 | 16 | Real-time remote-change reflection | future, post-MVP |
-| 19+ | Undecided | full bidirectional local sync stays out of scope |
+| 20+ | Undecided | full bidirectional local sync stays out of scope |
 
 ### Phase 6 — local cache + open-folder background refresh
 
@@ -189,6 +190,15 @@ predictions). Do not re-derive them here; this is only the checklist.
 別件として拾ったもの（このフェーズの範囲外）: `MegaApi::logout` は状態キャッシュ DB を破棄する
 ので、**サインアウト 1 回のコストが 6 分半**になる。導線に警告を出すかどうかは未決。
 
+### Phase 19 — menu-action redesign + new folder (done)
+
+Ahead of 15/16, same "self-contained" reasoning as 13a/13b/14a/17/18. The trigger was a small
+feature request — right-click empty space → "New folder" → name dialog → create — that the existing
+menu machinery could not express at all: `fileActionApplies()` returned false for an empty
+selection unconditionally, and empty space *is* an empty selection. Rather than bolt a second
+mechanism on beside it, the resolver gained the missing dimension (which menu) and all three menus
+were moved onto it. See the implementation-log entry below.
+
 ### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
 Lowest priority; explicitly deferred in Phase 4 since download→open already covers "view the file".
@@ -199,7 +209,7 @@ Format-specific rendering (image/PDF/text/...) makes this the highest-effort ite
 Reflect other devices' changes via the SDK's push-notification mechanism into whatever listing is
 open. Additive on top of phase 6's refresh.
 
-### Phase 18+ — undecided
+### Phase 20+ — undecided
 
 Full bidirectional local sync stays out of scope for the foreseeable future.
 
@@ -2063,3 +2073,138 @@ section 9's responsive work) is untouched.
 > **All timings quoted here are from a Debug build.** The 218 s tail is CPU-bound decrypt/tree-build
 > work, so a Release build could move the 42:57 split noticeably. The design doesn't depend on that
 > ratio, but the "a few minutes" wording should be re-checked once there is a Release measurement.
+
+## Phase 19 — menu-action redesign + new folder (done)
+
+Two things in one phase, because the second couldn't be built on the first as it stood.
+"Right-click empty space → New folder" needs a menu whose target is *not* the selection, and
+`fileActionApplies()` opened with an unconditional `if (selection.total() == 0) return false;`. The
+resolver had no way to say "this action applies when nothing is selected".
+
+### Why not a second hardcoded menu beside the resolver
+
+That was the cheap option, and `FolderPinMenu.qml` showed what it costs: it was already a hardcoded
+menu built beside the table, and its own header comment instructed the reader to keep its item
+order "in step with `FileActionResolver`'s `defaultFileActions()`" by hand. Its two labels were
+duplicated from `FileContextMenu.qml`'s `actionLabels` map as well. A third such menu would have
+made that three places to synchronize, right before a run of small features (refresh, select all,
+copy/paste, properties, share link) that are almost entirely menu items spanning several menus.
+
+### Why not per-case static arrays either
+
+The other obvious shape — one static array per (menu x selection shape) — was considered and
+rejected on counting. Of the menu sites that exist, only *one* has combinatorics: the file views'
+selection menu, where the target varies over files/folders x single/multi. The empty-space menu,
+the tree row and the quick-access pin row all have a fixed target of exactly one folder. Per-case
+arrays would have meant ~6 arrays for the one site that needs them, scattering "rename is
+single-selection only" across all of them, while adding nothing for the three sites that are
+already just a list.
+
+### The split that was adopted
+
+Three concerns, previously entangled, now separate:
+
+| concern | where | grows by |
+|---|---|---|
+| which actions a site offers, and the global display order | `src/core/MenuActionResolver` | one table row per action |
+| whether an action applies to the current state | same file, one predicate | one predicate per action |
+| label, greying, execution | `qml/ActionCatalog.qml` | one entry per action |
+
+`MenuSite` (`FileSelection`/`FolderBackground`/`FolderRow`) is the new dimension, and it decides
+**membership only** — ordering stays global, in `defaultMenuActions()`. That is what fixes
+`FolderPinMenu`'s hand-synchronization structurally: an action shared by two sites cannot come out
+in a different order in one of them, because there is only one order.
+`MenuActionResolverTest.SharedActionsKeepTheSameRelativeOrderAcrossSites` pins it.
+
+`FileAction`/`FileActionResolver` were renamed to `MenuAction`/`MenuActionResolver` — the actions
+are no longer all about files, and the pre-release refactor allowance made the rename cheaper than
+the misleading name.
+
+Execution deliberately stayed in QML. Every target (`downloadController`, `tabsController`,
+`quickAccessModel`, and each view's inline rename field / dialogs) is a QML-side object, so a C++
+command object would have had to call back into QML for all of them. Not only taste: the
+pre-existing fact that `TogglePin` couldn't resolve its own pinned/unpinned label in C++ is a
+layering constraint — `src/core` cannot see `src/qml`'s `QuickAccessModel` — not an oversight.
+
+The two fixed-target sites have no model to hang a property off, so they read their IDs from a new
+`MenuActions` singleton (`src/qml`, `QML_ELEMENT` + `QML_SINGLETON`, the codebase's first real QML
+singleton in C++). It deliberately exposes *only* those two sites: `FileSelection` still goes
+through `FileListModel::availableActions`, which has the change signal, and offering it on the
+singleton would have silently answered "as if one folder were selected".
+
+### `folderTargetContext()`: the trick that kept the predicates unchanged
+
+The fixed-target sites synthesize `SelectionSummary{fileCount: 0, folderCount: 1}`. One folder
+satisfies `FoldersOnly` and `SingleOnly` by construction, so `ActionTarget`/`ActionArity` work at
+those sites untouched — and the old "empty selection matches nothing" short circuit could stay
+exactly as it was, since a synthesized context is never empty. The entire resolver change is one
+`siteMatches()` call plus the `sites` field.
+
+### The duplicate-name check is the server's, and it is the only check
+
+`MegaApi::createFolder` returns `API_EEXIST` when the parent already holds a same-named folder
+(documented in `megaapi.h`), so no `findChildFolders`-style synchronous helper was added — it would
+have been both redundant and raceable against another device. `MegaErrorCodes.h` gained `kEExist`,
+with the matching `static_assert` in `MegaSdkClient.cpp` as always. `Result<void>` was kept even
+though the SDK does return the new handle: nothing needs it, and it keeps `createFolder` on the
+shared self-deleting `SimpleResultListener`, so no new listener class was written.
+
+Note MEGA lets a file and a folder share a name, so an existing *file* of that name is not a
+conflict — the same asymmetry `UploadService`'s `findChildFiles` relies on from the other side.
+
+### Failures split by whose problem they are
+
+`FolderNavigationController::createFolder` reports through two channels at once, chosen by error
+code:
+
+- `kEExist` / `kEArgs` → `folderCreationFailed("exists"/"invalidName")` only, no toast. The user is
+  looking at the dialog they can fix it in, so the dialog stays open with the name still in the
+  field and says so in red.
+- anything else → `notifyError("createFolder", …)` plus `folderCreationFailed("other")`, and the
+  dialog closes, because the toast is now carrying the message.
+- success → `refreshVisibleListing()`, `notifyOperation("createFolder", 1, 0)`, `folderCreated()`.
+
+The reason is a structured selector, not a sentence — same rule as `NotificationController`'s
+context strings. `ToastStack.qml` needed both a `showOperation` and a `showError` case; an unknown
+`showOperation` context is dropped silently, so forgetting it would have made success invisible
+rather than noisy.
+
+### `standardButtons` can't keep a dialog open
+
+`NewFolderDialog.qml` is the first dialog here that has to survive its own Ok: a taken name must
+leave the dialog open, text intact, showing the error. `Dialog`'s standard Ok accepts and closes
+unconditionally, so the button box is hand-built with Ok on `DialogButtonBox.ActionRole` — the same
+escape hatch `Main.qml`'s `nameConflictDialog` already used for its three-way choice. A `busy` flag
+disables the field and both buttons across the round trip; without it a second Ok would create two
+folders.
+
+It lives in `TabContentPane.qml`, one per **tab**, not per view like `ConfirmRubbishDialog.qml`:
+the result arrives as a signal from the tab's `FolderNavigationController`, which the list and grid
+views share, so a per-view instance would have had both copies reacting to every result.
+
+### The empty-space right-click fires twice
+
+The delegates' existing right-button `TapHandler`s use the default `DragThreshold` gesture policy,
+which takes only a passive grab — so a new viewport-level handler fires *in addition to* them, on
+delegates as well as on empty space. Both views therefore hit-test first and bail out when the tap
+landed on a row, reusing the same `rowAt()` / `indexAtViewportPos()` helpers drag & drop uses (the
+grid's already insets by half the tile gap, so the space *between* tiles counts as empty). Same
+`parent: tableView` / `parent: root` re-parenting as the left-button handler, for the same reason:
+a plain child of a `Flickable` lands in `contentItem`, which is only as tall as the content and so
+never sees taps below the last row.
+
+### Deliberately not done
+
+- Other tabs showing the same folder, and the side-panel folder tree, are not refreshed — same
+  split as Phase 14a's move. `refreshIfShowing` exists and `UploadController::destinationChanged`
+  is the fan-out pattern, but generalizing it belongs with Phase 16's remote-change reflection
+  rather than being half-built here.
+- No in-memory pre-check of the name while typing.
+- The new folder is not selected, scrolled to, or opened after creation; `createFolder` returns
+  `Result<void>` accordingly.
+- The background menu holds only "New folder". Refresh / Select all / paste are now one catalog
+  entry plus one table row each, and are left for the next small feature.
+- The tab strip's own right-click menu is out of scope: its vocabulary is tabs, not nodes.
+- `FolderNavigationController` gained no test, keeping that file's stated "bent for exactly one
+  thing" convention intact; the branch logic is covered one layer down in
+  `FileOperationServiceTest`.

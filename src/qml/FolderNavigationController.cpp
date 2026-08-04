@@ -1,6 +1,7 @@
 #include "FolderNavigationController.h"
 
 #include "app/Logging.h"
+#include "core/MegaErrorCodes.h"
 #include "NotificationController.h"
 
 #include <QCoreApplication>
@@ -297,24 +298,62 @@ void FolderNavigationController::refreshVisibleListing()
 
 void FolderNavigationController::renameEntry(quint64 handle, const QString& newName)
 {
-    mFileOps->rename(static_cast<std::uint64_t>(handle),
-                     newName.toStdString(),
-                     [this, self = shared_from_this()](Result<void> result) {
-                         invokeOnGuiThread(this, [this, result = std::move(result)]() {
-                             if (!result.success)
-                             {
-                                 qCWarning(lcFileOps)
-                                     << "rename failed:"
-                                     << QString::fromStdString(result.errorMessage)
-                                     << "code=" << result.errorCode;
-                                 mNotifications->notifyError(
-                                     QStringLiteral("rename"),
-                                     QString::fromStdString(result.errorMessage));
-                                 return;
-                             }
-                             refreshVisibleListing();
-                         });
-                     });
+    mFileOps->rename(
+        static_cast<std::uint64_t>(handle),
+        newName.toStdString(),
+        [this, self = shared_from_this()](Result<void> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() {
+                if (!result.success)
+                {
+                    qCWarning(lcFileOps)
+                        << "rename failed:" << QString::fromStdString(result.errorMessage)
+                        << "code=" << result.errorCode;
+                    mNotifications->notifyError(QStringLiteral("rename"),
+                                                QString::fromStdString(result.errorMessage));
+                    return;
+                }
+                refreshVisibleListing();
+            });
+        });
+}
+
+void FolderNavigationController::createFolder(const QString& name)
+{
+    mFileOps->createFolder(
+        static_cast<std::uint64_t>(currentHandle()),
+        atRoot(),
+        name.toStdString(),
+        [this, self = shared_from_this()](Result<void> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() {
+                if (result.success)
+                {
+                    refreshVisibleListing();
+                    mNotifications->notifyOperation(QStringLiteral("createFolder"), 1, 0);
+                    emit folderCreated();
+                    return;
+                }
+
+                // The two the user can fix in the dialog they're already
+                // looking at: no toast, just tell the dialog which it was.
+                if (result.errorCode == MegaErrorCode::kEExist)
+                {
+                    emit folderCreationFailed(QStringLiteral("exists"));
+                    return;
+                }
+                if (result.errorCode == MegaErrorCode::kEArgs)
+                {
+                    emit folderCreationFailed(QStringLiteral("invalidName"));
+                    return;
+                }
+
+                qCWarning(lcFileOps)
+                    << "create folder failed:" << QString::fromStdString(result.errorMessage)
+                    << "code=" << result.errorCode;
+                mNotifications->notifyError(QStringLiteral("createFolder"),
+                                            QString::fromStdString(result.errorMessage));
+                emit folderCreationFailed(QStringLiteral("other"));
+            });
+        });
 }
 
 void FolderNavigationController::moveSelectionToRubbish()
@@ -329,13 +368,13 @@ void FolderNavigationController::moveSelectionToRubbish()
     for (const QVariant& entry : entries)
     {
         const quint64 handle = entry.toMap().value(QStringLiteral("handle")).toULongLong();
-        mFileOps->moveToRubbish(
-            static_cast<std::uint64_t>(handle),
-            [this, self = shared_from_this(), batch](Result<void> result) {
-                invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
-                    accountForBulkOutcome(batch, result, "moveToRubbish");
-                });
-            });
+        mFileOps->moveToRubbish(static_cast<std::uint64_t>(handle),
+                                [this, self = shared_from_this(), batch](Result<void> result) {
+                                    invokeOnGuiThread(
+                                        this, [this, batch, result = std::move(result)]() {
+                                            accountForBulkOutcome(batch, result, "moveToRubbish");
+                                        });
+                                });
     }
 }
 
@@ -409,8 +448,7 @@ void FolderNavigationController::accountForBulkOutcome(
     else
     {
         ++batch->failed;
-        qCWarning(lcFileOps) << context
-                             << "failed:" << QString::fromStdString(result.errorMessage)
+        qCWarning(lcFileOps) << context << "failed:" << QString::fromStdString(result.errorMessage)
                              << "code=" << result.errorCode;
     }
 

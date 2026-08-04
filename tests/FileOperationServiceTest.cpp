@@ -268,3 +268,63 @@ TEST(FileOperationServiceTest, IsValidNameIsTheSingleRuleDefinition)
     // reject -- characters Windows would refuse locally are still legal here.
     EXPECT_TRUE(FileOperationService::isValidName("a:b?c*"));
 }
+
+TEST(FileOperationServiceTest, CreateFolderPassesAValidNameStraightThrough)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, createFolder(22u, false, std::string("Reports"), _))
+        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    Capture captured;
+
+    service.createFolder(22, false, "Reports", captured.sink());
+
+    EXPECT_EQ(captured.calls, 1);
+    EXPECT_TRUE(captured.result.success);
+}
+
+TEST(FileOperationServiceTest, CreateFolderRejectsAnInvalidNameWithoutCallingTheSdk)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, createFolder(_, _, _, _)).Times(0);
+    Capture captured;
+
+    service.createFolder(22, false, "a/b", captured.sink());
+
+    EXPECT_EQ(captured.calls, 1);
+    EXPECT_FALSE(captured.result.success);
+    // Tagged so a caller can tell "fix the name you typed" apart from a
+    // server-side rejection -- FolderNavigationController branches on it.
+    EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kEArgs);
+}
+
+TEST(FileOperationServiceTest, CreateFolderPropagatesTheServersDuplicateNameRejection)
+{
+    // The only duplicate-name check there is: no in-memory pre-check exists,
+    // by design (see IMegaClient::createFolder).
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, createFolder(22u, false, _, _))
+        .WillOnce(InvokeArgument<3>(Result<void>::fail("already exists", MegaErrorCode::kEExist)));
+    Capture captured;
+
+    service.createFolder(22, false, "Reports", captured.sink());
+
+    EXPECT_EQ(captured.calls, 1);
+    EXPECT_FALSE(captured.result.success);
+    EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kEExist);
+}
+
+TEST(FileOperationServiceTest, CreateFolderForwardsTheRootSentinel)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, createFolder(0u, true, std::string("Reports"), _))
+        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    Capture captured;
+
+    service.createFolder(0, true, "Reports", captured.sink());
+
+    EXPECT_TRUE(captured.result.success);
+}

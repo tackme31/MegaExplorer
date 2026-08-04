@@ -119,7 +119,18 @@ fetchNodes into 619ms on the same account), and the wait that remains gets a sta
 state machine (authenticating → downloading, with a determinate bar → decrypting, indeterminate),
 and `LoginView.qml` became a three-page `StackLayout`. The bar is labelled
 "downloading" and never rescaled into an overall percentage, because the decrypt phase after it is
-~57% of the wall time and the SDK exposes no progress for it at all. The full
+~57% of the wall time and the SDK exposes no progress for it at all. Phase 19 then reworked the
+context-menu machinery and added "New folder" on top of it: `FileAction`/`FileActionResolver`
+became `MenuAction`/`MenuActionResolver` and gained a `MenuSite` dimension
+(`FileSelection`/`FolderBackground`/`FolderRow`) that decides *membership only* — display order
+stays global — so all three menus now share one table, and `qml/ActionCatalog.qml` (a new QML
+singleton) owns every action's label/greying/execution while C++ owns applicability. The two
+fixed-target sites read their IDs from the new `MenuActions` C++ singleton (`src/qml`); the file
+views' selection menu still uses `FileListModel::availableActions`. On that base,
+`IMegaClient::createFolder` (fourth mutating method) plus `FolderNavigationController::createFolder`
+back a per-tab `NewFolderDialog`, where the *only* duplicate-name check is the server's
+`API_EEXIST` — that and an invalid name keep the dialog open with red inline text, every other
+failure closes it and reports by toast. Like 14a it refreshes only the creating tab. The full
 roadmap — phases 15–16+ (in-app preview, real-time remote-change reflection, ...) — lives in
 `docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
 `docs/MEMO.md` keeps only non-roadmap notes. Full bidirectional local sync stays out of scope.

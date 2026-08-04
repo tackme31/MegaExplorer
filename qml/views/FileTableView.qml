@@ -48,8 +48,13 @@ ColumnLayout {
     signal activateRequested(bool isFolder, var handle, string name, var sizeBytes)
     // Middle-click on a folder row below -- ignored for files, same
     // restriction as the "Open in new tab" context-menu action
-    // (FileActionResolver's FoldersOnly/SingleOnly spec).
+    // (MenuActionResolver's FoldersOnly/SingleOnly spec).
     signal openInNewTabRequested(var handle)
+
+    // Raised by the empty-space context menu, relayed by TabContentPane.qml to
+    // the tab's single NewFolderDialog (one per tab, not per view -- see that
+    // dialog's own comment).
+    signal newFolderRequested
 
     // See this file's own top comment: relayed up to TabContentPane/Main.qml
     // rather than written to a local Settings item.
@@ -707,6 +712,23 @@ ColumnLayout {
             }
         }
 
+        // Right-click on empty space targets the folder this view is showing,
+        // not the selection -- so it gets its own menu, and clears the
+        // selection first the way the handler above does. Same passive-grab
+        // caveat: the delegates' right-button handlers fire as well as this
+        // one, so a tap that landed on a row has to bail out here.
+        TapHandler {
+            parent: tableView
+            acceptedButtons: Qt.RightButton
+            onTapped: {
+                if (root.rowAt(point.position) >= 0)
+                    return;
+                root.forceActiveFocus();
+                root.navController.fileListModel.clearSelection();
+                backgroundMenu.popup();
+            }
+        }
+
         delegate: Rectangle {
             id: cell
             implicitHeight: Theme.rowHeight.normal
@@ -901,6 +923,14 @@ ColumnLayout {
         navController: root.navController
         onRenameRequested: root.beginRename()
         onMoveToRubbishRequested: confirmRubbishDialog.confirm()
+    }
+
+    // The empty-space counterpart, popped by the viewport's right-button
+    // TapHandler above.
+    FolderBackgroundMenu {
+        id: backgroundMenu
+        navController: root.navController
+        onNewFolderRequested: root.newFolderRequested()
     }
 
     // One per view, same reasoning as the menu above -- the action always
