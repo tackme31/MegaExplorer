@@ -68,6 +68,22 @@ GridView {
     // each (this view only differs in using positionViewAtIndex).
     property var renamingHandle: 0
 
+    // The live InlineRenameField, published by its Loader below (null while not
+    // renaming). Needed because GridView is itself a focus scope, unlike
+    // FileTableView.qml's root -- see takeFocus().
+    property Item activeRenameField: null
+
+    // Moves active focus to the view for a mouse interaction. Plain
+    // forceActiveFocus() isn't enough here: a focus scope hands active focus
+    // straight back to its focused child, so while the rename field is up it
+    // would never see a focus loss and its click-outside commit would never
+    // fire. Dropping the field's focus first is what makes focus actually move.
+    function takeFocus() {
+        if (root.activeRenameField)
+            root.activeRenameField.focus = false;
+        root.forceActiveFocus();
+    }
+
     function beginRename() {
         if (root.renamingHandle !== 0)
             return;
@@ -375,7 +391,7 @@ GridView {
             // rename field -- see FileTableView.qml's matching guard.
             if (root.renamingHandle !== 0 && idx === root.navController.fileListModel.cursorRow())
                 return;
-            root.forceActiveFocus();
+            root.takeFocus();
             if (idx < 0)
                 root.navController.fileListModel.clearSelection();
             else
@@ -496,9 +512,13 @@ GridView {
                 // Takes the name label's slot in the tile. Inline Component for the
                 // same required-property reason as FileTableView.qml's.
                 Loader {
+                    id: renameLoader
                     Layout.fillWidth: true
                     Layout.preferredHeight: Theme.grid.labelHeight
                     active: gridDelegateItem.renaming
+                    // Only ever one active at a time, so this is the view's
+                    // single handle on the live field (null again on unload).
+                    onItemChanged: root.activeRenameField = renameLoader.item
                     sourceComponent: Component {
                         InlineRenameField {
                             originalName: gridDelegateItem.name
@@ -540,7 +560,7 @@ GridView {
                 // Explorer's rule: dragging an unselected tile selects it
                 // first, dragging a selected one carries the whole selection.
                 if (!gridDelegateItem.selected) {
-                    root.forceActiveFocus();
+                    root.takeFocus();
                     root.navController.fileListModel.selectRow(gridDelegateItem.index,
                                                                Qt.NoModifier);
                 }
@@ -568,7 +588,7 @@ GridView {
             acceptedButtons: Qt.RightButton
             onTapped: {
                 if (!gridDelegateItem.selected) {
-                    root.forceActiveFocus();
+                    root.takeFocus();
                     root.navController.fileListModel.selectRow(gridDelegateItem.index,
                                                                Qt.NoModifier);
                 }
