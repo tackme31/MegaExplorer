@@ -244,10 +244,24 @@ TreeView {
             // strings, and without this one those drops are silently ignored.
             keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
 
-            // Recomputed on enter only: the target can't change without leaving
-            // this row first, so a positionChanged handler would re-ask the SDK
-            // for an answer that cannot have changed.
+            // Recomputed on enter, and again whenever Ctrl toggles the drag
+            // between move and copy (the two ask different questions and the
+            // answers genuinely differ -- see FolderNavigationController::
+            // canCopyEntriesOn). Not on positionChanged: the target can't change
+            // without leaving this row first.
             property bool accepting: false
+
+            // Ctrl can go down while the pointer sits still, and an internal
+            // drag delivers no event at all for that. DragProxy's copyMode is
+            // the only thing that moves, so this is what re-asks.
+            Connections {
+                target: root.dragProxy
+                function onCopyModeChanged() {
+                    if (dropArea.containsDrag && root.dragProxy.active)
+                        dropArea.accepting = root.dragProxy.canDropOn(treeDelegate.handle,
+                                                                      treeDelegate.isRoot);
+                }
+            }
 
             // Internal vs. external is decided on root.dragProxy.active, not on
             // drag.hasUrls: hasUrls is a claim about the *event*, while active
@@ -262,8 +276,8 @@ TreeView {
             // would be an unchecked dynamic lookup.
             onEntered: drag => {
                 if (root.dragProxy.active) {
-                    dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
-                                root.dragProxy.handles, treeDelegate.handle, treeDelegate.isRoot);
+                    dropArea.accepting = root.dragProxy.canDropOn(treeDelegate.handle,
+                                                                  treeDelegate.isRoot);
                 } else if (drag.hasUrls) {
                     dropArea.accepting = uploadController.canUploadTo(treeDelegate.handle,
                                                                       treeDelegate.isRoot);
@@ -301,9 +315,7 @@ TreeView {
                         uploadController.dropUrls(drop.urls, treeDelegate.handle,
                                                   treeDelegate.isRoot);
                     } else {
-                        root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
-                                                               treeDelegate.handle,
-                                                               treeDelegate.isRoot);
+                        root.dragProxy.dropOn(treeDelegate.handle, treeDelegate.isRoot);
                     }
                 }
                 dropArea.accepting = false;

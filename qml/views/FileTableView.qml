@@ -140,7 +140,7 @@ ColumnLayout {
         if (entries.length === 0)
             return;
         const label = entries.length === 1 ? entries[0].name : qsTr("%1 items").arg(entries.length);
-        root.dragProxy.begin(root.navController, entries.map(e => e.handle), label, scenePos);
+        root.dragProxy.begin(root.navController, entries, label, scenePos);
     }
 
     function clearDropTarget() {
@@ -148,11 +148,32 @@ ColumnLayout {
         root.dropOnCurrentFolder = false;
     }
 
-    // Reads the payload off root.dragProxy rather than the event's own
-    // drag.source, same reasoning as FileGridView.qml's.
+    // Last position a drag event was delivered at; see FileGridView.qml's.
+    property point lastDragPos: Qt.point(0, 0)
+
+    // The internal (node) branch on its own, resolved from lastDragPos so a
+    // Ctrl press with a stationary pointer can re-run it. Reads the payload off
+    // root.dragProxy rather than the event's own drag.source, same reasoning as
+    // FileGridView.qml's.
+    function updateNodeDropTarget() {
+        const row = root.rowAt(root.lastDragPos);
+        const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
+
+        if (entry.isFolder && root.dragProxy.canDropOn(entry.handle, false)) {
+            root.dropRow = row;
+            root.dropOnCurrentFolder = false;
+            return;
+        }
+
+        root.dropRow = -1;
+        root.dropOnCurrentFolder = root.dragProxy.canDropOn(root.navController.currentHandle,
+                                                            root.navController.atRoot);
+    }
+
     function updateDropTarget(drag) {
         // The DropArea fills the viewport, so drag.x/y are already in the
         // coordinates rowAt() wants.
+        root.lastDragPos = Qt.point(drag.x, drag.y);
         const row = root.rowAt(Qt.point(drag.x, drag.y));
         const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 
@@ -160,19 +181,7 @@ ColumnLayout {
         // FileGridView.qml's -- see there for why the guard is sourceNav rather
         // than dragProxy.active in the two views that a drag can start in.
         if (!drag.hasUrls && root.dragProxy.sourceNav) {
-            const nav = root.dragProxy.sourceNav;
-            const handles = root.dragProxy.handles;
-
-            if (entry.isFolder && nav.canDropHandlesOn(handles, entry.handle, false)) {
-                root.dropRow = row;
-                root.dropOnCurrentFolder = false;
-                return;
-            }
-
-            root.dropRow = -1;
-            root.dropOnCurrentFolder = nav.canDropHandlesOn(handles,
-                                                            root.navController.currentHandle,
-                                                            root.navController.atRoot);
+            root.updateNodeDropTarget();
             return;
         }
 
@@ -706,6 +715,16 @@ ColumnLayout {
             // it those drops are silently ignored here.
             keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
 
+            // Ctrl can go down while the pointer sits still, and an internal
+            // drag delivers no event at all for that; see FileGridView.qml's.
+            Connections {
+                target: root.dragProxy
+                function onCopyModeChanged() {
+                    if (tableDropArea.containsDrag && root.dragProxy.sourceNav)
+                        root.updateNodeDropTarget();
+                }
+            }
+
             onEntered: drag => {
                 root.updateDropTarget(drag);
                 autoScroller.track(drag.y);
@@ -732,8 +751,7 @@ ColumnLayout {
                         drop.accept(Qt.CopyAction);
                         uploadController.dropUrls(drop.urls, target, targetIsRoot);
                     } else {
-                        root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles, target,
-                                                               targetIsRoot);
+                        root.dragProxy.dropOn(target, targetIsRoot);
                     }
                 }
                 root.clearDropTarget();

@@ -14,22 +14,26 @@ void ClipboardController::cut(const QVariantList& entries, quint64 sourceHandle,
     take(entries, true, sourceHandle, sourceIsRoot);
 }
 
+std::vector<ClipboardController::Entry> ClipboardController::toEntries(const QVariantList& entries)
+{
+    std::vector<Entry> converted;
+    converted.reserve(static_cast<std::size_t>(entries.size()));
+    for (const QVariant& entry : entries)
+    {
+        const QVariantMap map = entry.toMap();
+        converted.push_back(Entry{map.value(QStringLiteral("handle")).toULongLong(),
+                                  map.value(QStringLiteral("name")).toString(),
+                                  map.value(QStringLiteral("isFolder")).toBool()});
+    }
+    return converted;
+}
+
 void ClipboardController::take(const QVariantList& entries,
                                bool cut,
                                quint64 sourceHandle,
                                bool sourceIsRoot)
 {
-    std::vector<Entry> taken;
-    taken.reserve(static_cast<std::size_t>(entries.size()));
-    for (const QVariant& entry : entries)
-    {
-        const QVariantMap map = entry.toMap();
-        taken.push_back(Entry{map.value(QStringLiteral("handle")).toULongLong(),
-                              map.value(QStringLiteral("name")).toString(),
-                              map.value(QStringLiteral("isFolder")).toBool()});
-    }
-
-    mEntries = std::move(taken);
+    mEntries = toEntries(entries);
     mIsCut = cut;
     mSourceHandle = sourceHandle;
     mSourceIsRoot = sourceIsRoot;

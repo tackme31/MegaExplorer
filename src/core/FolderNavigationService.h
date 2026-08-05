@@ -61,6 +61,17 @@ public:
     void refreshCurrent(SortOrder order,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
+    // Reads an arbitrary folder's children without going there: no back-stack
+    // push, no mCurrent change, nothing observable afterwards. refreshCurrent
+    // above can't serve this -- a drag-copy's destination is whatever folder
+    // the pointer was over, which is usually not the one this tab is showing,
+    // and the copy has to know that folder's existing names before it picks
+    // any (IMegaClient::copyNode).
+    void listChildrenOf(std::uint64_t handle,
+                        bool isRoot,
+                        SortOrder order,
+                        std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
     bool canGoBack() const;
 
     // Clears the back-stack and returns to the root sentinel, without

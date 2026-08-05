@@ -87,6 +87,18 @@ void FolderNavigationService::refreshCurrent(
         mClient->getChildren(mCurrent.handle, order, std::move(onDone));
 }
 
+void FolderNavigationService::listChildrenOf(
+    std::uint64_t handle,
+    bool isRoot,
+    SortOrder order,
+    std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    if (isRoot)
+        mClient->getRootChildren(order, std::move(onDone));
+    else
+        mClient->getChildren(handle, order, std::move(onDone));
+}
+
 bool FolderNavigationService::canGoBack() const
 {
     return !mBackStack.empty();

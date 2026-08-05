@@ -376,6 +376,55 @@ TEST(FolderNavigationServiceTest, NavigateToFailureLeavesStateUnchanged)
     EXPECT_FALSE(service.canGoBack());
 }
 
+TEST(FolderNavigationServiceTest, ListChildrenOfReadsAnArbitraryFolderWithoutNavigating)
+{
+    // Arrange: the service is sitting in folder 1, and something asks about
+    // folder 7 (a drag-copy's drop target).
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> inSeven{{"there.txt", 70, 50, false, 0}};
+
+    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok({})));
+    EXPECT_CALL(*mockClient, getChildren(7, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(inSeven)));
+
+    FolderNavigationService service(mockClient);
+    Captured opened;
+    service.openFolder(1, SortOrder{}, onDoneInto(opened));
+    Captured captured;
+
+    // Act
+    service.listChildrenOf(7, false, SortOrder{}, onDoneInto(captured));
+
+    // Assert: the answer is folder 7's, and nothing about where the service
+    // stands has moved -- back-stack still holds only the root, current is
+    // still folder 1 (which the next refreshCurrent would prove).
+    ASSERT_TRUE(captured.doneCalled);
+    ASSERT_EQ(captured.doneResult.value.size(), 1u);
+    EXPECT_EQ(captured.doneResult.value[0].name, "there.txt");
+    EXPECT_TRUE(service.canGoBack());
+    EXPECT_FALSE(service.currentLocation().isRoot);
+    EXPECT_EQ(service.currentLocation().handle, 1u);
+}
+
+TEST(FolderNavigationServiceTest, ListChildrenOfHonoursTheRootSentinel)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::ok({})));
+    EXPECT_CALL(*mockClient, getChildren(::testing::_, ::testing::_, ::testing::_)).Times(0);
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    // handle 99 is meaningless when isRoot is true, same convention as
+    // navigateTo's.
+    service.listChildrenOf(99, true, SortOrder{}, onDoneInto(captured));
+
+    ASSERT_TRUE(captured.doneCalled);
+    EXPECT_TRUE(captured.doneResult.success);
+}
+
 TEST(FolderNavigationServiceTest, ResolveCurrentPathAtRootQueriesRootSentinel)
 {
     // Arrange

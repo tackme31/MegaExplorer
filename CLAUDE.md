@@ -221,7 +221,28 @@ leftover — and Ctrl+C/X/V are `Keys.onPressed` branches placed *after* the exi
 one, because `StandardKey.Cut` is also Shift+Delete. Cut rows are ghosted via a binding on
 `clipboardController.cutHandles` (a property, not a method — a method call reads nothing a binding
 could track), so no model role was needed. No OS-clipboard interop, and paste targets the current
-folder only. The full
+folder only. Phase 23a then put that copy onto 14a/22b's drag gesture — **Ctrl (without Shift) makes
+a drag a copy**, Shift being the explicit move — and the phase is really about the fact that Qt
+supplies no modifier: QML's `DragEvent` carries none, `DragHandler.centroid.modifiers` only updates
+when the pointer *moves*, and `Keys` handlers are focus-dependent (22b's spring-loaded tab switch
+moves focus mid-drag). So `src/qml/KeyboardState.h` — header-only, `QML_ELEMENT`/`QML_SINGLETON`
+like `WindowAgentForeign.h` — exposes `QGuiApplication::queryKeyboardModifiers()`, which `DragProxy`
+samples in `begin()` (before `Drag.active`), `moveTo()` and `finish()` (before `Drag.drop()`, so the
+modifier at button-release decides) plus a 100ms `Timer` for the stationary pointer. Re-asking the
+hovered `DropArea` is a `Connections`-on-`copyModeChanged` per target, **not** a position nudge
+(`QQuickDragAttached` coalesces those into one *asynchronous* event, too late for the drop) and
+**not** a binding on `containsDrag` (which `QQuickDropArea` sets *after* `entered()`, so it would
+break every target's upload branch). `DragProxy` now carries `entries` (the `{handle, name,
+isFolder}` maps — a copy needs the names) with `handles` derived from it, plus `canDropOn`/`dropOn`
+that branch on the mode, so all six drop targets got *shorter*. C++ side:
+`FileOperationService::canCopy` (there is no `checkCopy` anywhere — it reuses `checkMove` and treats
+only `kEArgs`, "already in that folder", as allowed, so duplicate-in-place works and a folder into
+its own subtree is refused), `FolderNavigationService::listChildrenOf` (a drop target isn't the
+folder you're standing in, so `refreshCurrent` can't read its names), and
+`FolderNavigationController::copyEntriesTo`/`canCopyEntriesOn`. A failed destination read **refuses
+the whole drop** rather than falling back — `paste()` keeps its `mLastFolderEntries` fallback
+because there the destination *is* this tab. It also **changed Phase 23's paste**: the same
+`canCopy` check now greys out and refuses pasting a folder into its own subtree. The full
 roadmap — next up are phases 15–16 (in-app preview, real-time remote-change reflection) — lives in
 `docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
 `docs/MEMO.md` keeps only non-roadmap notes. Undo and full bidirectional local sync stay out of
@@ -252,7 +273,8 @@ it reached the side panel) plus `qml/components/DragAutoScroller.qml` for the ed
 doesn't provide (Phase 14a), the app-global `UploadController` (`src/qml`) behind all five drop
 targets' external-drop path and Main.qml's two upload confirmation dialogs (Phase 14b), the equally
 app-global but service-free `ClipboardController` (`src/qml`, Phase 23) that every tab's
-`FolderNavigationController` holds a non-owning pointer to,
+`FolderNavigationController` holds a non-owning pointer to, the header-only `KeyboardState`
+(`src/qml`, Phase 23a) that `DragProxy` reads Ctrl/Shift from during a drag,
 `qml/components/CaptionBar.qml` — the window's own caption row, carrying `TabStrip` and the three
 system buttons, registered with QWindowKit's `WindowAgent` (exposed to QML by the header-only
 `src/qml/WindowAgentForeign.h`, `QML_FOREIGN`) from `Main.qml`'s root `Component.onCompleted`,

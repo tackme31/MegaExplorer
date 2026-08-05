@@ -72,6 +72,13 @@ void FileOperationService::copy(std::uint64_t handle,
         return;
     }
 
+    Result<void> allowed = canCopy(handle, newParentHandle, newParentIsRoot);
+    if (!allowed.success)
+    {
+        onDone(std::move(allowed));
+        return;
+    }
+
     mClient->copyNode(handle, newParentHandle, newParentIsRoot, newName, std::move(onDone));
 }
 
@@ -116,6 +123,19 @@ Result<void> FileOperationService::canMove(std::uint64_t handle,
                                            bool newParentIsRoot) const
 {
     return mClient->checkMove(handle, newParentHandle, newParentIsRoot);
+}
+
+Result<void> FileOperationService::canCopy(std::uint64_t handle,
+                                           std::uint64_t newParentHandle,
+                                           bool newParentIsRoot) const
+{
+    Result<void> allowed = mClient->checkMove(handle, newParentHandle, newParentIsRoot);
+    // kEArgs here means "already in that folder", which a copy is entitled to do
+    // -- it produces a "... - Copy" sibling. Every other code a move fails with
+    // (gone, own descendant, read-only) is a refusal for a copy too.
+    if (!allowed.success && allowed.errorCode == MegaErrorCode::kEArgs)
+        return Result<void>::ok();
+    return allowed;
 }
 
 Result<void> FileOperationService::canAddChildren(std::uint64_t parentHandle,

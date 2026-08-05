@@ -179,6 +179,13 @@ Item {
         case "paste":
             text = qsTr("Can't paste here: %1").arg(errorMessage);
             break;
+            // Ctrl+drop's counterpart of "paste" above, and the same rule: only
+            // whole-drop refusals land here (a read-only destination, a folder
+            // that vanished, a destination listing that couldn't be read). The
+            // per-item tally is the "copy" case in showOperation.
+        case "copy":
+            text = qsTr("Can't copy here: %1").arg(errorMessage);
+            break;
         case "uploadNothingToUpload":
             text = qsTr("Nothing to upload — folders and non-file items can't be uploaded");
             break;

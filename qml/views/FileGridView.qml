@@ -310,7 +310,7 @@ GridView {
         if (entries.length === 0)
             return;
         const label = entries.length === 1 ? entries[0].name : qsTr("%1 items").arg(entries.length);
-        root.dragProxy.begin(root.navController, entries.map(e => e.handle), label, scenePos);
+        root.dragProxy.begin(root.navController, entries, label, scenePos);
     }
 
     function clearDropTarget() {
@@ -318,11 +318,39 @@ GridView {
         root.dropOnCurrentFolder = false;
     }
 
+    // Last position a drag event was delivered at, so the internal branch can be
+    // re-run without one -- Ctrl toggling the gesture between move and copy
+    // produces no drag event at all while the pointer is still.
+    property point lastDragPos: Qt.point(0, 0)
+
+    // The internal (node) branch on its own, resolved from lastDragPos rather
+    // than an event, so Ctrl toggling copyMode mid-hover can re-run it.
+    //
     // Reads the payload off root.dragProxy rather than the event's own
     // drag.source. They're the same object -- the DropArea's keys let nothing
     // else in -- but drag.source is typed QObject, so every field access
     // through it is an unchecked dynamic lookup.
+    function updateNodeDropTarget() {
+        const row = root.indexAtViewportPos(root.lastDragPos);
+        const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
+
+        if (entry.isFolder && root.dragProxy.canDropOn(entry.handle, false)) {
+            root.dropRow = row;
+            root.dropOnCurrentFolder = false;
+            return;
+        }
+
+        // Anything else in this view means "into the folder being shown",
+        // Explorer's own fallback -- which a move rejects when the dragged items
+        // already live there and a Ctrl+drag copy accepts, since that duplicates
+        // them under "... - Copy".
+        root.dropRow = -1;
+        root.dropOnCurrentFolder = root.dragProxy.canDropOn(root.navController.currentHandle,
+                                                            root.navController.atRoot);
+    }
+
     function updateDropTarget(drag) {
+        root.lastDragPos = Qt.point(drag.x, drag.y);
         const row = root.indexAtViewportPos(Qt.point(drag.x, drag.y));
         const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 
@@ -341,22 +369,7 @@ GridView {
         // Rectangles they drive) is payload-agnostic; only the question being
         // asked here differs.
         if (!drag.hasUrls && root.dragProxy.sourceNav) {
-            const nav = root.dragProxy.sourceNav;
-            const handles = root.dragProxy.handles;
-
-            if (entry.isFolder && nav.canDropHandlesOn(handles, entry.handle, false)) {
-                root.dropRow = row;
-                root.dropOnCurrentFolder = false;
-                return;
-            }
-
-            // Anything else in this view means "into the folder being shown",
-            // Explorer's own fallback -- which canDropHandlesOn rejects when
-            // the dragged items already live there.
-            root.dropRow = -1;
-            root.dropOnCurrentFolder = nav.canDropHandlesOn(handles,
-                                                            root.navController.currentHandle,
-                                                            root.navController.atRoot);
+            root.updateNodeDropTarget();
             return;
         }
 
@@ -389,6 +402,7 @@ GridView {
     }
 
     DropArea {
+        id: viewDropArea
         // parent: root for the same reason the TapHandler below uses it -- a
         // plain child of a Flickable lands in contentItem, which scrolls and is
         // only as tall as the content.
@@ -397,6 +411,16 @@ GridView {
         // "text/uri-list" is what an external OS drop matches on -- without it
         // those drops are silently ignored here.
         keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
+
+        // Ctrl can go down while the pointer sits still, and an internal drag
+        // delivers no event at all for that -- so nothing below would re-run.
+        Connections {
+            target: root.dragProxy
+            function onCopyModeChanged() {
+                if (viewDropArea.containsDrag && root.dragProxy.sourceNav)
+                    root.updateNodeDropTarget();
+            }
+        }
 
         onEntered: drag => {
             root.updateDropTarget(drag);
@@ -423,8 +447,7 @@ GridView {
                     drop.accept(Qt.CopyAction);
                     uploadController.dropUrls(drop.urls, target, targetIsRoot);
                 } else {
-                    root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles, target,
-                                                           targetIsRoot);
+                    root.dragProxy.dropOn(target, targetIsRoot);
                 }
             }
             root.clearDropTarget();

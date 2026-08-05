@@ -3,6 +3,10 @@
 #include "core/FolderNavigationService.h"
 #include "core/SearchService.h"
 #include "core/SortOrder.h"
+// Not just forward-declared like NotificationController below: startCopyBatch
+// takes ClipboardController::Entry, which a drag-copy fills in without the
+// clipboard being involved at all.
+#include "ClipboardController.h"
 #include "FileListModel.h"
 
 #include <QObject>
@@ -11,9 +15,9 @@
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 
-class ClipboardController;
 class NotificationController;
 
 // Q_INVOKABLE entry points below fire off SDK-thread callbacks that outlive
@@ -200,6 +204,26 @@ public:
     Q_INVOKABLE bool
     canDropHandlesOn(const QVariantList& handles, quint64 target, bool targetIsRoot) const;
 
+    // Ctrl+drag's copy. entries carries the same {handle, name, isFolder} maps
+    // the clipboard takes, not bare handles like the move above: a copy has to
+    // know the source names to pick non-colliding ones, and re-resolving every
+    // handle at drop time would buy nothing.
+    //
+    // Two-stage like paste()'s copy branch, and for the same reason -- but the
+    // destination is read with FolderNavigationService::listChildrenOf, since
+    // it is whatever folder the pointer was over rather than this tab's own.
+    // A destination read that fails aborts the whole drop: unlike paste(),
+    // there is no cached listing of *that* folder to fall back on, and copying
+    // under an unverified name is what silently versions over an existing file.
+    Q_INVOKABLE void copyEntriesTo(const QVariantList& entries, quint64 target, bool targetIsRoot);
+
+    // canDropHandlesOn's copy counterpart, and all-or-nothing in the same way.
+    // Differs in which refusals apply: a copy into the folder the nodes already
+    // live in is legitimate (it duplicates them), while a copy of a folder into
+    // its own subtree is not -- see FileOperationService::canCopy.
+    Q_INVOKABLE bool
+    canCopyEntriesOn(const QVariantList& entries, quint64 target, bool targetIsRoot) const;
+
     // Toolbar refresh button / F5. Asks the API for anything it hasn't told us
     // yet (FolderNavigationService::syncWithServer), then re-reads whatever
     // this tab is showing; no-op until the first successful load (see
@@ -292,6 +316,12 @@ private:
         // moveHandlesTo uses it to announce where the nodes went; empty for
         // moveSelectionToRubbish, which has nowhere to announce.
         std::function<void(const BulkOperationBatch&)> onComplete;
+        // Overrides the default "re-read what this tab is showing". A copy
+        // leaves the source folder alone, so a Ctrl+drop onto some other folder
+        // has nothing to re-read here -- and refreshVisibleListing() is a full
+        // model reset (plus a recursive search re-run, if one is showing).
+        // Empty means the default.
+        std::function<void()> refresh;
     };
 
     // Body of moveHandlesTo, with "where did these come from" passed in rather
@@ -304,12 +334,22 @@ private:
                          quint64 source,
                          bool sourceIsRoot);
 
-    // Second stage of a paste-copy, on the GUI thread: turns the destination's
-    // listing into the set of names already in use, then fans one copy out per
-    // clipboard entry. Split from paste() only because it has to wait for that
-    // listing -- a stale set would let a copy land as a new *version* of an
-    // existing file rather than beside it.
-    void startCopyBatch(Result<std::vector<FileEntry>> destination);
+    // Whether every clipboard entry could be *copied* into the folder this tab
+    // is showing, carrying the first refusal so paste() can report it. Split
+    // from canPaste() because paste() needs the reason, not just the verdict.
+    Result<void> clipboardCopyAllowedHere() const;
+
+    // Second stage of a copy, on the GUI thread. taken is the set of names the
+    // destination already uses; how it was arrived at is the caller's problem,
+    // because the two callers answer a failed destination read differently
+    // (paste() falls back to its cached listing of the folder it is standing
+    // in, copyEntriesTo() has no such listing and refuses). Split out at all
+    // only because that read is asynchronous -- a stale set would let a copy
+    // land as a new *version* of an existing file rather than beside it.
+    void startCopyBatch(const std::vector<ClipboardController::Entry>& entries,
+                        quint64 target,
+                        bool targetIsRoot,
+                        std::set<std::string> taken);
 
     // Common tail of both bulk fan-outs above: counts one outcome and, once the
     // batch is empty, refreshes and reports it under context. Must run on the

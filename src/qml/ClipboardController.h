@@ -68,6 +68,12 @@ public:
     int count() const;
     QVariantList cutHandles() const;
 
+    // The QVariantMap -> Entry conversion, static because the clipboard is not
+    // the only source of these maps any more: a drag carries the same
+    // FileListModel::selectedEntries() payload, and a Ctrl+drop copies from it
+    // without ever touching the clipboard.
+    static std::vector<Entry> toEntries(const QVariantList& entries);
+
     // Typed accessors for FolderNavigationController; not QML-facing.
     const std::vector<Entry>& entries() const;
     quint64 sourceHandle() const;

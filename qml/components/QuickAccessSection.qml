@@ -102,7 +102,10 @@ ColumnLayout {
             const handle = pinList.reorderHandle;
             // Insertion point -> final row: pulling the dragged pin out first
             // shifts everything below it up by one.
-            const to = pinList.reorderInsert > from ? pinList.reorderInsert - 1 : pinList.reorderInsert;
+            const to = pinList.reorderInsert > from ? pinList.reorderInsert - 1 :
+                                                      pinList.reorderInsert;
+
+
             pinList.endReorder();
             if (to !== from)
                 quickAccessModel.move(handle, to);
@@ -221,12 +224,23 @@ ColumnLayout {
 
                 property bool accepting: false
 
+                // Re-asks when Ctrl toggles the drag between move and copy; see
+                // FolderTreePanel.qml for why a positionChanged handler can't
+                // serve that.
+                Connections {
+                    target: root.dragProxy
+                    function onCopyModeChanged() {
+                        if (dropArea.containsDrag && root.dragProxy.active)
+                            dropArea.accepting = root.dragProxy.canDropOn(pinDelegate.handle,
+                                                                          false);
+                    }
+                }
+
                 // Payload read off root.dragProxy rather than the event's own
                 // drag.source, same reasoning as FolderTreePanel.qml's.
                 onEntered: drag => {
                     if (root.dragProxy.active) {
-                        dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
-                                    root.dragProxy.handles, pinDelegate.handle, false);
+                        dropArea.accepting = root.dragProxy.canDropOn(pinDelegate.handle, false);
                     } else if (drag.hasUrls) {
                         dropArea.accepting = uploadController.canUploadTo(pinDelegate.handle,
                                                                           false);
@@ -244,8 +258,7 @@ ColumnLayout {
                             drop.accept(Qt.CopyAction);
                             uploadController.dropUrls(drop.urls, pinDelegate.handle, false);
                         } else {
-                            root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
-                                                                   pinDelegate.handle, false);
+                            root.dragProxy.dropOn(pinDelegate.handle, false);
                         }
                     }
                     dropArea.accepting = false;
@@ -296,7 +309,8 @@ ColumnLayout {
                         return;
                     }
                     pinList.beginReorder(pinDelegate.index, pinDelegate.handle);
-                    root.dragProxy.beginGhost(pinDelegate.name, reorderHandler.centroid.scenePosition);
+                    root.dragProxy.beginGhost(pinDelegate.name,
+                                              reorderHandler.centroid.scenePosition);
                 }
 
                 onActiveTranslationChanged: {
@@ -339,8 +353,8 @@ ColumnLayout {
             // Clamped into the viewport, not just computed: the "after the last
             // pin" insertion point lands exactly on the bottom edge, where
             // pinList's own clip would swallow the line entirely.
-            y: Math.min(pinList.reorderInsert * pinList.rowH - pinList.contentY,
-                        pinList.height - insertLine.height)
+            y: Math.min(pinList.reorderInsert * pinList.rowH - pinList.contentY, pinList.height
+                        - insertLine.height)
         }
     }
 }

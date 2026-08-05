@@ -301,6 +301,16 @@ Done, except that the collision sentence above turned out to be **wrong about th
 `copyNode` has no `API_EEXIST`, and a colliding name is worse than untidy. See the
 implementation-log entry.
 
+### Phase 23a — Ctrl+drag copies (done)
+
+Unplanned follow-on: 14a/22b's drag & drop could only move, and Phase 23 had just built everything a
+copy needs. Ctrl (without Shift) turns the drag into a copy on all six existing drop targets;
+Shift is the explicit "move". No new drop target, no new SDK method.
+
+The awkward half is that Qt hands the app nothing to read the modifier from — see the
+implementation-log entry, which also records the one Phase 23 behaviour this changed
+(copying a folder into its own subtree is now refused on paste too).
+
 ### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
 Lowest priority; explicitly deferred in Phase 4 since download→open already covers "view the file".
@@ -3137,3 +3147,150 @@ fixtures for the new constructor parameter. 318 tests pass; `appMegaExplorer` bu
   out of scope, not deferred.
 - **The folder tree is still not refreshed** after a paste that moves or creates a folder — Phase
   16's, same as for 14a's moves.
+
+## Phase 23a — Ctrl+drag copies (done)
+
+Ctrl (without Shift) makes a drag a copy instead of a move, on all six of Phase 14a/22b's drop
+targets. Shift is the explicit "move" and wins over Ctrl, matching Explorer. Almost all of the
+machinery already existed — `IMegaClient::copyNode`, `FileOperationService::uniqueCopyName`, the
+bulk fan-out, `nodesCopied` and its `TabsController` fan-out are Phase 23's, unchanged. What this
+phase is really about is the one thing Qt does not provide.
+
+### Qt tells you nothing about the modifier, and the obvious workarounds all fail
+
+The gesture the request named first is "drag, then press Ctrl, then drop" — i.e. the modifier
+changes while the pointer is **stationary**. Three sources were considered and two rejected:
+
+- QML's `DragEvent` has no modifier at all (`accepted`/`action`/`keys`/`source`/`x`/`y`, verified
+  against Qt 6.11's docs). Dead end, not a matter of reading it more carefully.
+- `DragHandler.centroid.modifiers` exists (`BandSelector.qml:102` uses it) but only updates when a
+  point event is delivered, i.e. when the pointer moves. Exactly the wrong case.
+- `Keys.onPressed`/`onReleased` on the two views would see the key, but is focus-dependent — and
+  Phase 22b's spring-loaded tab switch moves focus *during* a drag, so the one gesture that most
+  needs it is the one that breaks it.
+
+So `src/qml/KeyboardState.h` (header-only, `QML_ELEMENT` + `QML_SINGLETON`, the same shape as
+`WindowAgentForeign.h`) exposes `QGuiApplication::queryKeyboardModifiers()`. Not
+`keyboardModifiers()` — that returns the state cached from the last delivered event, which is
+precisely the stale value being worked around. It is a `Q_INVOKABLE` method rather than a
+`Q_PROPERTY` because there is no change signal it could honestly emit.
+
+`DragProxy` samples it at three moments and polls it at a fourth:
+
+| when | why |
+|---|---|
+| `begin()`, **before** `Drag.active = true` | the source view's own DragEnter is delivered from inside that assignment (the reason `sourceNav` is already assigned first, `FileGridView.qml:329-343`), and the Timer — bound to `active` — has not started |
+| `moveTo()` | the per-pointer-move hook already exists; makes the moving case exact for free |
+| `finish()`, **before** `Drag.drop()` | the modifier at button-release is what decides, Explorer's rule. This is what demotes the 100ms Timer to purely cosmetic: the *decision* never depends on the polling interval |
+| a 100ms `Timer` while `active` | the only thing covering a stationary pointer; keeps the badge and the highlighting honest between moves |
+
+### The nudge that doesn't work, and what replaced it
+
+A modifier change has to make the hovered `DropArea` re-ask, and four of the six targets computed
+`accepting` in `onEntered` only. The tempting fix — nudge `DragProxy.x` by a pixel and back, since
+an internal drag emits its events from the attached item's position changes — **does not work**, and
+the reason is worth recording. `QQuickDragAttachedPrivate` carries `itemMoved`/`eventQueued` flags:
+`itemGeometryChanged()` sets `itemMoved` and posts a single coalesced `QEvent::User`, so the second
+geometry change is swallowed and the delivery is *asynchronous*. That is fatal at the drop instant,
+where `finish()` re-samples and calls `Drag.drop()` in one JS turn.
+
+Making `accepting` a binding on `containsDrag && dragProxy.canDropOn(...)` fails differently, and
+more quietly: `QQuickDropArea` sets `containsDrag` **after** emitting `entered()`, so the binding
+would read `false` exactly when every target's external-URL branch assigns
+`drag.accepted = accepting` — silently killing drag & drop *uploads* on all six targets.
+
+What works is a `Connections { target: dragProxy; function onCopyModeChanged() }` per target,
+guarded on `containsDrag`. A property write fires the signal synchronously in the same JS turn, it
+touches neither `drag.accepted` nor `TabStrip`'s `dwellTimer`, and it relies on no Qt internals. No
+`onPositionChanged` handler was added anywhere — the four per-delegate targets keep their
+"recomputed on enter only" optimisation, which was never wrong, just incomplete.
+
+### The dispatch lives in DragProxy, so the six targets got shorter
+
+`DragProxy` gained `canDropOn(handle, isRoot)` and `dropOn(handle, isRoot)`, which branch on
+`copyMode` internally. Every target's internal branch is now one call instead of a three-line
+`sourceNav.canDropHandlesOn(handles, ...)`, and the mode is invisible to them. The two file views
+also grew a `lastDragPos` and an `updateNodeDropTarget()` split out of `updateDropTarget(drag)`,
+since their hit test needs a position and a modifier change supplies no event to read one from.
+
+The payload changed shape with it: `DragProxy.entries` now holds the `{handle, name, isFolder}` maps
+(a copy needs the *names*, for `uniqueCopyName`), and `handles` became
+`readonly property var handles: root.entries.map(e => e.handle)` so the two cannot drift.
+`beginDrag()` in both views already had `selectedEntries()` and was mapping it down to handles, so
+this deleted code rather than adding it.
+
+### What "can I copy here" actually asks
+
+There is no `checkCopy` — not in `IMegaClient`, not in the SDK. `FileOperationService::canCopy`
+reuses `checkMove` and reinterprets exactly one code: `kEArgs` ("already in that folder") is a
+refusal for a move and a legitimate request for a copy, which lands a `... - Copy` sibling.
+`kECircular` / `kENoEnt` / `kEAccess` pass through. Two visible consequences, both matching
+Explorer and both now recorded in the comments they contradict:
+
+- Ctrl+dragging inside the folder being shown lights the whole viewport frame, and dropping
+  duplicates the selection in place.
+- `Breadcrumb.qml`'s **last** segment — documented since 14a as deliberately never highlighting for
+  a move — highlights for a copy.
+
+`kEAccess` is borrowed slightly too eagerly (`checkMove` also refuses when the *source* can't be
+removed, which a copy doesn't need). Unreachable while the app only browses the Cloud Drive; noted
+in the header rather than worked around.
+
+`copy()` is now gated on `canCopy()` the same way `move()` is gated on `canMove()`, so skipping the
+hover-time pre-check can't smuggle a folder into its own subtree. That gate is also what broke 12
+existing tests the moment it landed: `Result<void>::success` defaults to **false**, so an unstubbed
+`checkMove` refuses every copy before it reaches `copyNode`. The fixture stub sits next to Phase
+23's `checkUpload` one, whose comment already warned about exactly this trap.
+
+**This changed Phase 23's paste**, deliberately: `canPaste()` and `paste()` now run the same
+per-entry `canCopy()` check, so pasting a folder into its own subtree is greyed out and refused
+rather than attempted. Previously it was allowed and MEGA would snapshot-duplicate the whole tree.
+
+### A drop target is not the folder you're standing in
+
+`paste()` reads the destination's names with `refreshCurrent`, which only works because a paste
+always targets the current folder. A drop doesn't, so `FolderNavigationService` gained
+`listChildrenOf(handle, isRoot, order, onDone)` — the `navigateTo` branch without the back-stack
+push or the `mCurrent` commit.
+
+The two callers diverge on a failed read, and that divergence is the point. `paste()` keeps falling
+back to `mLastFolderEntries`, which is correct because the destination *is* the folder this tab is
+showing. `copyEntriesTo()` has no listing of some other folder and **refuses the whole drop** — this
+is correct rather than merely cautious, since `getChildren` is an in-memory read whose only
+realistic failure is a destination that no longer exists. The genuinely tempting wrong answer is an
+empty `taken` set: `uniqueCopyName` would then return the source name unchanged and the copy would
+version over an existing file (`IMegaClient::copyNode`).
+
+`startCopyBatch` was reduced to a pure fan-out taking `(entries, target, targetIsRoot, taken)`, so
+building `taken` — the only thing the two paths disagree about — belongs to the caller.
+
+`BulkOperationBatch` gained an optional `refresh` override. `accountForBulkOutcome` unconditionally
+called `refreshVisibleListing()`, which for a drag-copy onto *another* folder is a full model reset
+(plus a re-run of the recursive search, if one is showing) of a listing nothing changed. Both copy
+paths now set it to `refreshIfShowing(target, targetIsRoot)` — equivalent for a paste, a no-op for a
+cross-folder drop, and every other tab is still reached by `nodesCopied`.
+
+### Testing
+
+`FileOperationServiceTest` gained the `canCopy` code table and the `copy()` gate; three existing
+copy tests plus `FolderNavigationControllerTest`'s fixture needed the `checkMove` stub described
+above. `FolderNavigationServiceTest` gained two `listChildrenOf` cases, including the one that
+matters — it answers about another folder without moving where the service stands.
+`FolderNavigationControllerTest` gained ten, the load-bearing ones being that `copyEntriesTo` reads
+the *drop target* rather than `currentHandle()`, auto-renames against that folder's names, refuses
+the whole drop with a `"copy"` toast and zero `copyNode` calls when the read fails, and does not
+refetch this tab's listing when it isn't the destination. 335 tests pass; `appMegaExplorer` builds
+`/W4`-clean.
+
+### Deliberately not done
+
+- **No Ctrl+drag for external file drops.** An OS drop is always a copy; the modifier means nothing
+  there, and the upload branch of all six targets is untouched.
+- **No Ctrl+Shift.** MEGA has no shortcut/symlink node, so Explorer's third combination has nothing
+  to map onto.
+- **Ctrl+drag from an unselected row still replaces the selection** (`selectRow(index, NoModifier)`),
+  rather than adding to it the way a Ctrl+*click* would. Explorer drags just that item too.
+- **The folder tree still isn't refreshed** after a drag-copy that creates a folder — Phase 16's,
+  same as for 14a's moves.
+- **No automated UI verification.** `ui-style`'s `drive` sends press→move→release as one step, so a
+  modifier cannot be held across a drag; the gesture is verified by hand.

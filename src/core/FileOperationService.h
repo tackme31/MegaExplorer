@@ -45,9 +45,9 @@ public:
     // keeps the source's name; a non-empty one is validated exactly like
     // rename()'s and rejected with kEArgs without touching the SDK.
     //
-    // No destination pre-check here, unlike move() below: circularity is the
-    // only per-source condition a move has, and a copy has none, so the
-    // caller's single up-front canAddChildren() already covers the whole batch.
+    // Gated on canCopy() below, exactly as move() is gated on canMove(): a
+    // caller that skipped the hover-time pre-check must not be able to smuggle
+    // a copy of a folder into its own subtree through.
     void copy(std::uint64_t handle,
               std::uint64_t newParentHandle,
               bool newParentIsRoot,
@@ -70,6 +70,25 @@ public:
     // MegaErrorCodes.h code (kENoEnt / kECircular / kEAccess), not just text.
     Result<void>
     canMove(std::uint64_t handle, std::uint64_t newParentHandle, bool newParentIsRoot) const;
+
+    // "Would copy() be accepted?", synchronous for the same reason as
+    // canMove(). There is no checkCopy to call: the SDK has none, so this
+    // reuses checkMove and reinterprets one of its codes -- kEArgs ("already in
+    // that folder") is a refusal for a move and a legitimate request for a
+    // copy, which lands a "... - Copy" sibling. kENoEnt / kECircular / kEAccess
+    // pass through unchanged; kECircular is the one that matters, since copying
+    // a folder into its own subtree is a mistake in every case (Explorer
+    // refuses it too) and MEGA would happily snapshot-duplicate the whole tree.
+    //
+    // kEAccess is borrowed slightly too eagerly: checkMove also refuses when the
+    // *source* can't be removed, which a copy doesn't need. Unreachable while
+    // the app only browses the Cloud Drive; revisit if incoming shares become
+    // browsable.
+    //
+    // Says nothing about whether the destination accepts children at all --
+    // that is canAddChildren() below, and callers ask both.
+    Result<void>
+    canCopy(std::uint64_t handle, std::uint64_t newParentHandle, bool newParentIsRoot) const;
 
     // "Would this folder accept a new child?", the paste counterpart of
     // canMove() above and synchronous for the same reason. Straight through to

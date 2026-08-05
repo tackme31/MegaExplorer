@@ -486,7 +486,22 @@ bool FolderNavigationController::canPaste() const
         return false;
     if (!mClipboard->canPasteInto(currentHandle(), atRoot()))
         return false;
-    return mFileOps->canAddChildren(static_cast<std::uint64_t>(currentHandle()), atRoot()).success;
+    if (!mFileOps->canAddChildren(static_cast<std::uint64_t>(currentHandle()), atRoot()).success)
+        return false;
+    return mClipboard->isCut() || clipboardCopyAllowedHere().success;
+}
+
+Result<void> FolderNavigationController::clipboardCopyAllowedHere() const
+{
+    for (const ClipboardController::Entry& entry : mClipboard->entries())
+    {
+        Result<void> allowed = mFileOps->canCopy(static_cast<std::uint64_t>(entry.handle),
+                                                 static_cast<std::uint64_t>(currentHandle()),
+                                                 atRoot());
+        if (!allowed.success)
+            return allowed;
+    }
+    return Result<void>::ok();
 }
 
 void FolderNavigationController::paste()
@@ -530,38 +545,122 @@ void FolderNavigationController::paste()
         return;
     }
 
+    // Copying a folder into its own subtree is refused here as it is on a
+    // Ctrl+drop -- MEGA would snapshot-duplicate the whole tree, and no user
+    // asks for that on purpose. Toasted rather than silent: canPaste() greys
+    // the menu entry, so reaching this means Ctrl+V, where nothing else would
+    // explain the silence.
+    const Result<void> copyAllowed = clipboardCopyAllowedHere();
+    if (!copyAllowed.success)
+    {
+        qCWarning(lcFileOps) << "paste rejected:"
+                             << QString::fromStdString(copyAllowed.errorMessage)
+                             << "code=" << copyAllowed.errorCode;
+        mNotifications->notifyError(QStringLiteral("paste"),
+                                    QString::fromStdString(copyAllowed.errorMessage));
+        return;
+    }
+
     // Re-read the destination's names before choosing any: the cached listing
     // could be stale, and a name that collides silently versions over the
     // existing file instead of landing beside it (IMegaClient::copyNode).
     // refreshCurrent touches neither the back-stack nor the current location,
     // so this is also correct while a search is showing.
+    const quint64 target = currentHandle();
+    const bool targetIsRoot = atRoot();
     beginBusyOperation();
     mService->refreshCurrent(
-        mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
-                endBusyOperation();
-                startCopyBatch(std::move(result));
-            });
+        mSortOrder,
+        [this, self = shared_from_this(), target, targetIsRoot](
+            Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(
+                this, [this, target, targetIsRoot, result = std::move(result)]() mutable {
+                    endBusyOperation();
+                    const std::vector<ClipboardController::Entry>& entries = mClipboard->entries();
+                    if (entries.empty())
+                        return; // cleared while the destination read was in flight
+
+                    // A failed read is no reason to refuse the paste: the
+                    // destination *is* the folder this tab is showing, so the
+                    // cached listing of it is the best answer available.
+                    std::set<std::string> taken;
+                    for (const FileEntry& entry :
+                         (result.success ? result.value : mLastFolderEntries))
+                        taken.insert(entry.name);
+                    startCopyBatch(entries, target, targetIsRoot, std::move(taken));
+                });
         });
 }
 
-void FolderNavigationController::startCopyBatch(Result<std::vector<FileEntry>> destination)
+void FolderNavigationController::copyEntriesTo(const QVariantList& entries,
+                                               quint64 target,
+                                               bool targetIsRoot)
 {
-    const std::vector<ClipboardController::Entry>& entries = mClipboard->entries();
+    const std::vector<ClipboardController::Entry> copied = ClipboardController::toEntries(entries);
+    if (copied.empty())
+        return;
+
+    const Result<void> allowed =
+        mFileOps->canAddChildren(static_cast<std::uint64_t>(target), targetIsRoot);
+    if (!allowed.success)
+    {
+        qCWarning(lcFileOps) << "drop-copy rejected:"
+                             << QString::fromStdString(allowed.errorMessage)
+                             << "code=" << allowed.errorCode;
+        mNotifications->notifyError(QStringLiteral("copy"),
+                                    QString::fromStdString(allowed.errorMessage));
+        return;
+    }
+
+    beginBusyOperation();
+    mService->listChildrenOf(
+        static_cast<std::uint64_t>(target),
+        targetIsRoot,
+        mSortOrder,
+        [this, self = shared_from_this(), copied, target, targetIsRoot](
+            Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(
+                this, [this, copied, target, targetIsRoot, result = std::move(result)]() mutable {
+                    endBusyOperation();
+                    // No fallback here, unlike paste(): the destination is
+                    // whatever folder the pointer was over, and this tab holds
+                    // no listing of it. Copying under names picked against the
+                    // wrong folder is exactly what versions over an existing
+                    // file, so a failed read has to end the drop.
+                    if (!result.success)
+                    {
+                        qCWarning(lcFileOps) << "drop-copy destination read failed:"
+                                             << QString::fromStdString(result.errorMessage);
+                        mNotifications->notifyError(QStringLiteral("copy"),
+                                                    QString::fromStdString(result.errorMessage));
+                        return;
+                    }
+
+                    std::set<std::string> taken;
+                    for (const FileEntry& entry : result.value)
+                        taken.insert(entry.name);
+                    startCopyBatch(copied, target, targetIsRoot, std::move(taken));
+                });
+        });
+}
+
+void FolderNavigationController::startCopyBatch(
+    const std::vector<ClipboardController::Entry>& entries,
+    quint64 target,
+    bool targetIsRoot,
+    std::set<std::string> taken)
+{
     if (entries.empty())
-        return; // cleared while the destination read was in flight
-
-    // A failed read is no reason to refuse the paste; the cached listing is the
-    // best answer available.
-    std::set<std::string> taken;
-    for (const FileEntry& entry : (destination.success ? destination.value : mLastFolderEntries))
-        taken.insert(entry.name);
-
-    const quint64 target = currentHandle();
-    const bool targetIsRoot = atRoot();
+        return;
 
     auto batch = std::make_shared<BulkOperationBatch>();
     batch->remaining = static_cast<int>(entries.size());
+    // Only the destination gained anything, so re-read this tab only when it is
+    // the destination -- which is always true for a paste and usually false for
+    // a Ctrl+drop. Every other tab showing it is reached through nodesCopied.
+    batch->refresh = [this, target, targetIsRoot] {
+        refreshIfShowing(target, targetIsRoot);
+    };
     batch->onComplete = [this, target, targetIsRoot](const BulkOperationBatch& done) {
         if (done.succeeded > 0)
             emit nodesCopied(target, targetIsRoot);
@@ -601,6 +700,29 @@ bool FolderNavigationController::canDropHandlesOn(const QVariantList& handles,
     {
         if (!mFileOps
                  ->canMove(static_cast<std::uint64_t>(handle.toULongLong()),
+                           static_cast<std::uint64_t>(target),
+                           targetIsRoot)
+                 .success)
+            return false;
+    }
+    return true;
+}
+
+bool FolderNavigationController::canCopyEntriesOn(const QVariantList& entries,
+                                                  quint64 target,
+                                                  bool targetIsRoot) const
+{
+    if (entries.isEmpty())
+        return false;
+
+    if (!mFileOps->canAddChildren(static_cast<std::uint64_t>(target), targetIsRoot).success)
+        return false;
+
+    for (const QVariant& entry : entries)
+    {
+        const quint64 handle = entry.toMap().value(QStringLiteral("handle")).toULongLong();
+        if (!mFileOps
+                 ->canCopy(static_cast<std::uint64_t>(handle),
                            static_cast<std::uint64_t>(target),
                            targetIsRoot)
                  .success)
@@ -669,7 +791,10 @@ void FolderNavigationController::accountForBulkOutcome(
     if (--batch->remaining > 0)
         return;
 
-    refreshVisibleListing();
+    if (batch->refresh)
+        batch->refresh();
+    else
+        refreshVisibleListing();
     mNotifications->notifyOperation(QString::fromLatin1(context), batch->succeeded, batch->failed);
     if (batch->onComplete)
         batch->onComplete(*batch);

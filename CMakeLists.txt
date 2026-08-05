@@ -158,6 +158,7 @@ qt_add_qml_module(appMegaExplorer
         src/qml/AuthController.cpp
         src/qml/LicenseModel.h
         src/qml/LicenseModel.cpp
+        src/qml/KeyboardState.h
         src/qml/MenuActions.h
         src/qml/MenuActions.cpp
         src/qml/WindowAgentForeign.h

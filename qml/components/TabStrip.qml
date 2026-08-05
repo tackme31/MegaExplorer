@@ -298,10 +298,24 @@ RowLayout {
 
                     property bool accepting: false
 
+                    // Re-asks when Ctrl toggles the drag between move and copy;
+                    // see FolderTreePanel.qml. Deliberately does not touch
+                    // dwellTimer either -- the spring-load clock is "600ms after
+                    // entering", and a modifier press is not an entry.
+                    Connections {
+                        target: root.dragProxy
+                        function onCopyModeChanged() {
+                            if (tabDropArea.containsDrag && root.dragProxy.active)
+                                tabDropArea.accepting = root.dragProxy.canDropOn(
+                                            tabButton.navigation.currentHandle,
+                                            tabButton.navigation.atRoot);
+                        }
+                    }
+
                     onEntered: drag => {
                         if (root.dragProxy.active) {
-                            tabDropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
-                                        root.dragProxy.handles, tabButton.navigation.currentHandle,
+                            tabDropArea.accepting = root.dragProxy.canDropOn(
+                                        tabButton.navigation.currentHandle,
                                         tabButton.navigation.atRoot);
                         } else if (drag.hasUrls) {
                             tabDropArea.accepting = uploadController.canUploadTo(
@@ -345,9 +359,8 @@ RowLayout {
                                                           tabButton.navigation.currentHandle,
                                                           tabButton.navigation.atRoot);
                             } else {
-                                root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
-                                                                       tabButton.navigation.currentHandle,
-                                                                       tabButton.navigation.atRoot);
+                                root.dragProxy.dropOn(tabButton.navigation.currentHandle,
+                                                      tabButton.navigation.atRoot);
                             }
                         }
                         tabDropArea.accepting = false;

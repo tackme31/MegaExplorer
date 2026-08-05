@@ -202,6 +202,9 @@ Item {
                     // "already in that folder", but which is a perfectly valid
                     // upload destination -- so it highlights for an external
                     // drop and not for a move. That asymmetry is correct.
+                    // A Ctrl+drag *copy* also highlights it, on purpose: copying
+                    // into the folder the nodes already live in duplicates them
+                    // under "... - Copy", which is a real request.
                     DropArea {
                         id: dropArea
                         anchors.fill: parent
@@ -215,10 +218,23 @@ Item {
                         // which is typed QObject.
                         property bool accepting: false
 
+                        // Re-asks when Ctrl toggles the drag between move and
+                        // copy; see FolderTreePanel.qml for why positionChanged
+                        // can't serve that.
+                        Connections {
+                            target: root.dragProxy
+                            function onCopyModeChanged() {
+                                if (dropArea.containsDrag && root.dragProxy.active)
+                                    dropArea.accepting = root.dragProxy.canDropOn(
+                                                delegateRoot.modelData.handle,
+                                                delegateRoot.modelData.isRoot);
+                            }
+                        }
+
                         onEntered: drag => {
                             if (root.dragProxy.active) {
-                                dropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
-                                            root.dragProxy.handles, delegateRoot.modelData.handle,
+                                dropArea.accepting = root.dragProxy.canDropOn(
+                                            delegateRoot.modelData.handle,
                                             delegateRoot.modelData.isRoot);
                             } else if (drag.hasUrls) {
                                 dropArea.accepting = uploadController.canUploadTo(
@@ -241,9 +257,8 @@ Item {
                                                               delegateRoot.modelData.handle,
                                                               delegateRoot.modelData.isRoot);
                                 } else {
-                                    root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
-                                                                           delegateRoot.modelData.handle,
-                                                                           delegateRoot.modelData.isRoot);
+                                    root.dragProxy.dropOn(delegateRoot.modelData.handle,
+                                                          delegateRoot.modelData.isRoot);
                                 }
                             }
                             dropArea.accepting = false;

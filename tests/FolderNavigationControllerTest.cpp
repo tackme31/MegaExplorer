@@ -106,6 +106,10 @@ protected:
         // false, so an unstubbed paste pre-check *refuses* rather than merely
         // doing nothing. A test that wants it to fail sets its own EXPECT_CALL.
         EXPECT_CALL(*client, checkUpload(_, _)).WillRepeatedly(Return(Result<void>::ok()));
+        // And again for the per-source half: FileOperationService::copy() gates
+        // on canCopy(), which is checkMove reinterpreted, so an unstubbed
+        // checkMove refuses every copy before it reaches copyNode.
+        EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
     }
 
     // Fills the clipboard the way QML does -- selectedEntries()-shaped maps.
@@ -937,4 +941,212 @@ TEST_F(FolderNavigationControllerTest, CanPasteIsFalseBeforeTheFirstLoad)
 {
     clipboard->copy(clipboardEntries({entry("a", 1)}), 7, false);
     EXPECT_FALSE(controller->canPaste());
+}
+
+// --- Ctrl+drag copy (Phase 23a) -------------------------------------------
+// copyEntriesTo is paste()'s copy branch with the destination passed in rather
+// than read off this tab, so the interesting assertions are about *which*
+// folder's names the auto-rename is chosen against.
+
+TEST_F(FolderNavigationControllerTest, CanCopyEntriesOnRefusesAnEmptyDrag)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_FALSE(controller->canCopyEntriesOn(QVariantList{}, 7, false));
+}
+
+TEST_F(FolderNavigationControllerTest, CanCopyEntriesOnRefusesWhenTheDestinationTakesNoChildren)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, checkUpload(7u, false))
+        .WillRepeatedly(Return(Result<void>::fail("read-only", MegaErrorCode::kEAccess)));
+
+    EXPECT_FALSE(controller->canCopyEntriesOn(clipboardEntries({entry("a", 1)}), 7, false));
+}
+
+TEST_F(FolderNavigationControllerTest, CanCopyEntriesOnRefusesAFolderIntoItsOwnSubtree)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    // checkMove is what reports circularity; canCopy passes it straight through.
+    EXPECT_CALL(*client, checkMove(1u, 7u, false))
+        .WillRepeatedly(Return(Result<void>::fail("circular", MegaErrorCode::kECircular)));
+
+    EXPECT_FALSE(controller->canCopyEntriesOn(clipboardEntries({entry("a", 1, true)}), 7, false));
+}
+
+TEST_F(FolderNavigationControllerTest, CanCopyEntriesOnAllowsTheFolderTheNodesAlreadyLiveIn)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, checkMove(1u, 7u, false))
+        .WillRepeatedly(
+            Return(Result<void>::fail("Already in that folder", MegaErrorCode::kEArgs)));
+
+    EXPECT_TRUE(controller->canCopyEntriesOn(clipboardEntries({entry("a", 1)}), 7, false));
+}
+
+TEST_F(FolderNavigationControllerTest, CopyEntriesToReadsTheDropTargetNotTheCurrentFolder)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    // The tab is showing the root; the drop landed on folder 7.
+    bool sevenRead = false;
+    EXPECT_CALL(*client, getChildren(7u, _, _))
+        .WillOnce(Invoke([&](std::uint64_t,
+                             SortOrder,
+                             std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            sevenRead = true;
+            onDone(Result<std::vector<FileEntry>>::ok({}));
+        }));
+    EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string(), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    controller->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);
+    flush();
+    flush();
+
+    EXPECT_TRUE(sevenRead);
+}
+
+TEST_F(FolderNavigationControllerTest, CopyEntriesToAutoRenamesAgainstTheDropTargetsNames)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, getChildren(7u, _, _))
+        .WillOnce(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a.txt", 90)})));
+    EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string("a - Copy.txt"), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    controller->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);
+    flush();
+    flush();
+
+    EXPECT_EQ(operationCalls, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, CopyEntriesToRefusesTheWholeDropWhenTheTargetCantBeRead)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    // Unlike paste(), there is no cached listing of folder 7 to fall back on --
+    // and falling back to this tab's would pick names against the wrong folder,
+    // which is what silently versions over an existing file.
+    EXPECT_CALL(*client, getChildren(7u, _, _))
+        .WillOnce(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::fail("gone", MegaErrorCode::kENoEnt)));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+
+    controller->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);
+    flush();
+    flush();
+
+    EXPECT_EQ(operationCalls, 0);
+    EXPECT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("copy"));
+}
+
+TEST_F(FolderNavigationControllerTest, CopyEntriesToReportsAnErrorWithoutReadingWhenTheTargetRefuses)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, checkUpload(7u, false))
+        .WillRepeatedly(Return(Result<void>::fail("read-only", MegaErrorCode::kEAccess)));
+    EXPECT_CALL(*client, getChildren(7u, _, _)).Times(0);
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+
+    controller->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);
+    flush();
+
+    EXPECT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("copy"));
+}
+
+TEST_F(FolderNavigationControllerTest, CopyEntriesToEmitsNodesCopiedForTheDropTarget)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, getChildren(7u, _, _))
+        .WillOnce(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok({})));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    quint64 destination = 0;
+    bool destinationIsRoot = true;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::nodesCopied,
+                     controller.get(),
+                     [&](quint64 handle, bool isRoot) {
+                         destination = handle;
+                         destinationIsRoot = isRoot;
+                     });
+
+    controller->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);
+    flush();
+    flush();
+
+    EXPECT_EQ(destination, 7u);
+    EXPECT_FALSE(destinationIsRoot);
+}
+
+TEST_F(FolderNavigationControllerTest, CopyEntriesToDoesNotRefetchAListingItDidNotChange)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, getChildren(7u, _, _))
+        .WillOnce(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok({})));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    const int fetchesBefore = rootFetches;
+
+    controller->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);
+    flush();
+    flush();
+
+    // A copy leaves the source folder alone, and this tab is showing the root,
+    // not folder 7 -- so nothing here needs re-reading. Other tabs are reached
+    // through nodesCopied.
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
+}
+
+TEST_F(FolderNavigationControllerTest, CanPasteIsFalseForACopyOfAFolderIntoItsOwnSubtree)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a", 1, true)}), 7, false);
+
+    EXPECT_CALL(*client, checkMove(1u, _, true))
+        .WillRepeatedly(Return(Result<void>::fail("circular", MegaErrorCode::kECircular)));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+
+    EXPECT_FALSE(controller->canPaste());
+    controller->paste();
+    flush();
+    flush();
+
+    EXPECT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("paste"));
 }

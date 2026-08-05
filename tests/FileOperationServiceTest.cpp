@@ -166,8 +166,7 @@ TEST(FileOperationServiceTest, MoveForwardsTheRootSentinelToTheClient)
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
     EXPECT_CALL(*client, checkMove(11u, _, true)).WillOnce(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(11u, _, true, _))
-        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(11u, _, true, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
     Capture captured;
 
     service.move(11, 0, true, captured.sink());
@@ -350,6 +349,7 @@ TEST(FileOperationServiceTest, CopyPassesAnEmptyNameThroughUnchanged)
     // validation that would otherwise reject it (see FileOperationService::copy).
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
+    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
     EXPECT_CALL(*client, copyNode(11u, 22u, false, std::string(), _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
     Capture captured;
@@ -363,6 +363,7 @@ TEST(FileOperationServiceTest, CopyPassesAChosenNameStraightThrough)
 {
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
+    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
     EXPECT_CALL(*client, copyNode(11u, 0u, true, std::string("a - Copy.txt"), _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
     Capture captured;
@@ -390,6 +391,7 @@ TEST(FileOperationServiceTest, PropagatesACopyFailureFromTheSdk)
 {
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
+    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
     EXPECT_CALL(*client, copyNode(_, _, _, _, _))
         .WillOnce(InvokeArgument<4>(Result<void>::fail("node deleted", MegaErrorCode::kENoEnt)));
     Capture captured;
@@ -398,6 +400,57 @@ TEST(FileOperationServiceTest, PropagatesACopyFailureFromTheSdk)
 
     ASSERT_EQ(captured.calls, 1);
     EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kENoEnt);
+}
+
+TEST(FileOperationServiceTest, CanCopyTreatsAlreadyInThatFolderAsAllowed)
+{
+    // The one code canCopy reinterprets: a move there is a no-op, a copy there
+    // is the duplicate-in-place case and lands a "... - Copy" sibling.
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, checkMove(11u, 22u, false))
+        .WillOnce(Return(Result<void>::fail("Already in that folder", MegaErrorCode::kEArgs)));
+
+    EXPECT_TRUE(service.canCopy(11, 22, false).success);
+}
+
+TEST(FileOperationServiceTest, CanCopyRefusesAFolderIntoItsOwnSubtree)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, checkMove(11u, 22u, false))
+        .WillOnce(Return(Result<void>::fail("circular", MegaErrorCode::kECircular)));
+
+    const Result<void> allowed = service.canCopy(11, 22, false);
+    EXPECT_FALSE(allowed.success);
+    EXPECT_EQ(allowed.errorCode, MegaErrorCode::kECircular);
+}
+
+TEST(FileOperationServiceTest, CanCopyPassesTheOtherRefusalsThrough)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, checkMove(11u, 22u, false))
+        .WillOnce(Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)))
+        .WillOnce(Return(Result<void>::fail("read-only", MegaErrorCode::kEAccess)));
+
+    EXPECT_EQ(service.canCopy(11, 22, false).errorCode, MegaErrorCode::kENoEnt);
+    EXPECT_EQ(service.canCopy(11, 22, false).errorCode, MegaErrorCode::kEAccess);
+}
+
+TEST(FileOperationServiceTest, CopyRefusesWithoutCallingTheSdkWhenCanCopySaysNo)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, checkMove(_, _, _))
+        .WillOnce(Return(Result<void>::fail("circular", MegaErrorCode::kECircular)));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+    Capture captured;
+
+    service.copy(11, 22, false, "", captured.sink());
+
+    ASSERT_EQ(captured.calls, 1);
+    EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kECircular);
 }
 
 TEST(FileOperationServiceTest, UniqueCopyNameLeavesAFreeNameAlone)
@@ -415,15 +468,13 @@ TEST(FileOperationServiceTest, UniqueCopyNameInsertsCopyBeforeTheExtension)
 
 TEST(FileOperationServiceTest, UniqueCopyNameNumbersEveryFurtherCopy)
 {
-    EXPECT_EQ(FileOperationService::uniqueCopyName("report.pdf",
-                                                   false,
-                                                   {"report.pdf", "report - Copy.pdf"}),
-              "report - Copy (2).pdf");
     EXPECT_EQ(FileOperationService::uniqueCopyName(
-                  "report.pdf",
-                  false,
-                  {"report.pdf", "report - Copy.pdf", "report - Copy (2).pdf"}),
-              "report - Copy (3).pdf");
+                  "report.pdf", false, {"report.pdf", "report - Copy.pdf"}),
+              "report - Copy (2).pdf");
+    EXPECT_EQ(
+        FileOperationService::uniqueCopyName(
+            "report.pdf", false, {"report.pdf", "report - Copy.pdf", "report - Copy (2).pdf"}),
+        "report - Copy (3).pdf");
 }
 
 TEST(FileOperationServiceTest, UniqueCopyNameSplitsAtTheLastDotOnly)
@@ -455,8 +506,7 @@ TEST(FileOperationServiceTest, UniqueCopyNameChainsOnAnAlreadyCopiedName)
 {
     // Copying a copy, Explorer's behaviour: the suffix stacks rather than being
     // parsed back off.
-    EXPECT_EQ(FileOperationService::uniqueCopyName("report - Copy.pdf",
-                                                   false,
-                                                   {"report - Copy.pdf"}),
-              "report - Copy - Copy.pdf");
+    EXPECT_EQ(
+        FileOperationService::uniqueCopyName("report - Copy.pdf", false, {"report - Copy.pdf"}),
+        "report - Copy - Copy.pdf");
 }
