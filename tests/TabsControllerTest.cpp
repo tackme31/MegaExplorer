@@ -179,6 +179,139 @@ TEST_F(TabsControllerTest, ClosingAnOutOfRangeIndexIsANoOp)
     EXPECT_EQ(tabs->count(), 1);
 }
 
+TEST_F(TabsControllerTest, MoveTabReordersRight)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+    tabs->addTab();
+    QObject* first = tabs->data(tabs->index(0), TabsController::NavigationRole).value<QObject*>();
+    QObject* second = tabs->data(tabs->index(1), TabsController::NavigationRole).value<QObject*>();
+    QObject* third = tabs->data(tabs->index(2), TabsController::NavigationRole).value<QObject*>();
+
+    tabs->moveTab(0, 2);
+
+    EXPECT_EQ(tabs->data(tabs->index(0), TabsController::NavigationRole).value<QObject*>(), second);
+    EXPECT_EQ(tabs->data(tabs->index(1), TabsController::NavigationRole).value<QObject*>(), third);
+    EXPECT_EQ(tabs->data(tabs->index(2), TabsController::NavigationRole).value<QObject*>(), first);
+    EXPECT_EQ(tabs->count(), 3);
+}
+
+TEST_F(TabsControllerTest, MoveTabReordersLeft)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+    tabs->addTab();
+    QObject* first = tabs->data(tabs->index(0), TabsController::NavigationRole).value<QObject*>();
+    QObject* second = tabs->data(tabs->index(1), TabsController::NavigationRole).value<QObject*>();
+    QObject* third = tabs->data(tabs->index(2), TabsController::NavigationRole).value<QObject*>();
+
+    tabs->moveTab(2, 0);
+
+    EXPECT_EQ(tabs->data(tabs->index(0), TabsController::NavigationRole).value<QObject*>(), third);
+    EXPECT_EQ(tabs->data(tabs->index(1), TabsController::NavigationRole).value<QObject*>(), first);
+    EXPECT_EQ(tabs->data(tabs->index(2), TabsController::NavigationRole).value<QObject*>(), second);
+}
+
+TEST_F(TabsControllerTest, MoveTabEmitsRowsMovedExactlyOnce)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+    tabs->addTab();
+    int emissions = 0;
+    QObject::connect(tabs.get(), &TabsController::rowsMoved, [&emissions]() {
+        ++emissions;
+    });
+
+    tabs->moveTab(0, 2);
+
+    EXPECT_EQ(emissions, 1);
+}
+
+TEST_F(TabsControllerTest, MoveTabRejectsNoOpAndOutOfRange)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+    QObject* first = tabs->data(tabs->index(0), TabsController::NavigationRole).value<QObject*>();
+    int emissions = 0;
+    QObject::connect(tabs.get(), &TabsController::rowsMoved, [&emissions]() {
+        ++emissions;
+    });
+
+    tabs->moveTab(0, 0);
+    tabs->moveTab(-1, 1);
+    tabs->moveTab(0, 5);
+    tabs->moveTab(5, 0);
+
+    EXPECT_EQ(emissions, 0);
+    EXPECT_EQ(tabs->data(tabs->index(0), TabsController::NavigationRole).value<QObject*>(), first);
+}
+
+TEST_F(TabsControllerTest, MovingTheActiveTabCarriesCurrentIndexWithIt)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+    tabs->addTab(); // index 2, active
+    ASSERT_EQ(tabs->currentIndex(), 2);
+    QObject* activeNavigation = tabs->currentNavigation();
+
+    tabs->moveTab(2, 0);
+
+    EXPECT_EQ(tabs->currentIndex(), 0);
+    EXPECT_EQ(tabs->currentNavigation(), activeNavigation);
+}
+
+TEST_F(TabsControllerTest, MovingAnotherTabAcrossTheActiveOneShiftsCurrentIndex)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+    tabs->addTab();
+    tabs->setCurrentIndex(1);
+    QObject* activeNavigation = tabs->currentNavigation();
+
+    // Dragging tab 0 to the right past the active tab slides the active tab
+    // one slot to the left; its identity is unchanged.
+    tabs->moveTab(0, 2);
+    EXPECT_EQ(tabs->currentIndex(), 0);
+    EXPECT_EQ(tabs->currentNavigation(), activeNavigation);
+
+    // And back the other way.
+    tabs->moveTab(2, 0);
+    EXPECT_EQ(tabs->currentIndex(), 1);
+    EXPECT_EQ(tabs->currentNavigation(), activeNavigation);
+}
+
+TEST_F(TabsControllerTest, MoveEntirelyBesideTheActiveTabLeavesCurrentIndexAlone)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+    tabs->addTab();
+    tabs->addTab(); // four tabs, index 3 active
+    tabs->setCurrentIndex(0);
+    int currentTabChangedCount = 0;
+    QObject::connect(tabs.get(), &TabsController::currentTabChanged, [&currentTabChangedCount]() {
+        ++currentTabChangedCount;
+    });
+
+    tabs->moveTab(1, 3);
+
+    EXPECT_EQ(tabs->currentIndex(), 0);
+    EXPECT_EQ(currentTabChangedCount, 0);
+}
+
+TEST_F(TabsControllerTest, MoveTabDoesNotEmitCountChanged)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+    int emissions = 0;
+    QObject::connect(tabs.get(), &TabsController::countChanged, [&emissions]() {
+        ++emissions;
+    });
+
+    tabs->moveTab(0, 1);
+
+    EXPECT_EQ(emissions, 0);
+}
+
 TEST_F(TabsControllerTest, LoadRootAllCollapsesToOneTab)
 {
     auto tabs = makeController();

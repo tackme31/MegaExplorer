@@ -184,9 +184,27 @@ a Qt drag (it never leaves `pinList`), so the planned second `Drag.keys` value t
 the ghost; the insertion point is arithmetic like Phase 21's band. `QuickAccessService::move` +
 `QuickAccessModel::move` (handle-keyed, `beginMoveRows`) back it, and `QuickAccessModel::validateAll`
 was reworked to commit against the *current* pin list rather than replaying its own start-of-sweep
-snapshot — which would have silently undone a reorder (and, already, a mid-sweep `pin()`). The full
-roadmap — next up is the rest of the 22–23 detail pass (tab reordering + drop-onto-tab,
-copy/cut/paste), all pulled forward ahead of
+snapshot — which would have silently undone a reorder (and, already, a mid-sweep `pin()`). Phase 22b
+then applied that same gesture to the tab strip and added the drop-onto-tab half, and **the
+`CROSS_TAB_DND_INVESTIGATION.md` risk it was gated on did not materialize**: switching tabs mid-drag
+does *not* cancel the source `DragHandler`'s grab (the grabber is the handler, not the item that goes
+invisible), so the planned `StackLayout` → `Item`-stack rework of `Main.qml` was never done and
+`Main.qml`'s pane block is untouched. `TabsController::moveTab` (`std::rotate` + `beginMoveRows`,
+plus a `currentIndex` follow so the active tab keeps its identity rather than its row) backs the
+reorder — verified to move rather than rebuild both the `TabBar`'s and the pane `Repeater`'s
+delegates — while the reorder's own QML re-derives three things for the horizontal case: the tab
+pitch hoisted out of `TabButton.width` into `TabStrip.tabWidth` (the arithmetic needs a number),
+22a's `xAxis.enabled` trap read as `yAxis.enabled`, and an insertion line that must be declared
+*outside* the `TabBar` and reparented, since `TabBar` is a `Container` and anything declared in it
+becomes a tab. Each tab is also the sixth drop target: a `DropArea` + 600ms `Timer` (armed in
+`onEntered` only, never restarted on position, since an internal drag delivers no events while the
+pointer is still) springs the tab open, and a drop on the button itself moves/uploads into that tab's
+current folder through the unchanged 14a/14b entry points. That last part forced **Phase 14a's known
+limitation to be paid off**: `FolderNavigationController` gained a `nodesMoved` signal (via a new
+`BulkOperationBatch::onComplete`) and `TabsController` fans `refreshIfShowing` out to every other tab
+for both ends of the move, because the destination listing is now sitting in view. The folder tree is
+still not refreshed — that stays Phase 16's. The full
+roadmap — next up is Phase 23 (copy/cut/paste), pulled forward ahead of
 phases 15–16 (in-app preview, real-time remote-change reflection) — lives in `docs/PROGRESS.md`'s
 Roadmap section; see the companion-docs list above.
 `docs/MEMO.md` keeps only non-roadmap notes. Undo and full bidirectional local sync stay out of

@@ -21,6 +21,9 @@ Item {
     // Passed down explicitly from Main.qml rather than looked up, matching how
     // the other components/ items take navController/dragProxy.
     required property WindowAgent windowAgent
+    // Only relayed, never used here: TabStrip's tabs became drop targets in
+    // Phase 22b, and the reorder gesture borrows the same ghost.
+    required property var dragProxy
 
     readonly property Window targetWindow: Window.window
 
@@ -93,6 +96,7 @@ Item {
         // than a Loader. Hiding it hands the whole row back to dragging.
         visible: authController.authState === AuthController.LoggedIn
         windowAgent: root.windowAgent
+        dragProxy: root.dragProxy
     }
 
     // Stands in for the tab strip while logged out. Explorer 11 shows no

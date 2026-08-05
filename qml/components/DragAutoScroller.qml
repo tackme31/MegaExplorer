@@ -16,30 +16,50 @@ Timer {
 
     required property Flickable flickable
 
-    // How close to the top/bottom edge the drag has to be, and how far one tick
-    // scrolls. 16ms ticks make that pixels-per-frame at 60Hz.
+    // Which axis to scroll. Vertical by default because that is what all four
+    // Phase 14a/22a call sites want; the tab strip (Phase 22b) is the one
+    // horizontal user. Only the axis changes -- margin, step and the -1/0/1
+    // convention are shared.
+    property bool horizontal: false
+
+    // How close to the leading/trailing edge the drag has to be, and how far one
+    // tick scrolls. 16ms ticks make that pixels-per-frame at 60Hz.
     property real margin: 24
     property real step: 10
 
-    // -1 up, 1 down, 0 idle.
+    // -1 towards the start (up/left), 1 towards the end (down/right), 0 idle.
     property int direction: 0
+
+    // The extent along the scrolled axis, so the two branches below aren't
+    // written out twice.
+    readonly property real viewportExtent: root.horizontal ? root.flickable.width :
+                                                             root.flickable.height
+
+    readonly property real contentExtent: root.horizontal ? root.flickable.contentWidth :
+                                                            root.flickable.contentHeight
 
     interval: 16
     repeat: true
     running: root.direction !== 0
 
     onTriggered: {
-        const maxY = Math.max(0, root.flickable.contentHeight - root.flickable.height);
-        const next = root.flickable.contentY + root.direction * root.step;
-        root.flickable.contentY = Math.max(0, Math.min(next, maxY));
+        const max = Math.max(0, root.contentExtent - root.viewportExtent);
+        if (root.horizontal) {
+            const nextX = root.flickable.contentX + root.direction * root.step;
+            root.flickable.contentX = Math.max(0, Math.min(nextX, max));
+        } else {
+            const nextY = root.flickable.contentY + root.direction * root.step;
+            root.flickable.contentY = Math.max(0, Math.min(nextY, max));
+        }
     }
 
-    // y is the drag position in the flickable's own coordinates. Deliberately
-    // not named stop()/start(): Timer already has those.
-    function track(y) {
-        if (y < root.margin)
+    // pos is the drag position along the scrolled axis, in the flickable's own
+    // coordinates. Deliberately not named stop()/start(): Timer already has
+    // those.
+    function track(pos) {
+        if (pos < root.margin)
             root.direction = -1;
-        else if (y > root.flickable.height - root.margin)
+        else if (pos > root.viewportExtent - root.margin)
             root.direction = 1;
         else
             root.direction = 0;
