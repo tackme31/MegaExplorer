@@ -250,11 +250,17 @@ loads the profile once per session and re-reads storage on every open (stale-whi
 the loading state is only ever seen once), all of it behind `AccountService` (`src/core`) and four
 methods appended to `IMegaClient` — `currentAccountIdentity` being its **seventh** synchronous
 exception, appended at the tail precisely because that header's exception tally is positional. Its
-lasting trap is visual: FluentWinUI3's `Menu` opens by animating its own `height` (0.33→1 over
-250ms) over a `clip: true` `ListView` whose `contentHeight` *extrapolates* unrealized rows from the
-average of realized ones, so a 150px header makes size and content chase each other and the menu
-appears to snap shut mid-open. Reserving every label's line was not enough; the fix is replacing
-that `enter` transition with an opacity fade so the size settles in one step. The full
+lasting trap is visual: the menu appeared to snap shut mid-open, and instrumenting it proved the
+popup never closes at all — a popup that owns a window (`popupType: Popup.Window`) can present one
+frame of the *un-animated* state before its `enter` transition's first tick lands, 26–71ms later,
+so the menu shows itself, snaps to the transition's `from`, and only then animates in. `enter` is
+therefore `null`: no open animation. Two contributing traps were fixed on the way and are worth not
+re-learning — FluentWinUI3's `Menu` animates its own `height` over a `clip: true` `ListView` whose
+`contentHeight` *extrapolates* unrealized rows from the average of realized ones, so a 150px header
+makes size and content chase each other; and that ListView never aggregates its children's
+`implicitWidth`, so the menu's `width` has to be stated. **Two known issues stay open** (first open
+draws the menu 32px too high for a frame; a reported one-in-two blink that could not be reproduced
+afterwards) — both, with the diagnostic recipe, are in the Phase 20c log. The full
 roadmap — next up are phases 15–16 (in-app preview, real-time remote-change reflection) — lives in
 `docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
 `docs/MEMO.md` keeps only non-roadmap notes. Undo and full bidirectional local sync stay out of

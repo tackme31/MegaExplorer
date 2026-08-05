@@ -3405,9 +3405,33 @@ Two rounds of fixes were needed, and the first was not enough:
    frame-by-frame at 30ms intervals: the menu is full-size in the first captured frame, and only the
    storage numbers fill in afterwards, into their reserved line.
 
-The general lesson: a `Menu` whose entries are all one row tall can be animated by height; one with a
-header cannot, because `ListView` height estimation and a growing clip rectangle form a feedback
-loop.
+That was still not the end of it. The fade was reported as flickering on roughly one open in two, so
+the menu was instrumented (`onOpened` / `onClosed` / `onVisibleChanged` / `onHeightChanged` /
+`onXChanged` / `onYChanged` / `onOpacityChanged`, `console.log` into the app's own log file, which
+carries millisecond timestamps) and driven through a dozen open/close cycles. The result rules the
+QML layer out entirely: **the popup never closes**. `visible=false` and `closed` appear only where
+Escape was pressed, and `height` never changes once open. What the log does show is this, on every
+single open:
+
+```
+16.355 visible= true
+16.356 opacity= 0.000     <- the transition's `from` value
+16.427 opacity= 0.349     <- the next animated value, 71ms later (26-71ms across opens)
+```
+
+The popup window is mapped by the OS, and the render thread can present a frame of the
+*un-animated* state before the animation's first tick lands — one to three frames in which the menu
+shows itself, snaps to `from`, and only then animates in. That is the whole bug, and it is a
+property of having an enter transition on a popup that owns a window, not of which property the
+transition drives. Under the style's own `__heightScale` transition it reads as "appears at full
+height, collapses, grows back", which is exactly what the original frame-by-frame capture showed;
+under a fade it reads as "appears, vanishes, fades back". So `enter` is `null` and the menu simply
+appears.
+
+The general lesson is two-layered: a `Menu` whose entries are all one row tall can be animated by
+height and one with a header cannot, because `ListView` height estimation and a growing clip
+rectangle form a feedback loop — but on top of that, a popup that is its own window should not have
+an enter transition at all.
 
 Four smaller `Menu` findings from the same work:
 
@@ -3475,3 +3499,26 @@ so the two numbers are always comparable.
   identically on the pre-existing right-click menus, so it is a limitation of the tooling rather
   than anything this phase introduced.
 - **No account switching**, and nothing here is editable from the app: the section is read-only.
+
+### Known issues (open)
+
+- **The first menu of a session is drawn 32px too high for a frame.** The `Menu`'s `x`/`y` are not
+  evaluated until roughly 72ms *after* `onOpened` on the very first open — measured as
+  `opened h=279 x=0 y=0` while `moreButton` was already 32x32, then `x=-248 y=32` — so the menu
+  appears overlapping the toolbar and then drops into place. Every later open keeps the settled
+  value and is correct from the first frame. Passing the position to `popup(x, y)` instead behaves
+  identically, so this is popup-window creation ordering rather than the way the position is
+  expressed; the binding form is kept only because it reads better. **Untried next step:**
+  `popupType: Popup.Item`, which removes the separate native window and with it the
+  show-before-position ordering. It would satisfy the `Popup.Native` concern that motivated
+  `Popup.Window` just as well, at the cost of clipping the menu to the main window — currently
+  harmless, since the menu is 280x279 and right-aligned inside it, but not at every window size.
+- **An open→blink→open was reported at about one open in two and could not be reproduced after
+  `enter: null`.** Six scripted open/close cycles and three frame-by-frame captures showed the menu
+  fully drawn in the first captured frame and pixel-identical to the settled reference, and the
+  instrumented log shows the popup never closing. The report may have been contaminated by mouse
+  movement during the test, so it is recorded rather than closed. If it returns, re-instrument with
+  the handlers listed above before changing anything — the log file is
+  `$LOCALAPPDATA/MegaExplorer/MegaExplorer/MegaExplorer.log` (`MegaExplorer` nests twice) — and note
+  that `ui-style`'s default `--method print` cannot capture a `Popup.Window` menu at all;
+  `--method screen` is required, as a command flag rather than a step.

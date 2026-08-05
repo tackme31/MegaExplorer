@@ -409,16 +409,30 @@ ApplicationWindow {
                 }
 
                 ToolbarIconButton {
+                    id: moreButton
+
                     text: Theme.glyph.more
                     ToolTip.text: qsTr("More")
-                    // Right-aligned under the button rather than popup()'s
-                    // default of "top-left corner at the cursor": this button
-                    // sits at the right edge of the window, so the default put
-                    // all 280px of the menu outside it.
-                    onClicked: moreMenu.popup(width - moreMenu.width, height)
+                    onClicked: moreMenu.open()
 
                     Menu {
                         id: moreMenu
+
+                        // Right-aligned under the button rather than popup()'s
+                        // default of "top-left corner at the cursor": this
+                        // button sits at the right edge of the window, so the
+                        // default put all 280px of the menu outside it.
+                        //
+                        // Bound rather than passed to popup(x, y) only because
+                        // it reads better -- the two behave identically, and
+                        // neither lands in time for the *first* open. See the
+                        // known issue in this phase's docs/PROGRESS.md log:
+                        // these bindings are first evaluated ~72ms after
+                        // onOpened, so the first menu of a session is drawn
+                        // overlapping the toolbar for a frame before dropping
+                        // into place.
+                        x: moreButton.width - width
+                        y: moreButton.height
 
                         // Insurance, not decoration: since Qt 6.8 a Menu may
                         // resolve to Popup.Native, and the docs are explicit
@@ -434,27 +448,27 @@ ApplicationWindow {
                         // items need, which is too narrow for an email address.
                         width: 280
 
-                        // FluentWinUI3's Menu opens by animating its own height
-                        // from 33% to 100% over 250ms, and its contentItem is a
-                        // clipping ListView -- so mid-animation the menu is a
-                        // window showing only the top slice of its content.
-                        // That is fine for a list of 30px rows and wrong for a
-                        // 150px header: the ListView extrapolates the height of
-                        // rows it has not realized yet from the average of the
-                        // ones it has, so the header skews the estimate, the
-                        // estimate moves the menu's height, the new height
-                        // realizes different rows, and the header visibly
-                        // shrinks and re-grows. Replacing the height animation
-                        // with a fade settles the size in one step instead.
-                        enter: Transition {
-                            NumberAnimation {
-                                property: "opacity"
-                                from: 0.0
-                                to: 1.0
-                                duration: 120
-                                easing.type: Easing.OutCubic
-                            }
-                        }
+                        // No open animation, deliberately. Any enter transition
+                        // flickers here, whatever property it drives, because
+                        // this popup is a window of its own (popupType above):
+                        // the OS
+                        // maps it and the render thread can present one frame
+                        // of the *un-animated* state before the animation's
+                        // first tick lands. Measured: the transition's `from`
+                        // value is applied 1ms after visible becomes true, but
+                        // the next animated value is 26-71ms behind it -- one
+                        // to three frames in which the menu shows itself,
+                        // snaps to `from`, and only then animates in.
+                        //
+                        // The style's own transition drives __heightScale from
+                        // 0.33, so the symptom was a menu that appeared at full
+                        // height, collapsed, and grew back; swapping it for an
+                        // opacity fade only changed it to appear, vanish, and
+                        // fade back. Both read as "the menu closed and
+                        // reopened". A menu of one-row entries is small and
+                        // fast enough not to show it; a 280x279 one with a
+                        // header does.
+                        enter: null
 
                         // The style's popup background is a nine-patch PNG
                         // whose interior is not a flat colour but WinUI's
