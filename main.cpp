@@ -1,4 +1,5 @@
 #include "app/Logging.h"
+#include "core/AccountService.h"
 #include "core/AuthService.h"
 #include "core/DownloadService.h"
 #include "core/FileOperationService.h"
@@ -11,6 +12,7 @@
 #include "mega/MegaSdkClient.h"
 #include "platform/QSettingsPinnedFolderStore.h"
 #include "platform/WindowsSessionStore.h"
+#include "qml/AccountController.h"
 #include "qml/AuthController.h"
 #include "qml/ClipboardController.h"
 #include "qml/DownloadController.h"
@@ -90,6 +92,9 @@ int main(int argc, char* argv[])
     // tab's FolderNavigationController (same rationale as thumbnailService).
     auto fileOperationService = std::make_shared<FileOperationService>(client);
     auto authService = std::make_shared<AuthService>(client, sessionStore);
+    // Stateless like fileOperationService; one instance behind the account
+    // section of the "More" menu.
+    auto accountService = std::make_shared<AccountService>(client);
     // Declared before the controllers below: they hold a non-owning pointer
     // to it, and stack locals are destroyed in reverse construction order.
     NotificationController notifications;
@@ -99,6 +104,7 @@ int main(int argc, char* argv[])
     DownloadController downloadController(downloadService, &notifications);
     UploadController uploadController(uploadService, fileOperationService, &notifications);
     AuthController authController(authService);
+    AccountController accountController(accountService);
 
     // Shared across every tab (Phase 10's side panel is chrome beside the
     // tab content, not per-tab state), same app-lifetime-singleton shape as
@@ -145,6 +151,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("folderTreeModel", &folderTreeModel);
     engine.rootContext()->setContextProperty("quickAccessModel", &quickAccessModel);
     engine.rootContext()->setContextProperty("clipboardController", &clipboard);
+    engine.rootContext()->setContextProperty("accountController", &accountController);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

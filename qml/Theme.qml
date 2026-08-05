@@ -93,6 +93,23 @@ QtObject {
         readonly property int lg: 48
     }
 
+    // Account section of the "More" menu. Not folded into iconSize.lg even
+    // though both happen to be 48 today: that one is an icon scale and this is
+    // a portrait, and S8b is the recorded case of one token serving two
+    // decisions and later having to be split apart again.
+    readonly property QtObject avatar: QtObject {
+        readonly property int size: 48
+        readonly property int initialFontSize: 20
+    }
+
+    // Storage-usage bar in that same section. A pair of plain Rectangles
+    // rather than a ProgressBar, so the track can be drawn with no fill at all
+    // while the figures are still loading -- a zero-width fill would read as
+    // "nothing used", which is a different claim from "not known yet".
+    readonly property QtObject storageBar: QtObject {
+        readonly property int height: 6
+    }
+
     // Thumbnail-grid tile geometry (S8). The tile is inset inside its cell by
     // gap/2 on every side, so neighbouring tiles end up a full gap apart and
     // the view's own top/bottom margin only has to supply the other half.
@@ -192,6 +209,13 @@ QtObject {
         readonly property color band: Qt.rgba(root.sysPalette.highlight.r, root.sysPalette.highlight.g,
                                               root.sysPalette.highlight.b, 0.15)
         readonly property color danger: root.isLight ? "#c42b1c" : "#ff99a4"
+
+        // Groove of the storage bar. Deliberately not `stroke`: that one means
+        // "border", and reusing it here would tie a fill to a line weight (the
+        // S8b lesson again). Sits between surfaceAlt and stroke in contrast so
+        // an unfilled track still reads as a track on either surface.
+        readonly property color storageTrack: root.isLight ? Qt.rgba(0, 0, 0, 0.09) : Qt.rgba(1, 1,
+                                                                                              1, 0.11)
 
         // The folder is the one coloured thing in an otherwise monochrome icon
         // set, which is what makes it readable at 16px (D3 = Explorer 11).

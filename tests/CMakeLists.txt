@@ -10,6 +10,7 @@ find_package(GTest CONFIG REQUIRED)
 add_executable(MegaExplorerTests
     FolderNavigationServiceTest.cpp
     AuthServiceTest.cpp
+    AccountServiceTest.cpp
     SearchServiceTest.cpp
     DownloadServiceTest.cpp
     UploadServiceTest.cpp
@@ -27,6 +28,9 @@ add_executable(MegaExplorerTests
     QuickAccessModelTest.cpp
     LicenseModelTest.cpp
     ClipboardControllerTest.cpp
+    AccountControllerTest.cpp
+    ${CMAKE_SOURCE_DIR}/src/qml/AccountController.h
+    ${CMAKE_SOURCE_DIR}/src/qml/AccountController.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/FileListModel.h

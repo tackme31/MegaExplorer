@@ -1,4 +1,5 @@
 #pragma once
+#include "AccountInfo.h"
 #include "DownloadOutcome.h"
 #include "FileEntry.h"
 #include "NodeInfo.h"
@@ -6,6 +7,7 @@
 #include "Result.h"
 #include "SortOrder.h"
 #include "UploadOutcome.h"
+#include "UserAttribute.h"
 
 #include <cstdint>
 #include <functional>
@@ -316,4 +318,66 @@ public:
     // QAbstractItemModel::hasChildren() answers the view on the spot and has
     // nowhere to put a callback.
     virtual Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const = 0;
+
+    // --- Account-level reads -------------------------------------------------
+    //
+    // Everything above is auth/session or node tree; these four describe the
+    // signed-in *account* itself. Appended rather than grouped next to
+    // currentUserHandle() on purpose: the synchronous-exception tally below is
+    // positional (checkMove is "the third", hasSubfolders "the sixth"), so
+    // inserting higher up would renumber four existing doc comments.
+
+    // Email, the SDK's fallback avatar colour, and the user handle, in one
+    // read. MegaApi::getMyEmail + getMyUserHandle + getUserAvatarColor.
+    //
+    // Synchronous, the seventh exception here, same rationale as
+    // currentSessionToken/currentUserHandle: local reads of account state the
+    // SDK already holds, no API round-trip. avatarColor in particular is a
+    // pure derivation from the user handle, so it is available the instant
+    // login completes and never needs the network.
+    //
+    // Fails if not currently logged in.
+    virtual Result<AccountIdentity> currentAccountIdentity() const = 0;
+
+    // Fetches the signed-in account's avatar into the exact local file path
+    // destinationPath -- same caller-resolves-the-path division as
+    // getThumbnail/download, and the same rule that it must not end with a
+    // path separator (the SDK would treat it as a directory and synthesize
+    // email + "0.jpg" inside it). Result value is the path actually written.
+    //
+    // MegaApi::getUserAvatar's active-account overload.
+    //
+    // Unlike getThumbnail, failure here is *not* exceptional: most accounts
+    // have no avatar set, and there is no FileEntry::hasThumbnail-style flag
+    // to gate on beforehand, so the outcome is the only signal available.
+    // Measured against a real avatar-less account, the code is kENoEnt (-9)
+    // with "Not found" -- but megaapi.h does not document that, so callers
+    // must treat *any* failure as "no avatar" rather than matching on it.
+    // Callers must not surface it as an error -- AccountService converts it to
+    // AvatarOutcome::hasAvatar rather than leaving that judgement to each
+    // caller.
+    virtual void getMyAvatar(const std::string& destinationPath,
+                             std::function<void(Result<std::string>)> onDone) = 0;
+
+    // Reads one public attribute of the signed-in account.
+    // MegaApi::getUserAttribute's active-account overload; the value arrives
+    // in MegaRequest::getText().
+    //
+    // Parameterised by attribute instead of exposing getMyDisplayName, so that
+    // the first-name/last-name join policy lives in AccountService where a
+    // mock can test it. Fails when the attribute has never been set, which is
+    // ordinary rather than exceptional for names.
+    virtual void getMyUserAttribute(UserAttribute attribute,
+                                    std::function<void(Result<std::string>)> onDone) = 0;
+
+    // Storage quota and plan level.
+    // MegaApi::getSpecificAccountDetails(storage=true, transfer=false,
+    // pro=true) -- only two flags because megaapi.h asks callers to request
+    // just what they need to minimise server load, and transfer quota is out
+    // of scope for this app.
+    //
+    // Unlike the node-tree getters above, this is a real server round-trip, so
+    // the background-thread caveat at the top of this file is not theoretical
+    // here. Must not be issued per-frame or from a property getter.
+    virtual void getAccountInfo(std::function<void(Result<AccountInfo>)> onDone) = 0;
 };

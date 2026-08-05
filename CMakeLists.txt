@@ -51,6 +51,9 @@ add_library(MegaExplorerCore STATIC
     src/core/Result.h
     src/core/SortOrder.h
     src/core/PathSegment.h
+    src/core/AccountInfo.h
+    src/core/AccountPlan.h
+    src/core/UserAttribute.h
     src/core/MenuAction.h
     src/core/MenuActionResolver.h
     src/core/MenuActionResolver.cpp
@@ -72,6 +75,8 @@ add_library(MegaExplorerCore STATIC
     src/core/FolderTreeService.cpp
     src/core/QuickAccessService.h
     src/core/QuickAccessService.cpp
+    src/core/AccountService.h
+    src/core/AccountService.cpp
 )
 target_include_directories(MegaExplorerCore PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src)
 
@@ -130,6 +135,7 @@ qt_add_qml_module(appMegaExplorer
         qml/ActionCatalog.qml
         qml/Theme.qml
         qml/components/AboutDialog.qml
+        qml/components/AccountMenuHeader.qml
         qml/components/ActionMenu.qml
         qml/components/BandSelector.qml
         qml/components/Breadcrumb.qml
@@ -154,6 +160,8 @@ qt_add_qml_module(appMegaExplorer
         qml/views/LoginView.qml
         qml/views/TabContentPane.qml
     SOURCES
+        src/qml/AccountController.h
+        src/qml/AccountController.cpp
         src/qml/AuthController.h
         src/qml/AuthController.cpp
         src/qml/LicenseModel.h

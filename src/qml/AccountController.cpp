@@ -1,0 +1,267 @@
+#include "AccountController.h"
+
+#include "app/Logging.h"
+
+#include <QDebug>
+#include <QDir>
+#include <QLocale>
+#include <QMetaObject>
+#include <QStandardPaths>
+
+#include <utility>
+
+namespace
+{
+
+// Same 3-line idiom as ThumbnailController/FolderNavigationController's own
+// invokeOnGuiThread, duplicated rather than shared per that precedent.
+// AccountService's callbacks may fire on an SDK-internal background thread.
+void invokeOnGuiThread(QObject* target, std::function<void()> fn)
+{
+    QMetaObject::invokeMethod(target, std::move(fn), Qt::QueuedConnection);
+}
+
+// The avatar fallback's letter. Takes a whole code point, not a single UTF-16
+// code unit, so a name starting outside the BMP (an emoji, say) doesn't get
+// cut in half into an unrenderable lone surrogate.
+QString firstCharacterUpper(const QString& text)
+{
+    if (text.isEmpty())
+        return QString();
+    const int length = text.at(0).isHighSurrogate() ? 2 : 1;
+    return text.left(length).toUpper();
+}
+
+} // namespace
+
+AccountController::AccountController(std::shared_ptr<AccountService> service, QObject* parent)
+    : QObject(parent), mService(std::move(service))
+{}
+
+void AccountController::refresh()
+{
+    if (!mProfileLoaded)
+        loadProfile();
+    loadAccountInfo();
+}
+
+void AccountController::reset()
+{
+    ++mGeneration;
+
+    mEmail.clear();
+    mDisplayName.clear();
+    mAvatarColor.clear();
+    mAvatarInitial.clear();
+    // The cached JPEG on disk is deliberately left alone -- thumbnails are
+    // never cleaned up either, and it is keyed by user handle so it cannot be
+    // served to the wrong account. Clearing the URL is what matters: it stops
+    // a fast account switch showing the previous user's face.
+    mAvatarUrl.clear();
+    mProfileLoaded = false;
+
+    mStorageState = Loading;
+    mStorageUsedBytes = 0;
+    mStorageMaxBytes = 0;
+    mPlanLevel = Unknown;
+    mAccountInfoInFlight = false;
+    mHasStorageValue = false;
+
+    emit profileChanged();
+    emit storageChanged();
+}
+
+void AccountController::retryAccountInfo()
+{
+    loadAccountInfo();
+}
+
+void AccountController::loadProfile()
+{
+    const Result<AccountIdentity> identity = mService->identity();
+    if (!identity.success)
+    {
+        // Leaves mProfileLoaded false so the next open tries again.
+        qCWarning(lcAccount) << "account identity unavailable:"
+                             << QString::fromStdString(identity.errorMessage);
+        return;
+    }
+
+    mProfileLoaded = true;
+    mEmail = QString::fromStdString(identity.value.email);
+    mAvatarColor = QString::fromStdString(identity.value.avatarColor);
+    mAvatarInitial = firstCharacterUpper(mEmail);
+    emit profileChanged();
+
+    const std::uint64_t generation = mGeneration;
+
+    mService->loadDisplayName([this, generation](std::string name) {
+        invokeOnGuiThread(this, [this, generation, name = std::move(name)]() {
+            if (generation != mGeneration)
+                return;
+            mDisplayName = QString::fromStdString(name);
+            // The initial follows the name once there is
+            // one; the email is only the fallback.
+            if (!mDisplayName.isEmpty())
+                mAvatarInitial = firstCharacterUpper(mDisplayName);
+            emit profileChanged();
+        });
+    });
+
+    mService->loadAvatar(
+        computeAvatarPath(identity.value.userHandle).toStdString(),
+        [this, generation](Result<AvatarOutcome> result) {
+            invokeOnGuiThread(this, [this, generation, result = std::move(result)]() {
+                if (generation != mGeneration)
+                    return;
+                if (!result.value.hasAvatar)
+                {
+                    // Expected for most accounts -- the
+                    // coloured initial covers it. Logged at
+                    // info so the real error code is on
+                    // record without looking like a fault.
+                    qCInfo(lcAccount) << "no avatar for this account:"
+                                      << QString::fromStdString(result.value.errorMessage)
+                                      << "code=" << result.value.errorCode;
+                    return;
+                }
+                mAvatarUrl = QUrl::fromLocalFile(QString::fromStdString(result.value.localPath));
+                emit profileChanged();
+            });
+        });
+}
+
+void AccountController::loadAccountInfo()
+{
+    if (mAccountInfoInFlight)
+        return;
+    mAccountInfoInFlight = true;
+
+    // Only the very first read shows the loading state; a re-read keeps the
+    // previous numbers on screen until the new ones arrive.
+    if (!mHasStorageValue)
+    {
+        mStorageState = Loading;
+        emit storageChanged();
+    }
+
+    const std::uint64_t generation = mGeneration;
+
+    mService->loadAccountInfo([this, generation](Result<AccountInfo> result) {
+        invokeOnGuiThread(this, [this, generation, result = std::move(result)]() {
+            if (generation != mGeneration)
+                return;
+            mAccountInfoInFlight = false;
+
+            if (result.success)
+            {
+                mStorageUsedBytes = result.value.storageUsedBytes;
+                mStorageMaxBytes = result.value.storageMaxBytes;
+                mPlanLevel = result.value.proLevel;
+                mHasStorageValue = true;
+                mStorageState = Loaded;
+            }
+            else if (mHasStorageValue)
+            {
+                // Keep showing the last good numbers --
+                // replacing them with an error would be
+                // worse than showing something slightly
+                // stale.
+                qCWarning(lcAccount)
+                    << "account details refresh failed, keeping previous "
+                       "value:"
+                    << QString::fromStdString(result.errorMessage) << "code=" << result.errorCode;
+                return;
+            }
+            else
+            {
+                qCWarning(lcAccount)
+                    << "account details fetch failed:"
+                    << QString::fromStdString(result.errorMessage) << "code=" << result.errorCode;
+                mStorageState = Failed;
+            }
+            emit storageChanged();
+        });
+    });
+}
+
+QString AccountController::computeAvatarPath(std::uint64_t userHandle) const
+{
+    const QString dir =
+        QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/MegaExplorerAvatars";
+    QDir().mkpath(dir);
+    // Native separators are required, not cosmetic: the SDK's localpath.cpp
+    // splits on '\' on Windows. Same rule as ThumbnailController's path.
+    return QDir::toNativeSeparators(dir + "/" + QString::number(userHandle) + ".jpg");
+}
+
+QString AccountController::email() const
+{
+    return mEmail;
+}
+
+QString AccountController::displayName() const
+{
+    return mDisplayName;
+}
+
+QString AccountController::avatarColor() const
+{
+    return mAvatarColor;
+}
+
+QString AccountController::avatarInitial() const
+{
+    return mAvatarInitial;
+}
+
+QUrl AccountController::avatarUrl() const
+{
+    return mAvatarUrl;
+}
+
+AccountController::StorageState AccountController::storageState() const
+{
+    return mStorageState;
+}
+
+qreal AccountController::storageRatio() const
+{
+    // Business and Pro Flexi accounts can report an unknown maximum; without
+    // this guard QML would get a NaN width binding.
+    if (mStorageMaxBytes == 0)
+        return 0.0;
+    const qreal ratio =
+        static_cast<qreal>(mStorageUsedBytes) / static_cast<qreal>(mStorageMaxBytes);
+    return ratio > 1.0 ? 1.0 : ratio;
+}
+
+QString AccountController::storageText() const
+{
+    if (mStorageState != Loaded)
+        return QString();
+
+    // Formatted here rather than in QML for the same reason as
+    // AuthController::fetchProgressText and FileListModel's size column: QML
+    // has no formattedDataSize equivalent. Both halves share one base so the
+    // two numbers are always comparable.
+    //
+    // Traditional (1024-based, "GB"-labelled) rather than SI, because that is
+    // what MEGA itself quotes: an account whose maximum the SDK reports as
+    // 16106127360 bytes is called "15 GB" on MEGA's own site, which is this
+    // format's answer and not SI's 16.1 GB.
+    const QLocale locale = QLocale::system();
+    const QString used = locale.formattedDataSize(
+        static_cast<qint64>(mStorageUsedBytes), 1, QLocale::DataSizeTraditionalFormat);
+    if (mStorageMaxBytes == 0)
+        return used;
+    return QStringLiteral("%1 / %2").arg(
+        used,
+        locale.formattedDataSize(
+            static_cast<qint64>(mStorageMaxBytes), 1, QLocale::DataSizeTraditionalFormat));
+}
+
+int AccountController::planLevel() const
+{
+    return mPlanLevel;
+}

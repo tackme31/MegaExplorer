@@ -121,6 +121,16 @@ public:
 
     Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const override;
 
+    Result<AccountIdentity> currentAccountIdentity() const override;
+
+    void getMyAvatar(const std::string& destinationPath,
+                     std::function<void(Result<std::string>)> onDone) override;
+
+    void getMyUserAttribute(UserAttribute attribute,
+                            std::function<void(Result<std::string>)> onDone) override;
+
+    void getAccountInfo(std::function<void(Result<AccountInfo>)> onDone) override;
+
 private:
     // Shared by getRootChildren/getChildren/search: isRoot selects
     // getRootNode(), otherwise looks handle up via getNodeByHandle().

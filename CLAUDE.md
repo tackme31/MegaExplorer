@@ -242,7 +242,19 @@ folder you're standing in, so `refreshCurrent` can't read its names), and
 `FolderNavigationController::copyEntriesTo`/`canCopyEntriesOn`. A failed destination read **refuses
 the whole drop** rather than falling back — `paste()` keeps its `mLastFolderEntries` fallback
 because there the destination *is* this tab. It also **changed Phase 23's paste**: the same
-`canCopy` check now greys out and refuses pasting a folder into its own subtree. The full
+`canCopy` check now greys out and refuses pasting a folder into its own subtree. Phase 20c is a
+late, unplanned addition to Phase 20b's "More" menu — an account header (avatar / display name /
+email / storage bar / plan) above its two entries, so the app finally says which account is signed
+in. Nothing is fetched at login: `Menu::onAboutToShow` calls `AccountController::refresh()`, which
+loads the profile once per session and re-reads storage on every open (stale-while-revalidate, so
+the loading state is only ever seen once), all of it behind `AccountService` (`src/core`) and four
+methods appended to `IMegaClient` — `currentAccountIdentity` being its **seventh** synchronous
+exception, appended at the tail precisely because that header's exception tally is positional. Its
+lasting trap is visual: FluentWinUI3's `Menu` opens by animating its own `height` (0.33→1 over
+250ms) over a `clip: true` `ListView` whose `contentHeight` *extrapolates* unrealized rows from the
+average of realized ones, so a 150px header makes size and content chase each other and the menu
+appears to snap shut mid-open. Reserving every label's line was not enough; the fix is replacing
+that `enter` transition with an opacity fade so the size settles in one step. The full
 roadmap — next up are phases 15–16 (in-app preview, real-time remote-change reflection) — lives in
 `docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
 `docs/MEMO.md` keeps only non-roadmap notes. Undo and full bidirectional local sync stay out of
@@ -274,8 +286,9 @@ doesn't provide (Phase 14a), the app-global `UploadController` (`src/qml`) behin
 targets' external-drop path and Main.qml's two upload confirmation dialogs (Phase 14b), the equally
 app-global but service-free `ClipboardController` (`src/qml`, Phase 23) that every tab's
 `FolderNavigationController` holds a non-owning pointer to, the header-only `KeyboardState`
-(`src/qml`, Phase 23a) that `DragProxy` reads Ctrl/Shift from during a drag,
-`qml/components/CaptionBar.qml` — the window's own caption row, carrying `TabStrip` and the three
+(`src/qml`, Phase 23a) that `DragProxy` reads Ctrl/Shift from during a drag, the equally app-global
+`AccountService`/`AccountController` (`src/core`/`src/qml`, Phase 20c) behind
+`qml/components/AccountMenuHeader.qml`, `qml/components/CaptionBar.qml` — the window's own caption row, carrying `TabStrip` and the three
 system buttons, registered with QWindowKit's `WindowAgent` (exposed to QML by the header-only
 `src/qml/WindowAgentForeign.h`, `QML_FOREIGN`) from `Main.qml`'s root `Component.onCompleted`,
 Phase 17a/17b — the `qml/Theme.qml` design-token singleton and `qml/components/FileIcon.qml` that

@@ -411,10 +411,85 @@ ApplicationWindow {
                 ToolbarIconButton {
                     text: Theme.glyph.more
                     ToolTip.text: qsTr("More")
-                    onClicked: moreMenu.popup()
+                    // Right-aligned under the button rather than popup()'s
+                    // default of "top-left corner at the cursor": this button
+                    // sits at the right edge of the window, so the default put
+                    // all 280px of the menu outside it.
+                    onClicked: moreMenu.popup(width - moreMenu.width, height)
 
                     Menu {
                         id: moreMenu
+
+                        // Insurance, not decoration: since Qt 6.8 a Menu may
+                        // resolve to Popup.Native, and the docs are explicit
+                        // that the delegate is then not used for rendering --
+                        // which would silently drop the account header below
+                        // entirely. Windows is a native-menu platform.
+                        popupType: Popup.Window
+
+                        // Explicit, because a Menu's contentItem is a ListView
+                        // and does not aggregate its children's implicitWidth
+                        // -- the account header's own 280 is ignored and the
+                        // menu would otherwise stay at the ~200 the three text
+                        // items need, which is too narrow for an email address.
+                        width: 280
+
+                        // FluentWinUI3's Menu opens by animating its own height
+                        // from 33% to 100% over 250ms, and its contentItem is a
+                        // clipping ListView -- so mid-animation the menu is a
+                        // window showing only the top slice of its content.
+                        // That is fine for a list of 30px rows and wrong for a
+                        // 150px header: the ListView extrapolates the height of
+                        // rows it has not realized yet from the average of the
+                        // ones it has, so the header skews the estimate, the
+                        // estimate moves the menu's height, the new height
+                        // realizes different rows, and the header visibly
+                        // shrinks and re-grows. Replacing the height animation
+                        // with a fade settles the size in one step instead.
+                        enter: Transition {
+                            NumberAnimation {
+                                property: "opacity"
+                                from: 0.0
+                                to: 1.0
+                                duration: 120
+                                easing.type: Easing.OutCubic
+                            }
+                        }
+
+                        // The style's popup background is a nine-patch PNG
+                        // whose interior is not a flat colour but WinUI's
+                        // acrylic *grain* -- per-pixel noise, a couple of
+                        // levels either side of #353535. Its middle section is
+                        // only 102x90, and BorderImage stretches that to fill
+                        // the item, so at this menu's size it is a ~2.7x
+                        // bilinear magnification and the grain smears into
+                        // visible marbling. Tiling repeats it at 1:1, which is
+                        // how the texture was meant to be seen. Ordinary menus
+                        // are small enough not to show it.
+                        //
+                        // The BorderImage is found by duck-typing rather than
+                        // by index: the background item also carries the
+                        // style's own high-contrast rectangle as a child.
+                        Component.onCompleted: {
+                            for (const child of background.children) {
+                                if (child.horizontalTileMode !== undefined) {
+                                    child.horizontalTileMode = BorderImage.Repeat;
+                                    child.verticalTileMode = BorderImage.Repeat;
+                                }
+                            }
+                        }
+
+                        // The one and only trigger for loading account data.
+                        // Nothing is fetched at login, so a user who never
+                        // opens this menu costs no requests at all. Cheap to
+                        // call on every open: the profile half runs once per
+                        // session and the storage half skips a read that is
+                        // already in flight.
+                        onAboutToShow: accountController.refresh()
+
+                        AccountMenuHeader {}
+                        MenuSeparator {}
+
                         MenuItem {
                             text: qsTr("About MegaExplorer")
                             onTriggered: aboutDialog.open()
@@ -932,6 +1007,10 @@ ApplicationWindow {
                 // Node handles belong to the account that was signed in, so
                 // they can't survive into the next session.
                 clipboardController.clear();
+                // Same reasoning for the profile and storage figures. There is
+                // deliberately no matching call in the LoggedIn branch above:
+                // account data is loaded lazily, when the menu first opens.
+                accountController.reset();
             }
         }
     }

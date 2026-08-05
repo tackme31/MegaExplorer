@@ -1,5 +1,6 @@
 #include "MegaSdkClient.h"
 
+#include "core/AccountPlan.h"
 #include "core/MegaErrorCodes.h"
 #include "MegaSdkLogger.h"
 
@@ -32,6 +33,31 @@ static_assert(MegaErrorCode::kEBlocked == mega::MegaError::API_EBLOCKED,
               "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kEMfaRequired == mega::MegaError::API_EMFAREQUIRED,
               "MegaErrorCodes.h out of sync");
+
+// Same arrangement for AccountPlan.h's mirror of MegaAccountDetails'
+// ACCOUNT_TYPE_* enum.
+static_assert(AccountPlan::kFree == mega::MegaAccountDetails::ACCOUNT_TYPE_FREE,
+              "AccountPlan.h out of sync");
+static_assert(AccountPlan::kProI == mega::MegaAccountDetails::ACCOUNT_TYPE_PROI,
+              "AccountPlan.h out of sync");
+static_assert(AccountPlan::kProII == mega::MegaAccountDetails::ACCOUNT_TYPE_PROII,
+              "AccountPlan.h out of sync");
+static_assert(AccountPlan::kProIII == mega::MegaAccountDetails::ACCOUNT_TYPE_PROIII,
+              "AccountPlan.h out of sync");
+static_assert(AccountPlan::kLite == mega::MegaAccountDetails::ACCOUNT_TYPE_LITE,
+              "AccountPlan.h out of sync");
+static_assert(AccountPlan::kStarter == mega::MegaAccountDetails::ACCOUNT_TYPE_STARTER,
+              "AccountPlan.h out of sync");
+static_assert(AccountPlan::kBasic == mega::MegaAccountDetails::ACCOUNT_TYPE_BASIC,
+              "AccountPlan.h out of sync");
+static_assert(AccountPlan::kEssential == mega::MegaAccountDetails::ACCOUNT_TYPE_ESSENTIAL,
+              "AccountPlan.h out of sync");
+static_assert(AccountPlan::kBusiness == mega::MegaAccountDetails::ACCOUNT_TYPE_BUSINESS,
+              "AccountPlan.h out of sync");
+static_assert(AccountPlan::kProFlexi == mega::MegaAccountDetails::ACCOUNT_TYPE_PRO_FLEXI,
+              "AccountPlan.h out of sync");
+static_assert(AccountPlan::kFeature == mega::MegaAccountDetails::ACCOUNT_TYPE_FEATURE,
+              "AccountPlan.h out of sync");
 
 namespace
 {
@@ -116,10 +142,12 @@ private:
     std::function<void(Result<void>)> mOnDone;
 };
 
-class ThumbnailListener : public mega::MegaRequestListener
+// Shared by getThumbnail and getMyAvatar: both are TYPE_GET_ATTR_* requests
+// whose success payload is the local file the SDK wrote to.
+class AttributeFileListener : public mega::MegaRequestListener
 {
 public:
-    explicit ThumbnailListener(std::function<void(Result<std::string>)> onDone)
+    explicit AttributeFileListener(std::function<void(Result<std::string>)> onDone)
         : mOnDone(std::move(onDone))
     {}
 
@@ -142,6 +170,86 @@ public:
 private:
     std::function<void(Result<std::string>)> mOnDone;
 };
+
+// getMyUserAttribute: a public user attribute's value arrives as text.
+class TextResultListener : public mega::MegaRequestListener
+{
+public:
+    explicit TextResultListener(std::function<void(Result<std::string>)> onDone)
+        : mOnDone(std::move(onDone))
+    {}
+
+    void
+    onRequestFinish(mega::MegaApi* /*api*/, mega::MegaRequest* request, mega::MegaError* e) override
+    {
+        int code = e->getErrorCode();
+        if (code == mega::MegaError::API_OK)
+        {
+            const char* text = request->getText();
+            mOnDone(Result<std::string>::ok(text ? text : std::string()));
+        }
+        else
+        {
+            mOnDone(Result<std::string>::fail(e->getErrorString(), code));
+        }
+        delete this;
+    }
+
+private:
+    std::function<void(Result<std::string>)> mOnDone;
+};
+
+class AccountDetailsListener : public mega::MegaRequestListener
+{
+public:
+    explicit AccountDetailsListener(std::function<void(Result<AccountInfo>)> onDone)
+        : mOnDone(std::move(onDone))
+    {}
+
+    void
+    onRequestFinish(mega::MegaApi* /*api*/, mega::MegaRequest* request, mega::MegaError* e) override
+    {
+        int code = e->getErrorCode();
+        if (code == mega::MegaError::API_OK)
+        {
+            // getMegaAccountDetails() transfers ownership (megaapi.h).
+            const std::unique_ptr<mega::MegaAccountDetails> details(
+                request->getMegaAccountDetails());
+            if (details)
+            {
+                AccountInfo info;
+                info.storageUsedBytes = static_cast<std::uint64_t>(details->getStorageUsed());
+                info.storageMaxBytes = static_cast<std::uint64_t>(details->getStorageMax());
+                info.proLevel = details->getProLevel();
+                mOnDone(Result<AccountInfo>::ok(info));
+            }
+            else
+            {
+                mOnDone(Result<AccountInfo>::fail("Account details missing from response"));
+            }
+        }
+        else
+        {
+            mOnDone(Result<AccountInfo>::fail(e->getErrorString(), code));
+        }
+        delete this;
+    }
+
+private:
+    std::function<void(Result<AccountInfo>)> mOnDone;
+};
+
+int toMegaUserAttribute(UserAttribute attribute)
+{
+    switch (attribute)
+    {
+        case UserAttribute::LastName:
+            return mega::MegaApi::USER_ATTR_LASTNAME;
+        case UserAttribute::FirstName:
+        default:
+            return mega::MegaApi::USER_ATTR_FIRSTNAME;
+    }
+}
 
 int toMegaOrder(SortOrder order)
 {
@@ -470,7 +578,7 @@ void MegaSdkClient::getThumbnail(std::uint64_t handle,
     // Safe to let node die on return: getNodeAttribute copies what it needs
     // into the request before queueing it.
     mApi->getThumbnail(
-        node.get(), destinationPath.c_str(), new ThumbnailListener(std::move(onDone)));
+        node.get(), destinationPath.c_str(), new AttributeFileListener(std::move(onDone)));
 }
 
 void MegaSdkClient::getPath(std::uint64_t handle,
@@ -722,6 +830,55 @@ Result<bool> MegaSdkClient::hasSubfolders(std::uint64_t handle, bool isRoot) con
     // the node tree already in memory since fetchNodes(), so this costs no
     // round-trip and no MegaNodeList allocation.
     return Result<bool>::ok(node->isFolder() && mApi->getNumChildFolders(node.get()) > 0);
+}
+
+Result<AccountIdentity> MegaSdkClient::currentAccountIdentity() const
+{
+    // Three caller-owned char* in one function; all three need releasing.
+    const std::unique_ptr<char[]> email(mApi->getMyEmail());
+    if (!email)
+        return Result<AccountIdentity>::fail("Not logged in");
+
+    // Base64, not the binary handle currentUserHandle() returns:
+    // getUserAvatarColor is documented to take the Base64 form, and handing it
+    // a stringified integer still yields a plausible-looking colour, so the
+    // mistake would never show up by eye.
+    const std::unique_ptr<char[]> userHandleBase64(mApi->getMyUserHandle());
+
+    AccountIdentity identity;
+    identity.email = email.get();
+    identity.userHandle = static_cast<std::uint64_t>(mApi->getMyUserHandleBinary());
+    if (userHandleBase64)
+    {
+        const std::unique_ptr<char[]> color(
+            mega::MegaApi::getUserAvatarColor(userHandleBase64.get()));
+        if (color)
+            identity.avatarColor = color.get();
+    }
+    return Result<AccountIdentity>::ok(std::move(identity));
+}
+
+void MegaSdkClient::getMyAvatar(const std::string& destinationPath,
+                                std::function<void(Result<std::string>)> onDone)
+{
+    // No resolveNode pre-flight, unlike getThumbnail: the avatar belongs to
+    // the account, not to a node.
+    mApi->getUserAvatar(destinationPath.c_str(), new AttributeFileListener(std::move(onDone)));
+}
+
+void MegaSdkClient::getMyUserAttribute(UserAttribute attribute,
+                                       std::function<void(Result<std::string>)> onDone)
+{
+    mApi->getUserAttribute(toMegaUserAttribute(attribute),
+                           new TextResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::getAccountInfo(std::function<void(Result<AccountInfo>)> onDone)
+{
+    // storage + pro only; transfer quota is out of scope and megaapi.h asks
+    // callers to request no more than they need.
+    mApi->getSpecificAccountDetails(
+        true, false, true, -1, new AccountDetailsListener(std::move(onDone)));
 }
 
 std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot) const

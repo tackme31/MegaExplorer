@@ -101,4 +101,14 @@ public:
                 (std::uint64_t, bool, const std::vector<std::string>&),
                 (const, override));
     MOCK_METHOD(Result<bool>, hasSubfolders, (std::uint64_t, bool), (const, override));
+    MOCK_METHOD(Result<AccountIdentity>, currentAccountIdentity, (), (const, override));
+    MOCK_METHOD(void,
+                getMyAvatar,
+                (const std::string&, std::function<void(Result<std::string>)>),
+                (override));
+    MOCK_METHOD(void,
+                getMyUserAttribute,
+                (UserAttribute, std::function<void(Result<std::string>)>),
+                (override));
+    MOCK_METHOD(void, getAccountInfo, (std::function<void(Result<AccountInfo>)>), (override));
 };

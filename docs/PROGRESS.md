@@ -244,6 +244,16 @@ a nicety.
 The inventory turned out to be generated rather than written, and came to 36 components — see the
 log below.
 
+### Phase 20c — account section in the "More" menu (done)
+
+Unplanned, and numbered after 20b because it lands in the same menu that phase built. Nothing in the
+app said *which account is signed in* — a real gap once you keep more than one. Chrome's profile
+menu, transplanted: avatar, display name, email, storage bar and plan name, above 20b's two entries
+and the existing Sign out.
+
+Everything is fetched lazily on the first open, so the login path gains no request at all; storage
+alone is re-read on every open. See the log below for why the menu's own open animation had to go.
+
 ### Phase 21 — rubber-band (rectangle) selection (done)
 
 Drag on empty space to select the items the rectangle covers, in both the grid and the list view.
@@ -3294,3 +3304,174 @@ refetch this tab's listing when it isn't the destination. 335 tests pass; `appMe
   same as for 14a's moves.
 - **No automated UI verification.** `ui-style`'s `drive` sends press→move→release as one step, so a
   modifier cannot be held across a drag; the gesture is verified by hand.
+
+## Phase 20c — account section in the "More" menu (done)
+
+Avatar / display name / email / storage bar / plan name, as a header above 20b's two entries and
+Sign out. Unplanned and absent from the roadmap when it started; filed as 20c because it lands in
+the menu Phase 20b built.
+
+### Fetch policy: nothing at login, everything on first open
+
+Three options were on the table — fetch at login, fetch once at first open, fetch on every open —
+and the answer is a split. **Login gains nothing**: a user who never opens this menu costs zero
+requests, which matters because `fetchNodes` is already the slow part of signing in (Phase 18).
+"Once, at first open" was then adopted for all of it and *reverted for storage*: this app is
+expected to stay signed in for days, so a one-shot snapshot goes stale on screen. Storage is
+therefore re-read on every open, stale-while-revalidate — the previous numbers stay up while the new
+ones are in flight, so the loading state is only ever visible on the very first open. Avatar and
+display name keep the once-per-session rule.
+
+`used` and `max` come from **one** source, `getSpecificAccountDetails`. `MegaApi::getCloudStorageUsed()`
+is a cheaper local read and was rejected: mixing sources means the numerator and the denominator can
+disagree about versions and rubbish-bin contents, and re-reading on every open already makes the
+freshness argument moot.
+
+### SDK layer
+
+Four methods on `IMegaClient`, appended at the end of the interface rather than grouped next to
+`currentUserHandle()` — the synchronous-exception tally in that header is *positional*
+("`checkMove` is the third", "`hasSubfolders` the sixth"), so inserting higher up would have
+renumbered four existing doc comments. `currentAccountIdentity` is the seventh such exception, for
+the usual reason: email, user handle and avatar colour are state the SDK already holds.
+
+Three pitfalls, none of which announce themselves:
+
+- **`getUserAvatarColor()` wants the Base64 user handle**, not the `uint64_t` that
+  `currentUserHandle()` returns. Passing a stringified number returns a *plausible* colour, so this
+  is invisible in review and on screen. `MegaSdkClient` uses `MegaApi::getMyUserHandle()` (the
+  `char*` one) for this and only this.
+- **`getUserAvatar` must be given a file path, not a directory.** With a trailing separator the SDK
+  synthesizes `<email>0.jpg` inside it. Same caller-resolves-the-path rule as `getThumbnail`.
+- **A missing avatar is the normal case.** Measured against a real avatar-less account the code is
+  `kENoEnt` (-9), `"Not found"` — but `megaapi.h` documents no code at all here, so the adapter
+  treats *any* failure as "no avatar" and `AccountService` converts it into
+  `AvatarOutcome::hasAvatar` rather than leaving that judgement to callers. No toast, ever.
+
+`ThumbnailListener` was renamed `AttributeFileListener` and shared, since fetching an avatar to a
+path is the same request shape as fetching a thumbnail; `TextResultListener` and
+`AccountDetailsListener` are new.
+
+`AccountService` is stateless like the other services. Its one non-obvious rule: first name and last
+name are requested **sequentially, not in parallel**. Parallel would need a mutex around the join,
+and `MockMegaClient` invokes its callbacks synchronously — so the second callback would run inside
+the first one's lock and self-deadlock the test suite.
+
+### `AccountController`: two signal groups, one generation counter
+
+`profileChanged` and `storageChanged` rather than one `changed`, because the two halves have
+different lifetimes (once per session vs. per open) and a single signal would re-evaluate the avatar
+bindings on every menu open. A generation counter bumped by `refresh`/`reset`/`retryAccountInfo`
+drops callbacks belonging to an account that has since been signed out, and an in-flight flag keeps
+a fast reopen (or a double-clicked retry link) from issuing a second storage read. `reset()` is
+called from `Main.qml`'s existing auth `Connections`, on the **LoggedOut** branch only.
+
+Deliberately no `NotificationController`: the only user-visible failure is the storage read, which
+has an inline retry link in the menu itself, and the avatar/name failures are ordinary.
+
+### The trap: `Menu` animates its own height, and the content settles late
+
+This is the part worth remembering. FluentWinUI3's `Menu` opens like this:
+
+```qml
+property real __heightScale: 1
+height: __heightScale * implicitHeight
+enter: Transition {
+    NumberAnimation { property: "__heightScale"; from: 0.33; to: 1; duration: 250 }
+}
+```
+
+— and its `contentItem` is a `ListView` with `clip: true`. So for 250ms the menu is a window showing
+only the top slice of its content, and `implicitHeight` is that ListView's `contentHeight`, which
+**extrapolates the size of rows it has not realized yet from the average of the ones it has**. A
+150px header among 30px rows wrecks that average: the estimate moves the menu's height, the new
+height realizes a different set of rows, the average changes, and the height moves again. Measured,
+pre-fix: `279 → 218 → 238 → 279 → 250 → 271 → 277 → 278`. On screen that reads as the menu opening,
+snapping shut and reopening — captured frame-by-frame as "email visible → email gone and the menu
+shorter → email back".
+
+Two rounds of fixes were needed, and the first was not enough:
+
+1. **Make the content's height final from creation.** The display name arrives asynchronously, so
+   its `Label` reserves its line unconditionally instead of being `visible`-toggled; the storage
+   failure state puts its retry link on the same line as the numbers rather than swapping in a block
+   of a different height; and the header stopped depending on `anchors.fill: parent` while the
+   parent's `implicitHeight` depended on the layout (a round trip that needs a settle frame). This
+   made the logged height monotonic — and the flicker was still visible, because it was never only
+   about the content.
+2. **Drop the height animation.** `enter` is overridden with a 120ms opacity fade. The menu now takes
+   its final size in one step, which removes the ListView estimation loop *and* the per-frame resize
+   of the native popup window (`popupType: Popup.Window`, below) at the same time. Verified
+   frame-by-frame at 30ms intervals: the menu is full-size in the first captured frame, and only the
+   storage numbers fill in afterwards, into their reserved line.
+
+The general lesson: a `Menu` whose entries are all one row tall can be animated by height; one with a
+header cannot, because `ListView` height estimation and a growing clip rectangle form a feedback
+loop.
+
+Four smaller `Menu` findings from the same work:
+
+- **`width: 280` is explicit on the menu.** A `Menu`'s contentItem is a `ListView`, which does not
+  aggregate its children's `implicitWidth`, so the header's own 280 is ignored and the menu stays at
+  the ~200 the three text entries need. The flip side is the risk that did *not* materialize: the
+  header cannot widen the menu by accident either.
+- **`popupType: Popup.Window`.** Since Qt 6.8 a `Menu` may resolve to `Popup.Native`, and the docs
+  are explicit that the delegate is then not used for rendering — which would silently drop this
+  header entirely. Windows is a native-menu platform, so this is insurance, not decoration.
+- **`popup()` needed arguments.** Its default is "top-left corner at the cursor", and this button
+  sits at the right edge of the window, so all 280px of the menu opened *outside* the window.
+  `popup(width - moreMenu.width, height)` right-aligns it under the button.
+- **The menu background turned out to be marbled**, reported once the header made it big enough to
+  see. `dark|light/images/popup-background.png` is the only family of style assets whose interior is
+  *not* a flat colour: it carries WinUI's acrylic grain, per-pixel noise a couple of levels either
+  side of #353535. `Impl.StyleImage` draws it as a `BorderImage`, whose middle section is 102x90 in
+  the asset and is **stretched** to fill the item — a ~2.7x bilinear magnification at this menu's
+  size, which smears the grain into soft blobs. Setting the BorderImage's `horizontalTileMode` /
+  `verticalTileMode` to `Repeat` puts the texture back at 1:1; corners, borders and the baked-in
+  shadow are unaffected because a `BorderImage` never tiles its corners. It has to be reached
+  imperatively from `Component.onCompleted` (the style owns the background item), by duck-typing on
+  `horizontalTileMode` rather than by child index, since that item also holds the style's
+  high-contrast rectangle. Ordinary menus are too small to magnify the grain enough to notice, and
+  `Dialog` is unaffected entirely — its background is a plain `Rectangle`.
+
+### QML: a plain `Item`, and a circle Qt won't draw for you
+
+The header is a bare `Item` with `activeFocusOnTab: false`, never a `Control` or `AbstractButton`:
+`Menu`'s Up/Down walk skips whatever is not tab-focusable, which is exactly how the `MenuSeparator`
+below it is already skipped.
+
+`Rectangle { radius: width / 2; clip: true }` does **not** round an `Image` — Qt Quick's `clip` is a
+rectangular scissor and ignores `radius`. The avatar is masked with `MultiEffect` plus a
+`layer.enabled` mask rectangle. The coloured-initial fallback is used both when there is no avatar
+file and when one arrived but failed to decode, so a truncated JPEG leaves a letter rather than a
+hole. `Image.cache: false` matters here: re-logging into the same account rewrites the same path,
+and the cached pixmap would otherwise win.
+
+FluentWinUI3's `ProgressBar` hides its fill at `value: 0` (`visible: … && control.value`, a
+truthiness test), so it would have given the "track only, no fill" loading state for free — but the
+bar is two `Rectangle`s anyway, because the fill also has to switch colour past 90%.
+
+### Units
+
+`storageText()` formats with `QLocale::DataSizeTraditionalFormat` (1024-based, labelled "GB").
+Confirmed against a real account: the SDK reports a maximum of 16106127360 bytes and MEGA itself
+calls that "15 GB", which is this format's answer and not SI's 16.1 GB. Both halves share one base
+so the two numbers are always comparable.
+
+### Testing
+
+`AccountServiceTest` (13) and `AccountControllerTest` (16) are new; 364 tests pass and
+`appMegaExplorer` builds `/W4`-clean.
+
+### Deliberately not done / not verified
+
+- **No transfer quota and no subscription or payment detail.** Out of the file-manager frame; the
+  `getSpecificAccountDetails` call asks for storage and pro level only, which is also what
+  `megaapi.h` asks callers to do.
+- **`storageMax == 0`** (Business / Pro Flexi reporting an unlimited quota) is guarded — the ratio
+  returns 0.0 and the text shows used alone — but has not been seen on a real account.
+- **Keyboard navigation is unverified.** `ui-style`'s `drive` injects keys into the foreground
+  window, and a popup window is not it, so Down never reaches an open menu. This reproduces
+  identically on the pre-existing right-click menus, so it is a limitation of the tooling rather
+  than anything this phase introduced.
+- **No account switching**, and nothing here is editable from the app: the section is read-only.

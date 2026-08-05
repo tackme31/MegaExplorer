@@ -8,7 +8,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-
 #include <windows.h>
 
 // Default-constructed (2-arg) Q_LOGGING_CATEGORY enables all message types --
@@ -27,6 +26,7 @@ Q_LOGGING_CATEGORY(lcSession, "megaexplorer.session")
 Q_LOGGING_CATEGORY(lcAuth, "megaexplorer.auth")
 Q_LOGGING_CATEGORY(lcQuickAccess, "megaexplorer.quickaccess")
 Q_LOGGING_CATEGORY(lcFileOps, "megaexplorer.fileops")
+Q_LOGGING_CATEGORY(lcAccount, "megaexplorer.account")
 
 namespace
 {
@@ -79,13 +79,13 @@ const char* colorCodeFor(QtMsgType type)
 {
     switch (type)
     {
-    case QtWarningMsg:
-        return "\x1b[33m"; // yellow
-    case QtCriticalMsg:
-    case QtFatalMsg:
-        return "\x1b[31m"; // red -- for real terminals; Qt Creator already reds stderr
-    default:
-        return nullptr; // QtDebugMsg / QtInfoMsg: stdout's default color, no codes needed
+        case QtWarningMsg:
+            return "\x1b[33m"; // yellow
+        case QtCriticalMsg:
+        case QtFatalMsg:
+            return "\x1b[31m"; // red -- for real terminals; Qt Creator already reds stderr
+        default:
+            return nullptr; // QtDebugMsg / QtInfoMsg: stdout's default color, no codes needed
     }
 }
 constexpr const char* kAnsiReset = "\x1b[0m";
