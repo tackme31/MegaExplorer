@@ -9,6 +9,7 @@
 #include <QTimer>
 #include <QVariantList>
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -207,6 +208,15 @@ signals:
     // NotificationController's context strings.
     void folderCreationFailed(QString reason);
 
+    // At least one node of a moveHandlesTo batch landed. source is where this
+    // tab was standing when the drag started. This controller has already
+    // refreshed itself; the signal exists so TabsController can fan
+    // refreshIfShowing out to the *other* tabs, which is what makes a
+    // cross-tab drop show up on the destination tab that is sitting right
+    // there in view. Both ends are reported because a move empties one folder
+    // and fills another.
+    void nodesMoved(quint64 destination, bool destinationIsRoot, quint64 source, bool sourceIsRoot);
+
 private:
     void applyResult(Result<std::vector<FileEntry>> result);
     void applySearchResult(Result<std::vector<FileEntry>> result);
@@ -250,6 +260,10 @@ private:
         int remaining = 0;
         int succeeded = 0;
         int failed = 0;
+        // Run once the batch empties, after the refresh and the notification.
+        // moveHandlesTo uses it to announce where the nodes went; empty for
+        // moveSelectionToRubbish, which has nowhere to announce.
+        std::function<void(const BulkOperationBatch&)> onComplete;
     };
 
     // Common tail of both bulk fan-outs above: counts one outcome and, once the

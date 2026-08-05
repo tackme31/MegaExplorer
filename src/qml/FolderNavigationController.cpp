@@ -444,6 +444,15 @@ void FolderNavigationController::moveHandlesTo(const QVariantList& handles,
 
     auto batch = std::make_shared<BulkOperationBatch>();
     batch->remaining = static_cast<int>(handles.size());
+    // Where this tab is standing *now*, i.e. where the dragged nodes came
+    // from -- captured up front because a refresh mid-batch could in
+    // principle move it.
+    batch->onComplete =
+        [this, target, targetIsRoot, source = currentHandle(), sourceIsRoot = atRoot()](
+            const BulkOperationBatch& done) {
+            if (done.succeeded > 0)
+                emit nodesMoved(target, targetIsRoot, source, sourceIsRoot);
+        };
 
     for (const QVariant& handle : handles)
     {
@@ -541,6 +550,8 @@ void FolderNavigationController::accountForBulkOutcome(
 
     refreshVisibleListing();
     mNotifications->notifyOperation(QString::fromLatin1(context), batch->succeeded, batch->failed);
+    if (batch->onComplete)
+        batch->onComplete(*batch);
 }
 
 void FolderNavigationController::reset()

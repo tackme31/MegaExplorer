@@ -29,6 +29,7 @@ RowLayout {
     // Passed down from CaptionBar, same explicit-hand-off convention the rest
     // of components/ uses for navController/dragProxy.
     required property WindowAgent windowAgent
+    required property var dragProxy
 
     // Per-tab bounds, both enforced by the TabButton width binding below. A
     // tab is never wider than maxTabWidth however few tabs there are
@@ -36,6 +37,16 @@ RowLayout {
     // however many -- past that the bar scrolls instead of shrinking further.
     readonly property int maxTabWidth: 240
     readonly property int minTabWidth: 80
+
+    // Hoisted out of the TabButton width binding it used to be written in
+    // (the comment there explains why the width is explicit at all): the
+    // reorder below converts a pointer position into an insertion index by
+    // arithmetic, which needs the tab pitch as a number rather than as a
+    // property of whichever delegate happens to be under the cursor. Every
+    // tab is this wide, which is what makes that arithmetic legal.
+    readonly property real tabWidth: Math.max(root.minTabWidth, Math.min(root.maxTabWidth,
+                                                                         tabBar.availableWidth
+                                                                         / tabBar.count))
 
     // What CaptionBar sizes us to when the caption row has the space, so the
     // strip stops growing once every tab is at maxTabWidth and the leftover
@@ -87,6 +98,50 @@ RowLayout {
         // nothing is hovered.
         property int hoveredIndex: -1
 
+        // Reorder state (Phase 22b) lives here rather than on the dragged
+        // delegate, same reason Phase 22a put the pin version on the view: the
+        // insertion line below reads it, and it has to outlive whatever
+        // happens to the delegate while the strip scrolls under the drag.
+        // reorderFrom is a row, reorderInsert an insertion point (0..count).
+        property int reorderFrom: -1
+        property int reorderInsert: -1
+
+        // Arithmetic, not itemAt(): the strip can auto-scroll mid-drag and
+        // TabBar's own ListView only resolves realized delegates. Rounding
+        // rather than flooring puts the boundary at each tab's midpoint, which
+        // is what makes the line land *between* tabs.
+        function insertIndexAt(viewX) {
+            const i = Math.round((viewX + tabBar.contentItem.contentX) / root.tabWidth);
+            return Math.max(0, Math.min(i, tabBar.count));
+        }
+
+        function beginReorder(row) {
+            tabBar.reorderFrom = row;
+            tabBar.reorderInsert = row;
+        }
+
+        function endReorder() {
+            tabBar.reorderFrom = -1;
+            tabBar.reorderInsert = -1;
+            autoScroller.release();
+            root.dragProxy.finishGhost();
+        }
+
+        function commitReorder() {
+            if (tabBar.reorderFrom < 0)
+                return;
+            const from = tabBar.reorderFrom;
+            // Insertion point -> final row: pulling the dragged tab out first
+            // shifts everything right of it one slot left.
+            const to = tabBar.reorderInsert > from ? tabBar.reorderInsert - 1 :
+                                                     tabBar.reorderInsert;
+
+
+            tabBar.endReorder();
+            if (to !== from)
+                tabsController.moveTab(from, to);
+        }
+
         Repeater {
             model: tabsController
 
@@ -96,6 +151,11 @@ RowLayout {
                 required property string title
                 required property bool atRoot
                 required property bool busy
+                // FolderNavigationController* for *this* tab, straight off the
+                // model's "navigation" role (TabsController::roleNames) --
+                // Main.qml's pane Repeater already reads it the same way. The
+                // drop target below needs it to ask where this tab is standing.
+                required property var navigation
 
                 checkable: false
                 checked: tabButton.index === tabsController.currentIndex
@@ -137,6 +197,12 @@ RowLayout {
                                                ? Theme.color.subtlePressed : tabButton.hovered
                                                  ? Theme.color.subtleHover : "transparent"
 
+                    // Same outlined accept feedback the other five drop targets
+                    // use, for the same reason: an outline stays legible over
+                    // the active tab's opaque fill, a wash would not.
+                    border.width: tabDropArea.accepting ? Theme.border.drop : 0
+                    border.color: Theme.color.accent
+
                     // Hairline between two adjacent tabs that are both plain --
                     // without it neighbouring inactive tabs merge into one
                     // block. Suppressed next to the active or hovered tab so it
@@ -164,8 +230,7 @@ RowLayout {
                 // takes the button out of that pool entirely, so the clamp
                 // below is what decides, and the bar scrolls (clip: true
                 // above) once the tabs stop fitting.
-                width: Math.max(root.minTabWidth, Math.min(root.maxTabWidth, tabBar.availableWidth
-                                                           / tabBar.count))
+                width: root.tabWidth
 
                 onClicked: tabsController.currentIndex = tabButton.index
 
@@ -175,6 +240,124 @@ RowLayout {
                 TapHandler {
                     acceptedButtons: Qt.MiddleButton
                     onTapped: tabsController.closeTab(tabButton.index)
+                }
+
+                // Drag-to-reorder (Phase 22b), built exactly like the
+                // quick-access pin reorder: target is null, so the tab itself
+                // never leaves its slot -- only the ghost and the insertion
+                // line move, and the model is touched once, on release. Taking
+                // the exclusive grab is also what cancels this button's pending
+                // onClicked, so a reorder never switches tabs on the way past.
+                //
+                // Note what is *not* here: `yAxis.enabled: false`. It reads
+                // like the obvious constraint for a one-row strip, but it gates
+                // *activation* as well as translation -- with the unused axis
+                // disabled the handler never takes the exclusive grab at all.
+                // Phase 22a shipped that bug in its first cut; both axes stay
+                // live and the logic below simply ignores y.
+                DragHandler {
+                    id: reorderHandler
+                    target: null
+                    acceptedButtons: Qt.LeftButton
+
+                    onActiveChanged: {
+                        if (!reorderHandler.active) {
+                            tabBar.commitReorder();
+                            return;
+                        }
+                        tabBar.beginReorder(tabButton.index);
+                        root.dragProxy.beginGhost(tabButton.text,
+                                                  reorderHandler.centroid.scenePosition);
+                    }
+
+                    // activeTranslationChanged, not centroidChanged: the
+                    // documented "changes on every move" property. The centroid
+                    // is only read for the position.
+                    onActiveTranslationChanged: {
+                        if (tabBar.reorderFrom < 0)
+                            return;
+                        const scenePos = reorderHandler.centroid.scenePosition;
+                        root.dragProxy.moveTo(scenePos);
+                        const viewX = tabBar.contentItem.mapFromItem(null, scenePos).x;
+                        tabBar.reorderInsert = tabBar.insertIndexAt(viewX);
+                        autoScroller.track(viewX);
+                    }
+
+                    onCanceled: tabBar.endReorder()
+                }
+
+                // Spring-loaded tab + drop target in one (Phase 22b). The
+                // three-way branch is the same one all five Phase 14a/14b drop
+                // targets use; see QuickAccessSection.qml for why hover keys
+                // off dragProxy.active while the drop keys off the event's own
+                // payload.
+                DropArea {
+                    id: tabDropArea
+                    anchors.fill: parent
+                    keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
+
+                    property bool accepting: false
+
+                    onEntered: drag => {
+                        if (root.dragProxy.active) {
+                            tabDropArea.accepting = root.dragProxy.sourceNav.canDropHandlesOn(
+                                        root.dragProxy.handles, tabButton.navigation.currentHandle,
+                                        tabButton.navigation.atRoot);
+                        } else if (drag.hasUrls) {
+                            tabDropArea.accepting = uploadController.canUploadTo(
+                                        tabButton.navigation.currentHandle,
+                                        tabButton.navigation.atRoot);
+                            drag.accepted = tabDropArea.accepting;
+                        } else {
+                            tabDropArea.accepting = false;
+                        }
+
+                        // Armed regardless of `accepting`: this tab's own
+                        // current folder may be a bad destination (dragging
+                        // within one tab, say) while a subfolder of it is
+                        // exactly where the user is heading.
+                        if (tabButton.index !== tabsController.currentIndex)
+                            dwellTimer.restart();
+                    }
+
+                    // Deliberately does *not* touch dwellTimer: an internal
+                    // drag only delivers events while the pointer moves (see
+                    // DragProxy.qml), so restarting here would either postpone
+                    // the switch for as long as the user keeps moving or never
+                    // fire at all once they stop. "600ms after entering" is
+                    // Explorer's rule too.
+                    onPositionChanged: drag => {
+                        if (!root.dragProxy.active && drag.hasUrls)
+                            drag.accepted = tabDropArea.accepting;
+                    }
+
+                    onExited: {
+                        tabDropArea.accepting = false;
+                        dwellTimer.stop();
+                    }
+
+                    onDropped: drop => {
+                        dwellTimer.stop();
+                        if (tabDropArea.accepting) {
+                            if (drop.hasUrls) {
+                                drop.accept(Qt.CopyAction);
+                                uploadController.dropUrls(drop.urls,
+                                                          tabButton.navigation.currentHandle,
+                                                          tabButton.navigation.atRoot);
+                            } else {
+                                root.dragProxy.sourceNav.moveHandlesTo(root.dragProxy.handles,
+                                                                       tabButton.navigation.currentHandle,
+                                                                       tabButton.navigation.atRoot);
+                            }
+                        }
+                        tabDropArea.accepting = false;
+                    }
+                }
+
+                Timer {
+                    id: dwellTimer
+                    interval: 600
+                    onTriggered: tabsController.currentIndex = tabButton.index
                 }
 
                 // The close button is a sibling of contentItem, not a child of
@@ -290,5 +473,52 @@ RowLayout {
         text: "+"
         focusPolicy: Qt.NoFocus
         onClicked: tabsController.addTab()
+    }
+
+    // Fluent's TabBar.contentItem is a ListView, and its click-drag panning
+    // would steal the reorder gesture the moment the tabs stop fitting --
+    // exactly what QuickAccessSection.qml sets acceptedButtons: Qt.NoButton on
+    // its own list for. That contentItem is the style's, so it can only be
+    // reached through a Binding. Not `interactive: false`, which would take
+    // the wheel with it.
+    Binding {
+        target: tabBar.contentItem
+        property: "acceptedButtons"
+        value: Qt.NoButton
+    }
+
+    // The strip really does scroll once there are enough tabs (min width 80,
+    // and CaptionBar caps how wide the strip may get), so a reorder past the
+    // visible range needs this. Writes contentX directly, so the Binding above
+    // doesn't get in its way.
+    DragAutoScroller {
+        id: autoScroller
+        flickable: tabBar.contentItem
+        horizontal: true
+    }
+
+    // Declared here rather than inside tabBar, and reparented: TabBar is a
+    // Container, so anything declared in it lands in contentModel and becomes
+    // a *tab*. Parented to tabBar rather than to its contentItem for the
+    // reason BandSelector.qml documents -- a child of a Flickable rides its
+    // contentItem and would scroll away with the tabs.
+    Rectangle {
+        id: insertLine
+
+        parent: tabBar
+        z: 2
+        visible: tabBar.reorderFrom >= 0
+        width: Theme.border.drop
+        color: Theme.color.accent
+        y: 0
+        height: tabBar.height
+
+        // Clamped into the viewport at both ends, not just computed: the
+        // "after the last tab" insertion point lands exactly on the clipped
+        // edge, where tabBar's own clip would swallow the line.
+        x: Math.max(tabBar.contentItem.x, Math.min(tabBar.contentItem.x + tabBar.reorderInsert
+                                                   * root.tabWidth - tabBar.contentItem.contentX,
+                                                   tabBar.contentItem.x + tabBar.contentItem.width
+                                                   - insertLine.width))
     }
 }

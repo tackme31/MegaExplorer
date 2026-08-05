@@ -104,6 +104,13 @@ public:
     // than this class reaching for QGuiApplication itself.
     Q_INVOKABLE void closeTab(int index);
 
+    // Drag reordering (Phase 22b). `to` is the row the tab should end up on,
+    // not an insertion point in the pre-move coordinates -- same convention
+    // as QuickAccessModel::move. currentIndex follows the tab it was pointing
+    // at, so reordering never switches tabs. Out-of-range or no-op moves emit
+    // nothing.
+    Q_INVOKABLE void moveTab(int from, int to);
+
     // Collapses every tab but the first back down to one and re-fetches the
     // root in it -- called once on AuthController::authStateChanged reaching
     // LoggedIn (replaces the old single-controller "controller.loadRoot()").

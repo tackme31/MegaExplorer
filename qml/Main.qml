@@ -237,6 +237,7 @@ ApplicationWindow {
             id: captionBar
             Layout.fillWidth: true
             windowAgent: winAgent
+            dragProxy: moveDragProxy
         }
 
         Loader {

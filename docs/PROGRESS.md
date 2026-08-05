@@ -40,7 +40,7 @@ are post-MVP, sequenced by priority/dependency.
 | 20b | About / License dialogs | done (pulled forward) |
 | 21 | Rubber-band (rectangle) selection | done (pulled forward) |
 | 22a | Quick-access reordering | done (pulled forward) |
-| 22b | Tab reordering + drop-onto-tab move | planned (pulled forward) |
+| 22b | Tab reordering + drop-onto-tab move | done (pulled forward) |
 | 23 | Copy / cut / paste | planned (pulled forward) |
 | 15 | In-app preview (side panel, `getPreview`) | planned |
 | 16 | Real-time remote-change reflection | future, post-MVP |
@@ -266,7 +266,7 @@ have to be told apart — `DragProxy`'s `Drag.keys` is the existing mechanism fo
 Landed differently on that last point: the gesture never starts a Qt drag at all, so there was
 nothing to tell apart. See its implementation-log entry.
 
-### Phase 22b — tab reordering + drop-onto-tab move
+### Phase 22b — tab reordering + drop-onto-tab move (done)
 
 Two features, one phase, deliberately: both take over pointer input on a `TabButton`, and building
 one without the other means rewriting its gesture handling when the second arrives.
@@ -282,6 +282,10 @@ Phase 17b listed reordering as not-done because it fights caption dragging. That
 solve here, and the ground is better than it looks: `tabBar` is already registered hit-test-visible
 with QWindowKit, so a drag starting on a tab shouldn't reach the window-move path — to be confirmed
 first. Tearing a tab off into a new window stays out of scope.
+
+Confirmed, and so was the bigger unknown: `CROSS_TAB_DND_INVESTIGATION.md`'s one open risk (a tab
+switch cancelling the source `DragHandler`'s grab) did not happen, so the `StackLayout` rework it
+had lined up as the fix was never needed. See the implementation-log entry.
 
 ### Phase 23 — copy / cut / paste
 
@@ -2834,3 +2838,133 @@ press/release primitive, so there's no way to hold a drag open across a screensh
 - **Dragging a pin out of the panel.** Still not a thing: a pin is a shortcut, and unpinning stays
   in the right-click menu.
 - **Reordering the folder tree.** It reflects the real node tree; there's no order to own.
+
+---
+
+## Phase 22b — tab reordering + drop-onto-tab move (done)
+
+Drag a tab along the strip to change its order, and drag nodes (or files from Explorer) onto a tab
+to switch to it or drop straight into what it is showing. Both take over pointer input on the same
+`TabButton`, which is why they are one phase.
+
+### The investigation's one open risk didn't fire
+
+`docs/CROSS_TAB_DND_INVESTIGATION.md` called exactly one thing unproven: switching tabs mid-drag
+makes the source pane `visible: false`, and Qt takes the pointer grab away from items that go
+invisible — which would cancel the `DragHandler` holding the drag and make the whole gesture
+evaporate the instant a spring-loaded tab fires. It lined up a fix (replace `Main.qml`'s
+`StackLayout` with a hand-managed `Item` stack that keeps the drag-source pane visible) and
+estimated it as the phase's medium-sized item.
+
+Checked first, in the running app: **the drag survives.** A `DragHandler`'s grabber is the handler
+object, not the item it lives on, and that turns out to be enough — `Main.qml:779-849` is untouched,
+and so are the focus-handoff and `SplitView.fillWidth` details that would have had to move with it.
+The investigation's contingency B is left written down but unused.
+
+The same pre-flight settled a second unknown the roadmap had not flagged at all: whether
+`beginMoveRows` survives the trip through **two** `Repeater`s — `TabStrip.qml`'s inside a `TabBar`
+(a `Container`, which positions by `contentModel` order rather than child order) and `Main.qml`'s
+pane `Repeater`. Both handle it, and the panes are *moved, not rebuilt*. Proved by giving one tab a
+grid view and another a list view, then reordering the grid one: it stayed grid, which a recreated
+`TabContentPane` could not have done (its `Component.onCompleted` copies `window.viewMode`, which by
+then said list). `window.currentPane`'s `Binding` (`Main.qml:843-848`, keyed on
+`currentIndex`/`count`) re-evaluates correctly for the same reason the fixup below exists: every
+move that changes *which* pane sits at `currentIndex` also changes `currentIndex` itself.
+
+### Reorder: Phase 22a's gesture, rotated 90°
+
+`QuickAccessSection.qml`'s pin reorder ported almost line for line, because it is the same problem:
+a `DragHandler` with `target: null` (the tab never leaves its slot), the ghost borrowed from
+`DragProxy`'s `ghostOnly` mode, an insertion point computed by arithmetic rather than by `itemAt`,
+and a 2px accent line for the boundary. Not one line of the five existing `DropArea`s' accept logic
+changed, for 22a's reason: the gesture never starts a Qt drag, so nothing downstream can see it.
+
+Three things had to be re-derived for the horizontal case:
+
+- **The tab pitch had to become a property.** It was written inline in `TabButton.width`
+  (Phase 17b's explicit-width workaround for `TabBar::updateLayout`), and the arithmetic needs it as
+  a number, not as a property of whichever delegate happens to be under the cursor. Hoisted to
+  `TabStrip.root.tabWidth`. Every tab is that wide, which is what makes
+  `Math.round((viewX + contentX) / tabWidth)` legal at all.
+- **22a's `xAxis.enabled` trap mirrors into `yAxis.enabled`.** Writing `yAxis.enabled: false` on a
+  one-row strip reads like the obvious constraint and would break activation the same way — both
+  axes stay live, y is ignored, and a vertical drag resolves to a no-op. Recorded in the code, not
+  just here.
+- **The insertion line can't be declared inside the `TabBar`.** `TabBar` is a `Container`, so an
+  `Item` declared in it lands in `contentModel` and *becomes a tab*. It is declared in the root
+  `RowLayout` and reparented (`parent: tabBar`) — to the bar, not to its `contentItem`, which is the
+  Flickable trap `BandSelector.qml` documents. `x` is clamped at both ends, 22a's bottom-edge fix in
+  both directions.
+
+`TabBar`'s `contentItem` is a Fluent-supplied `ListView` with `interactive` at its default, so its
+click-drag panning would steal the gesture the moment the tabs stop fitting — 22a's
+`acceptedButtons: Qt.NoButton` rule, except the item belongs to the style and can only be reached
+through a `Binding`. `interactive: false` was rejected: it would take wheel scrolling with it.
+
+`DragAutoScroller` grew a `horizontal` flag rather than a twin. The strip really does scroll (min tab
+width 80, and `CaptionBar` caps how wide the strip may get), and the four existing vertical call
+sites are untouched by the default.
+
+### C++: one model method, and a fan-out that is really Phase 14a's debt
+
+`TabsController::moveTab(from, to)` is `QuickAccessModel::move`'s shape — `std::rotate`,
+`beginMoveRows` with the `to > from ? to + 1 : to` destination fixup, `to` defined as a final
+position rather than an insertion point, no `countChanged`. What it adds is the `currentIndex`
+follow: the active tab keeps its *identity*, so dragging another tab across it slides it one slot the
+other way. Four cases, the same shape as `closeTab`'s clamping, emitted after `endMoveRows` so
+`Main.qml`'s `StackLayout` never sees a new index against the old row order.
+
+The drop half needed no new drop-target machinery at all — `canDropHandlesOn`/`moveHandlesTo`/
+`canUploadTo`/`dropUrls` are called exactly as the other five targets call them, with the tab's own
+`FolderNavigationController` reached through the model's existing `"navigation"` role (a
+`required property var navigation` on the `Repeater` delegate; zero C++). What it did need was
+**Phase 14a's known limitation finally paid off**: `moveHandlesTo` refreshes only the tab it was
+called on, which was invisible before and is glaring now — drop onto another tab and the file
+doesn't appear in the listing sitting right there. So `FolderNavigationController` gained a
+`nodesMoved(destination, destinationIsRoot, source, sourceIsRoot)` signal, emitted from a new
+`BulkOperationBatch::onComplete` hook once the batch empties and at least one node landed, and
+`TabsController::createTab` fans `refreshIfShowing` out to every *other* tab for both ends. Both
+ends, because a move empties one folder and fills another. The folder tree still isn't refreshed —
+that stays Phase 16's.
+
+### Spring-loaded tabs
+
+A `DropArea` per tab plus a 600ms `Timer`, and the one non-obvious rule is that the timer is armed in
+`onEntered` and **never restarted from `onPositionChanged`**. An internal drag only delivers events
+while the pointer moves (`DragProxy.qml:17-19`), so restarting on every position update would
+postpone the switch for as long as the user keeps moving and then never fire once they stop. "600ms
+after entering" is Explorer's rule anyway.
+
+It is also armed independently of whether the drop would be *accepted*: a tab's own current folder is
+frequently a bad destination (dragging within one tab, or onto a folder's own parent) while a
+subfolder of it is exactly where the user is heading. Only the already-current tab is excluded.
+
+Dropping on the tab button itself moves into that tab's current folder rather than being a
+switch-only waypoint — it shortens the common case to one gesture, and the accept test was already
+sitting there. External `text/uri-list` drops take the same two paths (hover to switch, or drop to
+upload), so the tab strip is the sixth member of 14b's drop-target set and reuses its dialogs
+unchanged.
+
+### Testing
+
+8 new `TabsControllerTest` cases: reorder right and left with the exact resulting order, `rowsMoved`
+emitted once, no-op and out-of-range rejected without a signal, the `currentIndex` follow in all four
+shapes (the active tab dragged, another tab dragged across it in each direction, a move entirely
+beside it emitting no `currentTabChanged`), and no `countChanged`. 274 tests pass.
+
+The gesture itself was checked in the running app, partly with `ui-style`'s `drive` (open three tabs,
+drag the first to the end — the order changes, the active tab follows, the panes keep their per-tab
+view modes) and partly by hand, because `drive` still has no press/release primitive and so cannot
+hold a drag open across a screenshot: the spring-loaded switch, the ghost, the insertion line, the
+accept outline, the auto-scroll at 10+ tabs and the cross-tab refresh were all verified by driving
+the real mouse.
+
+### Deliberately not done
+
+- **Tearing a tab off into a new window.** Out of scope since Phase 17b and still is — it needs a
+  second window, a way to hand a `TabContext` between two `TabsController`s, and a drag that leaves
+  the window entirely.
+- **Reordering from the keyboard or a menu.** Same reasoning as 22a's: Explorer has neither.
+- **Dropping a *tab* onto anything.** The reorder never leaves the strip, by construction.
+- **Refreshing the folder tree after a cross-tab move.** The other half of Phase 14a's limitation,
+  still Phase 16's.

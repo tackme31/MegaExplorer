@@ -164,6 +164,46 @@ void TabsController::closeTab(int index)
     }
 }
 
+void TabsController::moveTab(int from, int to)
+{
+    const int size = static_cast<int>(mTabs.size());
+    if (from < 0 || from >= size || to < 0 || to >= size || from == to)
+        return;
+
+    const auto first = mTabs.begin();
+    const auto at = [first](int i) {
+        return first + static_cast<std::vector<TabContext>::difference_type>(i);
+    };
+
+    // beginMoveRows' destination is an insertion point in the *pre-move*
+    // coordinates, so moving right has to name the row after the target --
+    // the same off-by-one QuickAccessModel::move documents.
+    beginMoveRows(QModelIndex(), from, from, QModelIndex(), to > from ? to + 1 : to);
+    if (from < to)
+        std::rotate(at(from), at(from + 1), at(to + 1));
+    else
+        std::rotate(at(to), at(from), at(from + 1));
+    endMoveRows();
+
+    // The active tab keeps its identity, not its row number: dragging some
+    // other tab across it slides it one slot the other way. Emitted after
+    // endMoveRows so Main.qml's StackLayout never sees the new index against
+    // the old row order.
+    int current = mCurrentIndex;
+    if (current == from)
+        current = to;
+    else if (from < current && current <= to)
+        --current;
+    else if (to <= current && current < from)
+        ++current;
+
+    if (current != mCurrentIndex)
+    {
+        mCurrentIndex = current;
+        emit currentTabChanged();
+    }
+}
+
 void TabsController::loadRootAll()
 {
     collapseToSingleTab();
@@ -200,6 +240,26 @@ TabContext TabsController::createTab()
     connect(navigation, &FolderNavigationController::busyChanged, this, [this, navigation]() {
         emitRowChangedFor(navigation, {BusyRole});
     });
+
+    // Phase 22b: a drop onto another tab leaves that tab's listing on screen
+    // and stale, which Phase 14a could get away with (nothing else was
+    // visible) and this can't. The mover has already refreshed itself, so
+    // only the other tabs are fanned out to -- both ends of the move, since
+    // one folder lost nodes and another gained them. The folder tree still
+    // isn't refreshed; that stays Phase 16's.
+    connect(navigation,
+            &FolderNavigationController::nodesMoved,
+            this,
+            [this, navigation](
+                quint64 destination, bool destinationIsRoot, quint64 source, bool sourceIsRoot) {
+                for (const TabContext& tab : mTabs)
+                {
+                    if (tab.navigation.get() == navigation)
+                        continue;
+                    tab.navigation->refreshIfShowing(destination, destinationIsRoot);
+                    tab.navigation->refreshIfShowing(source, sourceIsRoot);
+                }
+            });
 
     return context;
 }
