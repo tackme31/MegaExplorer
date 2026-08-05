@@ -102,6 +102,8 @@ qt_add_executable(appMegaExplorer
     src/qml/ThumbnailController.cpp
     src/qml/NotificationController.h
     src/qml/NotificationController.cpp
+    src/qml/ClipboardController.h
+    src/qml/ClipboardController.cpp
     src/qml/TabsController.h
     src/qml/TabsController.cpp
     src/qml/FolderTreeModel.h

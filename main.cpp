@@ -12,6 +12,7 @@
 #include "platform/QSettingsPinnedFolderStore.h"
 #include "platform/WindowsSessionStore.h"
 #include "qml/AuthController.h"
+#include "qml/ClipboardController.h"
 #include "qml/DownloadController.h"
 #include "qml/FolderNavigationController.h"
 #include "qml/FolderTreeModel.h"
@@ -92,6 +93,9 @@ int main(int argc, char* argv[])
     // Declared before the controllers below: they hold a non-owning pointer
     // to it, and stack locals are destroyed in reverse construction order.
     NotificationController notifications;
+    // Same reason as notifications above for being declared here: every tab's
+    // FolderNavigationController holds a non-owning pointer to it.
+    ClipboardController clipboard;
     DownloadController downloadController(downloadService, &notifications);
     UploadController uploadController(uploadService, fileOperationService, &notifications);
     AuthController authController(authService);
@@ -117,12 +121,12 @@ int main(int argc, char* argv[])
     // this whenever a new tab is needed (initial tab, "+", middle-click-open,
     // "Open in new tab") -- it has no wiring knowledge of its own, per
     // docs/ARCHITECTURE.md's composition-root convention.
-    auto tabFactory =
-        [client, thumbnailService, fileOperationService, &notifications]() -> TabContext {
+    auto tabFactory = [client, thumbnailService, fileOperationService, &notifications, &clipboard]()
+        -> TabContext {
         auto navigationService = std::make_shared<FolderNavigationService>(client);
         auto searchService = std::make_shared<SearchService>(client, navigationService);
         auto navigation = std::make_shared<FolderNavigationController>(
-            navigationService, searchService, fileOperationService, &notifications);
+            navigationService, searchService, fileOperationService, &notifications, &clipboard);
         auto thumbnails = std::make_shared<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
         return TabContext{std::move(navigationService),
@@ -140,6 +144,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("authController", &authController);
     engine.rootContext()->setContextProperty("folderTreeModel", &folderTreeModel);
     engine.rootContext()->setContextProperty("quickAccessModel", &quickAccessModel);
+    engine.rootContext()->setContextProperty("clipboardController", &clipboard);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

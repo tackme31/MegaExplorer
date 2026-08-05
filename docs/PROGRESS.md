@@ -41,7 +41,7 @@ are post-MVP, sequenced by priority/dependency.
 | 21 | Rubber-band (rectangle) selection | done (pulled forward) |
 | 22a | Quick-access reordering | done (pulled forward) |
 | 22b | Tab reordering + drop-onto-tab move | done (pulled forward) |
-| 23 | Copy / cut / paste | planned (pulled forward) |
+| 23 | Copy / cut / paste | done (pulled forward) |
 | 15 | In-app preview (side panel, `getPreview`) | planned |
 | 16 | Real-time remote-change reflection | future, post-MVP |
 | 24+ | Undecided | undo and full bidirectional local sync both stay out of scope |
@@ -287,7 +287,7 @@ Confirmed, and so was the bigger unknown: `CROSS_TAB_DND_INVESTIGATION.md`'s one
 switch cancelling the source `DragHandler`'s grab) did not happen, so the `StackLayout` rework it
 had lined up as the fix was never needed. See the implementation-log entry.
 
-### Phase 23 — copy / cut / paste
+### Phase 23 — copy / cut / paste (done)
 
 The first *non-move* duplication: `IMegaClient::copyNode` (fifth mutating method), an app-global
 clipboard holding node handles plus a copy/cut mode, and paste into the current folder. Cut is
@@ -296,6 +296,10 @@ clipboard holding node handles plus a copy/cut mode, and paste into the current 
 Refresh / Select all / paste on the background menu — is picked up here. Same-name collisions on
 paste follow 14b's precedent (server's `API_EEXIST`, plus the replace/skip dialog if warranted).
 Ctrl+C/X/V accelerators included.
+
+Done, except that the collision sentence above turned out to be **wrong about the mechanism** —
+`copyNode` has no `API_EEXIST`, and a colliding name is worse than untidy. See the
+implementation-log entry.
 
 ### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
@@ -2968,3 +2972,168 @@ the real mouse.
 - **Dropping a *tab* onto anything.** The reorder never leaves the strip, by construction.
 - **Refreshing the folder tree after a cross-tab move.** The other half of Phase 14a's limitation,
   still Phase 16's.
+
+## Phase 23 — copy / cut / paste (done)
+
+An app-global clipboard (`src/qml/ClipboardController`), `IMegaClient::copyNode` as the fifth
+mutating method, and one new per-tab entry point, `FolderNavigationController::paste()`. Cut really
+is 14a's `moveNode` reused, as the roadmap predicted. Everything else about the roadmap's collision
+plan was wrong, and that is the substance of this phase.
+
+### The roadmap's `API_EEXIST` premise was false — and the truth is worse
+
+The roadmap said same-name collisions on paste would follow 14b's precedent: let the server answer
+with `API_EEXIST`, raise a replace/skip dialog if warranted. Checking the SDK before planning
+(`third_party/sdk/include/megaapi.h:14495` and `:14519`) showed `copyNode` documents no `API_EEXIST`
+at all — only `createFolder` does (`:14169`). MEGA permits duplicate sibling names, so the expected
+signal simply does not exist.
+
+Reading the implementation turned that from "no signal" into a data-loss hazard.
+`megaapi_impl.cpp:21843-21847` (`copyTreeFromOwnedNode`):
+
+```cpp
+if (std::shared_ptr<Node> ovn = (node->type == FILENODE) ? client->getovnode(target.get(), &sname) : nullptr)
+{
+    ovhandle = ovn->nodeHandle();
+    fileAlreadyExisted = node->isvalid && ovn->isvalid && node->EqualExceptValidFlag(*ovn);
+}
+```
+
+A copy of a **file** into a folder that already holds a same-named file does not land beside it — it
+attaches as a **new version over** it. And if the two are byte-identical, `performRequest_copy`
+converts the resulting `API_EEXIST` into `API_OK` with **no new node created at all**
+(`megaapi_impl.cpp:21762-21771`). Folders are unaffected: `getovnode` is `FILENODE`-only, so two
+same-named folders coexist.
+
+So the auto-rename this phase implements ("report.pdf" → "report - Copy.pdf" → "report - Copy
+(2).pdf") is not an Explorer affectation, it is the only thing standing between a paste and an
+unasked-for overwrite. `IMegaClient::copyNode`'s doc comment says so, since a future caller passing
+an empty `newName` would silently reintroduce the hazard. Consequences that fall out of it:
+
+- **The destination's names are re-read on every paste**, via
+  `FolderNavigationService::refreshCurrent` — deliberately *not* the cached `mLastFolderEntries`,
+  because a stale set is exactly what lets a copy version-over. That read is also correct while a
+  search is showing, since `refreshCurrent` touches neither the back-stack nor the current location;
+  it is the same method `refreshVisibleListing` already leans on for that reason.
+- **Names chosen mid-batch are claimed locally.** MEGA allows duplicate siblings, so two clipboard
+  entries really can share a name, and neither may be handed the name the other just took.
+- `FileOperationService::uniqueCopyName` is a static pure function (like `isValidName`), splitting
+  the extension at the last dot for files only — `archive.tar.gz` → `archive.tar - Copy.gz`,
+  `My.Folder` → `My.Folder - Copy`, `.gitignore` → `.gitignore - Copy`. The suffix is English rather
+  than translated: `src/core` is Qt-free and out of reach of any `.ts` file, and threading a format
+  string down from QML costs more than the wart.
+- `MegaSdkClient::copyNode` branches on `newName.empty()` between the SDK's two overloads. Not
+  stylistic: the named one rejects an empty string with `API_EARGS`
+  (`megaapi_impl.cpp:21645-21649`), so "keep the source's name" has to go through the unnamed one.
+
+No replace/skip dialog was built. With auto-rename there is nothing to ask about, and the 14b dialog
+exists for a different problem — an upload genuinely cannot keep both files under one name.
+
+### The clipboard holds a source folder, which forced 14a's move open
+
+`ClipboardController` is pure state: entries (`{handle, name, isFolder}`, straight from
+`FileListModel::selectedEntries()`), a cut flag, and the folder they were taken from. No services,
+no SDK, no operation — pasting belongs to `FolderNavigationController`, which already owns the bulk
+fan-out, the busy counter, the refresh and the toast. It is app-global for the obvious reason (cut
+in one tab, paste in another), and injected into every per-tab controller as a non-owning pointer,
+the same arrangement `NotificationController` has.
+
+Recording the *source folder* is what the drag path never needed. `moveHandlesTo` captured
+`currentHandle()`/`atRoot()` at call time, which is right for a drag (the dragging tab is the
+source) and wrong for a cut-paste (the source is wherever the clipboard was filled — possibly
+another tab, possibly a folder this tab has since left). Its body moved into a private
+`moveHandlesFrom(handles, target, targetIsRoot, source, sourceIsRoot)`; `moveHandlesTo` is now one
+line over it. Without that split `nodesMoved` would report a source folder the nodes never came
+from, and the tab they were cut from would never refresh. Both halves have a regression test.
+
+`nodesCopied(destination, destinationIsRoot)` is the copy counterpart, fanned out by
+`TabsController` to the other tabs — one end only, since a copy leaves the source folder untouched.
+The folder tree still isn't refreshed; that stays Phase 16's, for copies as much as for moves.
+
+### Where paste says nothing, and where it speaks
+
+Three refusals, deliberately split:
+
+| case | behaviour |
+|---|---|
+| empty clipboard, or paste before the first listing loaded | silent |
+| a cut going back into its own folder | silent, and the menu entry is greyed |
+| destination refuses new children (read-only share, folder gone) | `notifyError("paste")` toast |
+
+The middle one is why `ClipboardController::canPasteInto` exists at all: `checkMove` refuses a move
+into the node's current parent with `kEArgs` (`MegaSdkClient.cpp:625`, stricter than the SDK on
+purpose), so letting the batch through would report N failures for a gesture that means nothing.
+A *copy* back into its own folder is allowed — that is the auto-rename case, and the common one.
+The third gets a toast because, unlike the other two, the user has no way to guess why nothing
+happened. Per-item failures never reach it; they land in the `"copy"`/`"move"` tally.
+
+Two-stage busy accounting: one begin/end pair for the destination read, then N for the N copies. The
+count legitimately dips to zero between stages, which restarts the 250ms delay timer and is
+invisible — the read is an in-memory `getChildren`. Wrapping the whole paste in an umbrella pair
+would have broken the one-pair-per-SDK-call invariant the class documents.
+
+The queued GUI-thread hop around the copy callbacks looks redundant (the callbacks that matter are
+already on the GUI thread) but is load-bearing: `MegaSdkClient::copyNode` calls `onDone` *inline*
+when `resolveNode` fails, i.e. re-entrantly inside the issuing loop. Without the hop a batch of
+already-deleted nodes could drive `remaining` to zero while the loop was still issuing calls.
+
+### Menus, keys, and the ghosting
+
+Five rows joined `defaultMenuActions()` — `Cut`/`Copy` at `FileSelection`,
+`Paste`/`SelectAll`/`Refresh` at `FolderBackground`, the last two being Phase 19's own leftover.
+Phase 19's claim that each new action costs "one catalog entry plus one table row" held exactly: no
+new menu component, no new site, and `FileListModel::availableActions` picked Cut/Copy up for free.
+The three background rows are `FoldersOnly`/`SingleOnly` like `NewFolder`, satisfied by construction
+by `folderTargetContext`'s synthesized selection — `menuActionApplies` rejects an empty selection
+outright, which is why a background action can't be spelled `Any`/`Any`.
+
+Paste's greying is `ActionCatalog`'s `enabled`, sampled at menu-open time from
+`FolderNavigationController::canPaste()`. Applicability (C++) cannot see the clipboard, and the menu
+is closed whenever the answer could change — the same split `TogglePin`'s root case uses.
+
+Accelerators are `Keys.onPressed` branches in both views, not a window-level `Shortcut`, for the
+reason `Main.qml`'s F5 shortcut already records: a `Shortcut` ignores focus and would steal Ctrl+C
+from the header search field. **Placement within the handler is load-bearing**: `StandardKey.Cut` is
+Ctrl+X *and* Shift+Delete on Windows, and the existing `Qt.Key_Delete` branch tests no modifiers, so
+the new branches go *after* it or Shift+Delete silently stops opening the Rubbish-bin confirmation.
+The existing `renamingHandle !== 0` guard gave the inline-rename case for free — while the field is
+up the view stands down and Ctrl+C/X/V edit its text.
+
+Cut items are ghosted at `Theme.opacity.cut` by binding the delegate to
+`clipboardController.cutHandles` — a `QVariantList` property, not an `isCut(handle)` method: a
+method call reads no property, so the binding would never re-evaluate. No model role and no
+`dataChanged` were needed, and it works in every tab at once. The opacity goes on the *content*, not
+the delegate root: in the table on the `RowLayout` (so the selection fill, the trailing row band and
+the drop outline stay solid, and the rename `Loader` sibling is untouched), in the grid on the
+thumbnail frame and the name label individually (the rename `Loader` shares their `ColumnLayout`).
+
+### Testing
+
+`tests/ClipboardControllerTest.cpp` is new — 11 cases over the state machine, including the two the
+sentinel convention makes easy to get wrong: a cut from the root refuses a paste into the root but
+allows one into *handle 0, non-root*, which is a different folder. `FolderNavigationControllerTest`
+gained 14, most of them about the copy path's two stages (the destination is read before any copy
+goes out; only the colliding entry is renamed; two same-named entries get different names; a failed
+read falls back to the cache) plus the two `moveHandlesFrom` regressions. `FileOperationServiceTest`
+gained the `uniqueCopyName` table and the `copy`/`canAddChildren` pass-throughs.
+
+One fixture trap worth repeating from `UploadControllerTest`: `Result<void>::success` defaults to
+**false**, so an unstubbed `checkUpload` makes paste *refuse* rather than merely do nothing. The
+default stub sits in `SetUp` next to `syncPendingChanges`'.
+
+Three existing suites needed updating for the new table rows: `MenuActionResolverTest`'s
+exact-position assertions, `FileListModelTest`'s two `availableActions` lists, and both controller
+fixtures for the new constructor parameter. 318 tests pass; `appMegaExplorer` builds `/W4`-clean.
+
+### Deliberately not done
+
+- **No OS-clipboard interop.** Ctrl+C/X/V move MEGA node handles inside the app; copying files in
+  Explorer and pasting here would be an upload, which is 14b's drag & drop path and a separate
+  decision.
+- **Paste targets the current folder only** — no "paste into folder" on a folder row, the tree or a
+  quick-access pin, unlike 14a's five drop targets. The menu row would have to answer "can I paste
+  into *that* folder" per row, and drag & drop already covers the same intent.
+- **No undo**, per the Phases 20a–23 block note: it was considered as part of this request and is
+  out of scope, not deferred.
+- **The folder tree is still not refreshed** after a paste that moves or creates a folder — Phase
+  16's, same as for 14a's moves.

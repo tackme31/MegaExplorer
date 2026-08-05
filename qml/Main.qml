@@ -929,6 +929,9 @@ ApplicationWindow {
                 tabsController.resetAll();
                 folderTreeModel.reset();
                 quickAccessModel.reset();
+                // Node handles belong to the account that was signed in, so
+                // they can't survive into the next session.
+                clipboardController.clear();
             }
         }
     }

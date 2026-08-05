@@ -104,6 +104,19 @@ GridView {
         root.positionViewAtIndex(row, GridView.Contain);
     }
 
+    // See FileTableView.qml's matching function.
+    function putOnClipboard(cut) {
+        const entries = root.navController.fileListModel.selectedEntries();
+        if (entries.length === 0)
+            return;
+        if (cut)
+            clipboardController.cut(entries, root.navController.currentHandle,
+                                    root.navController.atRoot);
+        else
+            clipboardController.copy(entries, root.navController.currentHandle,
+                                     root.navController.atRoot);
+    }
+
     function endRename() {
         root.renamingHandle = 0;
         root.forceActiveFocus();
@@ -138,6 +151,26 @@ GridView {
 
         if (event.matches(StandardKey.SelectAll)) {
             root.navController.fileListModel.selectAll();
+            event.accepted = true;
+            return;
+        }
+
+        // Below the Delete branch, for the Shift+Delete reason spelled out in
+        // FileTableView.qml.
+        if (event.matches(StandardKey.Copy)) {
+            root.putOnClipboard(false);
+            event.accepted = true;
+            return;
+        }
+
+        if (event.matches(StandardKey.Cut)) {
+            root.putOnClipboard(true);
+            event.accepted = true;
+            return;
+        }
+
+        if (event.matches(StandardKey.Paste)) {
+            root.navController.paste();
             event.accepted = true;
             return;
         }
@@ -512,6 +545,11 @@ GridView {
 
         readonly property bool hovered: root.hoverIndex === gridDelegateItem.index
 
+        // See FileTableView.qml's matching property for why this is bound to
+        // the list rather than asked through a method.
+        readonly property bool cutPending: clipboardController.cutHandles.indexOf(
+                                               gridDelegateItem.handle) !== -1
+
         // Whether a real thumbnail image is what this tile shows. Folders never
         // have one, and a file that does still has an empty path until the
         // fetch below lands.
@@ -557,6 +595,9 @@ GridView {
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: Theme.grid.thumbSize
                     Layout.preferredHeight: Theme.grid.thumbSize
+                    // Ghosted per item rather than on the ColumnLayout: the
+                    // rename editor shares that layout and must stay solid.
+                    opacity: gridDelegateItem.cutPending ? Theme.opacity.cut : 1
                     radius: Theme.radius.sm
                     clip: true
                     color: gridDelegateItem.hasImage ? Theme.color.surface : "transparent"
@@ -590,6 +631,7 @@ GridView {
 
                 Label {
                     visible: !gridDelegateItem.renaming
+                    opacity: gridDelegateItem.cutPending ? Theme.opacity.cut : 1
                     Layout.fillWidth: true
                     // Fixed, not fillHeight: a one-line name must not pull the
                     // thumbnail frame off the line its neighbours sit on.

@@ -328,3 +328,135 @@ TEST(FileOperationServiceTest, CreateFolderForwardsTheRootSentinel)
 
     EXPECT_TRUE(captured.result.success);
 }
+
+TEST(FileOperationServiceTest, CanAddChildrenIsAPlainPassThroughToTheClient)
+{
+    // Paste's counterpart to canMove above, and queried the same way: once, up
+    // front, without intending to perform anything yet.
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, checkUpload(22u, false))
+        .WillOnce(Return(Result<void>::fail("read-only share", MegaErrorCode::kEAccess)));
+
+    const Result<void> result = service.canAddChildren(22, false);
+
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.errorCode, MegaErrorCode::kEAccess);
+}
+
+TEST(FileOperationServiceTest, CopyPassesAnEmptyNameThroughUnchanged)
+{
+    // Empty means "keep the source's name", which has to survive the name
+    // validation that would otherwise reject it (see FileOperationService::copy).
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, copyNode(11u, 22u, false, std::string(), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    Capture captured;
+
+    service.copy(11, 22, false, "", captured.sink());
+
+    EXPECT_TRUE(captured.result.success);
+}
+
+TEST(FileOperationServiceTest, CopyPassesAChosenNameStraightThrough)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, copyNode(11u, 0u, true, std::string("a - Copy.txt"), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    Capture captured;
+
+    service.copy(11, 0, true, "a - Copy.txt", captured.sink());
+
+    EXPECT_TRUE(captured.result.success);
+}
+
+TEST(FileOperationServiceTest, CopyRejectsAPathSeparatorInTheNewNameWithoutCallingTheSdk)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+    Capture captured;
+
+    service.copy(11, 22, false, "a/b", captured.sink());
+
+    ASSERT_EQ(captured.calls, 1);
+    EXPECT_FALSE(captured.result.success);
+    EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kEArgs);
+}
+
+TEST(FileOperationServiceTest, PropagatesACopyFailureFromTheSdk)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _))
+        .WillOnce(InvokeArgument<4>(Result<void>::fail("node deleted", MegaErrorCode::kENoEnt)));
+    Capture captured;
+
+    service.copy(11, 22, false, "", captured.sink());
+
+    ASSERT_EQ(captured.calls, 1);
+    EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kENoEnt);
+}
+
+TEST(FileOperationServiceTest, UniqueCopyNameLeavesAFreeNameAlone)
+{
+    // The common case: a copy into a different folder keeps its name.
+    EXPECT_EQ(FileOperationService::uniqueCopyName("report.pdf", false, {"other.pdf"}),
+              "report.pdf");
+}
+
+TEST(FileOperationServiceTest, UniqueCopyNameInsertsCopyBeforeTheExtension)
+{
+    EXPECT_EQ(FileOperationService::uniqueCopyName("report.pdf", false, {"report.pdf"}),
+              "report - Copy.pdf");
+}
+
+TEST(FileOperationServiceTest, UniqueCopyNameNumbersEveryFurtherCopy)
+{
+    EXPECT_EQ(FileOperationService::uniqueCopyName("report.pdf",
+                                                   false,
+                                                   {"report.pdf", "report - Copy.pdf"}),
+              "report - Copy (2).pdf");
+    EXPECT_EQ(FileOperationService::uniqueCopyName(
+                  "report.pdf",
+                  false,
+                  {"report.pdf", "report - Copy.pdf", "report - Copy (2).pdf"}),
+              "report - Copy (3).pdf");
+}
+
+TEST(FileOperationServiceTest, UniqueCopyNameSplitsAtTheLastDotOnly)
+{
+    EXPECT_EQ(FileOperationService::uniqueCopyName("archive.tar.gz", false, {"archive.tar.gz"}),
+              "archive.tar - Copy.gz");
+}
+
+TEST(FileOperationServiceTest, UniqueCopyNameTreatsALeadingDotAsPartOfTheName)
+{
+    // ".gitignore" is a name, not an extension on an empty stem.
+    EXPECT_EQ(FileOperationService::uniqueCopyName(".gitignore", false, {".gitignore"}),
+              ".gitignore - Copy");
+}
+
+TEST(FileOperationServiceTest, UniqueCopyNameHandlesANameWithNoExtension)
+{
+    EXPECT_EQ(FileOperationService::uniqueCopyName("README", false, {"README"}), "README - Copy");
+}
+
+TEST(FileOperationServiceTest, UniqueCopyNameNeverSplitsAFolderNameAtADot)
+{
+    // Folders have no extension, so a dotted folder name must stay intact.
+    EXPECT_EQ(FileOperationService::uniqueCopyName("My.Folder", true, {"My.Folder"}),
+              "My.Folder - Copy");
+}
+
+TEST(FileOperationServiceTest, UniqueCopyNameChainsOnAnAlreadyCopiedName)
+{
+    // Copying a copy, Explorer's behaviour: the suffix stacks rather than being
+    // parsed back off.
+    EXPECT_EQ(FileOperationService::uniqueCopyName("report - Copy.pdf",
+                                                   false,
+                                                   {"report - Copy.pdf"}),
+              "report - Copy - Copy.pdf");
+}

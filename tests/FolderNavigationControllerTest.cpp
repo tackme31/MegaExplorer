@@ -2,11 +2,13 @@
 
 #include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
+#include "qml/ClipboardController.h"
 #include "qml/NotificationController.h"
 #include "TestApp.h"
 
 #include <QEventLoop>
 #include <QTimer>
+#include <QVariantMap>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -72,8 +74,9 @@ protected:
         searchService = std::make_shared<SearchService>(client, navigationService);
         fileOps = std::make_shared<FileOperationService>(client);
         notifications = std::make_unique<NotificationController>();
+        clipboard = std::make_unique<ClipboardController>();
         controller = std::make_shared<FolderNavigationController>(
-            navigationService, searchService, fileOps, notifications.get());
+            navigationService, searchService, fileOps, notifications.get(), clipboard.get());
 
         QObject::connect(notifications.get(),
                          &NotificationController::operationFinished,
@@ -99,6 +102,25 @@ protected:
         // to fail sets its own EXPECT_CALL, which gMock matches first.
         EXPECT_CALL(*client, syncPendingChanges(_))
             .WillRepeatedly(InvokeArgument<0>(Result<void>::ok()));
+        // Same reasoning, sharper edge: Result<void>::success defaults to
+        // false, so an unstubbed paste pre-check *refuses* rather than merely
+        // doing nothing. A test that wants it to fail sets its own EXPECT_CALL.
+        EXPECT_CALL(*client, checkUpload(_, _)).WillRepeatedly(Return(Result<void>::ok()));
+    }
+
+    // Fills the clipboard the way QML does -- selectedEntries()-shaped maps.
+    QVariantList clipboardEntries(std::vector<FileEntry> entries)
+    {
+        QVariantList list;
+        for (const FileEntry& e : entries)
+        {
+            QVariantMap map;
+            map[QStringLiteral("handle")] = static_cast<quint64>(e.handle);
+            map[QStringLiteral("name")] = QString::fromStdString(e.name);
+            map[QStringLiteral("isFolder")] = e.isFolder;
+            list.append(map);
+        }
+        return list;
     }
 
     // Every folder fetch in these tests happens at the root, so counting
@@ -138,6 +160,7 @@ protected:
     std::shared_ptr<SearchService> searchService;
     std::shared_ptr<FileOperationService> fileOps;
     std::unique_ptr<NotificationController> notifications;
+    std::unique_ptr<ClipboardController> clipboard;
     std::shared_ptr<FolderNavigationController> controller;
 
     std::vector<FileEntry> rootListing;
@@ -521,7 +544,8 @@ TEST_F(FolderNavigationControllerTest, BusyClearsWhenAnOperationFails)
     std::function<void(Result<void>)> pending;
     EXPECT_CALL(*client, createFolder(_, _, std::string("x"), _))
         .WillOnce(Invoke(
-            [&pending](std::uint64_t, bool, const std::string&, std::function<void(Result<void>)> onDone) {
+            [&pending](
+                std::uint64_t, bool, const std::string&, std::function<void(Result<void>)> onDone) {
                 pending = std::move(onDone);
             }));
 
@@ -571,4 +595,346 @@ TEST_F(FolderNavigationControllerTest, ResetClearsBusyWithOperationsStillInFligh
 
     controller->moveSelectionToRubbish();
     EXPECT_TRUE(waitForBusy(*controller, true));
+}
+
+// Paste (Phase 23) is the same bookkeeping concern as the fan-outs above, plus
+// one of its own: the destination's names have to be read *before* any copy
+// goes out, since a colliding name silently versions over the existing file
+// instead of landing beside it (IMegaClient::copyNode).
+
+TEST_F(FolderNavigationControllerTest, PasteDoesNothingWithAnEmptyClipboard)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+    const int fetchesBefore = rootFetches;
+
+    controller->paste();
+    flush();
+
+    EXPECT_EQ(operationCalls, 0);
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteReadsTheDestinationBeforeCopying)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("z.txt", 5)}), 7, false);
+
+    const int fetchesBefore = rootFetches;
+    int fetchesWhenCopied = -1;
+    EXPECT_CALL(*client, copyNode(5u, _, _, _, _))
+        .WillOnce(Invoke([&](std::uint64_t,
+                             std::uint64_t,
+                             bool,
+                             const std::string&,
+                             std::function<void(Result<void>)> onDone) {
+            fetchesWhenCopied = rootFetches;
+            onDone(Result<void>::ok());
+        }));
+
+    controller->paste();
+    flush();
+    flush();
+
+    EXPECT_EQ(fetchesWhenCopied, fetchesBefore + 1);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteCopiesEveryClipboardEntryAndReportsOneTally)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a", 1), entry("b", 2), entry("c", 3)}), 7, false);
+
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _))
+        .Times(3)
+        .WillRepeatedly(InvokeArgument<4>(Result<void>::ok()));
+
+    controller->paste();
+    flush();
+    flush();
+
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastContext, QStringLiteral("copy"));
+    EXPECT_EQ(lastSucceeded, 3);
+    EXPECT_EQ(lastFailed, 0);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteSeparatesSucceededFromFailedCopies)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a", 1), entry("b", 2)}), 7, false);
+
+    EXPECT_CALL(*client, copyNode(1u, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(2u, _, _, _, _))
+        .WillOnce(InvokeArgument<4>(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
+
+    controller->paste();
+    flush();
+    flush();
+
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(lastFailed, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteKeepsANonCollidingNameUnchanged)
+{
+    givenRootListing({entry("other.txt", 1)});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a.txt", 5)}), 7, false);
+
+    // Empty name == "keep the source's", the only way to reach copyNode's
+    // unnamed SDK overload.
+    EXPECT_CALL(*client, copyNode(5u, _, true, std::string(), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    controller->paste();
+    flush();
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteAutoRenamesOnlyTheCollidingEntry)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("b.txt", 6)}), 7, false);
+
+    EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(6u, _, _, std::string(), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    controller->paste();
+    flush();
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 2);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteDoesNotHandOutTheSameGeneratedNameTwice)
+{
+    // MEGA allows duplicate siblings, so two clipboard entries really can share
+    // a name -- and neither may be given the name the other just claimed.
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("a.txt", 6)}), 7, false);
+
+    EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(6u, _, _, std::string("a - Copy (2).txt"), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    controller->paste();
+    flush();
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 2);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteFallsBackToTheCachedListingWhenTheDestinationReadFails)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a.txt", 5)}), 7, false);
+
+    // Matched ahead of givenRootListing's expectation, so every read from here
+    // on fails -- the paste has to fall back to what it already had.
+    EXPECT_CALL(*client, getRootChildren(_, _))
+        .WillRepeatedly(InvokeArgument<1>(Result<std::vector<FileEntry>>::fail("offline")));
+    EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    controller->paste();
+    flush();
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteMovesInsteadOfCopyingWhenTheClipboardHoldsACut)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->cut(clipboardEntries({entry("a", 1)}), 7, false);
+
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, checkMove(1u, _, true)).WillOnce(Return(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(1u, _, true, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
+
+    controller->paste();
+    flush();
+    flush();
+
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastContext, QStringLiteral("move"));
+    EXPECT_EQ(lastSucceeded, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteReportsTheClipboardsSourceFolderInNodesMoved)
+{
+    // The regression the moveHandlesFrom split exists for: this tab is standing
+    // at the root, but the nodes were cut from folder 7, and folder 7 is what
+    // the other tabs have to refresh.
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->cut(clipboardEntries({entry("a", 1)}), 7, false);
+
+    quint64 reportedSource = 0;
+    bool reportedSourceIsRoot = true;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::nodesMoved,
+                     controller.get(),
+                     [&](quint64, bool, quint64 source, bool sourceIsRoot) {
+                         reportedSource = source;
+                         reportedSourceIsRoot = sourceIsRoot;
+                     });
+
+    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
+
+    controller->paste();
+    flush();
+    flush();
+
+    EXPECT_EQ(reportedSource, 7u);
+    EXPECT_FALSE(reportedSourceIsRoot);
+}
+
+TEST_F(FolderNavigationControllerTest, MoveHandlesToStillReportsItsOwnFolderAsTheSource)
+{
+    // The other half of that split: a drag's source is the dragging tab, which
+    // here is the root.
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    bool reportedSourceIsRoot = false;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::nodesMoved,
+                     controller.get(),
+                     [&](quint64, bool, quint64, bool sourceIsRoot) {
+                         reportedSourceIsRoot = sourceIsRoot;
+                     });
+
+    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
+
+    controller->moveHandlesTo({1u}, 99, false);
+    flush();
+
+    EXPECT_TRUE(reportedSourceIsRoot);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteEmitsNodesCopiedOnlyWhenSomethingSucceeded)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a", 1)}), 7, false);
+
+    int copiedSignals = 0;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::nodesCopied,
+                     controller.get(),
+                     [&](quint64, bool) {
+                         ++copiedSignals;
+                     });
+
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _))
+        .WillOnce(InvokeArgument<4>(Result<void>::fail("gone")))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    controller->paste();
+    flush();
+    flush();
+    EXPECT_EQ(copiedSignals, 0);
+
+    controller->paste();
+    flush();
+    flush();
+    EXPECT_EQ(copiedSignals, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteClearsTheClipboardAfterACutButNotAfterACopy)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    clipboard->copy(clipboardEntries({entry("a", 1)}), 7, false);
+    controller->paste();
+    flush();
+    flush();
+    // Pasting a copy twice is a legitimate way to get two copies.
+    EXPECT_TRUE(clipboard->hasContent());
+
+    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    clipboard->cut(clipboardEntries({entry("a", 1)}), 7, false);
+    controller->paste();
+    flush();
+    flush();
+    EXPECT_FALSE(clipboard->hasContent());
+}
+
+TEST_F(FolderNavigationControllerTest, PasteReportsAnErrorWithoutCopyingWhenTheDestinationRefuses)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a", 1)}), 7, false);
+
+    EXPECT_CALL(*client, checkUpload(_, _))
+        .WillRepeatedly(Return(Result<void>::fail("read-only share", MegaErrorCode::kEAccess)));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+
+    controller->paste();
+    flush();
+
+    EXPECT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("paste"));
+    EXPECT_EQ(operationCalls, 0);
+}
+
+TEST_F(FolderNavigationControllerTest, PasteDoesNothingWhenACutGoesBackIntoItsSourceFolder)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+    // Cut at the root, pasted at the root: checkMove would refuse every node
+    // with kEArgs, so this must not reach the SDK at all.
+    clipboard->cut(clipboardEntries({entry("a", 1)}), 0, true);
+
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+
+    EXPECT_FALSE(controller->canPaste());
+    controller->paste();
+    flush();
+
+    EXPECT_EQ(operationCalls, 0);
+    EXPECT_EQ(errorCalls, 0);
+}
+
+TEST_F(FolderNavigationControllerTest, CanPasteIsFalseBeforeTheFirstLoad)
+{
+    clipboard->copy(clipboardEntries({entry("a", 1)}), 7, false);
+    EXPECT_FALSE(controller->canPaste());
 }

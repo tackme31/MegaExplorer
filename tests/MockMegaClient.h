@@ -77,6 +77,11 @@ public:
                 moveNode,
                 (std::uint64_t, std::uint64_t, bool, std::function<void(Result<void>)>),
                 (override));
+    MOCK_METHOD(
+        void,
+        copyNode,
+        (std::uint64_t, std::uint64_t, bool, const std::string&, std::function<void(Result<void>)>),
+        (override));
     MOCK_METHOD(void,
                 createFolder,
                 (std::uint64_t, bool, const std::string&, std::function<void(Result<void>)>),

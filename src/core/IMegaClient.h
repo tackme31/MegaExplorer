@@ -192,8 +192,8 @@ public:
 
     // First of the mutating calls in this interface -- everything above only
     // reads. All are MegaRequestListener-based, so they keep the
-    // single-Result<T>-callback shape; Result<void> because neither reports
-    // anything beyond success/failure. Must be called after a successful
+    // single-Result<T>-callback shape; Result<void> because none of them
+    // reports anything beyond success/failure. Must be called after a successful
     // fetchNodes(). Unlike the read methods above these are genuinely
     // asynchronous (a real API round-trip), so the background-thread caveat
     // at the top of this file is not merely theoretical here.
@@ -214,6 +214,27 @@ public:
     virtual void moveNode(std::uint64_t handle,
                           std::uint64_t newParentHandle,
                           bool newParentIsRoot,
+                          std::function<void(Result<void>)> onDone) = 0;
+
+    // Duplicates the node identified by handle under newParentHandle (same
+    // sentinel convention as moveNode). A folder is copied with its whole
+    // subtree in this one request -- the SDK walks it server-side, so callers
+    // never recurse.
+    //
+    // newName empty keeps the source's name. Passing one is not cosmetic: when
+    // the destination already holds a *file* of that name, the SDK attaches
+    // the copy as a new version *over* it instead of creating a sibling, and a
+    // byte-identical file is dropped outright while still reporting success.
+    // A caller that means "add a second item" must therefore pass a name
+    // nothing in the destination uses (FileOperationService::uniqueCopyName).
+    // Folders are unaffected -- two same-named folders simply coexist.
+    //
+    // Unlike createFolder below there is no kEExist to branch on: MEGA permits
+    // duplicate sibling names, so the collision is silent either way.
+    virtual void copyNode(std::uint64_t handle,
+                          std::uint64_t newParentHandle,
+                          bool newParentIsRoot,
+                          const std::string& newName,
                           std::function<void(Result<void>)> onDone) = 0;
 
     // Creates an empty folder under parentHandle (parentIsRoot is the same

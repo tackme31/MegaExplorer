@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 
+class ClipboardController;
 class NotificationController;
 
 // Q_INVOKABLE entry points below fire off SDK-thread callbacks that outlive
@@ -74,6 +75,7 @@ public:
                                         std::shared_ptr<SearchService> searchService,
                                         std::shared_ptr<FileOperationService> fileOperationService,
                                         NotificationController* notifications,
+                                        ClipboardController* clipboard,
                                         QObject* parent = nullptr);
 
     QObject* fileListModel();
@@ -170,6 +172,27 @@ public:
     // usual isRoot sentinel convention.
     Q_INVOKABLE void moveHandlesTo(const QVariantList& handles, quint64 target, bool targetIsRoot);
 
+    // Pastes whatever is on the app-global clipboard into the folder this tab
+    // is showing. Like createFolder above, the destination is read off
+    // currentHandle()/atRoot() rather than passed in: paste only ever targets
+    // the view it was invoked from (background menu / Ctrl+V).
+    //
+    // A cut is Phase 14a's move, reported under the same "move" context but
+    // announcing the *clipboard's* source folder rather than this tab's, so the
+    // folder the nodes were cut from refreshes even when the paste happened in
+    // another tab. A copy is a two-stage fan-out: re-read the destination's
+    // names, then one copy per entry under a name nothing there is using (see
+    // IMegaClient::copyNode for why a colliding one is not merely untidy).
+    //
+    // Silent when there is nothing to do -- empty clipboard, or a cut going
+    // back into its own folder, both of which canPaste() already greys out.
+    Q_INVOKABLE void paste();
+
+    // What the background menu greys its Paste entry on, sampled when the menu
+    // opens. Synchronous all the way down (ClipboardController's own state plus
+    // FileOperationService::canAddChildren), so it's safe to call from there.
+    Q_INVOKABLE bool canPaste() const;
+
     // Whether every handle could be moved onto target -- what a hovered drop
     // target paints its accept/reject feedback from. Synchronous all the way
     // down to IMegaClient::checkMove, so it's safe to call from a hover
@@ -216,6 +239,11 @@ signals:
     // there in view. Both ends are reported because a move empties one folder
     // and fills another.
     void nodesMoved(quint64 destination, bool destinationIsRoot, quint64 source, bool sourceIsRoot);
+
+    // At least one node of a paste-copy landed. Same purpose as nodesMoved
+    // above, but only the destination is reported: a copy leaves the folder the
+    // nodes came from untouched.
+    void nodesCopied(quint64 destination, bool destinationIsRoot);
 
 private:
     void applyResult(Result<std::vector<FileEntry>> result);
@@ -266,6 +294,23 @@ private:
         std::function<void(const BulkOperationBatch&)> onComplete;
     };
 
+    // Body of moveHandlesTo, with "where did these come from" passed in rather
+    // than read off this tab. A drag knows its source is this tab; a cut-paste
+    // knows it is wherever the clipboard was filled, which may be another tab
+    // or a folder this one has since navigated away from.
+    void moveHandlesFrom(const QVariantList& handles,
+                         quint64 target,
+                         bool targetIsRoot,
+                         quint64 source,
+                         bool sourceIsRoot);
+
+    // Second stage of a paste-copy, on the GUI thread: turns the destination's
+    // listing into the set of names already in use, then fans one copy out per
+    // clipboard entry. Split from paste() only because it has to wait for that
+    // listing -- a stale set would let a copy land as a new *version* of an
+    // existing file rather than beside it.
+    void startCopyBatch(Result<std::vector<FileEntry>> destination);
+
     // Common tail of both bulk fan-outs above: counts one outcome and, once the
     // batch is empty, refreshes and reports it under context. Must run on the
     // GUI thread (callers wrap it in invokeOnGuiThread).
@@ -277,6 +322,7 @@ private:
     std::shared_ptr<SearchService> mSearchService;
     std::shared_ptr<FileOperationService> mFileOps;
     NotificationController* mNotifications;
+    ClipboardController* mClipboard;
     FileListModel mFileListModel;
     QVariantList mBreadcrumb;
     std::vector<FileEntry> mLastFolderEntries; // restored when search is cleared

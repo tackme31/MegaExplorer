@@ -1,6 +1,7 @@
 #include "FolderNavigationController.h"
 
 #include "app/Logging.h"
+#include "ClipboardController.h"
 #include "core/MegaErrorCodes.h"
 #include "NotificationController.h"
 
@@ -9,6 +10,8 @@
 #include <QMetaObject>
 #include <QString>
 #include <QVariantMap>
+
+#include <set>
 
 namespace
 {
@@ -46,10 +49,11 @@ FolderNavigationController::FolderNavigationController(
     std::shared_ptr<SearchService> searchService,
     std::shared_ptr<FileOperationService> fileOperationService,
     NotificationController* notifications,
+    ClipboardController* clipboard,
     QObject* parent)
     : QObject(parent), mService(std::move(navigationService)),
       mSearchService(std::move(searchService)), mFileOps(std::move(fileOperationService)),
-      mNotifications(notifications)
+      mNotifications(notifications), mClipboard(clipboard)
 {
     mBusyDelayTimer.setSingleShot(true);
     mBusyDelayTimer.setInterval(kBusyIndicatorDelayMs);
@@ -439,17 +443,24 @@ void FolderNavigationController::moveHandlesTo(const QVariantList& handles,
                                                quint64 target,
                                                bool targetIsRoot)
 {
+    // A drag started in this tab, so this tab is where the nodes came from --
+    // read *now*, because a refresh mid-batch could in principle move it.
+    moveHandlesFrom(handles, target, targetIsRoot, currentHandle(), atRoot());
+}
+
+void FolderNavigationController::moveHandlesFrom(const QVariantList& handles,
+                                                 quint64 target,
+                                                 bool targetIsRoot,
+                                                 quint64 source,
+                                                 bool sourceIsRoot)
+{
     if (handles.isEmpty())
         return;
 
     auto batch = std::make_shared<BulkOperationBatch>();
     batch->remaining = static_cast<int>(handles.size());
-    // Where this tab is standing *now*, i.e. where the dragged nodes came
-    // from -- captured up front because a refresh mid-batch could in
-    // principle move it.
     batch->onComplete =
-        [this, target, targetIsRoot, source = currentHandle(), sourceIsRoot = atRoot()](
-            const BulkOperationBatch& done) {
+        [this, target, targetIsRoot, source, sourceIsRoot](const BulkOperationBatch& done) {
             if (done.succeeded > 0)
                 emit nodesMoved(target, targetIsRoot, source, sourceIsRoot);
         };
@@ -464,6 +475,116 @@ void FolderNavigationController::moveHandlesTo(const QVariantList& handles,
                            invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
                                endBusyOperation();
                                accountForBulkOutcome(batch, result, "move");
+                           });
+                       });
+    }
+}
+
+bool FolderNavigationController::canPaste() const
+{
+    if (!mHasLoadedOnce)
+        return false;
+    if (!mClipboard->canPasteInto(currentHandle(), atRoot()))
+        return false;
+    return mFileOps->canAddChildren(static_cast<std::uint64_t>(currentHandle()), atRoot()).success;
+}
+
+void FolderNavigationController::paste()
+{
+    // Ctrl+V is reachable before the first listing has ever loaded, and the two
+    // clipboard cases are exactly the ones canPaste() greys out -- nothing to
+    // report in any of them.
+    if (!mHasLoadedOnce || !mClipboard->hasContent())
+        return;
+    if (!mClipboard->canPasteInto(currentHandle(), atRoot()))
+        return;
+
+    const Result<void> allowed =
+        mFileOps->canAddChildren(static_cast<std::uint64_t>(currentHandle()), atRoot());
+    if (!allowed.success)
+    {
+        // The one refusal that does get a toast: unlike the silent cases above,
+        // a read-only share or a vanished destination gives the user no way to
+        // guess why nothing happened.
+        qCWarning(lcFileOps) << "paste rejected:" << QString::fromStdString(allowed.errorMessage)
+                             << "code=" << allowed.errorCode;
+        mNotifications->notifyError(QStringLiteral("paste"),
+                                    QString::fromStdString(allowed.errorMessage));
+        return;
+    }
+
+    if (mClipboard->isCut())
+    {
+        QVariantList handles;
+        handles.reserve(static_cast<qsizetype>(mClipboard->entries().size()));
+        for (const ClipboardController::Entry& entry : mClipboard->entries())
+            handles.append(QVariant::fromValue(entry.handle));
+        const quint64 source = mClipboard->sourceHandle();
+        const bool sourceIsRoot = mClipboard->sourceIsRoot();
+        // Emptied as the paste is *issued*, like Explorer: the ghosting has to
+        // stop now, and a half-failed batch must not leave a clipboard whose
+        // nodes are partly somewhere else. A copy keeps its content, so pasting
+        // twice is a legitimate way to get two copies.
+        mClipboard->clear();
+        moveHandlesFrom(handles, currentHandle(), atRoot(), source, sourceIsRoot);
+        return;
+    }
+
+    // Re-read the destination's names before choosing any: the cached listing
+    // could be stale, and a name that collides silently versions over the
+    // existing file instead of landing beside it (IMegaClient::copyNode).
+    // refreshCurrent touches neither the back-stack nor the current location,
+    // so this is also correct while a search is showing.
+    beginBusyOperation();
+    mService->refreshCurrent(
+        mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+                endBusyOperation();
+                startCopyBatch(std::move(result));
+            });
+        });
+}
+
+void FolderNavigationController::startCopyBatch(Result<std::vector<FileEntry>> destination)
+{
+    const std::vector<ClipboardController::Entry>& entries = mClipboard->entries();
+    if (entries.empty())
+        return; // cleared while the destination read was in flight
+
+    // A failed read is no reason to refuse the paste; the cached listing is the
+    // best answer available.
+    std::set<std::string> taken;
+    for (const FileEntry& entry : (destination.success ? destination.value : mLastFolderEntries))
+        taken.insert(entry.name);
+
+    const quint64 target = currentHandle();
+    const bool targetIsRoot = atRoot();
+
+    auto batch = std::make_shared<BulkOperationBatch>();
+    batch->remaining = static_cast<int>(entries.size());
+    batch->onComplete = [this, target, targetIsRoot](const BulkOperationBatch& done) {
+        if (done.succeeded > 0)
+            emit nodesCopied(target, targetIsRoot);
+    };
+
+    for (const ClipboardController::Entry& entry : entries)
+    {
+        const std::string sourceName = entry.name.toStdString();
+        const std::string chosen =
+            FileOperationService::uniqueCopyName(sourceName, entry.isFolder, taken);
+        // Claimed right away: MEGA allows duplicate siblings, so two clipboard
+        // entries can share a name and must not be handed the same new one.
+        taken.insert(chosen);
+
+        beginBusyOperation();
+        mFileOps->copy(static_cast<std::uint64_t>(entry.handle),
+                       static_cast<std::uint64_t>(target),
+                       targetIsRoot,
+                       chosen == sourceName ? std::string() : chosen,
+                       [this, self = shared_from_this(), batch](Result<void> result) {
+                           invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
+                               endBusyOperation();
+                               accountForBulkOutcome(batch, result, "copy");
                            });
                        });
     }

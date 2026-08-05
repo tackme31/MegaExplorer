@@ -246,7 +246,8 @@ TabContext TabsController::createTab()
     // visible) and this can't. The mover has already refreshed itself, so
     // only the other tabs are fanned out to -- both ends of the move, since
     // one folder lost nodes and another gained them. The folder tree still
-    // isn't refreshed; that stays Phase 16's.
+    // isn't refreshed; that stays Phase 16's, for copies (Phase 23) as much as
+    // for moves.
     connect(navigation,
             &FolderNavigationController::nodesMoved,
             this,
@@ -258,6 +259,20 @@ TabContext TabsController::createTab()
                         continue;
                     tab.navigation->refreshIfShowing(destination, destinationIsRoot);
                     tab.navigation->refreshIfShowing(source, sourceIsRoot);
+                }
+            });
+
+    // Same fan-out for a paste-copy, but with one end: a copy fills the
+    // destination and leaves the folder the nodes came from alone.
+    connect(navigation,
+            &FolderNavigationController::nodesCopied,
+            this,
+            [this, navigation](quint64 destination, bool destinationIsRoot) {
+                for (const TabContext& tab : mTabs)
+                {
+                    if (tab.navigation.get() == navigation)
+                        continue;
+                    tab.navigation->refreshIfShowing(destination, destinationIsRoot);
                 }
             });
 

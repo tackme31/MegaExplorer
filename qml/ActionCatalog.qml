@@ -25,6 +25,10 @@ import QtQuick
 //                         for actions driving an Item no singleton can reach
 //                         (the inline rename field, ConfirmRubbishDialog,
 //                         NewFolderDialog)
+//   navController         the tab's FolderNavigationController -- the only way
+//                         a singleton can reach per-tab state at all
+//   canPaste              FolderBackground only: whether a paste would do
+//                         anything, sampled when the menu opens
 //
 // Each entry documents which of those it actually reads.
 QtObject {
@@ -74,6 +78,29 @@ QtObject {
                                                     quickAccessModel.pin(ctx.handle, ctx.name);
                                             }
                                         },
+                                        // ctx: entries, navController
+                                        "cut": {
+                                            "label": ctx => qsTr("Cut"),
+                                            "trigger": ctx => clipboardController.cut(ctx.entries,
+                                                                                      ctx.navController.currentHandle,
+                                                                                      ctx.navController.atRoot)
+                                        },
+                                        // ctx: entries, navController
+                                        "copy": {
+                                            "label": ctx => qsTr("Copy"),
+                                            "trigger": ctx => clipboardController.copy(ctx.entries,
+                                                                                       ctx.navController.currentHandle,
+                                                                                       ctx.navController.atRoot)
+                                        },
+                                        // ctx: canPaste, navController
+                                        "paste": {
+                                            "label": ctx => qsTr("Paste"),
+                                            // Greyed rather than hidden, same as togglePin above:
+                                            // a row that comes and goes with the clipboard reads
+                                            // worse than one that is simply unavailable.
+                                            "enabled": ctx => ctx.canPaste,
+                                            "trigger": ctx => ctx.navController.paste()
+                                        },
                                         // ctx: requestRename()
                                         "rename": {
                                             "label": ctx => qsTr("Rename"),
@@ -83,6 +110,18 @@ QtObject {
                                         "moveToRubbish": {
                                             "label": ctx => qsTr("Move to Rubbish bin"),
                                             "trigger": ctx => ctx.requestMoveToRubbish()
+                                        },
+                                        // ctx: navController
+                                        "selectAll": {
+                                            "label": ctx => qsTr("Select all"),
+                                            "trigger": ctx
+                                                       => ctx.navController.fileListModel.selectAll(
+                                                              )
+                                        },
+                                        // ctx: navController
+                                        "refresh": {
+                                            "label": ctx => qsTr("Refresh"),
+                                            "trigger": ctx => ctx.navController.refresh()
                                         }
                                     })
 

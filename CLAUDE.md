@@ -203,10 +203,27 @@ current folder through the unchanged 14a/14b entry points. That last part forced
 limitation to be paid off**: `FolderNavigationController` gained a `nodesMoved` signal (via a new
 `BulkOperationBatch::onComplete`) and `TabsController` fans `refreshIfShowing` out to every other tab
 for both ends of the move, because the destination listing is now sitting in view. The folder tree is
-still not refreshed — that stays Phase 16's. The full
-roadmap — next up is Phase 23 (copy/cut/paste), pulled forward ahead of
-phases 15–16 (in-app preview, real-time remote-change reflection) — lives in `docs/PROGRESS.md`'s
-Roadmap section; see the companion-docs list above.
+still not refreshed — that stays Phase 16's. Phase 23 then added copy/cut/paste, and **dropped the
+roadmap's collision premise**: `MegaApi::copyNode` has no `API_EEXIST` (only `createFolder` does),
+and worse, a copy whose name collides with an existing *file* attaches as a new **version over** it
+(`copyTreeFromOwnedNode` → `getovnode`, FILENODE-only), a byte-identical one being dropped outright
+while still reporting success — so the auto-rename (`report.pdf` → `report - Copy.pdf`, via
+`FileOperationService::uniqueCopyName` plus a *fresh* `refreshCurrent` read of the destination's
+names, never the cached listing) is what prevents an unasked-for overwrite, and 14b's replace/skip
+dialog was not reproduced. An app-global `ClipboardController` (`src/qml`, context property) holds
+only state — entries, a cut flag, and the *source folder*, that last one forcing `moveHandlesTo`'s
+body out into a `moveHandlesFrom` taking an explicit source, since a cut-paste's origin is wherever
+the clipboard was filled rather than the pasting tab; pasting itself is
+`FolderNavigationController::paste()` (+ `canPaste()`, `nodesCopied`), which reuses the existing
+bulk fan-out and 14a's `moveNode` for cut. Five rows joined `defaultMenuActions()` — Cut/Copy on the
+selection menu, Paste/Select all/Refresh on the background one, the last two being Phase 19's own
+leftover — and Ctrl+C/X/V are `Keys.onPressed` branches placed *after* the existing `Qt.Key_Delete`
+one, because `StandardKey.Cut` is also Shift+Delete. Cut rows are ghosted via a binding on
+`clipboardController.cutHandles` (a property, not a method — a method call reads nothing a binding
+could track), so no model role was needed. No OS-clipboard interop, and paste targets the current
+folder only. The full
+roadmap — next up are phases 15–16 (in-app preview, real-time remote-change reflection) — lives in
+`docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
 `docs/MEMO.md` keeps only non-roadmap notes. Undo and full bidirectional local sync stay out of
 scope.
 
@@ -233,7 +250,9 @@ QuickAccessSection.qml` — both panel halves now stacked by `qml/components/Sid
 that carries every move drag (a delegate can't: the views' `Flickable` viewport would clip it before
 it reached the side panel) plus `qml/components/DragAutoScroller.qml` for the edge scrolling Qt
 doesn't provide (Phase 14a), the app-global `UploadController` (`src/qml`) behind all five drop
-targets' external-drop path and Main.qml's two upload confirmation dialogs (Phase 14b),
+targets' external-drop path and Main.qml's two upload confirmation dialogs (Phase 14b), the equally
+app-global but service-free `ClipboardController` (`src/qml`, Phase 23) that every tab's
+`FolderNavigationController` holds a non-owning pointer to,
 `qml/components/CaptionBar.qml` — the window's own caption row, carrying `TabStrip` and the three
 system buttons, registered with QWindowKit's `WindowAgent` (exposed to QML by the header-only
 `src/qml/WindowAgentForeign.h`, `QML_FOREIGN`) from `Main.qml`'s root `Component.onCompleted`,

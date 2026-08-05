@@ -40,6 +40,14 @@ QtObject {
         readonly property int drop: 2
     }
 
+    // Item opacity, not colour, unlike the de-emphasized text colours above:
+    // this dims an icon or a thumbnail as much as a label.
+    readonly property QtObject opacity: QtObject {
+        // Rows sitting on the clipboard as a cut -- Explorer ghosts them until
+        // the paste actually moves them.
+        readonly property real cut: 0.5
+    }
+
     readonly property QtObject rowHeight: QtObject {
         readonly property int compact: 28 // tree + pin rows (D1a)
         readonly property int normal: 32  // detail view rows and header (S6)

@@ -174,32 +174,40 @@ TEST(MenuActionResolverTest, EmptySelectionYieldsNoActions)
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(1, 0));
-    ASSERT_EQ(result.size(), 3u);
+    ASSERT_EQ(result.size(), 5u);
     EXPECT_EQ(result[0], MenuAction::Download);
-    EXPECT_EQ(result[1], MenuAction::Rename);
-    EXPECT_EQ(result[2], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[1], MenuAction::Cut);
+    EXPECT_EQ(result[2], MenuAction::Copy);
+    EXPECT_EQ(result[3], MenuAction::Rename);
+    EXPECT_EQ(result[4], MenuAction::MoveToRubbish);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForMultipleFiles)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(3, 0));
-    ASSERT_EQ(result.size(), 2u);
+    ASSERT_EQ(result.size(), 4u);
     EXPECT_EQ(result[0], MenuAction::Download);
-    EXPECT_EQ(result[1], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[1], MenuAction::Cut);
+    EXPECT_EQ(result[2], MenuAction::Copy);
+    EXPECT_EQ(result[3], MenuAction::MoveToRubbish);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersNoDownloadWhenSelectionContainsAFolder)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(1, 1));
-    ASSERT_EQ(result.size(), 1u);
-    EXPECT_EQ(result[0], MenuAction::MoveToRubbish);
+    ASSERT_EQ(result.size(), 3u);
+    EXPECT_EQ(result[0], MenuAction::Cut);
+    EXPECT_EQ(result[1], MenuAction::Copy);
+    EXPECT_EQ(result[2], MenuAction::MoveToRubbish);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersNoDownloadForFoldersOnlySelection)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(0, 2));
-    ASSERT_EQ(result.size(), 1u);
-    EXPECT_EQ(result[0], MenuAction::MoveToRubbish);
+    ASSERT_EQ(result.size(), 3u);
+    EXPECT_EQ(result[0], MenuAction::Cut);
+    EXPECT_EQ(result[1], MenuAction::Copy);
+    EXPECT_EQ(result[2], MenuAction::MoveToRubbish);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersNothingForEmptySelection)
@@ -220,11 +228,13 @@ TEST(MenuActionResolverTest, OpenInNewTabIdIsStable)
 TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(0, 1));
-    ASSERT_EQ(result.size(), 4u);
+    ASSERT_EQ(result.size(), 6u);
     EXPECT_EQ(result[0], MenuAction::OpenInNewTab);
     EXPECT_EQ(result[1], MenuAction::TogglePin);
-    EXPECT_EQ(result[2], MenuAction::Rename);
-    EXPECT_EQ(result[3], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[2], MenuAction::Cut);
+    EXPECT_EQ(result[3], MenuAction::Copy);
+    EXPECT_EQ(result[4], MenuAction::Rename);
+    EXPECT_EQ(result[5], MenuAction::MoveToRubbish);
 }
 
 TEST(MenuActionResolverTest, TogglePinIdIsStable)
@@ -311,12 +321,54 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersRenameOrMoveToRubbishForAnEm
     EXPECT_TRUE(resolveMenuActions(fileSelection(0, 0)).empty());
 }
 
-TEST(MenuActionResolverTest, DefaultTableOffersOnlyNewFolderOnAFolderBackground)
+TEST(MenuActionResolverTest, DefaultTableOffersNewFolderPasteSelectAllAndRefreshOnABackground)
 {
     std::vector<MenuAction> result =
         resolveMenuActions(folderTargetContext(MenuSite::FolderBackground));
-    ASSERT_EQ(result.size(), 1u);
+    ASSERT_EQ(result.size(), 4u);
     EXPECT_EQ(result[0], MenuAction::NewFolder);
+    EXPECT_EQ(result[1], MenuAction::Paste);
+    EXPECT_EQ(result[2], MenuAction::SelectAll);
+    EXPECT_EQ(result[3], MenuAction::Refresh);
+}
+
+TEST(MenuActionResolverTest, DefaultTableOffersCutAndCopyForEveryNonEmptySelection)
+{
+    EXPECT_TRUE(contains(resolveMenuActions(fileSelection(1, 0)), MenuAction::Cut));
+    EXPECT_TRUE(contains(resolveMenuActions(fileSelection(0, 1)), MenuAction::Copy));
+    EXPECT_TRUE(contains(resolveMenuActions(fileSelection(3, 2)), MenuAction::Cut));
+    EXPECT_TRUE(contains(resolveMenuActions(fileSelection(3, 2)), MenuAction::Copy));
+}
+
+TEST(MenuActionResolverTest, DefaultTableNeverOffersPasteAtTheSelectionOrRowSites)
+{
+    // Paste targets the folder a view is showing, like NewFolder -- and unlike
+    // 14a's drop targets, it deliberately doesn't reach folder rows (Phase 23).
+    EXPECT_FALSE(contains(resolveMenuActions(fileSelection(0, 1)), MenuAction::Paste));
+    EXPECT_FALSE(
+        contains(resolveMenuActions(folderTargetContext(MenuSite::FolderRow)), MenuAction::Paste));
+}
+
+TEST(MenuActionResolverTest, DefaultTableNeverOffersCutOrCopyOnABackgroundOrRow)
+{
+    const std::vector<MenuAction> background =
+        resolveMenuActions(folderTargetContext(MenuSite::FolderBackground));
+    const std::vector<MenuAction> row =
+        resolveMenuActions(folderTargetContext(MenuSite::FolderRow));
+    EXPECT_FALSE(contains(background, MenuAction::Cut));
+    EXPECT_FALSE(contains(background, MenuAction::Copy));
+    EXPECT_FALSE(contains(row, MenuAction::Cut));
+    EXPECT_FALSE(contains(row, MenuAction::Copy));
+}
+
+TEST(MenuActionResolverTest, ClipboardActionIdsAreStable)
+{
+    // The only contract linking these enum values to ActionCatalog.qml.
+    EXPECT_STREQ(menuActionId(MenuAction::Cut), "cut");
+    EXPECT_STREQ(menuActionId(MenuAction::Copy), "copy");
+    EXPECT_STREQ(menuActionId(MenuAction::Paste), "paste");
+    EXPECT_STREQ(menuActionId(MenuAction::SelectAll), "selectAll");
+    EXPECT_STREQ(menuActionId(MenuAction::Refresh), "refresh");
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabAndTogglePinOnAFolderRow)

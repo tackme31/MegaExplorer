@@ -41,6 +41,7 @@ ActionMenu {
             // anyway -- and the menu is closed whenever the answer could change.
             "pinned": entries.length === 1 && quickAccessModel.isPinned(primary.handle),
             "entries": entries,
+            "navController": root.navController,
             "requestRename": () => root.renameRequested(),
             "requestMoveToRubbish": () => root.moveToRubbishRequested()
         };
