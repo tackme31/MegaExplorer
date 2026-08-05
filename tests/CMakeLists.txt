@@ -26,6 +26,7 @@ add_executable(MegaExplorerTests
     QuickAccessServiceTest.cpp
     QuickAccessModelTest.cpp
     LicenseModelTest.cpp
+    ClipboardControllerTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/FileListModel.h
@@ -36,6 +37,8 @@ add_executable(MegaExplorerTests
     ${CMAKE_SOURCE_DIR}/src/qml/ThumbnailController.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/NotificationController.h
     ${CMAKE_SOURCE_DIR}/src/qml/NotificationController.cpp
+    ${CMAKE_SOURCE_DIR}/src/qml/ClipboardController.h
+    ${CMAKE_SOURCE_DIR}/src/qml/ClipboardController.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/UploadController.h
     ${CMAKE_SOURCE_DIR}/src/qml/UploadController.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/TabsController.h

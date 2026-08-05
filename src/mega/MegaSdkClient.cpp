@@ -589,6 +589,40 @@ void MegaSdkClient::moveNode(std::uint64_t handle,
     mApi->moveNode(node.get(), parent.get(), new SimpleResultListener(std::move(onDone)));
 }
 
+void MegaSdkClient::copyNode(std::uint64_t handle,
+                             std::uint64_t newParentHandle,
+                             bool newParentIsRoot,
+                             const std::string& newName,
+                             std::function<void(Result<void>)> onDone)
+{
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<void>::fail("No node with the given handle (not logged in / nodes not "
+                                  "fetched / node deleted)",
+                                  MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    std::unique_ptr<mega::MegaNode> parent = resolveNode(newParentHandle, newParentIsRoot);
+    if (!parent)
+    {
+        onDone(Result<void>::fail("No destination folder with the given handle (nodes not "
+                                  "fetched / folder deleted)",
+                                  MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    // The branch is load-bearing, not stylistic: the named overload rejects an
+    // empty string with API_EARGS, so "keep the source name" has to go through
+    // the unnamed one.
+    if (newName.empty())
+        mApi->copyNode(node.get(), parent.get(), new SimpleResultListener(std::move(onDone)));
+    else
+        mApi->copyNode(
+            node.get(), parent.get(), newName.c_str(), new SimpleResultListener(std::move(onDone)));
+}
+
 void MegaSdkClient::createFolder(std::uint64_t parentHandle,
                                  bool parentIsRoot,
                                  const std::string& name,

@@ -25,6 +25,10 @@ ActionMenu {
             "name": "",
             "pinned": false,
             "entries": [],
+            "navController": root.navController,
+            // Sampled, not bound: a menu must not grey or un-grey a row while
+            // it is open (see ActionMenu.qml).
+            "canPaste": root.navController.canPaste(),
             "requestNewFolder": () => root.newFolderRequested()
         };
     }

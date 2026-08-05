@@ -4,6 +4,7 @@
 #include "core/SearchService.h"
 #include "core/ThumbnailService.h"
 #include "MockMegaClient.h"
+#include "qml/ClipboardController.h"
 #include "qml/FolderNavigationController.h"
 #include "qml/NotificationController.h"
 #include "qml/ThumbnailController.h"
@@ -48,7 +49,7 @@ protected:
         auto searchService = std::make_shared<SearchService>(client, navigationService);
         auto fileOperationService = std::make_shared<FileOperationService>(client);
         auto navigation = std::make_shared<FolderNavigationController>(
-            navigationService, searchService, fileOperationService, &notifications);
+            navigationService, searchService, fileOperationService, &notifications, &clipboard);
         auto thumbnailService = std::make_shared<ThumbnailService>(client);
         auto thumbnails = std::make_shared<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
@@ -69,6 +70,9 @@ protected:
 
     std::shared_ptr<MockMegaClient> client;
     NotificationController notifications;
+    // Shared by every tab, like main.cpp's -- and never filled here, so no
+    // assertion below depends on it.
+    ClipboardController clipboard;
     std::unique_ptr<UploadController> uploads;
 };
 

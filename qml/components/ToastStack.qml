@@ -106,6 +106,15 @@ Item {
             else
                 text = qsTr("Moved %1 item(s), %2 failed").arg(succeeded).arg(failed);
             break;
+            // A cut-paste reports under "move" above, not here: it *is* a move.
+        case "copy":
+            if (failed === 0)
+                text = qsTr("Copied %1 item(s)").arg(succeeded);
+            else if (succeeded === 0)
+                text = qsTr("Failed to copy %1 item(s)").arg(failed);
+            else
+                text = qsTr("Copied %1 item(s), %2 failed").arg(succeeded).arg(failed);
+            break;
         case "moveToRubbish":
             if (failed === 0)
                 text = qsTr("Moved %1 item(s) to the Rubbish bin").arg(succeeded);
@@ -163,6 +172,12 @@ Item {
             break;
         case "createFolder":
             text = qsTr("Failed to create folder: %1").arg(errorMessage);
+            break;
+            // The whole paste was refused before anything was attempted (a
+            // read-only share, a destination that vanished). Per-item failures
+            // never come here -- they land in the "copy"/"move" tally above.
+        case "paste":
+            text = qsTr("Can't paste here: %1").arg(errorMessage);
             break;
         case "uploadNothingToUpload":
             text = qsTr("Nothing to upload — folders and non-file items can't be uploaded");

@@ -2,6 +2,17 @@
 
 #include "MegaErrorCodes.h"
 
+namespace
+{
+// Splits at the last dot, but only when there is a name in front of it, so a
+// dotfile keeps its leading dot in the stem.
+std::size_t extensionStart(const std::string& name)
+{
+    const std::size_t dot = name.rfind('.');
+    return (dot == std::string::npos || dot == 0) ? name.size() : dot;
+}
+} // namespace
+
 FileOperationService::FileOperationService(std::shared_ptr<IMegaClient> client)
     : mClient(std::move(client))
 {}
@@ -26,6 +37,42 @@ void FileOperationService::rename(std::uint64_t handle,
     }
 
     mClient->renameNode(handle, newName, std::move(onDone));
+}
+
+std::string FileOperationService::uniqueCopyName(const std::string& name,
+                                                 bool isFolder,
+                                                 const std::set<std::string>& taken)
+{
+    if (taken.count(name) == 0)
+        return name;
+
+    const std::size_t split = isFolder ? name.size() : extensionStart(name);
+    const std::string stem = name.substr(0, split);
+    const std::string extension = name.substr(split);
+
+    std::string candidate = stem + " - Copy" + extension;
+    // Bounded rather than while(true): a folder pathological enough to exhaust
+    // this is better served by a duplicate name than by a hung paste.
+    for (int n = 2; taken.count(candidate) != 0 && n < 10000; ++n)
+        candidate = stem + " - Copy (" + std::to_string(n) + ")" + extension;
+
+    return candidate;
+}
+
+void FileOperationService::copy(std::uint64_t handle,
+                                std::uint64_t newParentHandle,
+                                bool newParentIsRoot,
+                                const std::string& newName,
+                                std::function<void(Result<void>)> onDone)
+{
+    if (!newName.empty() && !isValidName(newName))
+    {
+        onDone(Result<void>::fail("Invalid name: empty, or contains a path separator",
+                                  MegaErrorCode::kEArgs));
+        return;
+    }
+
+    mClient->copyNode(handle, newParentHandle, newParentIsRoot, newName, std::move(onDone));
 }
 
 void FileOperationService::createFolder(std::uint64_t parentHandle,
@@ -69,4 +116,10 @@ Result<void> FileOperationService::canMove(std::uint64_t handle,
                                            bool newParentIsRoot) const
 {
     return mClient->checkMove(handle, newParentHandle, newParentIsRoot);
+}
+
+Result<void> FileOperationService::canAddChildren(std::uint64_t parentHandle,
+                                                  bool parentIsRoot) const
+{
+    return mClient->checkUpload(parentHandle, parentIsRoot);
 }

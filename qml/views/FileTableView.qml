@@ -399,6 +399,21 @@ ColumnLayout {
         tableView.positionViewAtRow(row, TableView.Contain);
     }
 
+    // Shared by Ctrl+C/Ctrl+X and the context menu's cut/copy entries. The
+    // source folder is recorded with the entries because the paste may well
+    // happen in another tab, long after this one has navigated elsewhere.
+    function putOnClipboard(cut) {
+        const entries = root.navController.fileListModel.selectedEntries();
+        if (entries.length === 0)
+            return;
+        if (cut)
+            clipboardController.cut(entries, root.navController.currentHandle,
+                                    root.navController.atRoot);
+        else
+            clipboardController.copy(entries, root.navController.currentHandle,
+                                     root.navController.atRoot);
+    }
+
     // Focus must be handed back explicitly, same reason the focusPolicy:
     // Qt.NoFocus assignments elsewhere exist -- otherwise arrow keys go dead
     // once the field is gone.
@@ -445,6 +460,28 @@ ColumnLayout {
 
         if (event.matches(StandardKey.SelectAll)) {
             root.navController.fileListModel.selectAll();
+            event.accepted = true;
+            return;
+        }
+
+        // Below the Delete branch above on purpose: StandardKey.Cut is Ctrl+X
+        // *and* Shift+Delete on Windows, and that branch tests no modifiers, so
+        // moving these up would silently turn Shift+Delete from "Rubbish bin"
+        // into "cut".
+        if (event.matches(StandardKey.Copy)) {
+            root.putOnClipboard(false);
+            event.accepted = true;
+            return;
+        }
+
+        if (event.matches(StandardKey.Cut)) {
+            root.putOnClipboard(true);
+            event.accepted = true;
+            return;
+        }
+
+        if (event.matches(StandardKey.Paste)) {
+            root.navController.paste();
             event.accepted = true;
             return;
         }
@@ -798,6 +835,13 @@ ColumnLayout {
             readonly property bool renaming: root.renamingHandle !== 0 && root.renamingHandle
                                              === cell.handle && cell.column === 0
 
+            // Bound to the list rather than asked through a method: a method
+            // call reads no property, so the binding would never re-evaluate
+            // when the clipboard changes. Handles compare exactly -- both sides
+            // take the same quint64-to-JS-number path, and MEGA's are 48-bit.
+            readonly property bool cutPending: clipboardController.cutHandles.indexOf(cell.handle)
+                                               !== -1
+
             // No rounded corners here, unlike the side panel's pill (S5-a):
             // this delegate is a cell, so a radius would round off the middle
             // of a row at every column boundary.
@@ -847,6 +891,10 @@ ColumnLayout {
             // column (4-4).
             RowLayout {
                 visible: !cell.renaming
+                // On the content, not the cell: the selection fill, the
+                // trailing row band and the drop outline all stay solid, and
+                // the rename editor is a sibling, so it is never ghosted.
+                opacity: cell.cutPending ? Theme.opacity.cut : 1
                 anchors.fill: parent
                 // Horizontal only, and the same token the header uses (S6-a):
                 // the two used to be 4 and 6, which left the header text 2px off

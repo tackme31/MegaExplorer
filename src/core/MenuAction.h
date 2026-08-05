@@ -16,11 +16,24 @@ enum class MenuAction
     // resolves that and picks the label, the same C++-decides-applicability /
     // QML-decides-wording split the rest of this table already relies on.
     TogglePin,
+    Cut,
+    Copy,
+    // FolderBackground only, and unconditional there: whether the clipboard is
+    // empty, or holds a cut going back into the folder it came from, is a
+    // greying question, not an applicability one -- the resolver can't see the
+    // clipboard at all. FolderNavigationController::canPaste answers it, the
+    // same C++-applicability / QML-wording split TogglePin above relies on.
+    Paste,
     Rename,
     // "Delete" from the user's point of view; named after what it actually
     // does, since MEGA's delete is a move into the Rubbish bin rather than a
     // destructive removal (see IMegaClient::moveToRubbish).
     MoveToRubbish,
+    // The two Phase 19 left on the background menu's table, picked up in Phase
+    // 23 alongside Paste. Both are keyboard shortcuts the view already handles
+    // (Ctrl+A, F5); the menu entries just call the same thing.
+    SelectAll,
+    Refresh,
 };
 
 // Which right-click site a menu is being built for. A site decides *membership*

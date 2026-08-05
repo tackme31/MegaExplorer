@@ -267,13 +267,14 @@ TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
     modelSingle.setEntries(makeEntries(3));
     modelSingle.selectRow(0, 0);
     EXPECT_EQ(modelSingle.availableActions(),
-              (QStringList{"download", "rename", "moveToRubbish"}));
+              (QStringList{"download", "cut", "copy", "rename", "moveToRubbish"}));
 
     FileListModel modelMulti;
     modelMulti.setEntries(makeEntries(3));
     modelMulti.selectRow(0, 0);
     modelMulti.selectRow(1, kCtrl);
-    EXPECT_EQ(modelMulti.availableActions(), (QStringList{"download", "moveToRubbish"}));
+    EXPECT_EQ(modelMulti.availableActions(),
+              (QStringList{"download", "cut", "copy", "moveToRubbish"}));
 }
 
 TEST(FileListModelTest, AvailableActionsOffersOnlyMoveToRubbishForAMixedSelection)
@@ -283,9 +284,9 @@ TEST(FileListModelTest, AvailableActionsOffersOnlyMoveToRubbishForAMixedSelectio
     model.selectRow(0, 0);
     model.selectRow(1, kCtrl);
 
-    // Download is FilesOnly and Rename is SingleOnly, so deleting is all that
-    // a mixed multi-selection can do.
-    EXPECT_EQ(model.availableActions(), (QStringList{"moveToRubbish"}));
+    // Download is FilesOnly and Rename is SingleOnly, so the clipboard pair and
+    // deleting are all that a mixed multi-selection can do.
+    EXPECT_EQ(model.availableActions(), (QStringList{"cut", "copy", "moveToRubbish"}));
 }
 
 TEST(FileListModelTest, AvailableActionsClearedAfterNavigation)

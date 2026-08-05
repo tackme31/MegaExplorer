@@ -70,10 +70,29 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {MenuSite::FileSelection, MenuSite::FolderRow},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
+        // Cut before Copy, Windows' own order.
+        {MenuAction::Cut, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
+        {MenuAction::Copy, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
+        // FoldersOnly/SingleOnly like NewFolder above, and satisfied the same
+        // way: folderTargetContext() synthesizes exactly that selection for the
+        // two fixed-target sites. See MenuAction::Paste for why the clipboard's
+        // own state isn't expressed here.
+        {MenuAction::Paste,
+         {MenuSite::FolderBackground},
+         ActionTarget::FoldersOnly,
+         ActionArity::SingleOnly},
         // SingleOnly is the whole implementation of "no rename while multiple
         // items are selected" -- the resolver itself needed no change.
         {MenuAction::Rename, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::SingleOnly},
         {MenuAction::MoveToRubbish, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
+        {MenuAction::SelectAll,
+         {MenuSite::FolderBackground},
+         ActionTarget::FoldersOnly,
+         ActionArity::SingleOnly},
+        {MenuAction::Refresh,
+         {MenuSite::FolderBackground},
+         ActionTarget::FoldersOnly,
+         ActionArity::SingleOnly},
     };
     return actions;
 }
@@ -111,10 +130,20 @@ const char* menuActionId(MenuAction action)
             return "openInNewTab";
         case MenuAction::TogglePin:
             return "togglePin";
+        case MenuAction::Cut:
+            return "cut";
+        case MenuAction::Copy:
+            return "copy";
+        case MenuAction::Paste:
+            return "paste";
         case MenuAction::Rename:
             return "rename";
         case MenuAction::MoveToRubbish:
             return "moveToRubbish";
+        case MenuAction::SelectAll:
+            return "selectAll";
+        case MenuAction::Refresh:
+            return "refresh";
     }
     return "";
 }
