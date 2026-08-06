@@ -1,7 +1,6 @@
 #include "core/QuickAccessService.h"
 
 #include "core/MegaErrorCodes.h"
-
 #include "MockMegaClient.h"
 #include "MockPinnedFolderStore.h"
 
@@ -66,7 +65,7 @@ TEST_F(QuickAccessServiceTest, LoadReflectsStoredPinsInOrder)
     const std::vector<PinnedFolder> stored = {makePin("Photos", 11), makePin("Work", 22)};
     EXPECT_CALL(*store, load(_)).WillOnce(Return(Result<std::vector<PinnedFolder>>::ok(stored)));
 
-    service->load();
+    EXPECT_TRUE(service->load().success);
 
     EXPECT_EQ(service->pins(), stored);
 }
@@ -74,9 +73,15 @@ TEST_F(QuickAccessServiceTest, LoadReflectsStoredPinsInOrder)
 TEST_F(QuickAccessServiceTest, LoadFailureDegradesToEmptyList)
 {
     EXPECT_CALL(*store, load(_))
-        .WillOnce(Return(Result<std::vector<PinnedFolder>>::fail("corrupt", MegaErrorCode::kEInternal)));
+        .WillOnce(
+            Return(Result<std::vector<PinnedFolder>>::fail("corrupt", MegaErrorCode::kEInternal)));
 
-    service->load();
+    // Degrades to empty, but the caller can still tell why: QuickAccessModel
+    // is what logs it, since this class is Qt-free.
+    const Result<void> loaded = service->load();
+    EXPECT_FALSE(loaded.success);
+    EXPECT_EQ(loaded.errorCode, MegaErrorCode::kEInternal);
+    EXPECT_EQ(loaded.errorMessage, "corrupt");
 
     EXPECT_TRUE(service->pins().empty());
 }
@@ -84,7 +89,7 @@ TEST_F(QuickAccessServiceTest, LoadFailureDegradesToEmptyList)
 TEST_F(QuickAccessServiceTest, PinAppendsAtTheEndAndPersists)
 {
     expectEmptyStore();
-    service->load();
+    EXPECT_TRUE(service->load().success);
 
     const std::vector<PinnedFolder> afterFirst = {makePin("Photos", 11)};
     const std::vector<PinnedFolder> afterSecond = {makePin("Photos", 11), makePin("Work", 22)};
@@ -100,7 +105,7 @@ TEST_F(QuickAccessServiceTest, PinAppendsAtTheEndAndPersists)
 TEST_F(QuickAccessServiceTest, PinRejectsADuplicateHandleWithoutSaving)
 {
     expectEmptyStore();
-    service->load();
+    EXPECT_TRUE(service->load().success);
 
     // Exactly one save: the second pin() must not reach the store at all.
     EXPECT_CALL(*store, save(_, _)).Times(1).WillRepeatedly(Return(Result<void>::ok()));
@@ -117,7 +122,7 @@ TEST_F(QuickAccessServiceTest, UnpinRemovesAndPersists)
     EXPECT_CALL(*store, load(_))
         .WillOnce(Return(
             Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11), makePin("Work", 22)})));
-    service->load();
+    EXPECT_TRUE(service->load().success);
 
     const std::vector<PinnedFolder> remaining = {makePin("Work", 22)};
     EXPECT_CALL(*store, save(_, remaining)).WillOnce(Return(Result<void>::ok()));
@@ -129,7 +134,7 @@ TEST_F(QuickAccessServiceTest, UnpinRemovesAndPersists)
 TEST_F(QuickAccessServiceTest, UnpinOfAnUnknownHandleDoesNothing)
 {
     expectEmptyStore();
-    service->load();
+    EXPECT_TRUE(service->load().success);
 
     EXPECT_CALL(*store, save(_, _)).Times(0);
 
@@ -141,18 +146,18 @@ TEST_F(QuickAccessServiceTest, MoveReordersAndPersists)
     EXPECT_CALL(*store, load(_))
         .WillOnce(Return(Result<std::vector<PinnedFolder>>::ok(
             {makePin("Photos", 11), makePin("Work", 22), makePin("Docs", 33)})));
-    service->load();
+    EXPECT_TRUE(service->load().success);
 
     // Downwards: the pins between source and destination shift up by one.
-    const std::vector<PinnedFolder> afterDown = {makePin("Work", 22), makePin("Docs", 33),
-                                                 makePin("Photos", 11)};
+    const std::vector<PinnedFolder> afterDown = {
+        makePin("Work", 22), makePin("Docs", 33), makePin("Photos", 11)};
     EXPECT_CALL(*store, save(_, afterDown)).WillOnce(Return(Result<void>::ok()));
     EXPECT_TRUE(service->move(0, 2));
     EXPECT_EQ(service->pins(), afterDown);
 
     // Upwards, back to the original order.
-    const std::vector<PinnedFolder> afterUp = {makePin("Photos", 11), makePin("Work", 22),
-                                               makePin("Docs", 33)};
+    const std::vector<PinnedFolder> afterUp = {
+        makePin("Photos", 11), makePin("Work", 22), makePin("Docs", 33)};
     EXPECT_CALL(*store, save(_, afterUp)).WillOnce(Return(Result<void>::ok()));
     EXPECT_TRUE(service->move(2, 0));
     EXPECT_EQ(service->pins(), afterUp);
@@ -162,7 +167,7 @@ TEST_F(QuickAccessServiceTest, MoveRejectsAnOutOfRangeOrNoOpIndexWithoutSaving)
 {
     const std::vector<PinnedFolder> stored = {makePin("Photos", 11), makePin("Work", 22)};
     EXPECT_CALL(*store, load(_)).WillOnce(Return(Result<std::vector<PinnedFolder>>::ok(stored)));
-    service->load();
+    EXPECT_TRUE(service->load().success);
 
     EXPECT_CALL(*store, save(_, _)).Times(0);
 
@@ -177,7 +182,7 @@ TEST_F(QuickAccessServiceTest, IsPinnedTracksTheCurrentList)
     EXPECT_CALL(*store, load(_))
         .WillOnce(Return(Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11)})));
     EXPECT_CALL(*store, save(_, _)).WillRepeatedly(Return(Result<void>::ok()));
-    service->load();
+    EXPECT_TRUE(service->load().success);
 
     EXPECT_TRUE(service->isPinned(11));
     EXPECT_FALSE(service->isPinned(22));
@@ -191,7 +196,7 @@ TEST_F(QuickAccessServiceTest, ReplaceAllOverwritesAndPersistsInOneWrite)
     EXPECT_CALL(*store, load(_))
         .WillOnce(Return(
             Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11), makePin("Work", 22)})));
-    service->load();
+    EXPECT_TRUE(service->load().success);
 
     const std::vector<PinnedFolder> replacement = {makePin("Photos (renamed)", 11)};
     EXPECT_CALL(*store, save(_, replacement)).Times(1).WillOnce(Return(Result<void>::ok()));
@@ -201,11 +206,87 @@ TEST_F(QuickAccessServiceTest, ReplaceAllOverwritesAndPersistsInOneWrite)
     EXPECT_EQ(service->pins(), replacement);
 }
 
+// R3-3: a failed write-through used to be discarded outright, so a pin change
+// silently didn't survive the next restart. Every mutator writes through the
+// same persist() helper, so one failing store covers all four.
+TEST_F(QuickAccessServiceTest, PersistenceFailureReachesTheHandlerFromEveryMutator)
+{
+    EXPECT_CALL(*store, load(_))
+        .WillOnce(Return(
+            Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11), makePin("Work", 22)})));
+    EXPECT_TRUE(service->load().success);
+
+    std::vector<Result<void>> failures;
+    service->setOnPersistenceFailed([&failures](const Result<void>& failure) {
+        failures.push_back(failure);
+    });
+
+    EXPECT_CALL(*store, save(_, _))
+        .WillRepeatedly(Return(
+            Result<void>::fail("failed to save quick-access pins", MegaErrorCode::kEInternal)));
+
+    // The in-memory list is still updated, so each mutator still reports
+    // success -- the bool answers "was the change accepted", not "was it
+    // saved".
+    EXPECT_TRUE(service->pin(makePin("Vacation", 33)));
+    EXPECT_TRUE(service->unpin(11));
+    EXPECT_TRUE(service->move(0, 1));
+    service->replaceAll({makePin("Photos", 11)});
+
+    ASSERT_EQ(failures.size(), 4u);
+    for (const Result<void>& failure : failures)
+    {
+        EXPECT_FALSE(failure.success);
+        EXPECT_EQ(failure.errorCode, MegaErrorCode::kEInternal);
+        EXPECT_EQ(failure.errorMessage, "failed to save quick-access pins");
+    }
+}
+
+TEST_F(QuickAccessServiceTest, PersistenceSuccessDoesNotCallTheHandler)
+{
+    expectEmptyStore();
+    EXPECT_TRUE(service->load().success);
+
+    int calls = 0;
+    service->setOnPersistenceFailed([&calls](const Result<void>&) {
+        ++calls;
+    });
+
+    EXPECT_CALL(*store, save(_, _)).WillRepeatedly(Return(Result<void>::ok()));
+
+    EXPECT_TRUE(service->pin(makePin("Photos", 11)));
+    EXPECT_TRUE(service->unpin(11));
+
+    EXPECT_EQ(calls, 0);
+}
+
+// A rejected mutation writes nothing, so it can't report a write failure
+// either -- otherwise a duplicate pin would raise a "couldn't save" toast.
+TEST_F(QuickAccessServiceTest, RejectedMutationsNeverReachTheHandler)
+{
+    EXPECT_CALL(*store, load(_))
+        .WillOnce(Return(Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11)})));
+    EXPECT_TRUE(service->load().success);
+
+    int calls = 0;
+    service->setOnPersistenceFailed([&calls](const Result<void>&) {
+        ++calls;
+    });
+
+    EXPECT_CALL(*store, save(_, _)).Times(0);
+
+    EXPECT_FALSE(service->pin(makePin("Photos again", 11)));
+    EXPECT_FALSE(service->unpin(99));
+    EXPECT_FALSE(service->move(0, 0));
+
+    EXPECT_EQ(calls, 0);
+}
+
 TEST_F(QuickAccessServiceTest, ClearEmptiesMemoryButLeavesTheStoreAlone)
 {
     EXPECT_CALL(*store, load(_))
         .WillOnce(Return(Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11)})));
-    service->load();
+    EXPECT_TRUE(service->load().success);
 
     // Sign-out must not wipe the persisted list -- signing back in restores it.
     EXPECT_CALL(*store, save(_, _)).Times(0);
@@ -226,11 +307,11 @@ TEST_F(QuickAccessServiceTest, PinsAreIsolatedPerAccount)
         .WillOnce(Return(Result<std::vector<PinnedFolder>>::ok({makePin("Photos", 11)})));
     EXPECT_CALL(*store, load("222")).WillOnce(Return(Result<std::vector<PinnedFolder>>::ok({})));
 
-    service->load(); // account 111
+    EXPECT_TRUE(service->load().success); // account 111
     EXPECT_EQ(service->pins(), std::vector<PinnedFolder>{makePin("Photos", 11)});
 
-    service->clear(); // sign-out
-    service->load();  // account 222 -- must not inherit account 111's pins
+    service->clear();                     // sign-out
+    EXPECT_TRUE(service->load().success); // account 222 -- must not inherit account 111's pins
     EXPECT_TRUE(service->pins().empty());
 
     EXPECT_CALL(*store, save("222", _)).Times(1).WillOnce(Return(Result<void>::ok()));
@@ -245,7 +326,11 @@ TEST_F(QuickAccessServiceTest, LoadWithNoLoggedInAccountDegradesToEmptyAndSkipsT
         .WillOnce(Return(Result<std::uint64_t>::fail("not logged in", MegaErrorCode::kEInternal)));
     EXPECT_CALL(*store, load(_)).Times(0);
 
-    service->load();
+    // The client's own failure is forwarded verbatim, so the caller can tell
+    // "not signed in" from a store error.
+    const Result<void> loaded = service->load();
+    EXPECT_FALSE(loaded.success);
+    EXPECT_EQ(loaded.errorMessage, "not logged in");
 
     EXPECT_TRUE(service->pins().empty());
 
@@ -279,7 +364,8 @@ TEST(QuickAccessServiceIsUsableTest, AcceptsALiveCloudDriveFolder)
 
 TEST(QuickAccessServiceIsUsableTest, RejectsAnUnresolvableHandle)
 {
-    EXPECT_FALSE(QuickAccessService::isUsable(Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)));
+    EXPECT_FALSE(QuickAccessService::isUsable(
+        Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)));
 }
 
 TEST(QuickAccessServiceIsUsableTest, RejectsANodeOutsideTheCloudDrive)

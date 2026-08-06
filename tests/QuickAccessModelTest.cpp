@@ -1,9 +1,9 @@
 #include "qml/QuickAccessModel.h"
 
 #include "core/MegaErrorCodes.h"
-
 #include "MockMegaClient.h"
 #include "MockPinnedFolderStore.h"
+#include "qml/NotificationController.h"
 #include "TestApp.h"
 
 #include <gmock/gmock.h>
@@ -65,7 +65,7 @@ protected:
         // QuickAccessServiceTest's job.
         ON_CALL(*client, currentUserHandle()).WillByDefault(Return(Result<std::uint64_t>::ok(111)));
         service = std::make_shared<QuickAccessService>(client, store);
-        model = std::make_unique<QuickAccessModel>(service);
+        model = std::make_unique<QuickAccessModel>(service, &notifications);
     }
 
     void givenStoredPins(std::vector<PinnedFolder> pins)
@@ -84,6 +84,7 @@ protected:
         return model->data(model->index(row, 0), QuickAccessModel::HandleRole).toULongLong();
     }
 
+    NotificationController notifications;
     std::shared_ptr<MockMegaClient> client;
     std::shared_ptr<MockPinnedFolderStore> store;
     std::shared_ptr<QuickAccessService> service;
@@ -143,7 +144,8 @@ TEST_F(QuickAccessModelTest, ReloadDropsAPinWhoseHandleNoLongerResolves)
 {
     givenStoredPins({makePin("Photos", 11)});
     EXPECT_CALL(*client, getNodeInfo(11u, _))
-        .WillOnce(InvokeArgument<1>(Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)));
+        .WillOnce(
+            InvokeArgument<1>(Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)));
     EXPECT_CALL(*store, save(_, std::vector<PinnedFolder>{})).WillOnce(Return(Result<void>::ok()));
 
     model->reload();
@@ -179,8 +181,8 @@ TEST_F(QuickAccessModelTest, MoveReordersRowsAndPersists)
     });
     EXPECT_CALL(*store,
                 save(_,
-                     std::vector<PinnedFolder>{makePin("Work", 22), makePin("Photos", 11),
-                                               makePin("Docs", 33)}))
+                     std::vector<PinnedFolder>{
+                         makePin("Work", 22), makePin("Photos", 11), makePin("Docs", 33)}))
         .WillOnce(Return(Result<void>::ok()));
 
     model->move(11, 1);
@@ -191,6 +193,31 @@ TEST_F(QuickAccessModelTest, MoveReordersRowsAndPersists)
     EXPECT_EQ(handleAt(0), 22u);
     EXPECT_EQ(handleAt(1), 11u);
     EXPECT_EQ(nameAt(1), QStringLiteral("Photos"));
+}
+
+// R3-3: the failure used to stop at the service, which discarded it. The pin
+// stays in the list -- only the write failed -- so the toast is the only thing
+// telling the user it won't be there next launch.
+TEST_F(QuickAccessModelTest, AFailedWriteRaisesAnErrorToast)
+{
+    givenStoredPins({});
+    model->reload();
+
+    QString context;
+    QObject::connect(&notifications,
+                     &NotificationController::errorOccurred,
+                     model.get(),
+                     [&context](const QString& reported) {
+                         context = reported;
+                     });
+    EXPECT_CALL(*store, save(_, _))
+        .WillOnce(Return(
+            Result<void>::fail("failed to save quick-access pins", MegaErrorCode::kEInternal)));
+
+    model->pin(11, QStringLiteral("Photos"));
+
+    EXPECT_EQ(context, QStringLiteral("quickAccessSave"));
+    EXPECT_EQ(model->count(), 1);
 }
 
 TEST_F(QuickAccessModelTest, MoveIgnoresAnUnknownHandleOrANoOpDestination)
@@ -289,7 +316,8 @@ TEST_F(QuickAccessModelTest, ActivateEmitsMissingWithTheClickedLabelForADeletedP
     // cannot catch, which is why activate() re-checks at all.
     EXPECT_CALL(*client, getNodeInfo(11u, _))
         .WillOnce(InvokeArgument<1>(liveFolder("Photos", 11)))
-        .WillOnce(InvokeArgument<1>(Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)));
+        .WillOnce(
+            InvokeArgument<1>(Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)));
     model->reload();
     flushQueuedEvents();
 
