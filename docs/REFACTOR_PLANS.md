@@ -1125,7 +1125,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   という SDK 実装詳細に依存している事実（R2-9 の副産物）も残した。3 つの配達モードそのものは
   R2-2 で `IMegaClient.h` の先頭に書いたので、重複させず参照だけ張っている。
 
-### R3 — 調査済み / R3-1 対応済み、残り 8 件（2026-08-06）
+### R3 — 調査済み / R3-1・R3-3 対応済み、残り 7 件（2026-08-06）
 
 計画の「種」4 件を現物で検証した結果。**確認 8 件 / 種の誤り 3 件（うち 1 件は方針判断が要る）/
 問題なし 6 件 / 新規 5 件**。R1・R2 と同じく、以下はそのまま plan mode の作業単位として使える粒度で
@@ -1221,7 +1221,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   誤って捨てるより残す方が安い」と同じ判断を既に文書化している（`src/core/AuthService.h:17-25`）ので、
   規約はそこから借りればよく、新しく決めることは無い。
 
-**R3-3 [高] `IPinnedFolderStore::save()` の `Result<void>` が 4 箇所で破棄されている**
+**R3-3 [高] ✅対応済み `IPinnedFolderStore::save()` の `Result<void>` が 4 箇所で破棄されている**
 
 - `src/core/QuickAccessService.cpp:44`・`:56`・`:76`・`:84`（`pin` / `unpin` / `move` / `replaceAll`）。
   `(void)` キャストすら無い純粋な破棄。`QSettingsPinnedFolderStore::save` は
@@ -1235,6 +1235,35 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   は「load 失敗と空を区別しない」ことを意図として書いているが、ログを出さない点までは正当化していない。
 - 修正方針: `Result` に `[[nodiscard]]` を付ける（これ単体で破棄箇所が全部コンパイル警告として出る）→
   save 失敗をログ + `NotificationController` に流す。**R3 の中で最も小さく、最も明確に直る項目**。
+- **対応（2026-08-06）**: 方針どおり実施。決めた点:
+  - **`[[nodiscard]]` はクラスに付けた**（`Result` / `Result<void>` の両方）ので、`Result` を返す
+    *あらゆる*関数の破棄が C4834 になる。事前に全 call site を洗った結果、**波及は上記 4 箇所だけ**で、
+    `AuthService` の 5 箇所は既に `(void)` 付き（MSVC では `(void)` が C4834 を抑止する）、
+    `tests/` の 26 箇所は全て値を読んでいた。C4834 は level-1 警告なので、`/W4` が
+    `appMegaExplorer` にしか付いていないことは影響しない — `MegaExplorerCore` でも出る。
+  - **4 箇所は private `QuickAccessService::persist()` に集約**した。`if (!mAccountKey.empty())` の
+    ガードもここに移動。同じ破棄が 4 箇所に散る形そのものを消すのが狙いで、`[[nodiscard]]` は
+    その再発防止。
+  - **サービス → UI は sink コールバック** `setOnPersistenceFailed(std::function<void(const Result<void>&)>)`。
+    `pin`/`unpin`/`move` の `bool`（= 変更が受理されたか）は永続化の成否とは別の問いなので**据え置き**、
+    という切り分け。先例は `DownloadService::setOnJobFinished` で、ハンドラを張るのも
+    `DownloadController` と同じく `src/qml` 側（`QuickAccessModel` のコンストラクタ）。
+    sink は mutator と同じスレッド（= GUI スレッド）で同期に呼ばれるので `invokeOnGuiThread` は不要。
+  - **トーストの文言は `%1` を使わない固定文**（`ToastStack.qml` の `quickAccessSave`）。原因は
+    ローカル設定の書き込み失敗で、SDK の英語文字列は何も説明しない。結果として **R3-4 の enum 化が
+    来てもこの行は動かない** — 新しい文脈を足しながら R3-4 の作業を増やさない形にした。
+  - **`void load()` → `Result<void> load()`**。`QuickAccessService` は Qt-free でログを出せないので、
+    失敗理由を戻り値で外に出し `QuickAccessModel::reload()` が `qCWarning` する。**トーストは出さない**
+    （ログイン直後で、ユーザにはピンが空に見えるだけ／まだ何も失われていない）。
+  - **「load 失敗の直後に save が上書きする」件は意図的に許容**し、その理由をヘッダに書いた。壊れた
+    JSON はアプリ側で復旧しようが無く（QSettings を手で直す以外に無い）、保全のために以降の
+    save を封じると**新しく付けたピンが全部消えるセッション**が生まれ、そちらの方が損。
+  - テスト 4 件追加（永続化失敗が sink に届く / 成功時は呼ばれない / **拒否された mutation は
+    書き込まないので sink も呼ばない** / モデルが `quickAccessSave` トーストを上げる）。
+    既存の load テスト 2 件は戻り値の検証を追加、他の `service->load();` は
+    `EXPECT_TRUE(service->load().success);` に変えた（`[[nodiscard]]` が機械的に炙り出した）。
+    377 件全緑、`/W4` 新規警告ゼロ。`[[nodiscard]]` が実際に効くことは、`persist()` に破棄を
+    一時的に戻して C4834 が出ることを確認して裏づけた。
 
 **R3-4 [中] トースト 8 文脈が SDK の英語文字列を生のまま `%1` に差し込む**
 
@@ -1323,7 +1352,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   ベンダーされた `third_party/sdk` / `qwindowkit` も巻き込む変更になるため、**エラー表現の整理のために
   払うコストとして釣り合わない**。
 - 推奨する結論（**要承認**）: 独自 `Result<T>` を維持し、次の 3 点だけ入れる。
-  (a) `[[nodiscard]]`（R3-3 が即座に直る）、(b) `value` の直接公開をやめてアクセサ化（R3-7）、
+  (a) `[[nodiscard]]`（**✅R3-3 で実施済み**）、(b) `value` の直接公開をやめてアクセサ化（R3-7）、
   (c) `fail()` の既定コードを廃止（R3-1）。`std::variant` 化は (b) と実質同じ効果しか無いのに
   全 service に波及するので**採らない**。
 - 波及規模の実測: `Result` に触れるファイルは `src/` + `tests/` で 57、`tests/` 内の `Result<` は
@@ -1397,9 +1426,9 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 
 | 箇所 | 現状 | 判定 | 対応 |
 | --- | --- | --- | --- |
-| `QuickAccessService.cpp:44,56,76,84` | `save()` の戻り値を破棄 | **報告漏れ** | R3-3 |
-| `QuickAccessService.cpp:23-24` | load 失敗 → 空リスト、無ログ | **報告漏れ**（畳むこと自体は意図的） | R3-3 |
-| `QuickAccessService.cpp:15-20` | `currentUserHandle()` 失敗 → ピン全消し、無ログ | **報告漏れ** | R3-3 |
+| `QuickAccessService.cpp:44,56,76,84` | `save()` の戻り値を破棄 | **報告漏れ** | ✅R3-3（`persist()` + sink → ログ + トースト） |
+| `QuickAccessService.cpp:23-24` | load 失敗 → 空リスト、無ログ | **報告漏れ**（畳むこと自体は意図的） | ✅R3-3（`load()` が `Result<void>` を返す → モデルがログ） |
+| `QuickAccessService.cpp:15-20` | `currentUserHandle()` 失敗 → ピン全消し、無ログ | **報告漏れ** | ✅R3-3（同上、client の `Result` をそのまま転送） |
 | `QuickAccessModel.cpp:183-195` | 失敗を「dangling」と断定してピン削除 | **報告漏れ**（ログの文言も誤り） | R3-2 |
 | `FolderNavigationController.cpp:318-324` | 裏側 refresh 失敗、無ログ | **報告漏れ** | R3-12 |
 | `AuthService.cpp:111-117` | トークン取得失敗、無ログ | **報告漏れ** | R3-13 |
@@ -1412,8 +1441,8 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 
 ```
 R3-1  errorCode の意味づけ（既定引数の廃止）    … ✅済（先行実施）。以降 3 件の前提
-R3-3  [[nodiscard]] + save/load 失敗の報告      … 単独・最小・データ損失を止める
-R3-2  isUsable の 3 値化（ピンを誤削除しない）  … R3-1(c) に依存 → 着手可
+R3-3  [[nodiscard]] + save/load 失敗の報告      … ✅済。R3-9(a) もこれで入った
+R3-2  isUsable の 3 値化（ピンを誤削除しない）  … R3-1(c) に依存 → 次はこれ
 R3-6  renameEntry の QML 分岐だけ               … ◐C++ 半分は R3-1 で完了
 R3-12 / R3-13 / R3-14  無音の 3 箇所にログ      … 極小・まとめて 1 コミット
 R3-8  goBack のガード                           … 極小

@@ -230,3 +230,15 @@ mistaken for SDK ones:
 `Result::fail` takes the code as a **required** argument. It used to default to `-1`, which is
 `API_EINTERNAL`, so "the caller didn't think about it" and "an internal error happened" were the
 same value; making it mandatory is what forces the decision at each call site.
+
+### A `Result` may not be dropped on the floor
+
+`Result` is `[[nodiscard]]`, so ignoring one is a compile warning (MSVC C4834). Ignoring a failure
+on purpose is spelled `(void)foo();` with a comment saying why — `AuthService`'s best-effort session
+clears are the model. This was added after `QuickAccessService` discarded four `IPinnedFolderStore::save()`
+results outright, which meant a pin the user added just silently wasn't there next launch.
+
+Where a Qt-free service has no one to report to, it hands the failure out rather than swallowing it:
+`QuickAccessService::load()` returns its `Result` for the caller to log, and its write-through
+failures go to a `setOnPersistenceFailed` handler that `QuickAccessModel` turns into a log line plus
+a toast. Services don't log; `src/qml` does.
