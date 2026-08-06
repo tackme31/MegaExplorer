@@ -1,6 +1,7 @@
 #include "QSettingsPinnedFolderStore.h"
 
 #include "app/Logging.h"
+#include "core/MegaErrorCodes.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -39,7 +40,8 @@ QSettingsPinnedFolderStore::load(const std::string& accountKey) const
     {
         qCWarning(lcQuickAccess) << "stored quick-access pins are not a valid JSON array:"
                                  << parseError.errorString();
-        return Result<std::vector<PinnedFolder>>::fail("stored quick-access pins are corrupt");
+        return Result<std::vector<PinnedFolder>>::fail("stored quick-access pins are corrupt",
+                                                       MegaErrorCode::kEInternal);
     }
 
     std::vector<PinnedFolder> pins;
@@ -88,7 +90,7 @@ Result<void> QSettingsPinnedFolderStore::save(const std::string& accountKey,
     {
         qCWarning(lcQuickAccess) << "failed to write quick-access pins, status="
                                  << settings.status();
-        return Result<void>::fail("failed to save quick-access pins");
+        return Result<void>::fail("failed to save quick-access pins", MegaErrorCode::kEInternal);
     }
 
     return Result<void>::ok();

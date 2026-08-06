@@ -1,5 +1,7 @@
 #include "SearchService.h"
 
+#include "MegaErrorCodes.h"
+
 SearchService::SearchService(std::shared_ptr<IMegaClient> client,
                              std::shared_ptr<FolderNavigationService> navigationService)
     : mClient(std::move(client)), mNavigationService(std::move(navigationService))
@@ -11,7 +13,7 @@ void SearchService::search(const std::string& query,
 {
     if (query.empty())
     {
-        onDone(Result<std::vector<FileEntry>>::fail("empty query"));
+        onDone(Result<std::vector<FileEntry>>::fail("empty query", MegaErrorCode::kEArgs));
         return;
     }
 

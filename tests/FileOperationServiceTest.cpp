@@ -115,7 +115,7 @@ TEST(FileOperationServiceTest, PropagatesARenameFailure)
     ASSERT_EQ(captured.calls, 1);
     EXPECT_FALSE(captured.result.success);
     EXPECT_EQ(captured.result.errorMessage, "access denied");
-    EXPECT_EQ(captured.result.errorCode, -11);
+    EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kEAccess);
 }
 
 TEST(FileOperationServiceTest, MoveToRubbishPassesThrough)
@@ -136,7 +136,7 @@ TEST(FileOperationServiceTest, PropagatesAMoveToRubbishFailure)
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
     EXPECT_CALL(*client, moveToRubbish(11u, _))
-        .WillOnce(InvokeArgument<1>(Result<void>::fail("no such node")));
+        .WillOnce(InvokeArgument<1>(Result<void>::fail("no such node", MegaErrorCode::kENoEnt)));
     Capture captured;
 
     service.moveToRubbish(11, captured.sink());

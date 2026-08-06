@@ -214,7 +214,7 @@ TEST_F(FolderNavigationControllerTest, MoveSelectionToRubbishSeparatesSucceededF
 
     EXPECT_CALL(*client, moveToRubbish(1u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
     EXPECT_CALL(*client, moveToRubbish(2u, _))
-        .WillOnce(InvokeArgument<1>(Result<void>::fail("access denied")));
+        .WillOnce(InvokeArgument<1>(Result<void>::fail("access denied", MegaErrorCode::kEAccess)));
     EXPECT_CALL(*client, moveToRubbish(3u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
     const int fetchesBefore = rootFetches;
 
@@ -296,7 +296,7 @@ TEST_F(FolderNavigationControllerTest, MoveHandlesToSeparatesSucceededFromFailed
     EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
     EXPECT_CALL(*client, moveNode(1u, _, _, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
     EXPECT_CALL(*client, moveNode(2u, _, _, _))
-        .WillOnce(InvokeArgument<3>(Result<void>::fail("access denied")));
+        .WillOnce(InvokeArgument<3>(Result<void>::fail("access denied", MegaErrorCode::kEAccess)));
 
     controller->moveHandlesTo({1u, 2u}, 99, false);
     flush();
@@ -484,7 +484,7 @@ TEST_F(FolderNavigationControllerTest, RefreshStillReReadsTheListingWhenTheSyncF
     flush();
 
     EXPECT_CALL(*client, syncPendingChanges(_))
-        .WillOnce(InvokeArgument<0>(Result<void>::fail("offline")));
+        .WillOnce(InvokeArgument<0>(Result<void>::fail("offline", MegaErrorCode::kEAgain)));
     const int fetchesBefore = rootFetches;
 
     controller->refresh();
@@ -761,7 +761,7 @@ TEST_F(FolderNavigationControllerTest, PasteFallsBackToTheCachedListingWhenTheDe
     // Matched ahead of givenRootListing's expectation, so every read from here
     // on fails -- the paste has to fall back to what it already had.
     EXPECT_CALL(*client, getRootChildren(_, _))
-        .WillRepeatedly(InvokeArgument<1>(Result<std::vector<FileEntry>>::fail("offline")));
+        .WillRepeatedly(InvokeArgument<1>(Result<std::vector<FileEntry>>::fail("offline", MegaErrorCode::kEAgain)));
     EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
@@ -864,7 +864,7 @@ TEST_F(FolderNavigationControllerTest, PasteEmitsNodesCopiedOnlyWhenSomethingSuc
                      });
 
     EXPECT_CALL(*client, copyNode(_, _, _, _, _))
-        .WillOnce(InvokeArgument<4>(Result<void>::fail("gone")))
+        .WillOnce(InvokeArgument<4>(Result<void>::fail("gone", MegaErrorCode::kENoEnt)))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
     controller->paste();

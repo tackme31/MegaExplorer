@@ -51,7 +51,7 @@ TEST(AccountServiceTest, IdentityPropagatesFailureWhenNotLoggedIn)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     EXPECT_CALL(*mockClient, currentAccountIdentity())
-        .WillOnce(::testing::Return(Result<AccountIdentity>::fail("not logged in")));
+        .WillOnce(::testing::Return(Result<AccountIdentity>::fail("not logged in", MegaErrorCode::kEInternal)));
 
     AccountService service(mockClient);
 

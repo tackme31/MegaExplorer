@@ -1,5 +1,7 @@
 #include "FolderNavigationService.h"
 
+#include "MegaErrorCodes.h"
+
 FolderNavigationService::FolderNavigationService(std::shared_ptr<IMegaClient> client)
     : mClient(std::move(client))
 {}
@@ -59,7 +61,7 @@ void FolderNavigationService::goBack(SortOrder order,
 {
     if (mBackStack.empty())
     {
-        onDone(Result<std::vector<FileEntry>>::fail("no back history"));
+        onDone(Result<std::vector<FileEntry>>::fail("no back history", MegaErrorCode::kEArgs));
         return;
     }
 

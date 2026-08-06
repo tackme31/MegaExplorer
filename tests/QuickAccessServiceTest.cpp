@@ -1,5 +1,7 @@
 #include "core/QuickAccessService.h"
 
+#include "core/MegaErrorCodes.h"
+
 #include "MockMegaClient.h"
 #include "MockPinnedFolderStore.h"
 
@@ -72,7 +74,7 @@ TEST_F(QuickAccessServiceTest, LoadReflectsStoredPinsInOrder)
 TEST_F(QuickAccessServiceTest, LoadFailureDegradesToEmptyList)
 {
     EXPECT_CALL(*store, load(_))
-        .WillOnce(Return(Result<std::vector<PinnedFolder>>::fail("corrupt")));
+        .WillOnce(Return(Result<std::vector<PinnedFolder>>::fail("corrupt", MegaErrorCode::kEInternal)));
 
     service->load();
 
@@ -240,7 +242,7 @@ TEST_F(QuickAccessServiceTest, PinsAreIsolatedPerAccount)
 TEST_F(QuickAccessServiceTest, LoadWithNoLoggedInAccountDegradesToEmptyAndSkipsTheStore)
 {
     EXPECT_CALL(*client, currentUserHandle())
-        .WillOnce(Return(Result<std::uint64_t>::fail("not logged in")));
+        .WillOnce(Return(Result<std::uint64_t>::fail("not logged in", MegaErrorCode::kEInternal)));
     EXPECT_CALL(*store, load(_)).Times(0);
 
     service->load();
@@ -257,7 +259,7 @@ TEST_F(QuickAccessServiceTest, ResolveFolderDelegatesToGetNodeInfo)
     EXPECT_CALL(*client, getNodeInfo(11u, _))
         .WillOnce(InvokeArgument<1>(Result<NodeInfo>::ok(info)));
 
-    Result<NodeInfo> received = Result<NodeInfo>::fail("not called");
+    Result<NodeInfo> received = Result<NodeInfo>::fail("not called", MegaErrorCode::kEInternal);
     service->resolveFolder(11, [&received](Result<NodeInfo> result) {
         received = std::move(result);
     });
@@ -277,7 +279,7 @@ TEST(QuickAccessServiceIsUsableTest, AcceptsALiveCloudDriveFolder)
 
 TEST(QuickAccessServiceIsUsableTest, RejectsAnUnresolvableHandle)
 {
-    EXPECT_FALSE(QuickAccessService::isUsable(Result<NodeInfo>::fail("no such node")));
+    EXPECT_FALSE(QuickAccessService::isUsable(Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)));
 }
 
 TEST(QuickAccessServiceIsUsableTest, RejectsANodeOutsideTheCloudDrive)

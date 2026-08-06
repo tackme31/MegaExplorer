@@ -35,7 +35,8 @@ void FileOperationService::rename(std::uint64_t handle,
 {
     if (!isValidName(newName))
     {
-        onDone(Result<void>::fail("Invalid name: empty, or contains a path separator"));
+        onDone(Result<void>::fail("Invalid name: empty, or contains a path separator",
+                                  MegaErrorCode::kEArgs));
         return;
     }
 

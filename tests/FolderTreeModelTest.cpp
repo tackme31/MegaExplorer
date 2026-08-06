@@ -1,6 +1,7 @@
 #include "qml/FolderTreeModel.h"
 
 #include "core/FolderTreeService.h"
+#include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
 #include "TestApp.h"
 
@@ -125,7 +126,7 @@ TEST_F(FolderTreeModelTest, EnsureLoadedFailureResetsToNotLoadedForRetry)
 
     EXPECT_CALL(*client, getRootChildren(::testing::_, ::testing::_))
         .WillOnce(
-            ::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::fail("network error")));
+            ::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::fail("network error", MegaErrorCode::kEAgain)));
     model->ensureLoaded(root);
     flushQueuedEvents();
 

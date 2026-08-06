@@ -1,6 +1,7 @@
 #include "WindowsSessionStore.h"
 
 #include "app/Logging.h"
+#include "core/MegaErrorCodes.h"
 
 #include <filesystem>
 #include <fstream>
@@ -70,7 +71,8 @@ Result<std::string> WindowsSessionStore::loadSession() const
     if (!in)
     {
         qCWarning(lcSession) << "failed to open session file for reading:" << mFilePath.c_str();
-        return Result<std::string>::fail("failed to open session file");
+        return Result<std::string>::fail("failed to open session file",
+                                        MegaErrorCode::kEInternal);
     }
     std::vector<char> raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     in.close();
@@ -78,7 +80,7 @@ Result<std::string> WindowsSessionStore::loadSession() const
     if (raw.empty())
     {
         qCWarning(lcSession) << "session file is empty:" << mFilePath.c_str();
-        return Result<std::string>::fail("session file is empty");
+        return Result<std::string>::fail("session file is empty", MegaErrorCode::kEInternal);
     }
 
     DATA_BLOB dataIn;
@@ -92,7 +94,8 @@ Result<std::string> WindowsSessionStore::loadSession() const
     {
         qCWarning(lcSession) << "CryptUnprotectData failed, error"
                              << static_cast<qint64>(GetLastError());
-        return Result<std::string>::fail("failed to decrypt session data");
+        return Result<std::string>::fail("failed to decrypt session data",
+                                        MegaErrorCode::kEInternal);
     }
 
     std::string result(reinterpret_cast<char*>(dataOut.pbData), dataOut.cbData);
@@ -113,7 +116,7 @@ Result<void> WindowsSessionStore::saveSession(const std::string& sessionToken)
     {
         qCWarning(lcSession) << "CryptProtectData failed, error"
                              << static_cast<qint64>(GetLastError());
-        return Result<void>::fail("failed to encrypt session data");
+        return Result<void>::fail("failed to encrypt session data", MegaErrorCode::kEInternal);
     }
 
     std::ofstream out(mFilePath, std::ios::binary | std::ios::trunc);
@@ -121,7 +124,8 @@ Result<void> WindowsSessionStore::saveSession(const std::string& sessionToken)
     {
         LocalFree(dataOut.pbData);
         qCWarning(lcSession) << "failed to open session file for writing:" << mFilePath.c_str();
-        return Result<void>::fail("failed to open session file for writing");
+        return Result<void>::fail("failed to open session file for writing",
+                                  MegaErrorCode::kEInternal);
     }
     out.write(reinterpret_cast<const char*>(dataOut.pbData),
               static_cast<std::streamsize>(dataOut.cbData));
@@ -132,7 +136,7 @@ Result<void> WindowsSessionStore::saveSession(const std::string& sessionToken)
     if (!writeOk)
     {
         qCWarning(lcSession) << "failed to write session file:" << mFilePath.c_str();
-        return Result<void>::fail("failed to write session file");
+        return Result<void>::fail("failed to write session file", MegaErrorCode::kEInternal);
     }
     return Result<void>::ok();
 }

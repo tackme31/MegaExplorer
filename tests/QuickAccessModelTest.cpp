@@ -1,5 +1,7 @@
 #include "qml/QuickAccessModel.h"
 
+#include "core/MegaErrorCodes.h"
+
 #include "MockMegaClient.h"
 #include "MockPinnedFolderStore.h"
 #include "TestApp.h"
@@ -141,7 +143,7 @@ TEST_F(QuickAccessModelTest, ReloadDropsAPinWhoseHandleNoLongerResolves)
 {
     givenStoredPins({makePin("Photos", 11)});
     EXPECT_CALL(*client, getNodeInfo(11u, _))
-        .WillOnce(InvokeArgument<1>(Result<NodeInfo>::fail("no such node")));
+        .WillOnce(InvokeArgument<1>(Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)));
     EXPECT_CALL(*store, save(_, std::vector<PinnedFolder>{})).WillOnce(Return(Result<void>::ok()));
 
     model->reload();
@@ -287,7 +289,7 @@ TEST_F(QuickAccessModelTest, ActivateEmitsMissingWithTheClickedLabelForADeletedP
     // cannot catch, which is why activate() re-checks at all.
     EXPECT_CALL(*client, getNodeInfo(11u, _))
         .WillOnce(InvokeArgument<1>(liveFolder("Photos", 11)))
-        .WillOnce(InvokeArgument<1>(Result<NodeInfo>::fail("no such node")));
+        .WillOnce(InvokeArgument<1>(Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)));
     model->reload();
     flushQueuedEvents();
 
