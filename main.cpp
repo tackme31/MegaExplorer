@@ -123,7 +123,7 @@ int main(int argc, char* argv[])
     // organization/application name set at the top of this function.
     auto pinnedFolderStore = std::make_shared<QSettingsPinnedFolderStore>();
     auto quickAccessService = std::make_shared<QuickAccessService>(client, pinnedFolderStore);
-    QuickAccessModel quickAccessModel(quickAccessService);
+    QuickAccessModel quickAccessModel(quickAccessService, &notifications);
 
     // Wires one tab's worth of navigation/search/thumbnail state: a fresh
     // FolderNavigationService/SearchService/FolderNavigationController/

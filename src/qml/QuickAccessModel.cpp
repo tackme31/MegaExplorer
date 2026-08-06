@@ -2,6 +2,7 @@
 
 #include "app/Logging.h"
 #include "GuiThread.h"
+#include "NotificationController.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -24,9 +25,25 @@ struct Sweep
 };
 } // namespace
 
-QuickAccessModel::QuickAccessModel(std::shared_ptr<QuickAccessService> service, QObject* parent)
-    : QAbstractListModel(parent), mService(std::move(service))
-{}
+QuickAccessModel::QuickAccessModel(std::shared_ptr<QuickAccessService> service,
+                                   NotificationController* notifications,
+                                   QObject* parent)
+    : QAbstractListModel(parent), mService(std::move(service)), mNotifications(notifications)
+{
+    // No invokeOnGuiThread: the service calls this synchronously from inside
+    // the mutator that failed, and every mutator is reached from the GUI
+    // thread (validateAll's commit included -- it runs inside its own
+    // invokeOnGuiThread).
+    mService->setOnPersistenceFailed([this](const Result<void>& failure) {
+        qCWarning(lcQuickAccess) << "failed to persist quick-access pins:"
+                                 << failure.errorMessage.c_str() << "code=" << failure.errorCode;
+        if (mNotifications)
+        {
+            mNotifications->notifyError(QStringLiteral("quickAccessSave"),
+                                        QString::fromStdString(failure.errorMessage));
+        }
+    });
+}
 
 QuickAccessModel::~QuickAccessModel() = default;
 
@@ -69,8 +86,16 @@ void QuickAccessModel::reload()
 {
     beginResetModel();
     ++mGeneration;
-    mService->load();
+    const Result<void> loaded = mService->load();
     endResetModel();
+    // Logged, not toasted: the pin list simply comes up empty, and nothing the
+    // user did is being lost at this point (a sign-out mid-login reaches this
+    // too, via currentUserHandle).
+    if (!loaded.success)
+    {
+        qCWarning(lcQuickAccess) << "failed to load quick-access pins:"
+                                 << loaded.errorMessage.c_str() << "code=" << loaded.errorCode;
+    }
     emit countChanged();
 
     validateAll();

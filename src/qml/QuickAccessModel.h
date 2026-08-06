@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <memory>
 
+class NotificationController;
+
 // QML-facing model behind QuickAccessSection.qml's pin list. Flat, unlike
 // FolderTreeModel: a pin is a shortcut, never expandable.
 //
@@ -32,6 +34,7 @@ public:
     };
 
     explicit QuickAccessModel(std::shared_ptr<QuickAccessService> service,
+                              NotificationController* notifications,
                               QObject* parent = nullptr);
     ~QuickAccessModel() override;
 
@@ -77,6 +80,7 @@ private:
     QString nameFor(quint64 handle) const;
 
     std::shared_ptr<QuickAccessService> mService;
+    NotificationController* mNotifications;
 
     // Bumped by reload()/reset(); every async callback captures its value and
     // drops its result if it no longer matches. Same guard as

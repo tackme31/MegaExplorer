@@ -186,6 +186,14 @@ Item {
         case "copy":
             text = qsTr("Can't copy here: %1").arg(errorMessage);
             break;
+            // Deliberately drops errorMessage: the cause is a local settings
+            // write failing, which the SDK's English strings don't describe
+            // anyway, and what the user needs to know is that the pin change
+            // won't survive a restart. Carrying no %1 also means R3-4's
+            // planned error-code enum can't change this line.
+        case "quickAccessSave":
+            text = qsTr("Couldn't save your pinned folders");
+            break;
         case "uploadNothingToUpload":
             text = qsTr("Nothing to upload — folders and non-file items can't be uploaded");
             break;
