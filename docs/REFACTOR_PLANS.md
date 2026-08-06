@@ -1125,11 +1125,11 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   という SDK 実装詳細に依存している事実（R2-9 の副産物）も残した。3 つの配達モードそのものは
   R2-2 で `IMegaClient.h` の先頭に書いたので、重複させず参照だけ張っている。
 
-### R3 — 調査済み / 未修正（2026-08-06）
+### R3 — 調査済み / R3-1 対応済み、残り 8 件（2026-08-06）
 
 計画の「種」4 件を現物で検証した結果。**確認 8 件 / 種の誤り 3 件（うち 1 件は方針判断が要る）/
 問題なし 6 件 / 新規 5 件**。R1・R2 と同じく、以下はそのまま plan mode の作業単位として使える粒度で
-書いてある。**このセッションではコードを一切変更していない**（調査のみ）。
+書いてある。**調査セッションではコードを一切変更していない**（以降の修正は各項目の「対応」に記録）。
 
 #### 前提: 失敗の表現は 1 つではなく 3 つある
 
@@ -1151,23 +1151,31 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 
 #### 確認された問題
 
-**R3-1 [高] `fail()` の既定コード `-1` は SDK の `API_EINTERNAL` そのもの — 79 中 52 箇所**
+**R3-1 [高] ✅対応済み `fail()` の既定コード `-1` は SDK の `API_EINTERNAL` そのもの — 79 中 53 箇所**
 
 - `src/core/Result.h:13`・`:28` の `fail(std::string message, int code = -1)`。一方
   `third_party/sdk/include/megaapi.h:8933` が `API_EINTERNAL = -1`。つまり「コードを指定し忘れた」と
   「内部エラーだった」が同じ値で、**`MegaErrorCodes.h` には -1 のエントリが無い**ので表を見ても
   区別できない。
-- 実測（`::fail(` の全 79 箇所を引数の最上位カンマで分類）:
+- 実測（`::fail(` の全 79 箇所を引数の最上位カンマで分類）。**修正時に既定引数を外して
+  コンパイルエラーで数え直したところ、調査時の目視分類が数箇所ずれていた**ので、下表は
+  訂正済みの実数（括弧内が調査時の記載）:
 
   | 区分 | 件数 | 備考 |
   | --- | --- | --- |
-  | コードを明示 | 27 | `checkMove`/`checkUpload`/`createFolder` 系。正しい側 |
-  | 既定 -1 のまま | 52 | 内訳 ↓ |
+  | コードを明示 | 26（27） | `checkMove`/`checkUpload`/`createFolder` 系。正しい側 |
+  | 既定 -1 のまま | 53（52） | 内訳 ↓ |
   | ├ `fail(kShutDownMessage)` | 29 | 表に出ない（→「問題なし」節） |
-  | ├ `MegaSdkClient` のハンドル解決失敗 | 13 | **意味的には `kENoEnt`** |
+  | ├ `MegaSdkClient` のハンドル解決失敗 | 9（13） | **意味的には `kENoEnt`** |
   | ├ `WindowsSessionStore` | 6 | I/O・DPAPI 失敗 |
   | ├ `QSettingsPinnedFolderStore` | 2 | |
-  | └ `src/core`（`goBack` / `search`） | 2 | R3-8 |
+  | ├ `MegaSdkClient` の「not logged in」 | 3 | 調査時は「その他」に含めそこねていた |
+  | ├ `MegaSdkClient:245`「Account details missing」 | 1 | 同上 |
+  | └ `src/core`（`rename` / `goBack` / `search`） | 3（2） | R3-6 / R3-8 |
+
+  `tests/` 側は「`Result<` が 452 箇所」と書いていたが、**波及するのは `::fail(` の 77 箇所、
+  そのうちコード未指定は 15 箇所だけ**（残り 62 は既にコードを明示していた）。既定引数の撤廃が
+  想定よりはるかに安く済んだ理由がこれ。
 
 - 一番効く不整合はファイル内で完結している。`src/mega/MegaSdkClient.cpp:743`（`getNodeInfo`）、
   `:771`（`renameNode`）、`:819`・`:851`・`:889` などは「ハンドルが解決しない」を -1 で返すのに、
@@ -1180,6 +1188,22 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   (b) `fail()` の既定引数を**廃止してコードを必須**にする（呼び出し側 79 箇所が機械的に洗われ、
   「考えていない」箇所が漏れなく出る）、(c) ハンドル解決失敗 13 箇所を `kENoEnt` にする。
   (b) は 79 箇所に触るので単独セッション。
+- **対応（2026-08-06、commit `007dc88` + `a8965a2`）**: (a)(b)(c) を方針どおり実施。決めた点:
+  - **既定引数は完全撤廃**。`= -1` を外した状態で一度ビルドを落とし、出たエラーが上表の
+    53 + 15 件と一致することを確認してから直した。**この「わざと落とす」手順が監査そのもの**なので、
+    同種の作業では先にエラー一覧を取ること。
+  - **シャットダウン 29 箇所は正のセンチネル** `kClientShutDownCode = 2`（`MegaSdkClient.cpp` の
+    無名 namespace、`kShutDownMessage` の隣）。正にしたのは、`isSessionDefinitivelyInvalid` /
+    `classifyError` の `switch` に**値域で**掛からないことを保証するため。`MegaErrorCodes.h` に
+    正センチネルの台帳コメントを置き、`kNoStoredSession = 1` と並べた。
+  - **SDK に対応物が無い失敗（ストア 8 + 「not logged in」3 + details missing 1）は `kEInternal`**。
+    「I/O 失敗」と「保存データが壊れている」の区別は、それを実際に必要とする **R3-3 に渡した**。
+  - ハンドル解決失敗 9 箇所を `kENoEnt` にしても**挙動は変わらない**ことを事前確認済み:
+    `kENoEnt` で分岐するのは `UploadController.cpp:65`（供給元は `checkUpload`/`upload` で元から
+    `kENoEnt`）と auth 経路 2 箇所だけで、後者に届くのは login/loginWithSession/fetchNodes の結果に
+    限られ、それらは SDK リスナ経由かシャットダウンガードである。テスト 373 件が全緑で裏づけ。
+  - `docs/ARCHITECTURE.md` に `## Error representation` 節を追加（R1 の信頼境界・R2 の
+    スレッドモデルと並ぶ位置）。R3-4 / R3-9 は未決なので書いていない — 決まった時点で追記する。
 
 **R3-2 [高] `isUsable()` が「問い合わせ失敗」を「ピンが消えた」に畳み、ピンを永久削除する**
 
@@ -1244,7 +1268,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 - 修正方針: R3-4 と同じ場所を触るので**同一セッションで片付ける**。文字列の対応表が C++ と QML に
   分かれている限り同じ取りこぼしが再発するので、R3-4 の enum 化がそのまま再発防止になる。
 
-**R3-6 [中] 同じ「名前が不正」を rename だけ -1、createFolder / copy は `kEArgs` で返す**
+**R3-6 [中] ◐半分対応済み 同じ「名前が不正」を rename だけ -1、createFolder / copy は `kEArgs` で返す**
 
 - `src/core/FileOperationService.cpp:38` — `rename` は
   `fail("Invalid name: empty, or contains a path separator")`（コード無し = -1）。
@@ -1255,6 +1279,10 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   **ユーザの入力ミスが「操作の失敗」として出る**。
 - 修正方針: rename に `kEArgs` を付け、`renameEntry` に `createFolder` と同じ分岐を足す。
   R3-1(b) を先にやれば、この 1 件は自動的に炙り出される。
+- **対応（2026-08-06）**: C++ 半分（`FileOperationService.cpp:38` への `kEArgs` 付与）は R3-1 で完了
+  — 実際に既定引数の撤廃で真っ先に落ちた 3 箇所の 1 つだった。**残るは `renameEntry` の QML 分岐**
+  （`src/qml/FolderNavigationController.cpp:340-347` を `:377-386` と同じ形にする）で、これが
+  済むまで挙動は変わらない。
 
 **R3-7 [低] 失敗した `Result` の `value` が読める — 実際に読んでいる箇所が 1 つある**
 
@@ -1383,10 +1411,10 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 #### 推奨実施順（各項目 1 セッション）
 
 ```
+R3-1  errorCode の意味づけ（既定引数の廃止）    … ✅済（先行実施）。以降 3 件の前提
 R3-3  [[nodiscard]] + save/load 失敗の報告      … 単独・最小・データ損失を止める
-R3-1  errorCode の意味づけ（既定引数の廃止）    … 79 箇所。以降 3 件の前提
-R3-2  isUsable の 3 値化（ピンを誤削除しない）  … R3-1(c) に依存
-R3-6  rename の kEArgs + ダイアログ分岐         … R3-1 が炙り出す 1 件
+R3-2  isUsable の 3 値化（ピンを誤削除しない）  … R3-1(c) に依存 → 着手可
+R3-6  renameEntry の QML 分岐だけ               … ◐C++ 半分は R3-1 で完了
 R3-12 / R3-13 / R3-14  無音の 3 箇所にログ      … 極小・まとめて 1 コミット
 R3-8  goBack のガード                           … 極小
 R3-4 + R3-5  notifyError の enum 化（+ refresh 追加） … QML も動く。R6 と要調整
@@ -1403,6 +1431,9 @@ R3-9 の承認だけは着手前に要る（`実施手順` 3 の「製品挙動�
   R2 の「スレッドモデル」と並ぶ形にする。内容は前提節（表現が 3 つあること）+ R3-1 の結論
   （`errorCode` で分岐し `errorMessage` では分岐しない、を `IMegaClient.h` の同期 3 メソッドから
   全体規約に格上げ）+ R3-4 の C++/QML 分担 + R3-9 で決めた `Result` の方針。
+  - **R3-1 で `## Error representation` として作成済み**。前提節と `errorCode` 規約（値域の
+    使い分けを含む）まで入っている。**R3-4 の C++/QML 分担と R3-9 の `Result` 方針は未決なので
+    まだ書いていない** — プレースホルダも置いていないので、各項目が済んだ時点で追記すること。
 
 ### R4 — 未着手
 ### R5 — 未着手

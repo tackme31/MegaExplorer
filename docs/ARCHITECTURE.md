@@ -194,3 +194,39 @@ own defense:
 The mirror image — **local** data crossing into the app — is `UploadController::dropUrls`, and it
 is the model to copy: it drops anything that isn't `QUrl::isLocalFile()`, classifies with
 `QFileInfo::isDir`/`isFile`, and normalizes via `absoluteFilePath()` before the path is used.
+
+## Error representation
+
+Failure is expressed three ways, and they are not interchangeable:
+
+1. **`Result<T>`** (`src/core/Result.h`) — `success` / `value` / `errorMessage` / `errorCode`. The
+   normal one; every `IMegaClient` method and every service reports through it.
+2. **A `Result` that always succeeds, with the error inside the value** — `AccountService::loadAvatar`
+   returns `Result<AvatarOutcome>::ok()` unconditionally and puts the failure in
+   `AvatarOutcome::errorCode`/`errorMessage`. The outer `Result` carries zero bits there. Don't add
+   more of these; if the work can't fail, don't wrap it in a `Result` at all.
+3. **Job state machines** — `DownloadJob` / `UploadJob` carry `state == Failed` plus their own copies
+   of `errorMessage`/`errorCode`, fed from the `Result` that produced them.
+
+### `errorCode` is the part callers are allowed to read
+
+**Branch on `errorCode`, never on `errorMessage`.** On the SDK path the message is
+`MegaError::getErrorString()` — a fixed English table looked up from the code itself
+(`third_party/sdk/src/megaapi.cpp`), so it carries nothing the code doesn't. It is for logs and for
+the one UI case that has genuinely run out of classification (`AuthController`'s `UnknownError`).
+`IMegaClient.h` stated this rule for its three synchronous methods; it applies everywhere.
+
+Codes come from `src/core/MegaErrorCodes.h`, whose value ranges keep app-defined codes from being
+mistaken for SDK ones:
+
+- **`0`** is `API_OK` and is never valid on a failed `Result`. Note that a default-constructed
+  `Result` is exactly that contradiction (`success == false`, `errorCode == 0`) — always build one
+  through `ok()` or `fail()`.
+- **negative** mirrors `mega::MegaError`, kept honest by the `static_assert` block at the top of
+  `src/mega/MegaSdkClient.cpp` — the only file that can see both that header and `megaapi.h`.
+- **positive** is this app's own sentinels, so they fall through every `switch` written against SDK
+  values. `MegaErrorCodes.h` holds the ledger of which numbers are taken.
+
+`Result::fail` takes the code as a **required** argument. It used to default to `-1`, which is
+`API_EINTERNAL`, so "the caller didn't think about it" and "an internal error happened" were the
+same value; making it mandatory is what forces the decision at each call site.
