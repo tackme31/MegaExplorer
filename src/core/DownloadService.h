@@ -60,9 +60,20 @@ class DownloadService
 public:
     explicit DownloadService(std::shared_ptr<IMegaClient> client);
 
+    // Turns a MEGA node name into a name that can only ever be a leaf inside
+    // the caller's chosen directory. Node names are server-side data and MEGA
+    // is end-to-end encrypted, so nothing upstream validates them: a name of
+    // "..\\..\\evil.exe" would otherwise escape the download directory once
+    // concatenated. Static and here rather than in DownloadController because
+    // that class isn't in the test target (QDesktopServices pulls in QtGui).
+    // No length cap on purpose -- truncating invents collisions, and an
+    // over-long path is an OS-level error, not a trust-boundary break.
+    static std::string safeLocalFileName(const std::string& nodeName);
+
     // Enqueues a download of handle -> destinationPath (destinationPath is
     // an exact local file path, already fully resolved by the caller -- see
-    // DownloadController). expectedTotalBytes seeds the new job's
+    // DownloadController, whose leaf name has been through
+    // safeLocalFileName above). expectedTotalBytes seeds the new job's
     // totalBytes from already-known metadata (FileEntry::sizeBytes) so a
     // consumer reading currentJob() right after this call still gets a real
     // denominator, before MegaApi's first onTransferUpdate arrives. Starts

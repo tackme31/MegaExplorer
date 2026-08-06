@@ -5,6 +5,55 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+TEST(DownloadServiceTest, SafeLocalFileNameKeepsOnlyTheLeafOfATraversalName)
+{
+    EXPECT_EQ(DownloadService::safeLocalFileName("..\\..\\evil.exe"), "evil.exe");
+    EXPECT_EQ(DownloadService::safeLocalFileName("../../evil.exe"), "evil.exe");
+    EXPECT_EQ(DownloadService::safeLocalFileName("C:\\Windows\\System32\\x.dll"), "x.dll");
+    // Drive-relative: no separator to cut at, so the "C:" needs its own step.
+    EXPECT_EQ(DownloadService::safeLocalFileName("C:evil.exe"), "evil.exe");
+}
+
+TEST(DownloadServiceTest, SafeLocalFileNameReplacesForbiddenAndControlCharacters)
+{
+    EXPECT_EQ(DownloadService::safeLocalFileName("a<b>c:d?.txt"), "a_b_c_d_.txt");
+    EXPECT_EQ(DownloadService::safeLocalFileName(std::string("a\x01") + "b.txt"), "a_b.txt");
+}
+
+TEST(DownloadServiceTest, SafeLocalFileNameStripsTrailingDotsAndSpaces)
+{
+    EXPECT_EQ(DownloadService::safeLocalFileName("evil.exe. "), "evil.exe");
+}
+
+TEST(DownloadServiceTest, SafeLocalFileNameFallsBackWhenNothingUsableIsLeft)
+{
+    EXPECT_EQ(DownloadService::safeLocalFileName(""), "download");
+    EXPECT_EQ(DownloadService::safeLocalFileName("."), "download");
+    EXPECT_EQ(DownloadService::safeLocalFileName(".."), "download");
+    EXPECT_EQ(DownloadService::safeLocalFileName("..."), "download");
+    EXPECT_EQ(DownloadService::safeLocalFileName("../"), "download");
+}
+
+TEST(DownloadServiceTest, SafeLocalFileNameSidestepsWindowsReservedDeviceNames)
+{
+    EXPECT_EQ(DownloadService::safeLocalFileName("CON"), "_CON");
+    EXPECT_EQ(DownloadService::safeLocalFileName("con.txt"), "_con.txt");
+    EXPECT_EQ(DownloadService::safeLocalFileName("COM1.log"), "_COM1.log");
+    // Only exact stems are reserved.
+    EXPECT_EQ(DownloadService::safeLocalFileName("CONS.txt"), "CONS.txt");
+}
+
+TEST(DownloadServiceTest, SafeLocalFileNameLeavesOrdinaryNamesAlone)
+{
+    EXPECT_EQ(DownloadService::safeLocalFileName("report.pdf"), "report.pdf");
+    EXPECT_EQ(DownloadService::safeLocalFileName(".bashrc"), ".bashrc");
+    // Multi-byte UTF-8 must survive byte-wise scanning untouched. Spelled as
+    // raw bytes so no source/execution charset setting can change what is
+    // actually being tested.
+    const std::string japanese = "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E.txt";
+    EXPECT_EQ(DownloadService::safeLocalFileName(japanese), japanese);
+}
+
 TEST(DownloadServiceTest, InitiallyHasNoCurrentJob)
 {
     // Arrange
