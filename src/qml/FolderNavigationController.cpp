@@ -191,8 +191,8 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
         return;
     }
     mHasLoadedOnce = true;
-    mLastFolderEntries = result.value;
-    mFileListModel->setEntries(std::move(result.value));
+    mLastFolderEntries = result.value();
+    mFileListModel->setEntries(std::move(result.value()));
     emit canGoBackChanged();
     refreshBreadcrumb();
 }
@@ -211,8 +211,8 @@ void FolderNavigationController::refreshBreadcrumb()
                 }
 
                 QVariantList breadcrumb;
-                breadcrumb.reserve(static_cast<qsizetype>(result.value.size()));
-                for (const PathSegment& segment : result.value)
+                breadcrumb.reserve(static_cast<qsizetype>(result.value().size()));
+                for (const PathSegment& segment : result.value())
                 {
                     QVariantMap entry;
                     entry.insert(QStringLiteral("name"), QString::fromStdString(segment.name));
@@ -265,7 +265,7 @@ void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>
                                     QString::fromStdString(result.errorMessage));
         return;
     }
-    mFileListModel->setEntries(std::move(result.value));
+    mFileListModel->setEntries(std::move(result.value()));
 }
 
 void FolderNavigationController::refreshCurrentFolder()
@@ -333,7 +333,7 @@ void FolderNavigationController::refreshVisibleListing()
                                                 << "code=" << result.errorCode;
                         return;
                     }
-                    mLastFolderEntries = std::move(result.value);
+                    mLastFolderEntries = std::move(result.value());
                 });
             });
         return;
@@ -591,7 +591,7 @@ void FolderNavigationController::paste()
                     // cached listing of it is the best answer available.
                     std::set<std::string> taken;
                     for (const FileEntry& entry :
-                         (result.success ? result.value : mLastFolderEntries))
+                         (result.success ? result.value() : mLastFolderEntries))
                         taken.insert(entry.name);
                     startCopyBatch(entries, target, targetIsRoot, std::move(taken));
                 });
@@ -646,7 +646,7 @@ void FolderNavigationController::copyEntriesTo(const QVariantList& entries,
                     }
 
                     std::set<std::string> taken;
-                    for (const FileEntry& entry : result.value)
+                    for (const FileEntry& entry : result.value())
                         taken.insert(entry.name);
                     startCopyBatch(copied, target, targetIsRoot, std::move(taken));
                 });

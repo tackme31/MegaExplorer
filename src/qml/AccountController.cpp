@@ -80,8 +80,8 @@ void AccountController::loadProfile()
     }
 
     mProfileLoaded = true;
-    mEmail = QString::fromStdString(identity.value.email);
-    mAvatarColor = QString::fromStdString(identity.value.avatarColor);
+    mEmail = QString::fromStdString(identity.value().email);
+    mAvatarColor = QString::fromStdString(identity.value().avatarColor);
     mAvatarInitial = firstCharacterUpper(mEmail);
     emit profileChanged();
 
@@ -101,23 +101,23 @@ void AccountController::loadProfile()
     });
 
     mService->loadAvatar(
-        computeAvatarPath(identity.value.userHandle).toStdString(),
+        computeAvatarPath(identity.value().userHandle).toStdString(),
         [this, generation](Result<AvatarOutcome> result) {
             invokeOnGuiThread(this, [this, generation, result = std::move(result)]() {
                 if (generation != mGeneration)
                     return;
-                if (!result.value.hasAvatar)
+                if (!result.value().hasAvatar)
                 {
                     // Expected for most accounts -- the
                     // coloured initial covers it. Logged at
                     // info so the real error code is on
                     // record without looking like a fault.
                     qCInfo(lcAccount) << "no avatar for this account:"
-                                      << QString::fromStdString(result.value.errorMessage)
-                                      << "code=" << result.value.errorCode;
+                                      << QString::fromStdString(result.value().errorMessage)
+                                      << "code=" << result.value().errorCode;
                     return;
                 }
-                mAvatarUrl = QUrl::fromLocalFile(QString::fromStdString(result.value.localPath));
+                mAvatarUrl = QUrl::fromLocalFile(QString::fromStdString(result.value().localPath));
                 emit profileChanged();
             });
         });
@@ -147,9 +147,9 @@ void AccountController::loadAccountInfo()
 
             if (result.success)
             {
-                mStorageUsedBytes = result.value.storageUsedBytes;
-                mStorageMaxBytes = result.value.storageMaxBytes;
-                mPlanLevel = result.value.proLevel;
+                mStorageUsedBytes = result.value().storageUsedBytes;
+                mStorageMaxBytes = result.value().storageMaxBytes;
+                mPlanLevel = result.value().proLevel;
                 mHasStorageValue = true;
                 mStorageState = Loaded;
             }

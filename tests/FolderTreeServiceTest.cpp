@@ -40,7 +40,7 @@ TEST(FolderTreeServiceTest, RootRequestGoesToGetRootChildren)
 
     ASSERT_TRUE(captured.called);
     EXPECT_TRUE(captured.result.success);
-    EXPECT_EQ(captured.result.value.size(), 1u);
+    EXPECT_EQ(captured.result.value().size(), 1u);
 }
 
 TEST(FolderTreeServiceTest, NonRootRequestGoesToGetChildrenWithHandle)
@@ -59,7 +59,7 @@ TEST(FolderTreeServiceTest, NonRootRequestGoesToGetChildrenWithHandle)
 
     ASSERT_TRUE(captured.called);
     EXPECT_TRUE(captured.result.success);
-    EXPECT_EQ(captured.result.value.size(), 1u);
+    EXPECT_EQ(captured.result.value().size(), 1u);
 }
 
 TEST(FolderTreeServiceTest, PassesNameAscendingSortOrder)
@@ -102,9 +102,9 @@ TEST(FolderTreeServiceTest, FiltersOutFilesKeepingOnlyFolders)
 
     ASSERT_TRUE(captured.called);
     EXPECT_TRUE(captured.result.success);
-    ASSERT_EQ(captured.result.value.size(), 2u);
-    EXPECT_EQ(captured.result.value[0].handle, 2u);
-    EXPECT_EQ(captured.result.value[1].handle, 4u);
+    ASSERT_EQ(captured.result.value().size(), 2u);
+    EXPECT_EQ(captured.result.value()[0].handle, 2u);
+    EXPECT_EQ(captured.result.value()[1].handle, 4u);
 }
 
 TEST(FolderTreeServiceTest, FailurePropagates)

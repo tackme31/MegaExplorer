@@ -303,8 +303,8 @@ TEST(UploadServiceTest, FindNameCollisionsDelegatesToClientFindChildFiles)
 
     // Assert
     ASSERT_TRUE(result.success);
-    ASSERT_EQ(result.value.size(), 1u);
-    EXPECT_EQ(result.value[0].handle, 55u);
+    ASSERT_EQ(result.value().size(), 1u);
+    EXPECT_EQ(result.value()[0].handle, 55u);
 }
 
 TEST(UploadServiceTest, SynchronousUploadFailuresDrainTheQueueWithoutRecursing)

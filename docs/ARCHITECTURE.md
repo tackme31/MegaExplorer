@@ -199,7 +199,7 @@ is the model to copy: it drops anything that isn't `QUrl::isLocalFile()`, classi
 
 Failure is expressed three ways, and they are not interchangeable:
 
-1. **`Result<T>`** (`src/core/Result.h`) — `success` / `value` / `errorMessage` / `errorCode`. The
+1. **`Result<T>`** (`src/core/Result.h`) — `success` / `value()` / `errorMessage` / `errorCode`. The
    normal one; every `IMegaClient` method and every service reports through it.
 2. **A `Result` that always succeeds, with the error inside the value** — `AccountService::loadAvatar`
    returns `Result<AvatarOutcome>::ok()` unconditionally and puts the failure in
@@ -230,6 +230,23 @@ mistaken for SDK ones:
 `Result::fail` takes the code as a **required** argument. It used to default to `-1`, which is
 `API_EINTERNAL`, so "the caller didn't think about it" and "an internal error happened" were the
 same value; making it mandatory is what forces the decision at each call site.
+
+### `value()` may only be read on a successful `Result`
+
+The value member is private and reached through `value()`, which asserts `success`. Reading it on a
+failed `Result` hands back a default-constructed `T` — an empty string, `0`, an empty vector — which
+is indistinguishable from real data at the call site; the assert turns that silent misread into a
+Debug crash on the offending line. Release builds compile the assert out and return the
+default-constructed value, so this is a development guardrail, not a runtime check.
+
+The one place that reads `value()` without a local `success` check is `QuickAccessModel`'s
+`PinStatus::Usable` branch, which is safe because `QuickAccessService::classify` only returns
+`Usable` from inside its own `success` branch. Every other read is inside a success branch or behind
+an early return.
+
+`std::expected` (C++23) would enforce this in the type system instead, but the project is C++17 and
+raising the standard would drag `third_party/sdk` and `qwindowkit` along with it. Rejected on cost
+in `docs/REFACTOR_PLANS.md` R3-9; the hand-rolled `Result` plus this assert is the settled answer.
 
 ### A `Result` may not be dropped on the floor
 

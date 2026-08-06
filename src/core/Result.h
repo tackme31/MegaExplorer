@@ -1,5 +1,7 @@
 #pragma once
+#include <cassert>
 #include <string>
+#include <utility>
 
 // `code` is a MegaErrorCode.h value and is mandatory: callers branch on
 // errorCode, never on errorMessage (which is a fixed English SDK string).
@@ -13,15 +15,28 @@ template<typename T>
 struct [[nodiscard]] Result
 {
     bool success = false;
-    T value{};
     std::string errorMessage;
     int errorCode = 0;
+
+    // Reading the value of a failed Result yields a default-constructed T, i.e.
+    // an empty string / 0 / empty vector that looks like real data. The assert
+    // turns that silent misread into a Debug crash at the offending line.
+    T& value()
+    {
+        assert(success && "read value() of a failed Result");
+        return mValue;
+    }
+    const T& value() const
+    {
+        assert(success && "read value() of a failed Result");
+        return mValue;
+    }
 
     static Result<T> ok(T v)
     {
         Result<T> r;
         r.success = true;
-        r.value = std::move(v);
+        r.mValue = std::move(v);
         return r;
     }
     static Result<T> fail(std::string message, int code)
@@ -32,6 +47,9 @@ struct [[nodiscard]] Result
         r.errorCode = code;
         return r;
     }
+
+private:
+    T mValue{};
 };
 
 // void has no value member, so this needs its own specialization.

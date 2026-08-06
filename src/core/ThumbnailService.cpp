@@ -101,7 +101,7 @@ void ThumbnailService::finishJob(std::uint64_t handle, Result<std::string> resul
         callbacks = std::move(jobIt->second.callbacks);
         mJobs.erase(jobIt);
         if (result.success)
-            mCache[handle] = result.value;
+            mCache[handle] = result.value();
         --mActiveCount;
     }
     for (auto& cb : callbacks)

@@ -352,7 +352,7 @@ TEST_F(QuickAccessServiceTest, ResolveFolderDelegatesToGetNodeInfo)
     });
 
     ASSERT_TRUE(received.success);
-    EXPECT_EQ(received.value, info);
+    EXPECT_EQ(received.value(), info);
 }
 
 // classify is the single definition of what a pin's resolved target means,

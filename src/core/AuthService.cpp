@@ -36,13 +36,13 @@ void AuthService::restoreSession(FetchProgressCallback onFetchProgress,
         return;
     }
 
-    if (stored.value.empty())
+    if (stored.value().empty())
     {
         onDone(Result<void>::fail("no stored session", kNoStoredSession));
         return;
     }
 
-    mClient->loginWithSession(stored.value, [this, onFetchProgress, onDone](Result<void> result) {
+    mClient->loginWithSession(stored.value(), [this, onFetchProgress, onDone](Result<void> result) {
         if (!result.success)
         {
             if (isSessionDefinitivelyInvalid(result.errorCode))
@@ -113,7 +113,7 @@ void AuthService::finishLoginSuccess(FetchProgressCallback onFetchProgress,
         {
             // Best-effort: failure to persist doesn't fail the login itself
             // -- the session is still usable for the rest of this run.
-            (void)mSessionStore->saveSession(token.value);
+            (void)mSessionStore->saveSession(token.value());
         }
         onDone(Result<void>::ok());
     });

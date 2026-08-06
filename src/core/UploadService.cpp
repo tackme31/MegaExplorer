@@ -165,7 +165,7 @@ void UploadService::startNextIfIdle()
                         result.success ? UploadState::Completed : UploadState::Failed;
                     if (result.success)
                     {
-                        mQueue.front().nodeHandle = result.value.nodeHandle;
+                        mQueue.front().nodeHandle = result.value().nodeHandle;
                     }
                     else
                     {

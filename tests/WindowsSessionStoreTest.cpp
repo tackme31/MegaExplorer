@@ -36,7 +36,7 @@ TEST(WindowsSessionStoreTest, LoadOnNonexistentPathReturnsEmptyOk)
 
     // Assert
     EXPECT_TRUE(result.success);
-    EXPECT_EQ(result.value, "");
+    EXPECT_EQ(result.value(), "");
 }
 
 TEST(WindowsSessionStoreTest, SaveThenLoadRoundTripsToken)
@@ -54,7 +54,7 @@ TEST(WindowsSessionStoreTest, SaveThenLoadRoundTripsToken)
     // Assert
     ASSERT_TRUE(saveResult.success);
     ASSERT_TRUE(loadResult.success);
-    EXPECT_EQ(loadResult.value, token);
+    EXPECT_EQ(loadResult.value(), token);
 
     removeIfExists(path);
 }
@@ -73,7 +73,7 @@ TEST(WindowsSessionStoreTest, SecondSaveOverwritesFirst)
 
     // Assert
     ASSERT_TRUE(loadResult.success);
-    EXPECT_EQ(loadResult.value, "second-token");
+    EXPECT_EQ(loadResult.value(), "second-token");
 
     removeIfExists(path);
 }
@@ -93,7 +93,7 @@ TEST(WindowsSessionStoreTest, ClearThenLoadReturnsEmptyOk)
     // Assert
     ASSERT_TRUE(clearResult.success);
     ASSERT_TRUE(loadResult.success);
-    EXPECT_EQ(loadResult.value, "");
+    EXPECT_EQ(loadResult.value(), "");
 }
 
 TEST(WindowsSessionStoreTest, ClearOnNeverWrittenPathIsStillOk)

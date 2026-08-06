@@ -26,7 +26,7 @@ TEST(ThumbnailServiceTest, InitialRequestCallsSdkAndReturnsResult)
     // Assert
     ASSERT_TRUE(called);
     EXPECT_TRUE(received.success);
-    EXPECT_EQ(received.value, "/tmp/7.jpg");
+    EXPECT_EQ(received.value(), "/tmp/7.jpg");
 }
 
 TEST(ThumbnailServiceTest, SecondRequestForCachedHandleDoesNotCallSdkAgain)
@@ -51,7 +51,7 @@ TEST(ThumbnailServiceTest, SecondRequestForCachedHandleDoesNotCallSdkAgain)
     // Assert: served from cache, no second SDK call (enforced by Times(1) above)
     ASSERT_TRUE(called);
     EXPECT_TRUE(received.success);
-    EXPECT_EQ(received.value, "/tmp/7.jpg");
+    EXPECT_EQ(received.value(), "/tmp/7.jpg");
 }
 
 TEST(ThumbnailServiceTest, DuplicateInFlightRequestAttachesCallbackWithoutDuplicateSdkCall)
@@ -93,8 +93,8 @@ TEST(ThumbnailServiceTest, DuplicateInFlightRequestAttachesCallbackWithoutDuplic
     EXPECT_TRUE(secondCalled);
     EXPECT_TRUE(firstResult.success);
     EXPECT_TRUE(secondResult.success);
-    EXPECT_EQ(firstResult.value, "/tmp/7.jpg");
-    EXPECT_EQ(secondResult.value, "/tmp/7.jpg");
+    EXPECT_EQ(firstResult.value(), "/tmp/7.jpg");
+    EXPECT_EQ(secondResult.value(), "/tmp/7.jpg");
 }
 
 TEST(ThumbnailServiceTest, RequestsBeyondMaxConcurrentAreQueuedThenAutoStart)
@@ -154,7 +154,7 @@ TEST(ThumbnailServiceTest, FailedRequestIsNotCachedAndRetriedOnNextRequest)
     EXPECT_FALSE(firstResult.success);
     EXPECT_EQ(firstResult.errorMessage, "no thumbnail");
     EXPECT_TRUE(secondResult.success);
-    EXPECT_EQ(secondResult.value, "/tmp/7.jpg");
+    EXPECT_EQ(secondResult.value(), "/tmp/7.jpg");
 }
 
 TEST(ThumbnailServiceTest, SynchronousFailuresDrainTheQueueWithoutRecursing)

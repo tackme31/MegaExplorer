@@ -250,7 +250,7 @@ std::map<QString, quint64> UploadController::collisionsFor(const QStringList& lo
         return hits;
     }
 
-    for (const FileEntry& entry : result.value)
+    for (const FileEntry& entry : result.value())
         hits.emplace(QString::fromStdString(entry.name), static_cast<quint64>(entry.handle));
     return hits;
 }

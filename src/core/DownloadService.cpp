@@ -208,8 +208,8 @@ void DownloadService::startNextIfIdle()
                         result.success ? DownloadState::Completed : DownloadState::Failed;
                     if (result.success)
                     {
-                        mQueue.front().resolvedLocalPath = result.value.localPath;
-                        mQueue.front().alreadyPresent = result.value.alreadyPresent;
+                        mQueue.front().resolvedLocalPath = result.value().localPath;
+                        mQueue.front().alreadyPresent = result.value().alreadyPresent;
                     }
                     else
                     {

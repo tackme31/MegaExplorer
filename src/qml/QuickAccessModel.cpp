@@ -229,7 +229,7 @@ void QuickAccessModel::validateAll()
                         case QuickAccessService::PinStatus::Usable:
                             // A handle is stable across moves and renames, so
                             // re-reading the name is all it takes to follow one.
-                            pin.name = resolved.value.name;
+                            pin.name = resolved.value().name;
                             break;
                         case QuickAccessService::PinStatus::Gone:
                             qCInfo(lcQuickAccess)

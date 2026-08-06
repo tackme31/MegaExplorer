@@ -43,7 +43,7 @@ TEST(AccountServiceTest, IdentityPassesThroughClientResult)
 
     // Assert
     EXPECT_TRUE(result.success);
-    EXPECT_EQ(result.value, identity);
+    EXPECT_EQ(result.value(), identity);
 }
 
 TEST(AccountServiceTest, IdentityPropagatesFailureWhenNotLoggedIn)
@@ -213,9 +213,9 @@ TEST(AccountServiceTest, LoadAvatarReportsPathOnSuccess)
 
     // Assert
     EXPECT_TRUE(captured.success);
-    EXPECT_TRUE(captured.value.hasAvatar);
-    EXPECT_EQ(captured.value.localPath, "C:\\tmp\\42.jpg");
-    EXPECT_EQ(captured.value.errorCode, 0);
+    EXPECT_TRUE(captured.value().hasAvatar);
+    EXPECT_EQ(captured.value().localPath, "C:\\tmp\\42.jpg");
+    EXPECT_EQ(captured.value().errorCode, 0);
 }
 
 TEST(AccountServiceTest, LoadAvatarReportsNoAvatarOnENoEnt)
@@ -237,9 +237,9 @@ TEST(AccountServiceTest, LoadAvatarReportsNoAvatarOnENoEnt)
 
     // Assert
     EXPECT_TRUE(captured.success);
-    EXPECT_FALSE(captured.value.hasAvatar);
-    EXPECT_TRUE(captured.value.localPath.empty());
-    EXPECT_EQ(captured.value.errorCode, MegaErrorCode::kENoEnt);
+    EXPECT_FALSE(captured.value().hasAvatar);
+    EXPECT_TRUE(captured.value().localPath.empty());
+    EXPECT_EQ(captured.value().errorCode, MegaErrorCode::kENoEnt);
 }
 
 TEST(AccountServiceTest, LoadAvatarSwallowsOtherErrorsToo)
@@ -261,8 +261,8 @@ TEST(AccountServiceTest, LoadAvatarSwallowsOtherErrorsToo)
 
     // Assert
     EXPECT_TRUE(captured.success);
-    EXPECT_FALSE(captured.value.hasAvatar);
-    EXPECT_EQ(captured.value.errorCode, MegaErrorCode::kEAgain);
+    EXPECT_FALSE(captured.value().hasAvatar);
+    EXPECT_EQ(captured.value().errorCode, MegaErrorCode::kEAgain);
 }
 
 TEST(AccountServiceTest, LoadAccountInfoPassesThrough)
@@ -285,7 +285,7 @@ TEST(AccountServiceTest, LoadAccountInfoPassesThrough)
 
     // Assert
     EXPECT_TRUE(captured.success);
-    EXPECT_EQ(captured.value, info);
+    EXPECT_EQ(captured.value(), info);
 }
 
 TEST(AccountServiceTest, LoadAccountInfoPropagatesFailureCode)

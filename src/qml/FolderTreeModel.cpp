@@ -133,12 +133,12 @@ void FolderTreeModel::ensureLoaded(const QModelIndex& index)
                     return;
                 }
 
-                if (!result.value.empty())
+                if (!result.value().empty())
                 {
                     const QModelIndex parentIndex = indexForNode(node);
-                    beginInsertRows(parentIndex, 0, static_cast<int>(result.value.size()) - 1);
-                    node->children.reserve(result.value.size());
-                    for (FileEntry& entry : result.value)
+                    beginInsertRows(parentIndex, 0, static_cast<int>(result.value().size()) - 1);
+                    node->children.reserve(result.value().size());
+                    for (FileEntry& entry : result.value())
                     {
                         auto child = std::make_unique<TreeNode>();
                         child->name = std::move(entry.name);

@@ -41,7 +41,7 @@ void ThumbnailController::requestThumbnail(quint64 handle)
                                                 QString::fromStdString(result.errorMessage));
                     return;
                 }
-                mModel->setThumbnailPath(handle, QString::fromStdString(result.value));
+                mModel->setThumbnailPath(handle, QString::fromStdString(result.value()));
             });
         });
 }

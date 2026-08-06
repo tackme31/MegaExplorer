@@ -16,8 +16,8 @@ void FolderTreeService::loadSubfolders(std::uint64_t handle,
         }
 
         std::vector<FileEntry> folders;
-        folders.reserve(result.value.size());
-        for (FileEntry& entry : result.value)
+        folders.reserve(result.value().size());
+        for (FileEntry& entry : result.value())
         {
             if (entry.isFolder)
                 folders.push_back(std::move(entry));
@@ -35,5 +35,5 @@ void FolderTreeService::loadSubfolders(std::uint64_t handle,
 bool FolderTreeService::hasSubfolders(std::uint64_t handle, bool isRoot) const
 {
     const Result<bool> result = mClient->hasSubfolders(handle, isRoot);
-    return result.success && result.value;
+    return result.success && result.value();
 }

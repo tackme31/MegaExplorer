@@ -21,9 +21,9 @@ Result<void> QuickAccessService::load()
         return Result<void>::fail(std::move(handle.errorMessage), handle.errorCode);
     }
 
-    mAccountKey = std::to_string(handle.value);
+    mAccountKey = std::to_string(handle.value());
     Result<std::vector<PinnedFolder>> stored = mStore->load(mAccountKey);
-    mPins = stored.success ? std::move(stored.value) : std::vector<PinnedFolder>();
+    mPins = stored.success ? std::move(stored.value()) : std::vector<PinnedFolder>();
     if (!stored.success)
         return Result<void>::fail(std::move(stored.errorMessage), stored.errorCode);
     return Result<void>::ok();
@@ -101,7 +101,7 @@ QuickAccessService::PinStatus QuickAccessService::classify(const Result<NodeInfo
 {
     if (resolved.success)
     {
-        return resolved.value.isFolder && resolved.value.inCloud ? PinStatus::Usable
+        return resolved.value().isFolder && resolved.value().inCloud ? PinStatus::Usable
                                                                  : PinStatus::Gone;
     }
 

@@ -47,12 +47,12 @@ void AccountService::loadDisplayName(std::function<void(std::string)> onDone)
             // An unset attribute fails rather than returning "", so both
             // branches feed the join the same way: whatever arrived, or
             // nothing.
-            std::string firstName = first.success ? std::move(first.value) : std::string();
+            std::string firstName = first.success ? std::move(first.value()) : std::string();
             mClient->getMyUserAttribute(
                 UserAttribute::LastName,
                 [firstName = std::move(firstName),
                  onDone = std::move(onDone)](Result<std::string> last) {
-                    onDone(joinName(firstName, last.success ? last.value : std::string()));
+                    onDone(joinName(firstName, last.success ? last.value() : std::string()));
                 });
         });
 }
@@ -64,7 +64,7 @@ void AccountService::loadAvatar(const std::string& destinationPath,
         AvatarOutcome outcome;
         if (result.success)
         {
-            outcome.localPath = std::move(result.value);
+            outcome.localPath = std::move(result.value());
             outcome.hasAvatar = true;
         }
         else

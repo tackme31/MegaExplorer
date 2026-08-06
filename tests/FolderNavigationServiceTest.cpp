@@ -56,7 +56,7 @@ TEST(FolderNavigationServiceTest, OpenFolderSuccessUpdatesCurrentAndEnablesGoBac
     // Assert
     ASSERT_TRUE(captured.doneCalled);
     EXPECT_TRUE(captured.doneResult.success);
-    EXPECT_EQ(captured.doneResult.value.size(), expected.size());
+    EXPECT_EQ(captured.doneResult.value().size(), expected.size());
     EXPECT_TRUE(service.canGoBack());
 }
 
@@ -105,7 +105,7 @@ TEST(FolderNavigationServiceTest, GoBackFromFolderReturnsToRootViaGetRootChildre
     // Assert
     ASSERT_TRUE(backCaptured.doneCalled);
     EXPECT_TRUE(backCaptured.doneResult.success);
-    EXPECT_EQ(backCaptured.doneResult.value.size(), rootChildren.size());
+    EXPECT_EQ(backCaptured.doneResult.value().size(), rootChildren.size());
     EXPECT_FALSE(service.canGoBack());
 }
 
@@ -254,7 +254,7 @@ TEST(FolderNavigationServiceTest, RefreshCurrentInOpenedFolderUsesGetChildrenAnd
     // Assert: refresh succeeded via getChildren, back-stack untouched
     ASSERT_TRUE(refreshCalled);
     EXPECT_TRUE(refreshResult.success);
-    EXPECT_EQ(refreshResult.value.size(), refreshed.size());
+    EXPECT_EQ(refreshResult.value().size(), refreshed.size());
     EXPECT_TRUE(service.canGoBack());
 
     // Further assert mCurrent is still handle 1 (not root, not popped): a
@@ -328,7 +328,7 @@ TEST(FolderNavigationServiceTest, NavigateToRootFromFolderUsesGetRootChildrenAnd
     service.goBack(SortOrder{}, onDoneInto(backCaptured));
     ASSERT_TRUE(backCaptured.doneCalled);
     EXPECT_TRUE(backCaptured.doneResult.success);
-    EXPECT_EQ(backCaptured.doneResult.value.size(), h1Children.size());
+    EXPECT_EQ(backCaptured.doneResult.value().size(), h1Children.size());
     EXPECT_TRUE(service.canGoBack()); // root is still one entry back
 }
 
@@ -350,7 +350,7 @@ TEST(FolderNavigationServiceTest, NavigateToFolderPushesHistoryLikeOpenFolder)
     // Assert
     ASSERT_TRUE(captured.doneCalled);
     EXPECT_TRUE(captured.doneResult.success);
-    EXPECT_EQ(captured.doneResult.value.size(), expected.size());
+    EXPECT_EQ(captured.doneResult.value().size(), expected.size());
     EXPECT_TRUE(service.canGoBack());
 }
 
@@ -400,8 +400,8 @@ TEST(FolderNavigationServiceTest, ListChildrenOfReadsAnArbitraryFolderWithoutNav
     // stands has moved -- back-stack still holds only the root, current is
     // still folder 1 (which the next refreshCurrent would prove).
     ASSERT_TRUE(captured.doneCalled);
-    ASSERT_EQ(captured.doneResult.value.size(), 1u);
-    EXPECT_EQ(captured.doneResult.value[0].name, "there.txt");
+    ASSERT_EQ(captured.doneResult.value().size(), 1u);
+    EXPECT_EQ(captured.doneResult.value()[0].name, "there.txt");
     EXPECT_TRUE(service.canGoBack());
     EXPECT_FALSE(service.currentLocation().isRoot);
     EXPECT_EQ(service.currentLocation().handle, 1u);
@@ -443,8 +443,8 @@ TEST(FolderNavigationServiceTest, ResolveCurrentPathAtRootQueriesRootSentinel)
     // Assert
     ASSERT_TRUE(captured.doneCalled);
     EXPECT_TRUE(captured.doneResult.success);
-    ASSERT_EQ(captured.doneResult.value.size(), 1u);
-    EXPECT_TRUE(captured.doneResult.value[0].isRoot);
+    ASSERT_EQ(captured.doneResult.value().size(), 1u);
+    EXPECT_TRUE(captured.doneResult.value()[0].isRoot);
 }
 
 TEST(FolderNavigationServiceTest, ResolveCurrentPathAfterOpenFolderQueriesCurrentHandle)
@@ -471,7 +471,7 @@ TEST(FolderNavigationServiceTest, ResolveCurrentPathAfterOpenFolderQueriesCurren
     // Assert
     ASSERT_TRUE(pathCaptured.doneCalled);
     EXPECT_TRUE(pathCaptured.doneResult.success);
-    EXPECT_EQ(pathCaptured.doneResult.value, path);
+    EXPECT_EQ(pathCaptured.doneResult.value(), path);
 }
 
 TEST(FolderNavigationServiceTest, ResolveCurrentPathAfterGoBackQueriesRestoredLocation)
@@ -513,5 +513,5 @@ TEST(FolderNavigationServiceTest, ResolveCurrentPathAfterGoBackQueriesRestoredLo
     // Assert
     ASSERT_TRUE(pathCaptured.doneCalled);
     EXPECT_TRUE(pathCaptured.doneResult.success);
-    EXPECT_EQ(pathCaptured.doneResult.value, path);
+    EXPECT_EQ(pathCaptured.doneResult.value(), path);
 }

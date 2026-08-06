@@ -45,7 +45,7 @@ TEST(SearchServiceTest, SearchAtRootPassesRootSentinelToClient)
     // Assert
     ASSERT_TRUE(captured.called);
     EXPECT_TRUE(captured.result.success);
-    EXPECT_EQ(captured.result.value.size(), expected.size());
+    EXPECT_EQ(captured.result.value().size(), expected.size());
 }
 
 TEST(SearchServiceTest, SearchInOpenedFolderPassesItsHandleToClient)
@@ -74,7 +74,7 @@ TEST(SearchServiceTest, SearchInOpenedFolderPassesItsHandleToClient)
     // Assert
     ASSERT_TRUE(captured.called);
     EXPECT_TRUE(captured.result.success);
-    EXPECT_EQ(captured.result.value.size(), expected.size());
+    EXPECT_EQ(captured.result.value().size(), expected.size());
 }
 
 TEST(SearchServiceTest, SearchWithNoMatchesSucceedsWithEmptyResult)
@@ -97,7 +97,7 @@ TEST(SearchServiceTest, SearchWithNoMatchesSucceedsWithEmptyResult)
     // Assert: empty results is still a success, not a failure
     ASSERT_TRUE(captured.called);
     EXPECT_TRUE(captured.result.success);
-    EXPECT_TRUE(captured.result.value.empty());
+    EXPECT_TRUE(captured.result.value().empty());
 }
 
 TEST(SearchServiceTest, SearchFailurePropagates)
