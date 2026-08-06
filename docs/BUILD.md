@@ -114,8 +114,24 @@ Preferences > AI > Qt Creator MCP Server — must be running, registered locally
 `mcp__qtcreator__build` (or `list_issues`/`list_file_issues`); its `issues` array returns `{file,
 line, description, type}` per diagnostic with an absolute path, so filtering out `third_party/sdk`
 is a reliable path-prefix check rather than a text-based `grep -v`. Confirmed 2026-07-24: warnings
-raised only on the `appMegaExplorer` target (e.g. via its own `/W4`) don't leak SDKlib/third_party
-noise into the array at all, since those are separate CMake targets.
+raised only on our own targets (via `/W4`) don't leak SDKlib/third_party noise into the array at
+all, since those are separate CMake targets.
 
-`/W4` is scoped to `appMegaExplorer` only (`target_compile_options(appMegaExplorer PRIVATE /W4)`
-in root `CMakeLists.txt`) so `third_party/sdk` isn't affected by the stricter level.
+`/W4` reaches all four of our targets — `MegaExplorerCore`, `MegaExplorerQml`, `appMegaExplorer`,
+`MegaExplorerTests` — through the `MegaExplorerWarnings` interface target they each link
+`PRIVATE`. `PRIVATE` is what keeps it off `third_party/sdk` and QWindowKit; putting `/W4` in
+`CMAKE_CXX_FLAGS` instead would hit everything and is why the flag was target-scoped from the
+start. Before R4-9 it was on `appMegaExplorer` alone, which meant `src/core` and all of `tests/`
+were never compiled at anything above MSVC's default `/W1`.
+
+That target also carries two suppressions, both about *Qt's* headers rather than ours:
+
+- `/external:W0` — CMake already passes Qt's and GTest's include directories as `/external:I`
+  (imported targets are SYSTEM by default), but MSVC ignores that designation until an
+  `/external:W` level is set. Without it, Qt headers instantiated from generated
+  moc/qmlcachegen/type-registration code report as if they were our code.
+- `/wd4702` (unreachable code) — the one warning `/external:W0` cannot reach, because it comes
+  from the back end, which has no notion of external headers. A full rebuild produced 51 hits,
+  every one inside `qjsengine.h`/`qvariant.h`/`qjsprimitivevalue.h` from qmlcachegen's AOT output
+  and none in `src/`. These only appear on a *full* rebuild — incremental builds don't recompile
+  the generated sources, which is why the sweep looked clean before R4-9.

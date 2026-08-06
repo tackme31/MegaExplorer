@@ -144,7 +144,10 @@ and vcpkg's `debug/bin` on `PATH` to run outside Qt Creator:
 set PATH=C:\Qt\6.11.1\msvc2022_64\bin;%CD%\build\msvc-debug\vcpkg_installed\x64-windows-mega\debug\bin;%PATH%
 ```
 
-**Compiler warnings**: `appMegaExplorer` builds at `/W4`. At the end of any task touching
+**Compiler warnings**: all four of our targets — `MegaExplorerCore`, `MegaExplorerQml`,
+`appMegaExplorer`, `MegaExplorerTests` — build at `/W4`, via the `MegaExplorerWarnings` interface
+target they each link (`docs/BUILD.md` covers that and the two Qt-header suppressions it carries).
+At the end of any task touching
 `main.cpp`/`src/`, check for new warnings and fix them before considering the task done. Preferred:
 the `qtcreator` MCP server (`mcp__qtcreator__build` / `list_issues` / `list_file_issues` — must be
 running, see `docs/BUILD.md` for setup). CLI fallback:
@@ -156,10 +159,16 @@ C:/Qt/Tools/CMake_64/bin/cmake.exe --build build/msvc-debug --config Debug --tar
 Full path to `cmake.exe` is required — the `cmake` on `PATH` resolves to Strawberry Perl's copy,
 which is unrelated and wrong for this project.
 
-After adding/removing a `.qml` file from `qt_add_qml_module`'s `QML_FILES`, **reconfigure** (`cmake
---preset msvc-debug`) before rebuilding — an incremental `cmake --build` alone leaves the AOT
-`qmlcache_loader.cpp` aggregator stale and the link fails with unresolved
-`QmlCacheGeneratedCode::...` symbols (hit during Phase 9, see its `docs/PROGRESS.md` log entry).
+After adding/removing a `.qml` file from `qt_add_qml_module`'s `QML_FILES`, **or moving the module
+to a different target**, **reconfigure** (`cmake --preset msvc-debug`) before rebuilding — an
+incremental `cmake --build` alone leaves the AOT `qmlcache_loader.cpp` aggregator stale and the
+link fails with unresolved `QmlCacheGeneratedCode::...` symbols. The aggregator's symbol names
+embed the target name, which is why a target move triggers it too (`QML_FILES` case hit during
+Phase 9, see its `docs/PROGRESS.md` log entry; target case confirmed in R4-4).
+
+Warnings from the generated sources (moc, qmlcachegen, type registration) only appear on a **full**
+rebuild, since an incremental build has no reason to recompile them — don't read a clean
+incremental build as proof the tree is warning-free.
 
 No linter or CI yet.
 

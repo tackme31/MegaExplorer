@@ -1621,7 +1621,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     assert の役割と Release での挙動、`std::expected` を採らなかった理由、`QuickAccessModel` が
     唯一の間接ガードであること）。**これで本節は完成**。
 
-### R4 — 調査済み / R4-1 のみ対応済み、次は R4-4（調査 2026-08-07）
+### R4 — 調査済み / R4-1・R4-4・R4-9 対応済み、次は R4-2（調査 2026-08-07）
 
 計画の「種」4 件 +「持ち越し」の [R4] 2 件を現物で検証した結果。**確認 6 件 / 種の誤り 4 件 /
 問題なしと確認 4 件 / 新規 3 件**。R1〜R3 と同じく、以下はそのまま plan mode の作業単位として使える
@@ -1768,7 +1768,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
   `Qt6::Gui` は `Qt6::Quick` 経由で推移的に入る。`Qt6Gui.dll` は既に `PATH` に要る Qt の
   `bin` にあるので追加要求も無い。**R4-3 は R4-4 の後に回し、テストを書くだけの作業にする**。
 
-**R4-4 [中] ビルド定義が `src/qml` を 3 箇所で列挙している**
+**R4-4 [中] ✅対応済み ビルド定義が `src/qml` を 3 箇所で列挙している**
 
 - 種は「`tests/CMakeLists.txt` が 20 ファイル手書き」としていたが、実際は**ルート側にも 2 分割が
   あり、三重管理**になっている:
@@ -1847,15 +1847,58 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
   静的ライブラリに入った QML リソースの初期化漏れは**ビルドもテストも通ったうえで起動時に
   `module "MegaExplorer" is not installed` で落ちる**タイプなので、起動確認を省略できない。
 
+- **対応（2026-08-07、R4-9 と同一コミット）**: (b) を実施設計どおり実施。`MegaExplorerQml`
+  （STATIC）に `src/qml` 31 ファイルと `qt_add_qml_module` を移し、`appMegaExplorer` は
+  `main.cpp` + `src/app`/`src/mega`/`src/platform` の 11 ファイルに、`tests/CMakeLists.txt` は
+  手写し 22 行が消えて `MegaExplorerQml` のリンク 1 行になった。決めた点と、**実施設計が
+  外していた点 3 つ**:
+  - **`OUTPUT_DIRECTORY` の明示が必須だった（実施設計の誤り）**。設計は「ルートに置いたままなら
+    配置は変わらない」としていたが、Qt のドキュメントは *backing target が実行ファイルのときだけ*
+    出力先に target path が付く、と規定している。ライブラリでは `CMAKE_CURRENT_BINARY_DIR`
+    直下になり、`qmldir` がビルドルートに落ちて `<importpath>/MegaExplorer/qmldir` を探す
+    import path 解決（qmllint / Qt Creator）が壊れる。
+    `OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/MegaExplorer` で従来の配置に固定した。
+    **リソースパスは無関係**（`:/qt/qml/MegaExplorer/` のまま）なので `loadFromModule` は無変更。
+  - **`NO_PLUGIN` は罠。プラグインのリンクと `Q_IMPORT_QML_PLUGIN` の両方が要る**。
+    実施設計は「起動時に落ちたら (a) `Q_IMPORT_QML_PLUGIN` か (b) `NO_PLUGIN`」と書いていたが、
+    **(b) は誤り**。実際に 2 段階で踏んだ:
+    1. 既定構成のまま起動 → `module "MegaExplorer" plugin "MegaExplorerQmlplugin" not found`。
+       STATIC backing target が生成する静的プラグインを誰もリンクしないため、engine が
+       `optional plugin` 行を*動的*ロードにフォールバックして失敗する。
+    2. `NO_PLUGIN` を付けるとモジュール自体は import できるようになるが、今度は
+       `WindowAgent is not a type` で落ちる。**型登録が丸ごと効いていない**。
+       `dumpbin` で確認: `qml_register_types_MegaExplorer` は `MegaExplorerQml.lib` に存在し、
+       `appMegaExplorer.exe` には無い。登録は main.cpp が名前で参照しない生成 TU にあるので、
+       リンカが静的ライブラリからその .obj を落とす — Qt のドキュメントが `NO_PLUGIN` の注意書きで
+       「リンカが未使用と判断したライブラリを保持する保証は無い」と書いているそのものだった。
+    3. 結論: `NO_PLUGIN` を外して `target_link_libraries(appMegaExplorer PRIVATE
+       MegaExplorerQmlplugin)` ＋ main.cpp に `Q_IMPORT_QML_PLUGIN(MegaExplorerPlugin)`。
+       **片方だけでは動かない**。`qt_import_qml_plugins()` は非静的 Qt では no-op なので代替に
+       ならない。**R4-5 で Qt Quick Test の target を足すときも同じ 2 点セットが要る**。
+  - **「コード変更ゼロ」は達成できなかった**。上記のとおり `main.cpp` に
+    `Q_IMPORT_QML_PLUGIN` の 1 行（＋ include）が入る。製品の振る舞いは不変。
+  - **`SOURCES` と素の `QObject` の 2 分割は維持したが、根拠は無効**。Qt のドキュメント上
+    `SOURCES` は `target_sources()` と等価な便宜機能で、型登録は AUTOMOC を通った backing target
+    の全ソースを走査して生成される。つまり「`SOURCES` は型登録の生成に要る」（調査時の確認）は
+    **不正確**で、2 分割は登録結果に影響しない。今回は差分を小さく保つため現状維持にした。
+    **統合するかは R7 の判断材料**（片方に寄せれば列挙が 1 ブロックになる）。
+  - 検証: 387 ケース緑（増減なし）、自前 4 target の警告ゼロ、`qmldir` は従来の
+    `build/msvc-debug/MegaExplorer/` に `singleton` 2 行を保ったまま出力、
+    アプリ起動＆ログイン画面の描画をスクショで確認。configure 時に出る QWindowKit の
+    `CorePrivate/GuiPrivate/QuickPrivate ... not declared` 警告は
+    `_qt_internal_finalize_executable` 由来の**既存**のもので、R4-4 とは無関係。
+
 **R4-5 [中] `qml/` 7,356 行が全面ノーテストで、かつ現在のビルド構成ではテスト用に import できない**
 
 - 種は「対象を絞って `qt-development-skills:qt-qml-test` を使う」としており方向は正しいが、
   **先に構成上の障害がある**: `qt_add_qml_module` は `appMegaExplorer`（`WIN32_EXECUTABLE` な
   実行ファイル）に付いている（`CMakeLists.txt:138`）ので、URI `MegaExplorer` は exe の中にしか
   存在せず、`qmltestrunner` / Qt Quick Test の target から import できない。
-  → **R4-4(b) が前提。(b) 採用が決まったので、この障害は R4-4 で解消される見込み**
+  → **R4-4(b) が前提。R4-4 の完了（2026-08-07）でこの障害は解消済み**
   （`MegaExplorerQml` を Quick Test の target からリンクすれば URI `MegaExplorer` が import 可能に
-  なる）。R4-5 は R4 の範囲内に確定。
+  なる）。R4-5 は R4 の範囲内に確定。**ただし R4-4 の対応ログのとおり、リンクするだけでは足りず
+  `MegaExplorerQmlplugin` のリンク ＋ `Q_IMPORT_QML_PLUGIN(MegaExplorerPlugin)` の 2 点セットが
+  Quick Test の target 側にも要る**。
 - 環境側は揃っている: `C:/Qt/6.11.1/msvc2022_64/lib/cmake/Qt6QuickTest` が存在し、
   `find_package(Qt6 COMPONENTS QuickTest)` は通る。現状 `CMakeLists.txt`/`CMakePresets.json` に
   `QuickTest`/`qmltestrunner`/`qmllint` の記述は 1 つも無い。
@@ -1974,7 +2017,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
   構築する（`TestApp.h` の「1 プロセス 1 インスタンス」制約はそのまま満たせる）。
   全 fixture の `SetUp` に `testApp()` を書き足すより漏れが無い。
 
-**R4-9 [中] `/W4` は `appMegaExplorer` にしか掛かっておらず、`src/core` は既に監視外**
+**R4-9 [中] ✅対応済み `/W4` は `appMegaExplorer` にしか掛かっておらず、`src/core` は既に監視外**
 
 - `CLAUDE.md` の Build 節は「`main.cpp`/`src/` を触ったら `/W4` の新規警告を潰す」と指示するが、
   `target_compile_options(... /W4)` は `CMakeLists.txt:216` の `appMegaExplorer` **1 target
@@ -2000,6 +2043,26 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
 - **`src/core`/`tests` を `/W4` にした初回は既存警告が出る前提**。件数次第で「R4-9 で潰す」か
   「R7 に送る」かを決める。`MegaExplorerQml` への `/W4` 付与（現状維持のため）だけは
   R4-4 と同じコミットで必ず入れる。
+- **対応（2026-08-07、R4-4 と同一コミット）**: `MegaExplorerWarnings` という INTERFACE target を
+  1 つ作り、自前 4 target（`MegaExplorerCore` / `MegaExplorerQml` / `appMegaExplorer` /
+  `MegaExplorerTests`）が `PRIVATE` でリンクする形にした。`PRIVATE` なので `third_party`/
+  `SDKlib`/`QWindowKit` には一切伝播しない。決めた点:
+  - **`src/core` と `tests/` の既存警告はゼロだった**。判断ゲート（少数なら潰す／多数なら R7 送り）
+    は不要で、R7 への持ち越しは無し。
+  - **`/W4` だけでは足りず、`/external:W0` と `/wd4702` が要る**。これは調査時に見えていなかった:
+    - CMake は Qt/GTest の include を `/external:I` で渡している（imported target は既定で
+      SYSTEM 扱い）が、**MSVC は `/external:W<n>` を指定するまでその指定を無視する**。
+      `/external:W0` を足すまで、生成コード（moc / qmlcachegen / 型登録）から実体化された
+      Qt ヘッダの警告が自前コードの警告と同列に出ていた。
+    - `/wd4702`（到達不能コード）は `/external:W0` では消せない。**バックエンドが出す警告で、
+      external ヘッダの概念を持たない**ため。フルリビルドで 51 件、すべて
+      `qjsengine.h`/`qvariant.h`/`qjsprimitivevalue.h` の中（qmlcachegen の AOT 出力からの
+      実体化）で、`src/` 由来はゼロ。放置するとフルリビルドが常に 51 警告で終わり、
+      R4-9 が作ろうとしている監視自体が無意味になるので抑止した。
+  - **なぜ今まで気づかれなかったか**: 生成ソースは増分ビルドで再コンパイルされないので、
+    `CLAUDE.md` の手順（`main.cpp`/`src/` を触った後にビルドして確認）では**一度も現れない**。
+    R4-4 の target 移動が初めてフルリビルドを強制して露出した。この点は `CLAUDE.md` と
+    `docs/BUILD.md` の両方に注記した。
 
 #### 推奨実施順（各項目 1 セッション）
 
@@ -2008,10 +2071,10 @@ R4-9 が R4-4 と同時実施の必須項目になった。
 
 ```
 R4-1  慣例の書き直し（ARCHITECTURE.md + コメント 10 箇所）✅ … コード変更ゼロ。認識を先に揃える
-R4-4  MegaExplorerQml への分離（(b) 確定）                  … ★R4 の背骨。R4-9 の /W4 維持を同梱
-      + R4-9  /W4 を自前 3 target へ                        … 既存警告の件数次第で一部 R7 送り
+R4-4  MegaExplorerQml への分離（(b) 確定）                ✅ … ★R4 の背骨。R4-9 の /W4 維持を同梱
+      + R4-9  /W4 を自前 4 target へ                     ✅ … 既存警告ゼロ。R7 送りは発生せず
 R4-2  AuthController のテスト                               … 最大の穴。R4-4 と独立に着手可
-R4-3  DownloadController のテスト                           … R4-4 後なら Qt6::Gui は解決済み
+R4-3  DownloadController のテスト                           … R4-4 済みなので Qt6::Gui は解決済み
 R4-7  QSettingsPinnedFolderStore のテスト                   … 小。パス注入の口だけ製品側に開ける
 R4-8  QCoreApplication のプロセス毎 1 回化                  … 小。R4-6 段階 2 の前提
 R4-5  QML テスト（ToastStack / ActionCatalog / DragProxy）  … R4-4 完了後。R6 の安全網
@@ -2043,16 +2106,19 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   **既知の限界の明記**（これを書かないと、次に読む人が R2-19 を再発見することになる）。
 - ✅ `tests/` 側のコメント 7 箇所の削除と `src/qml` ヘッダ **3** 箇所の訂正（R4-1。ヘッダは調査時の
   2 箇所に `ThumbnailController.h` を加えた 3 箇所）。
-- `docs/ARCHITECTURE.md` の `Directory overview` に target 構成の変更（`MegaExplorerQml` の追加、
-  `appMegaExplorer` が `main.cpp` + 3 ディレクトリだけになること）を反映する。**(b) 確定により
-  これは必須**。同節の `MegaExplorerCore` の説明が「`appMegaExplorer` と `MegaExplorerTests` が
-  同じドメインロジックをリンクするため」と書いているのと同じ形で、`MegaExplorerQml` にも
-  「なぜ実行ファイルではなくライブラリがモジュールを持つのか」を 1 文で書く。
-- `docs/BUILD.md` に `qmlcache_loader` の再 configure が要る条件を追記（現状は
-  「`QML_FILES` を増減したとき」だけが書かれているが、R4-4 で **target を移したときも**同じ
-  再 configure が要ることが分かったため）。
-- `CLAUDE.md` の Build 節の `/W4` の記述を R4-9 の結果に合わせて更新（どの target が対象かを
-  明示する。現状の「`appMegaExplorer` builds at /W4」は R4-4 後には不正確になる）。
+- ✅ `docs/ARCHITECTURE.md` の `Directory overview` に target 構成の変更を反映。4 target の表
+  （何を持ち／なぜ別target か）を `CMake targets` 小節として足し、`MegaExplorerQml` には
+  `MegaExplorerCore` と同じ形で「なぜ実行ファイルではなくライブラリがモジュールを持つのか」を
+  書いた。併せて `OUTPUT_DIRECTORY` 明示とプラグイン 2 点セットの理由も、ビルド定義を触る前に
+  読む場所として同節に置いた。`qml/` の項の「`appMegaExplorer` is itself the QML module's
+  backing target」も訂正（ついでに、存在しない `qml/dialogs/` と削除済みの
+  `DownloadSnackbar.qml` を実態に合わせた）。
+- ✅ `CLAUDE.md` に `qmlcache_loader` の再 configure が要る条件を追記（「`QML_FILES` を
+  増減したとき」に加えて **target を移したときも**。アグリゲータのシンボル名が target 名を
+  含むため）。`docs/BUILD.md` 側には `/W4` の適用範囲と 2 つの抑止フラグの根拠を書いた。
+- ✅ `CLAUDE.md` の Build 節の `/W4` の記述を R4-9 の結果に合わせて更新（4 target が対象、
+  経路は `MegaExplorerWarnings`）。併せて「生成ソースの警告は**フル**リビルドでしか出ない」を
+  注記（増分ビルドのクリーンさを無警告の証拠と読まないため）。
 
 ### R5 — 未着手
 ### R6 — 未着手

@@ -30,47 +30,28 @@ add_executable(MegaExplorerTests
     ClipboardControllerTest.cpp
     AccountControllerTest.cpp
     NotificationControllerTest.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/AccountController.h
-    ${CMAKE_SOURCE_DIR}/src/qml/AccountController.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/FileListModel.h
-    ${CMAKE_SOURCE_DIR}/src/qml/FileListModel.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/FolderNavigationController.h
-    ${CMAKE_SOURCE_DIR}/src/qml/FolderNavigationController.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/ThumbnailController.h
-    ${CMAKE_SOURCE_DIR}/src/qml/ThumbnailController.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/NotificationController.h
-    ${CMAKE_SOURCE_DIR}/src/qml/NotificationController.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/ClipboardController.h
-    ${CMAKE_SOURCE_DIR}/src/qml/ClipboardController.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/UploadController.h
-    ${CMAKE_SOURCE_DIR}/src/qml/UploadController.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/TabsController.h
-    ${CMAKE_SOURCE_DIR}/src/qml/TabsController.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/FolderTreeModel.h
-    ${CMAKE_SOURCE_DIR}/src/qml/FolderTreeModel.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/QuickAccessModel.h
-    ${CMAKE_SOURCE_DIR}/src/qml/QuickAccessModel.cpp
-    ${CMAKE_SOURCE_DIR}/src/qml/LicenseModel.h
-    ${CMAKE_SOURCE_DIR}/src/qml/LicenseModel.cpp
     MockMegaClient.h
     MockSessionStore.h
     MockPinnedFolderStore.h
     TestApp.h
 )
 
-# Qt6::Qml (not just Core) is needed here solely for
-# TabsController.cpp's QQmlEngine::setObjectOwnership call -- no separate
-# find_package() needed, Qt6::Qml is already resolved as a transitive
-# dependency of the root CMakeLists.txt's find_package(Qt6 COMPONENTS Quick).
+# MegaExplorerQml is the QML module's backing library, so linking it is what
+# gives the tests the src/qml controllers and models -- before R4-4 this file
+# listed those 22 source files by hand and drifted from the root CMakeLists.txt.
+# It also carries Qt6::Quick (hence Qt6::Gui) transitively, so tests may use
+# anything src/qml already depends on without this file growing a Qt component
+# list of its own. No extra DLLs: Qt6Quick/Qt6Gui sit in the same Qt bin
+# directory that Qt6Core/Qt6Qml already had to be on PATH from.
 target_link_libraries(MegaExplorerTests PRIVATE
     MegaExplorerCore
+    MegaExplorerQml
     crypt32
-    Qt6::Core
-    Qt6::Qml
     GTest::gtest_main
     GTest::gmock
+    MegaExplorerWarnings
 )
 
 # LicenseModelTest reads the working copy's licenses/ directly rather than the

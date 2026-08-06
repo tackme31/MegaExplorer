@@ -10,16 +10,17 @@ needs to decide "which layer does this belong in."
   module's `Main` component via `loadFromModule` (by type name, not path — unaffected by where the
   `.qml` file physically lives). Also the **composition root** (see below).
 - `qml/` — all hand-written `.qml` files (as opposed to `src/qml/`, which is the C++ types exposed
-  *to* QML — see below). `appMegaExplorer` is itself the QML module's backing target, so per Qt's
-  `qt_add_qml_module` docs the on-disk layout doesn't need to mirror the module's URI path;
-  subdirectories are free-form and, since Qt 6.8 (`QTP0004`, on by default at this project's
-  required Qt 6.10), each subdirectory gets its own auto-generated `qmldir` that prefers the
-  module's root — so types in different subdirectories resolve each other with no explicit
-  imports. Organized by role, split further only once a subfolder actually earns it:
+  *to* QML — see below). The module's backing target is the `MegaExplorerQml` library (see the
+  target list below), and the repo root directory is itself named `MegaExplorer`, which is what
+  Qt's `qt_add_qml_module` checks the URI against; subdirectories under `qml/` are free-form and,
+  since Qt 6.8 (`QTP0004`, on by default at this project's required Qt 6.10), each subdirectory
+  gets its own auto-generated `qmldir` that prefers the module's root — so types in different
+  subdirectories resolve each other with no explicit imports. Organized by role, split further
+  only once a subfolder actually earns it:
   - `qml/Main.qml` — root `ApplicationWindow`.
-  - `qml/views/` — full-screen views (empty until Phase 6+ adds one).
-  - `qml/components/` — reusable, non-modal pieces, e.g. `DownloadSnackbar.qml`.
-  - `qml/dialogs/` — modal popups/dialogs (empty so far).
+  - `qml/views/` — full-screen views, e.g. `LoginView.qml`, `FileTableView.qml`.
+  - `qml/components/` — everything reusable, including the modal dialogs (`AboutDialog.qml`,
+    `NewFolderDialog.qml`, …). A separate `qml/dialogs/` was planned but never earned its keep.
   New `.qml` files must also be added to `CMakeLists.txt`'s `qt_add_qml_module(... QML_FILES ...)`.
 - `importedcontent/` — Figma-to-Qt export drop-in; auto-`add_subdirectory`'d if its
   `CMakeLists.txt` exists. Currently empty.
@@ -61,6 +62,28 @@ src/qml/       C++ types exposed to QML (Q_PROPERTY etc.): FileListModel, contro
                NotificationController (shared error-toast relay)
 tests/         GoogleTest-based unit tests, one per src/core service
 ```
+
+### CMake targets
+
+Four targets, all defined in the root `CMakeLists.txt`:
+
+| Target | Holds | Why it is separate |
+| --- | --- | --- |
+| `MegaExplorerCore` (STATIC) | `src/core` | So `appMegaExplorer` and `MegaExplorerTests` link the same domain logic. Links no Qt at all. |
+| `MegaExplorerQml` (STATIC) | `src/qml` + `qml/`, and carries `qt_add_qml_module` | Same reason, one level up: the QML module's backing target is a library rather than the executable so `MegaExplorerTests` can link the QML-facing C++ types instead of hand-copying the file list, and so a Qt Quick Test target can `import MegaExplorer` at all. |
+| `appMegaExplorer` (WIN32 executable) | `main.cpp` + `src/app`, `src/mega`, `src/platform` | The composition root and the only target that touches the SDK or the OS. |
+| `MegaExplorerTests` | `tests/` | GoogleTest binary; links the two libraries above. |
+
+Two consequences worth knowing before editing the build files:
+
+- Because the backing target is a **library**, `qt_add_qml_module` no longer appends the module's
+  target path to the output directory by itself — `OUTPUT_DIRECTORY` is pinned explicitly so
+  `qmldir` keeps landing in `build/<preset>/MegaExplorer/`.
+- A static backing library means the generated type registration lives in a translation unit that
+  nothing references by name, so the linker would drop it and every QML type would fail to
+  register at startup. `appMegaExplorer` therefore links `MegaExplorerQmlplugin` *and* `main.cpp`
+  carries `Q_IMPORT_QML_PLUGIN(MegaExplorerPlugin)`. Neither half works without the other; a Qt
+  Quick Test target added later will need the same pair.
 
 Note the split: `src/qml/` is C++ (`.h`/`.cpp`) that QML consumes; `qml/` (project root) is the
 `.qml` files themselves. Don't conflate the two when adding a feature that needs both a controller

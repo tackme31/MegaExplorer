@@ -34,6 +34,14 @@
 #include <QStyleHints>
 
 #include <memory>
+#include <QtQml/qqmlextensionplugin.h>
+
+// The MegaExplorer QML module is backed by a static library (MegaExplorerQml),
+// whose type registration sits in a generated translation unit nothing here
+// references by name -- so without this forcing reference the linker drops it
+// and every QML_ELEMENT type goes unregistered. qt_import_qml_plugins() is not
+// an alternative: it is documented as a no-op against a non-static Qt.
+Q_IMPORT_QML_PLUGIN(MegaExplorerPlugin)
 
 int main(int argc, char* argv[])
 {
