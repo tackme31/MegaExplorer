@@ -1125,7 +1125,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   という SDK 実装詳細に依存している事実（R2-9 の副産物）も残した。3 つの配達モードそのものは
   R2-2 で `IMegaClient.h` の先頭に書いたので、重複させず参照だけ張っている。
 
-### R3 — 調査済み / R3-1・R3-2・R3-3・R3-6・R3-8・R3-12〜R3-14 対応済み、残り 4 件（2026-08-06）
+### R3 — 調査済み / R3-1〜R3-6・R3-8・R3-12〜R3-14 対応済み、残り 2 件（2026-08-06）
 
 計画の「種」4 件を現物で検証した結果。**確認 8 件 / 種の誤り 3 件（うち 1 件は方針判断が要る）/
 問題なし 6 件 / 新規 5 件**。R1・R2 と同じく、以下はそのまま plan mode の作業単位として使える粒度で
@@ -1203,7 +1203,8 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
     `kENoEnt`）と auth 経路 2 箇所だけで、後者に届くのは login/loginWithSession/fetchNodes の結果に
     限られ、それらは SDK リスナ経由かシャットダウンガードである。テスト 373 件が全緑で裏づけ。
   - `docs/ARCHITECTURE.md` に `## Error representation` 節を追加（R1 の信頼境界・R2 の
-    スレッドモデルと並ぶ位置）。R3-4 / R3-9 は未決なので書いていない — 決まった時点で追記する。
+    スレッドモデルと並ぶ位置）。R3-4 / R3-9 は未決なので書いていない — 決まった時点で追記する
+    （R3-4 の分は 2026-08-07 に追記済み。現状は「成果物」節を見ること）。
 
 **R3-2 [高] ✅対応済み `isUsable()` が「問い合わせ失敗」を「ピンが消えた」に畳み、ピンを永久削除する**
 
@@ -1299,7 +1300,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
     377 件全緑、`/W4` 新規警告ゼロ。`[[nodiscard]]` が実際に効くことは、`persist()` に破棄を
     一時的に戻して C4834 が出ることを確認して裏づけた。
 
-**R3-4 [中] トースト 8 文脈が SDK の英語文字列を生のまま `%1` に差し込む**
+**R3-4 [中] ✅対応済み トースト 8 文脈が SDK の英語文字列を生のまま `%1` に差し込む**
 
 - `qml/components/ToastStack.qml:155-202` の `showError`。`navigation` / `search` / `thumbnail` /
   `openFile` / `rename` / `createFolder` / `paste` / `copy` の 8 つが
@@ -1318,7 +1319,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   文言は `ToastStack.qml` が持つ。**QML も動くので R6 と衝突しうる — R3 で API だけ決めて、
   文面の作り込みは R6 に渡すのが安い**。
 
-**R3-5 [中] `"refresh"` 文脈だけ QML 側に case が無く、生の英語メッセージが単独で出る**
+**R3-5 [中] ✅対応済み `"refresh"` 文脈だけ QML 側に case が無く、生の英語メッセージが単独で出る**
 
 - C++ 側の `notifyError` 文脈は 11 個（`navigation` / `search` / `thumbnail` / `openFile` / `rename` /
   `createFolder` / `paste` / `copy` / `refresh` / `uploadNothingToUpload` / `uploadReplaceFailed`）。
@@ -1330,6 +1331,49 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   `createFolder`）は C++ 側と過不足なく一致している。抜けは `showError` だけ。
 - 修正方針: R3-4 と同じ場所を触るので**同一セッションで片付ける**。文字列の対応表が C++ と QML に
   分かれている限り同じ取りこぼしが再発するので、R3-4 の enum 化がそのまま再発防止になる。
+
+**R3-4 + R3-5 の対応（2026-08-07、1 セッション 1 コミット）**: 方針どおり `NotificationController`
+に `Q_ENUM(ErrorReason){NotFound/NoPermission/Offline/Unknown}` と `classify(int)` を置き、
+`errorOccurred(context, reason, rawMessage)` の 3 引数にした。`ToastStack.qml` の `showError` は
+`describeReason(clause, reason, raw)` で「何が失敗したか」と「なぜか」を合成する形になり、
+R3-5 の `refresh` はその 9 番目の case として入った。決めた点:
+
+- **enum 化したのは `reason` だけで、`context` は文字列のまま**。context も `Q_ENUM` にすれば
+  R3-5 型の取りこぼしをタイプミスの側から潰せるが、**QML の `switch` には網羅チェックが無い**ので
+  「C++ に文脈を足して QML に case を足し忘れる」本体は防げない。得られるものの割に C++ 16 箇所 +
+  QML 14 case + テスト 8 箇所のアサーションが動き、R6（QML 構造）との衝突が増える。
+  代わりに `showError` の `default:` を**生文字列のパススルーから `console.warn` + 一般文に変えた**
+  — R3-5 が 2 フェーズ生き延びたのは、取りこぼしが「穴」ではなく「メッセージ」に見えていたから。
+- **生の英語を出すのは `Unknown` のときだけ**（`AuthController::rawErrorMessage` と同じ規約）。
+  分類が付いた失敗には訳文があるので、そこに未翻訳を足しても悪くなるだけ。C++ 側で `classify()` が
+  `Unknown` 以外を返したら `rawMessage` を空にして emit しており、**QML の書き方に依存しない**。
+- **`classify` は呼び出し側ではなく `NotificationController` に 1 つだけ置いた**。16 箇所それぞれで
+  畳むと `AuthService`/`QuickAccessService` と並ぶ 3 つ目の対応表が散らばる。
+  `ARCHITECTURE.md` の「allowlist + `default`」の形に揃えてあり、名前を付けたのは
+  `kENoEnt`/`kEAccess`/`kEAgain` の 3 つだけ。
+- **文言は「動詞句 + 理由句」の連結にした**。context × reason の全文を並べると 32 文字列になる。
+  翻訳片の連結という既知の匂いは残るが、**reason は値であって文ではない**ので、日本語で読みが硬い
+  context だけ全文に開く作業は C++ 無変更で R6 が単独でできる。
+- **詳細を持たない 5 文脈（`renameInvalidName` / `quickAccessSave` / `quickAccessUnavailable` /
+  `uploadNothingToUpload` / `uploadReplaceFailed`）は 1 引数版 `notifyError(context)` に分けた**。
+  `QString()` を渡していた形が消え、「SDK に届く前に弾いた失敗」であることが型に出る。
+  **5 つとも文言は無変更**。
+- **`openFile` は product-visible に変えた（小）**。`DownloadController.cpp` は `errorMessage` 引数に
+  `localPath` を渡しており、`ToastStack` がそれをエラー文字列として `%1` に差していた
+  （`QDesktopServices::openUrl` の失敗なので `errorCode` が無い）。固定文
+  「Couldn't open this file」にし、パスは同行の `qCWarning` に残した — ユーザが今ダブルクリックした
+  ファイルなので、名前を返しても情報が増えない。持ち越し節にあった `showDownload:85` の同型は
+  **今回触っていない**（`fileName` は `%1` の意味が通る引数で、`%2` の `errorMessage` だけが問題。
+  ダウンロード経路は `DownloadJob` という 3 つ目のエラー表現に乗っており、R3-11 で R5 に合流させると
+  決めてある）→ **R6 ではなく R5 送り**。
+- CMake: `QML_ELEMENT` 型は `qt_add_qml_module` の `SOURCES` に無いと型登録されないので、
+  `NotificationController.h/.cpp` をそこへ移した（`AuthController` の先例。`target_include_directories`
+  の `src/qml` は既に入っている）。`tests/CMakeLists.txt` はファイルを明示列挙しているので影響なし。
+- テスト: `tests/NotificationControllerTest.cpp` を新規 4 件（3 コードの分類 / 未知コードが `Unknown` に
+  落ちる / **`Unknown` のときだけ raw が乗る** / 1 引数版）。既存は harness 2 つを 3 引数化し、
+  `refresh` と `rename`(`kEAccess`) のテストに reason と「raw が空」のアサーションを追加。
+  387 件全緑、`/W4` 新規警告ゼロ。実機でも 3 経路（`refresh`+`Offline` / `navigation`+`NoPermission` /
+  `renameInvalidName`）のトーストを目視確認した。
 
 **R3-6 [中] ✅対応済み 同じ「名前が不正」を rename だけ -1、createFolder / copy は `kEArgs` で返す**
 
@@ -1496,6 +1540,12 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   `src/mega` で `app/Logging.h` を include するのは `MegaSdkLogger` 以外では初。
 - **R3-14 の「チェックできなかった」をユーザに伝えるかは R3-4 に持ち越し**（トーストの文脈を
   足す話なので、enum 化と同じ場所を触る）。今回はログのみ。
+  → **R3-4 で「伝えない」に決着（2026-08-07）**。R3-4 が触ったのは既存 14 文脈の引数の形だけで、
+  文脈は 1 つも増やしていない。同名チェックが飛ぶのはアップロード**前**の判定で、その後の結果は
+  `upload` の成功/失敗タリーとして必ず出る。ここでトーストを足すと「確認できませんでした」の直後に
+  「N 件アップロードしました」が並び、**成功したのに何か失敗したように読める**。伝えるなら
+  トーストではなく `NameConflictDialog` 側（「同名の確認ができませんでした、続行しますか」）で、
+  それは R6 の範囲。
 - テスト追加なし。`MegaSdkClient` は実アカウントが要るのでアダプタ級のテストが元々無く、
   他 2 件は `src/qml`。`/W4` 新規警告ゼロ。
 
@@ -1511,7 +1561,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 | `QuickAccessModel.cpp:183-195` | 失敗を「dangling」と断定してピン削除 | **報告漏れ**（ログの文言も誤り） | ✅R3-2（`PinStatus` 3 値化 + `Unknown` 用のログ／トースト） |
 | `FolderNavigationController.cpp:318-324` | 裏側 refresh 失敗、無ログ | **報告漏れ** | ✅R3-12（`qCWarning`） |
 | `AuthService.cpp:111-117` | トークン取得失敗、無ログ | **報告漏れ** | ✅R3-13（core は Qt-free なのでアダプタ側で `qCWarning`） |
-| `UploadController.cpp:242-243` | 同名チェック不能 → スキップ | 意図的（ただし無ログ） | ✅R3-14（`qCWarning`。ユーザへの通知は R3-4 へ） |
+| `UploadController.cpp:242-243` | 同名チェック不能 → スキップ | 意図的（ただし無ログ） | ✅R3-14（`qCWarning`。ユーザへの通知は R3-4 で「しない」に決着、伝えるなら R6 のダイアログ側） |
 | `AuthService.cpp:34,49,94,106,116` | `(void)` 付きで破棄 | 意図的・明示済み | 対応不要 |
 | `AccountService.cpp:46-55` | 属性未設定 → `""` | 意図的・コメント済み | 対応不要 |
 | `FolderTreeService.cpp:37-38` | 失敗 → `false`（安全側） | 意図的・コメント済み | 対応不要 |
@@ -1525,8 +1575,8 @@ R3-2  isUsable の 3 値化（ピンを誤削除しない）  … ✅済。R3-1(
 R3-6  renameEntry の QML 分岐だけ               … ✅済。C++ 半分は R3-1 で先に入っていた
 R3-12 / R3-13 / R3-14  無音の 3 箇所にログ      … ✅済。予定どおり 1 コミット
 R3-8  goBack のガード                           … ✅済。1 行、サービス側の契約は据え置き
-R3-4 + R3-5  notifyError の enum 化（+ refresh 追加） … QML も動く。R6 と要調整 → 次はこれ
-R3-7  value のアクセサ化                        … R3-9 の承認が前提
+R3-4 + R3-5  notifyError の enum 化（+ refresh 追加） … ✅済。1 セッション 1 コミット
+R3-7  value のアクセサ化                        … R3-9 の承認が前提 → 次はこれ
 R3-9  Result 型そのものの方針                   … ★先に承認を取る。R5 の入力
 ```
 
@@ -1540,8 +1590,10 @@ R3-9 の承認だけは着手前に要る（`実施手順` 3 の「製品挙動�
   （`errorCode` で分岐し `errorMessage` では分岐しない、を `IMegaClient.h` の同期 3 メソッドから
   全体規約に格上げ）+ R3-4 の C++/QML 分担 + R3-9 で決めた `Result` の方針。
   - **R3-1 で `## Error representation` として作成済み**。前提節と `errorCode` 規約（値域の
-    使い分けを含む）まで入っている。**R3-4 の C++/QML 分担と R3-9 の `Result` 方針は未決なので
-    まだ書いていない** — プレースホルダも置いていないので、各項目が済んだ時点で追記すること。
+    使い分けを含む）まで入っている。**R3-4 で `### C++ carries the reason, QML carries the words`
+    を追記済み**（context + reason の 2 値だけを渡す規約、生英語は `Unknown` のときだけ、分類表は
+    境界ごとに 1 つ、`default:` が警告する理由）。**残るは R3-9 の `Result` 方針**で、こちらは
+    未決なのでプレースホルダも置いていない — 済んだ時点で追記すること。
 
 ### R4 — 未着手
 ### R5 — 未着手
@@ -1558,6 +1610,10 @@ R3-9 の承認だけは着手前に要る（`実施手順` 3 の「製品挙動�
   （`src/qml/AuthController.cpp:155-159`）、ダウンロードだけ生のまま。R3 の「`fail()` の
   `errorMessage` がそのまま UI に出る経路がないか」の答えの 1 つ。（R1 調査中に発見）
   → **R3 調査で回収済み（2026-08-06）**。同型が `showError` にも 8 文脈あり、R3-4 に統合した。
+  → **`showError` 側は R3-4 で解消、この `showDownload:85` 自体は R5 へ（2026-08-07）**。`%1` の
+  `fileName` は意味が通り、問題は `%2` の `errorMessage` だけ。ただしダウンロードは `Result` ではなく
+  `DownloadJob`（R3-11 の「3 つ目のエラー表現」）に乗っているので、`notifyError` の enum 化とは
+  別の入口が要る。R3-11 が既に R5 のサービス整理に合流させると決めており、そこで一緒に畳む。
 - **[R4] `DownloadController` にテストが無い** — `tests/UploadControllerTest.cpp:19` が理由を
   「`QDesktopServices` が QtGui を引く」と説明している。R1-1 の修正で `computeDestinationPath` に
   検証ロジックが入るなら、テスト可能な形（`src/core` の純関数）に出すのが望ましい。（R1 調査中に発見）

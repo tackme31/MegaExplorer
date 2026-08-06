@@ -186,6 +186,7 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
                                 << QString::fromStdString(result.errorMessage)
                                 << "code=" << result.errorCode;
         mNotifications->notifyError(QStringLiteral("navigation"),
+                                    result.errorCode,
                                     QString::fromStdString(result.errorMessage));
         return;
     }
@@ -260,6 +261,7 @@ void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>
         qCWarning(lcSearch) << "search failed:" << QString::fromStdString(result.errorMessage)
                             << "code=" << result.errorCode;
         mNotifications->notifyError(QStringLiteral("search"),
+                                    result.errorCode,
                                     QString::fromStdString(result.errorMessage));
         return;
     }
@@ -356,13 +358,14 @@ void FolderNavigationController::renameEntry(quint64 handle, const QString& newN
                     // worth a warning either.
                     if (result.errorCode == MegaErrorCode::kEArgs)
                     {
-                        mNotifications->notifyError(QStringLiteral("renameInvalidName"), QString());
+                        mNotifications->notifyError(QStringLiteral("renameInvalidName"));
                         return;
                     }
                     qCWarning(lcFileOps)
                         << "rename failed:" << QString::fromStdString(result.errorMessage)
                         << "code=" << result.errorCode;
                     mNotifications->notifyError(QStringLiteral("rename"),
+                                                result.errorCode,
                                                 QString::fromStdString(result.errorMessage));
                     return;
                 }
@@ -409,6 +412,7 @@ void FolderNavigationController::createFolder(const QString& name)
                     << "create folder failed:" << QString::fromStdString(result.errorMessage)
                     << "code=" << result.errorCode;
                 mNotifications->notifyError(QStringLiteral("createFolder"),
+                                            result.errorCode,
                                             QString::fromStdString(result.errorMessage));
                 emit folderCreationFailed(QStringLiteral("other"));
             });
@@ -524,6 +528,7 @@ void FolderNavigationController::paste()
         qCWarning(lcFileOps) << "paste rejected:" << QString::fromStdString(allowed.errorMessage)
                              << "code=" << allowed.errorCode;
         mNotifications->notifyError(QStringLiteral("paste"),
+                                    allowed.errorCode,
                                     QString::fromStdString(allowed.errorMessage));
         return;
     }
@@ -557,6 +562,7 @@ void FolderNavigationController::paste()
                              << QString::fromStdString(copyAllowed.errorMessage)
                              << "code=" << copyAllowed.errorCode;
         mNotifications->notifyError(QStringLiteral("paste"),
+                                    copyAllowed.errorCode,
                                     QString::fromStdString(copyAllowed.errorMessage));
         return;
     }
@@ -608,6 +614,7 @@ void FolderNavigationController::copyEntriesTo(const QVariantList& entries,
                              << QString::fromStdString(allowed.errorMessage)
                              << "code=" << allowed.errorCode;
         mNotifications->notifyError(QStringLiteral("copy"),
+                                    allowed.errorCode,
                                     QString::fromStdString(allowed.errorMessage));
         return;
     }
@@ -630,8 +637,10 @@ void FolderNavigationController::copyEntriesTo(const QVariantList& entries,
                     if (!result.success)
                     {
                         qCWarning(lcFileOps) << "drop-copy destination read failed:"
-                                             << QString::fromStdString(result.errorMessage);
+                                             << QString::fromStdString(result.errorMessage)
+                                             << "code=" << result.errorCode;
                         mNotifications->notifyError(QStringLiteral("copy"),
+                                                    result.errorCode,
                                                     QString::fromStdString(result.errorMessage));
                         return;
                     }
@@ -753,6 +762,7 @@ void FolderNavigationController::refresh()
                     << "server sync failed:" << QString::fromStdString(result.errorMessage)
                     << "code=" << result.errorCode;
                 mNotifications->notifyError(QStringLiteral("refresh"),
+                                            result.errorCode,
                                             QString::fromStdString(result.errorMessage));
             }
             // Re-read either way. The user asked for the folder to be

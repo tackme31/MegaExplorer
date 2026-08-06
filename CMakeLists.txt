@@ -114,8 +114,6 @@ qt_add_executable(appMegaExplorer
     src/qml/UploadController.cpp
     src/qml/ThumbnailController.h
     src/qml/ThumbnailController.cpp
-    src/qml/NotificationController.h
-    src/qml/NotificationController.cpp
     src/qml/ClipboardController.h
     src/qml/ClipboardController.cpp
     src/qml/TabsController.h
@@ -178,6 +176,8 @@ qt_add_qml_module(appMegaExplorer
         src/qml/KeyboardState.h
         src/qml/MenuActions.h
         src/qml/MenuActions.cpp
+        src/qml/NotificationController.h
+        src/qml/NotificationController.cpp
         src/qml/WindowAgentForeign.h
     RESOURCES
         ${MEGAEXPLORER_LICENSE_RESOURCES}

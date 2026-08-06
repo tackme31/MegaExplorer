@@ -92,9 +92,13 @@ protected:
         QObject::connect(notifications.get(),
                          &NotificationController::errorOccurred,
                          notifications.get(),
-                         [this](QString context, QString) {
+                         [this](QString context,
+                                NotificationController::ErrorReason reason,
+                                QString rawMessage) {
                              ++errorCalls;
                              lastErrorContext = context;
+                             lastErrorReason = reason;
+                             lastErrorRaw = rawMessage;
                          });
 
         // refresh() syncs with the API before re-reading the listing. Left
@@ -175,6 +179,8 @@ protected:
     int errorCalls = 0;
     QString lastContext;
     QString lastErrorContext;
+    NotificationController::ErrorReason lastErrorReason = NotificationController::Unknown;
+    QString lastErrorRaw;
     int lastSucceeded = 0;
     int lastFailed = 0;
 };
@@ -396,6 +402,9 @@ TEST_F(FolderNavigationControllerTest, RenameEntryReportsARealFailureAsAnOperati
 
     EXPECT_EQ(errorCalls, 1);
     EXPECT_EQ(lastErrorContext, QStringLiteral("rename"));
+    EXPECT_EQ(lastErrorReason, NotificationController::NoPermission);
+    // "denied" is the SDK's English; a classified reason must not carry it.
+    EXPECT_TRUE(lastErrorRaw.isEmpty());
     EXPECT_EQ(rootFetches - fetchesBefore, 0);
 }
 
@@ -516,6 +525,11 @@ TEST_F(FolderNavigationControllerTest, RefreshStillReReadsTheListingWhenTheSyncF
     // a refresh, and what the SDK already has is still worth showing.
     EXPECT_EQ(errorCalls, 1);
     EXPECT_EQ(lastErrorContext, QStringLiteral("refresh"));
+    // The code reaches the toast as a reason, so ToastStack can say something
+    // other than "offline" in English. R3-5's gap was on the QML side -- this
+    // only locks the C++ half of it.
+    EXPECT_EQ(lastErrorReason, NotificationController::Offline);
+    EXPECT_TRUE(lastErrorRaw.isEmpty());
     EXPECT_EQ(rootFetches - fetchesBefore, 1);
 }
 

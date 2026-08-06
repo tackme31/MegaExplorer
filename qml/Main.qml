@@ -1004,8 +1004,8 @@ ApplicationWindow {
 
     Connections {
         target: notificationController
-        function onErrorOccurred(context, errorMessage) {
-            toastStack.showError(context, errorMessage);
+        function onErrorOccurred(context, reason, rawMessage) {
+            toastStack.showError(context, reason, rawMessage);
         }
         function onOperationFinished(context, succeeded, failed) {
             toastStack.showOperation(context, succeeded, failed);

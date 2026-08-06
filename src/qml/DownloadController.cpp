@@ -101,8 +101,11 @@ void DownloadController::openFile(QString localPath)
 {
     if (!QDesktopServices::openUrl(QUrl::fromLocalFile(localPath)))
     {
+        // The path goes to the log, not the toast: openUrl gives no reason to
+        // report, and the file is the one the user just double-clicked or
+        // pressed "Open" on, so naming it back at them adds nothing.
         qCWarning(lcDownload) << "failed to open downloaded file:" << localPath;
-        mNotifications->notifyError(QStringLiteral("openFile"), localPath);
+        mNotifications->notifyError(QStringLiteral("openFile"));
     }
 }
 

@@ -259,3 +259,35 @@ Some boundaries have to reduce an `errorCode` to a decision. Two rules there:
 Don't reduce to `bool` when the boundary needs three answers. `QuickAccessService::classify` returns
 `Usable`/`Gone`/`Unknown` because it used to be a `bool`, and folding "couldn't ask" into "it's
 gone" meant a shutdown during the login-time sweep wrote an emptied pin list to disk.
+
+### C++ carries the reason, QML carries the words
+
+**No user-facing sentence is composed in C++, and no SDK string is composed into one.** A controller
+reporting a failure sends two structured values and nothing else:
+
+- **`context`** — which operation failed (`"navigation"`, `"refresh"`, `"paste"`, …). Selects the
+  clause naming the operation.
+- **A reason** — the `errorCode`, already collapsed by the "unknown means don't act" rule above.
+  Selects the clause explaining why.
+
+`NotificationController::notifyError` is where that happens for toasts: it classifies the code once
+into `ErrorReason` (`NotFound`/`NoPermission`/`Offline`/`Unknown`) and emits `errorOccurred`, and
+`ToastStack.qml`'s `showError`/`describeReason` join the two clauses. `AuthController` does the same
+for the login screen with `AuthErrorKind` and `LoginView.qml`'s `describeError`. Call sites classify
+nothing themselves — there is one table per boundary, not one per caller.
+
+**The SDK's English reaches the user in exactly one case: an `Unknown` reason.** Both boundaries
+carry the raw string alongside the reason and both blank it out once classification succeeded
+(`NotificationController`'s `rawMessage` argument, `AuthController::rawErrorMessage`) — a classified
+failure has a translated sentence, so appending untranslated text to it would only make it worse.
+Everywhere else the string is for the log.
+
+A failure this app rejected before the SDK saw it has no code to classify and no string worth
+showing — an invalid name, a local settings write, a pre-flight check. Those use the
+context-only `notifyError(context)` overload, and their QML case is a fixed sentence that reads
+neither reason nor raw message.
+
+The asymmetry to keep in mind: C++ can add a context QML doesn't handle, and no compiler will say
+so. `showError`'s `default` branch therefore `console.warn`s rather than printing the raw string,
+which is how the missing `"refresh"` case survived from Phase 20a to R3-5 — it looked like a
+message rather than like a gap.

@@ -29,6 +29,7 @@ add_executable(MegaExplorerTests
     LicenseModelTest.cpp
     ClipboardControllerTest.cpp
     AccountControllerTest.cpp
+    NotificationControllerTest.cpp
     ${CMAKE_SOURCE_DIR}/src/qml/AccountController.h
     ${CMAKE_SOURCE_DIR}/src/qml/AccountController.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp

@@ -39,8 +39,7 @@ QuickAccessModel::QuickAccessModel(std::shared_ptr<QuickAccessService> service,
                                  << failure.errorMessage.c_str() << "code=" << failure.errorCode;
         if (mNotifications)
         {
-            mNotifications->notifyError(QStringLiteral("quickAccessSave"),
-                                        QString::fromStdString(failure.errorMessage));
+            mNotifications->notifyError(QStringLiteral("quickAccessSave"));
         }
     });
 }
@@ -192,8 +191,7 @@ void QuickAccessModel::activate(quint64 handle, bool inNewTab)
                             << "code=" << resolved.errorCode;
                         if (mNotifications)
                         {
-                            mNotifications->notifyError(QStringLiteral("quickAccessUnavailable"),
-                                                        QString());
+                            mNotifications->notifyError(QStringLiteral("quickAccessUnavailable"));
                         }
                         break;
                 }

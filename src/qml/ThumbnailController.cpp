@@ -37,6 +37,7 @@ void ThumbnailController::requestThumbnail(quint64 handle)
                                            << QString::fromStdString(result.errorMessage)
                                            << "code=" << result.errorCode;
                     mNotifications->notifyError(QStringLiteral("thumbnail"),
+                                                result.errorCode,
                                                 QString::fromStdString(result.errorMessage));
                     return;
                 }

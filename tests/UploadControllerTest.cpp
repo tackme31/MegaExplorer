@@ -77,9 +77,13 @@ protected:
         QObject::connect(notifications.get(),
                          &NotificationController::errorOccurred,
                          notifications.get(),
-                         [this](QString context, QString) {
+                         [this](QString context,
+                                NotificationController::ErrorReason reason,
+                                QString rawMessage) {
                              ++errorCalls;
                              lastErrorContext = context;
+                             lastErrorReason = reason;
+                             lastErrorRaw = rawMessage;
                          });
         QObject::connect(
             controller.get(),
@@ -142,6 +146,8 @@ protected:
     int lastFailed = 0;
     int errorCalls = 0;
     QString lastErrorContext;
+    NotificationController::ErrorReason lastErrorReason = NotificationController::Unknown;
+    QString lastErrorRaw;
     int folderAsks = 0;
     int conflictAsks = 0;
     QStringList askedFilePaths;

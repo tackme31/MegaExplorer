@@ -173,7 +173,7 @@ void UploadController::dropUrls(const QList<QUrl>& urls, quint64 target, bool ta
     // terrible thing to ask.
     if (files.isEmpty())
     {
-        mNotifications->notifyError(QStringLiteral("uploadNothingToUpload"), QString());
+        mNotifications->notifyError(QStringLiteral("uploadNothingToUpload"));
         return;
     }
 
@@ -310,7 +310,7 @@ void UploadController::flushBatchIfDone()
     {
         // The uploads themselves succeeded and the new files are there; what
         // needs explaining is that the old ones didn't go away.
-        mNotifications->notifyError(QStringLiteral("uploadReplaceFailed"), QString());
+        mNotifications->notifyError(QStringLiteral("uploadReplaceFailed"));
     }
 
     mBatch = Batch{};
