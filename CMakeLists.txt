@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.20)
 
 project(MegaExplorer VERSION 0.1.0 LANGUAGES CXX)
 
+# CMAKE_INSTALL_BINDIR below would otherwise rely on Qt's package including this
+# transitively.
+include(GNUInstallDirs)
+
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Gui is for QWindowKit, which links Qt's Core/Gui/Quick *private* modules.
@@ -223,4 +227,13 @@ install(TARGETS appMegaExplorer
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# The licenses require their text to accompany the distribution, so the qrc copy
+# behind LicenseDialog is not a substitute. Same dir as the exe, which is what
+# THIRD-PARTY-NOTICES.txt calls "the root of this distribution".
+install(FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
+    ${CMAKE_CURRENT_SOURCE_DIR}/THIRD-PARTY-NOTICES.txt
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
