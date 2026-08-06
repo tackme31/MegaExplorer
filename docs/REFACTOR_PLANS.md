@@ -283,7 +283,145 @@ R7 ドキュメント/コメント整理
 
 （各スコープ完了時にここへ追記。形式は `docs/DESIGN_IMPROVEMENT.md` の段階ログに揃える）
 
-### R1 — 未着手
+### R1 — 調査済み / 修正未着手（2026-08-06）
+
+計画の「種」5 件を現物で検証した結果。**確認 3 件 / 種の誤り 1 件 / 問題なし 3 件 / 新規 3 件**。
+以下はそのまま plan mode の作業単位として使える粒度で書いてある。
+
+#### 確認された問題
+
+**R1-1 [高] ダウンロード先パスにサーバ由来のノード名を無検証で連結（パストラバーサル）**
+
+- 現物: `src/qml/DownloadController.cpp:114-132` (`computeDestinationPath`)。
+  `QDir::toNativeSeparators(dir + "/" + fileName)` のみで、`fileName` に一切の検証がない。
+- 到達経路: `qml/views/TabContentPane.qml:70-75`（ダブルクリック）と
+  `qml/ActionCatalog.qml:44-53`（コンテキストメニュー "Download"）→
+  `downloadController.downloadFile(handle, name, sizeBytes)`。`name` は `FileEntry::name`
+  = **サーバ由来**。
+- **SDK 側の正規化は存在しないことを確認した**（種が「依存先の副作用に頼っている」と書いた点の答え）:
+  - `third_party/sdk/src/megaapi_impl.cpp:10416-10438` — `startDownload` は `localPath` を
+    `LocalPath::fromAbsolutePath()` に渡すだけ。
+  - エスケープ（`fsaccess->escapefsincompatible`）は同 `:10493-10499` にあるが、**`customName`
+    にしか適用されない**。そして `src/mega/MegaSdkClient.cpp:528-537` は `customName` に
+    `nullptr` を渡している。→ セパレータは一切潰されない。
+- 影響: 名前が `..\..\evil.exe` のノードで Downloads 外へ書ける。MEGA のノード名は
+  **E2E 暗号化なのでサーバ側検証が原理的に不可能**（= 「MEGA が弾いてくれる」は成り立たない）。
+  ただし本アプリが見るのは自分のルートのみ（`MegaSdkClient::resolveNode`,
+  `src/mega/MegaSdkClient.cpp:884-888` — インシェアは扱わない）なので、実際の混入経路は
+  「公開リンクの import（元の名前がそのまま自分の口座に入る）」「別クライアントでの改名」に限られる。
+  重大度は高いが、悪用の前提条件はある。
+- 修正方針 A（推奨・堅い）: `IMegaClient::download` を `destinationDir` + `fileName` の 2 引数に変え、
+  `MegaApi::startDownload` の `customName` に名前を渡す。SDK の `escapefsincompatible` が
+  セパレータを潰してくれるので、正規化ロジックを自前で持たなくて済む。
+  波及: `IMegaClient.h` / `MegaSdkClient` / `DownloadService` / `DownloadController` /
+  `tests/MockMegaClient.h` / `tests/DownloadServiceTest.cpp`。
+- 修正方針 B（小・自前）: `computeDestinationPath` 内で `QFileInfo(fileName).fileName()` を取り、
+  空 / `.` / `..` を弾き、Windows 予約名（`CON` `PRN` `AUX` `NUL` `COM1-9` `LPT1-9`）と
+  末尾のドット・空白も避ける。波及は 1 ファイル。
+- どちらでも `COLLISION_RESOLUTION_NEW_WITH_N` と `resolvedLocalPath` 表示ロジック
+  （`DownloadController.cpp:52-55`）はそのまま生きる。
+- テスト: **`DownloadController` にテストが無い**（`tests/` に `DownloadControllerTest.cpp` は不在。
+  理由は `tests/UploadControllerTest.cpp:19` のコメント = `QDesktopServices` が QtGui を引く）。
+  B を採るなら判定を `src/core` の純関数へ出せばテストできる。R4 の「未テストの src/qml」と直結。
+
+**R1-2 [中] `install()` に `LICENSE` / `THIRD-PARTY-NOTICES.txt` が入っていない（Phase 20b の宿題）**
+
+- 現物: `CMakeLists.txt:222-226` — `install(TARGETS appMegaExplorer ...)` のみ。
+- 前提の確認: リポジトリ直下に `LICENSE` と `THIRD-PARTY-NOTICES.txt` は**存在する**。
+  `licenses/licenses.cmake` 経由で qrc 埋め込みもされており、**アプリ内表示（Phase 20b のダイアログ）
+  は成立している**。足りないのは「配布物のファイルとしての同梱」だけ。
+- 修正: `install(FILES ${CMAKE_SOURCE_DIR}/LICENSE ${CMAKE_SOURCE_DIR}/THIRD-PARTY-NOTICES.txt
+  DESTINATION ${CMAKE_INSTALL_BINDIR})` を追加。
+- **併走する未整備**: `windeployqt` / `qt_generate_deploy_qml_app_script` / CPack が一切ない
+  （`grep` 済み、`CMakeLists.txt` にヒットなし）。つまり `install` してもそのままでは動かないツリーになる。
+  **R1 でどこまでやるかは要合意** — 提案は「ファイル同梱だけ R1 で閉じ、デプロイ整備は別スコープ（持ち越し）」。
+- 要確認（ユーザー判断）: GPLv3 の対応ソース提供義務を「public な GitHub リポジトリ」で満たす方針か。
+  About ダイアログには URL がある（`qml/components/AboutDialog.qml:87`）ので、それを提供手段と
+  みなす旨をどこかに明記すれば足りる想定。
+
+**R1-3 [中] MEGA SDK のログレベルが明示されておらず、デフォルト値に依存している**
+
+- 現物: `src/mega/MegaSdkClient.cpp:391-399` — `addLoggerObject` するだけで `setLogLevel` を呼ばない。
+- 実効値は `third_party/sdk/src/logging.cpp:52` の `logInfo`（`src/app/Logging.cpp:16-17` の
+  コメント通り）。**INFO 以下では資格情報が出ないことは SDK 側を grep して確認済み**。
+- ただし `third_party/sdk/src/megaclient.cpp:2368` は `req->posturl` を `LOG_debug` で出力する。
+  この URL には `sid=` が含まれる。→ **レベルが上がった瞬間にセッション ID が平文ログへ落ちる**。
+- ログの出口も確認: `src/app/Logging.cpp:157-163` → `%LOCALAPPDATA%/MegaExplorer/MegaExplorer.log`。
+  **世代 1 世代のみ（`.1`）、サイズ上限なし、ログアウトでも削除されない**（種の「場所と寿命は未確認」への答え）。
+- 修正: `MegaSdkClient` のコンストラクタで `mega::MegaApi::setLogLevel(...)` を明示し、
+  「上げると sid が平文で落ちる」旨をヘッダに 1 行。デバッグ用に上げたいときのために
+  環境変数ゲートを付けるかは任意（付けるなら既定は必ず INFO 以下）。
+
+#### 種が不正確だった / 判断が要るもの
+
+**R1-4 [要合意] `openFile` の実行導線 — 種の記述は事実と違う**
+
+- 種は「クラウド上の `.exe` をダブルクリックで実行できる導線」と書いているが、**ダブルクリックは
+  ダウンロードするだけ**（`qml/views/TabContentPane.qml:70-75`）。`openFile` を呼ぶのは
+  **完了トーストの "Open" ボタン 1 箇所のみ**（`qml/components/ToastStack.qml:304`、
+  ボタンは `showDownload` が成功時に必ず出す `:82-91`）。つまり「もう 1 クリック必要」。
+- とはいえ `QDesktopServices::openUrl`（`src/qml/DownloadController.cpp:107`）が
+  `.exe` / `.lnk` / `.scr` を無警告で起動するのは事実。
+- **製品挙動の変更なので R1 では実装せず、方針だけ決める**。選択肢:
+  - (a) 何もしない（自分がダウンロードしたファイルを開くだけ、という現状の位置づけを明記）
+  - (b) 実行可能拡張子のときだけ確認ダイアログ
+  - (c) "Open" を "Show in folder" に変える（Explorer 的にも自然で、挙動変更が最小）
+- なお `Qt.openUrlExternally` は他に 2 箇所あるが、いずれも `AboutDialog.qml:82,88` の
+  **静的リテラル URL** で、外部入力は入らない（確認済み）。
+
+#### 問題なしと確認できた種
+
+**R1-5 DPAPI の使い方は妥当** — `src/platform/WindowsSessionStore.cpp`
+
+- フラグ `0` = current-user スコープ。`CRYPTPROTECT_LOCAL_MACHINE` は**使っていない**（`:90`, `:111`）。
+- `pOptionalEntropy` あり（`:26-51`、pepper であって秘密ではない旨もコメント済み）。
+- 保存先は `%LOCALAPPDATA%/MegaExplorer/session.dat`（`main.cpp:82-83`）で、ユーザースコープの
+  ACL を継承。ログアウトで `clearSession` される（`src/core/AuthService.cpp:89-97`）。
+- 残るのは R1-8 の細かい点のみ。**このスコープでの修正対象なし**。
+
+**R1-6 ログに資格情報は出ていない** — `src/` 全体の `qCWarning`/`qCInfo`/`qCDebug` を一巡
+
+- email / password / セッショントークンを出す箇所は皆無。`AuthController` は `errorMessage` と
+  `errorCode` のみ（`:113`, `:153`, `:186`）、`AccountController` も同様（`:85`, `:123`, `:170`, `:178`）。
+- サムネイル / アバターのローカルパスは**ハンドル数値のみ**でノード名を含まない
+  （`src/qml/ThumbnailController.cpp:79`, `src/qml/AccountController.cpp:195`）。
+- 失敗時に限りノード名 / ローカルパスがログに出る（`DownloadController.cpp:61,109`,
+  `UploadController.cpp:84`, `FolderNavigationController.cpp:363`）。単一ユーザーのデスクトップ
+  アプリとしては許容だが、R1-3 のログ寿命と併せて成果物のドキュメントに明記する。
+
+**R1-7 外部ドロップ（アップロード）側の信頼境界は正しく引けている** — `src/qml/UploadController.cpp:153-190`
+
+- `url.isLocalFile()` で非ローカル URL を落とし、`isDir`/`isFile` で分類、`absoluteFilePath()` で正規化。
+- R1-1 の対比として使える「良い側」の実例。成果物のドキュメントでこちらを参照する。
+
+#### 新規発見（いずれも低）
+
+**R1-8 [低] 資格情報のメモリ寿命** — `src/qml/AuthController.cpp`
+
+- `mPendingPassword` は 2FA 用に平文保持され、成功 / キャンセルで `clear()`（`:141`, `:181`, `:219`）。
+  `std::string::clear()` はゼロ化しない。`login` のラムダも `passwordStd` をコピーキャプチャで持つ（`:137-138`）。
+- 同一ユーザーのプロセスメモリなので実効リスクは低い。やるなら `SecureZeroMemory` 相当。
+  **「やらないと決めて記録する」でも可** — plan mode で判断する。
+
+**R1-9 [低] サムネイル / アバターのキャッシュがログアウト後も残る**
+
+- `%TEMP%/MegaExplorerThumbnails/<handle>.jpg`（`src/qml/ThumbnailController.cpp:72-79`）、
+  `%TEMP%/MegaExplorerAvatars/<handle>.jpg`（`src/qml/AccountController.cpp:189-195`）。
+- ログアウトでも別アカウントログインでも削除されない。前アカウントの画像プレビューが残る軽微な
+  プライバシー問題。修正はログアウト時に両ディレクトリを削除するだけ（`AuthController::logout` の完了時）。
+
+**R1-10 [低・ハイジーン] `include(GNUInstallDirs)` が無いまま `CMAKE_INSTALL_BINDIR` を使っている**
+
+- `CMakeLists.txt:224-225` が使っているが、`grep` の通り `include(GNUInstallDirs)` は無い。
+- 生成物を確認したところ `build/msvc-debug/cmake_install.cmake:52` は `${CMAKE_INSTALL_PREFIX}/bin`
+  に解決されており、**現状は壊れていない**（Qt の CMake パッケージが推移的に include している）。
+  暗黙依存なので R1-2 のついでに明示的な `include(GNUInstallDirs)` を足すのが安全。
+
+#### 成果物（計画通り）
+
+- `docs/ARCHITECTURE.md` に「サーバ由来文字列の信頼境界」を 1 節。R1-1（悪い例）と R1-7（良い例）、
+  R1-3 のログ出口と寿命をここに集約する。
+
 ### R2 — 未着手
 ### R3 — 未着手
 ### R4 — 未着手
@@ -294,3 +432,16 @@ R7 ドキュメント/コメント整理
 ## 5. 持ち越し（スコープ外で見つかった事項）
 
 （担当スコープが来るまでここに置く）
+
+- **[R3] SDK の英語 `errorMessage` がそのまま UI に出ている** — `qml/components/ToastStack.qml:85`
+  の `qsTr("Failed to download %1: %2").arg(fileName).arg(errorMessage)`。`errorMessage` は
+  `Result::fail()` の生文字列。`AuthController` は `classifyError` で構造化してから渡しているのに
+  （`src/qml/AuthController.cpp:155-159`）、ダウンロードだけ生のまま。R3 の「`fail()` の
+  `errorMessage` がそのまま UI に出る経路がないか」の答えの 1 つ。（R1 調査中に発見）
+- **[R4] `DownloadController` にテストが無い** — `tests/UploadControllerTest.cpp:19` が理由を
+  「`QDesktopServices` が QtGui を引く」と説明している。R1-1 の修正で `computeDestinationPath` に
+  検証ロジックが入るなら、テスト可能な形（`src/core` の純関数）に出すのが望ましい。（R1 調査中に発見）
+- **[スコープ未割当] 配布パイプラインが存在しない** — `windeployqt` /
+  `qt_generate_deploy_qml_app_script` / CPack のいずれも `CMakeLists.txt` に無い。`install()` しても
+  実行可能なツリーにならない。R1-2 はライセンスファイルの同梱だけを閉じ、デプロイ整備はここに残す。
+  （R1 調査中に発見）
