@@ -381,7 +381,7 @@ R7 ドキュメント/コメント整理
 して 2 個目が `report (1).pdf` になること（`COLLISION_RESOLUTION_NEW_WITH_N`）を確認すれば、
 既存のリネーム経路を壊していないことも分かる。
 
-**R1-2 [中] `install()` に `LICENSE` / `THIRD-PARTY-NOTICES.txt` が入っていない（Phase 20b の宿題）**
+**R1-2 [中] `install()` に `LICENSE` / `THIRD-PARTY-NOTICES.txt` が入っていない（Phase 20b の宿題）** — **修正済み（2026-08-06）**
 
 - 現物: `CMakeLists.txt:222-226` — `install(TARGETS appMegaExplorer ...)` のみ。
 - 前提の確認: リポジトリ直下に `LICENSE` と `THIRD-PARTY-NOTICES.txt` は**存在する**。
@@ -395,6 +395,38 @@ R7 ドキュメント/コメント整理
 - 要確認（ユーザー判断）: GPLv3 の対応ソース提供義務を「public な GitHub リポジトリ」で満たす方針か。
   About ダイアログには URL がある（`qml/components/AboutDialog.qml:87`）ので、それを提供手段と
   みなす旨をどこかに明記すれば足りる想定。
+
+**修正結果**（同梱のみ。デプロイ整備は持ち越しのまま）:
+
+- `CMakeLists.txt` に `install(FILES LICENSE THIRD-PARTY-NOTICES.txt DESTINATION ${CMAKE_INSTALL_BINDIR})`
+  を追加。宛先を `BINDIR`（= `bin`）にしたのは exe と同じ場所になるからで、NOTICES 前文の
+  「in the root of this distribution」という記述とも一致する（`DOCDIR` だと exe から離れる）。
+  併せて **R1-10 もここで閉じた** — `project()` 直後に `include(GNUInstallDirs)` を明示。
+- **調査の副産物: 種の前提が半分外れていた**。`THIRD-PARTY-NOTICES.txt` は Phase 20b の生成物で
+  36 件すべて `licenses/` と同期しており、内容の更新は不要だった。一方 `LICENSE` は
+  プロジェクト作成時のままで、中身は完全な GPLv3 だが **gnu.org の HTML 版を貼った体裁**
+  （曲線引用符 `“ ”`、折り返しなし、センタリング見出しなし）。GPLv3 自身が「この license document の
+  変更は不可」と述べているので、正典 `gpl-3.0.txt` に差し替えた。
+- `LICENSE` は生成スクリプトの入力（`gen_third_party_notices.py` の `megaexplorer` エントリ本文）
+  なので、差し替え後に再生成。変わったのは `licenses/texts/megaexplorer.txt` と
+  `THIRD-PARTY-NOTICES.txt` だけで、`manifest.json` / `licenses.cmake` は名前もバージョンも
+  変わらないため不変。
+- **`ABOUT.txt` を削除**。Phase 20b 以前の下書きで、About ダイアログ（`AboutDialog.qml:44-92`）が
+  同じ内容を全部表示しており、コードからもビルドからも参照されていなかった。
+  `docs/PROGRESS.md:2630-2632` の記述は Phase 20b 当時の履歴なので**書き換えていない**。
+- ただし削除すると、プレーンテキスト側（`LICENSE` は FSF の文書、NOTICES 前文は「GPLv3 です」としか
+  言わない）に**著作権者名とソース入手先が一切出なくなる**。そこで `NOTICES_PREAMBLE` に 3 点追加した:
+  著作権表示 + §15/§16 の無保証告知、**GPLv3 §6 の対応ソース提供先**（= public な GitHub リポジトリ、
+  上の「要確認」への回答）、FFmpeg を DLL で配るので再リンク可能である旨
+  （`docs/PROGRESS.md:2623-2624` が「実質満たしているがどこにも書かれていない」と記録していた穴）。
+- `AboutDialog.qml` の裸だった GitHub URL に `Source code:` のラベルを付けた。URL だけでは
+  「これが §6 の提供手段」と読めないため。
+- 検証: `--check` 緑（前後とも）、`MegaExplorerTests` 370 件全緑、`/W4` 新規警告ゼロ、
+  `cmake --install --prefix build/_installtest` で `bin/` に exe + 2 ファイルが揃うことを実地確認、
+  `ui_shot.py` で About ダイアログとライセンス一覧 1 件目（正典テキストに切り替わっている）を目視確認。
+- **意図的にやらなかったこと**: `windeployqt` / `qt_generate_deploy_qml_app_script` / CPack /
+  Release プリセット。`cmake --install` しても Qt/FFmpeg の DLL が無く動くツリーにはならないが、
+  R1-2 の論点は「同梱の義務を閉じる」ことなので、配布パイプラインは持ち越し節に残したままにする。
 
 **R1-3 [中] MEGA SDK のログレベルが明示されておらず、デフォルト値に依存している**
 
@@ -503,4 +535,5 @@ R7 ドキュメント/コメント整理
 - **[スコープ未割当] 配布パイプラインが存在しない** — `windeployqt` /
   `qt_generate_deploy_qml_app_script` / CPack のいずれも `CMakeLists.txt` に無い。`install()` しても
   実行可能なツリーにならない。R1-2 はライセンスファイルの同梱だけを閉じ、デプロイ整備はここに残す。
-  （R1 調査中に発見）
+  なお `CMakePresets.json` には `msvc-debug` しかなく、**Release プリセットも無い**ので、着手時は
+  そこからになる。（R1 調査中に発見、Release の件は R1-2 実施時に追記）
