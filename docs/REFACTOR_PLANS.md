@@ -513,7 +513,7 @@ R7 ドキュメント/コメント整理
   → **R1-1 / R1-7 ぶんは記述済み**（`## Trust boundary: strings that come from the server`）。
   R1-3 のログ出口と寿命は R1-3 実施時にこの節へ追記する。
 
-### R2 — 調査済み / R2-1・R2-2 修正済み（2026-08-06）
+### R2 — 調査済み / R2-1・R2-2・R2-3・R2-7 修正済み（2026-08-06）
 
 計画の「種」5 件を現物 + **ベンダーされた MEGA SDK 本体**（`third_party/sdk`）で検証した結果。
 **確認 3 件 / 種の誤り 1 件（重要）/ 問題なし 6 件 / 新規 4 件**。R1 と同じく、以下はそのまま
@@ -647,7 +647,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 - ついでに `FolderNavigationService.h` / `FileEntry.h` の C++ 標準に関する古いコメントを是正
   （R2-1 で `cxx_std_17` が入ったため前者は事実に反し、後者は消滅した `Result.h` のコメントを参照していた）。
 
-**R2-3 [高] シャットダウン時の use-after-free — `~MegaApi` が破棄済みサービスへコールバックする**
+**R2-3 [高] シャットダウン時の use-after-free — `~MegaApi` が破棄済みサービスへコールバックする** —
+**修正済み（2026-08-06）**
 
 - `main.cpp` の宣言順は `client`(:81) → 各サービス(:85-97) → コントローラ(:100-107) → `tabs`(:143)。
   スタック変数は逆順に壊れるので、**`MegaSdkClient` が最後**。
@@ -681,6 +682,79 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 - 修正方針（推奨）: `MegaSdkClient` に明示的な `shutdown()`（`mApi.reset()`）を足し、
   `app.exec()` の直後に `main.cpp` から呼ぶ。`client` は複数の shared_ptr に保持されているので
   **宣言順の入れ替えでは直せない — 明示的な停止点を作るのが唯一の手**。
+
+**修正結果**:
+
+- 方針どおり `MegaSdkClient::shutdown()`（`mApi.reset()`）を足し、`main.cpp` は
+  `return app.exec();` を `const int exitCode = app.exec(); client->shutdown(); return exitCode;`
+  にした。`shutdown()` は **`IMegaClient` には足していない** — `main.cpp:81` の `client` は
+  `shared_ptr<MegaSdkClient>` で具象型が見えており、`MockMegaClient` の 28 個の `MOCK_METHOD` を
+  増やす理由がない。
+- **`mApi.reset()` だけでは足りなかった。** `unique_ptr::reset()` はポインタを null にしてから
+  デリータを呼ぶので、`~MegaApi` の `thread.join()` 中に SDK スレッドから戻ってくるコールバックが
+  `MegaSdkClient` に再入すると null 参照になる。**この再入は仮定ではなく現物にある**:
+  `DownloadService` / `ThumbnailService` は onDone から（R2-2 のトランポリン経由で）次のジョブを
+  開始し、`AccountService.cpp:51` は `getMyUserAttribute` のコールバック内から
+  `getMyUserAttribute` を再発行する。よって **shutdown 後は不活性（inert）** にする必要がある。
+- **ミューテックスは使えない**。ここが今回いちばん再学習したくない知見: コールバックは `sdkMutex` を
+  保持したまま届く（R2-10）ので、自前ミューテックスで「mApi を触る」と「mApi を壊す」を囲むと
+  GUI 側「自前 mutex → `sdkMutex`」/ SDK 側「`sdkMutex` → 自前 mutex」のロック順逆転になり、
+  確実にデッドロックする。したがって `std::atomic<bool> mShuttingDown` を `mApi.reset()` の**前に**
+  立て、**全 public メソッド 29 本 + `resolveNode`** がその先頭で早期失敗する形にした。
+  1 本でも漏らすと teardown 中の再入が null 参照になるので、部分適用（`resolveNode` 1 箇所に集約する等）
+  ではなく一律にしてある。エラー文言は無名 namespace の `kShutDownMessage` 1 本。
+  同期エラー返しが多段再帰にならないのは R2-2 のトランポリンのおかげで、既に払ってある代償。
+- 残る理論上の窓は「フラグを false と読んだ直後に GUI が reset する」だが、SDK スレッドが
+  コールバックを出すのは join 中＝フラグ true・`mApi` null 確定後なので到達しない。
+  ロックで塞げない以上ここが限界であることをヘッダのコメントに残した。
+- `~MegaSdkClient` は `shutdown()` → `removeLoggerObject` の順にした（`shutdown()` は
+  `exchange(true)` で冪等）。副次効果として **R2-16 が「代償」と記録していた「SDK の終了時ログが
+  失われる」が解消した** — ロガーが `~MegaApi` の間ずっと登録されたままになる。
+  併せて `MegaSdkClient.h:147-149` の宣言順コメントを R2-11 のとおり是正
+  （「先に構築されるので先に登録される」は誤り、正しい理由は「後に破棄される」だけ）。
+- **R2-12 の申し送りを消化**: リスナ群の先頭に「`removeRequestListener` /
+  `removeTransferListener` を呼んではならない」理由をコメントで書いた。あれは unsubscribe ではなく
+  `setListener(NULL)` なので、呼ぶと finish コールバックが届かず `delete this` に到達せず
+  **リークする** — 名前から期待する動作の正反対、という点まで明記。
+- **R2-5 の窓は狭まった**（SDK スレッドが動くのは全オーナー生存中だけになった）が、
+  タブを閉じた直後の in-flight は残る。R2-5 は未着手のまま。
+- 既存 373 テスト全通過、`/W4` 新規警告ゼロ。**挙動差・QML 側の変更はゼロ**（`shutdown()` は
+  イベントループ終了後にしか走らない）。**自動テストによる検証は無い** — `MegaSdkClient` は
+  テストターゲットに入っておらず（`tests/CMakeLists.txt:4`）、`MockMegaClient` では
+  shutdown 後の不活性挙動を突けない。R4 への入力として記録する。
+
+**手動検証の状況と、決定的にするための宿題**
+
+ダウンロード中にウィンドウを閉じてログを確認した。**確認できたのは 2 点だけ**で、肝心の中断パスは
+まだ踏めていない。
+
+- **確認済み: R2-16 の解消**。ログに `megaapi_impl.cpp:17968 Request (DELETE) starting` が出る。
+  これは `fireOnRequestStart` の行で、その `TYPE_DELETE` リクエストは **`~MegaApiImpl` の中で
+  生成される**もの ＝ 旧コード（`removeLoggerObject` が `~MegaApi` より先）では**原理的に出得ない行**。
+  続く `utils.cpp:2944/2949 ~MegaClientAsyncQueue() joining threads / ends` も `thread.join()` 中の
+  SDK スレッド側の行で、ログが `~MegaApi` の最後まで届いていることを示す。
+- **確認済み: teardown が最後まで走る**。`~MegaClientAsyncQueue() ends` は SDK 終了処理のほぼ最終行。
+- **未確認: 中断コールバックが破棄済みオブジェクトに届かないこと（＝ R2-3 の本題）**。ログの
+  `megaapi_impl.cpp:18157 Transfer (DOWNLOAD) finished. File: ...` は**成功ブランチ**で、
+  `abortPendingActions` 経由なら `setState(STATE_FAILED)` ＋ エラー付き `fireOnTransferFinish` に
+  なりその手前のエラーブランチが出る。つまり実際に起きたのは「最後の 1 件が自然完了した 1ms 後に
+  閉じた」で、中断は 1 件も発生していない。完了直後に新しい転送開始のログが無い点も、
+  「キューが空だった」のか「キュー送りが shutdown ガードで弾かれた」のか**ログでは区別できない**
+  （後者なら SDK ログは一切出ない）。
+
+**宿題（決定的にする手順）**:
+
+1. 数十 MB 以上のファイルを先頭に、後ろに数件キューしてダウンロードを開始する。
+2. 進捗バーが**動いている最中**にウィンドウを閉じる（自然完了を待たない）。
+3. 期待する所見:
+   - `Request (DELETE) starting` の**後**に、中断された転送のエラー行（`API_EACCESS` 相当）が出る。
+   - その後もログが `~MegaClientAsyncQueue() ends` まで到達する。
+   - プロセスが 0 で終了する（`echo %ERRORLEVEL%`）。
+4. ガードが実際に踏まれたかまで見たい場合は、`MegaSdkClient::download` のガード内に一時的な
+   `qCWarning` を 1 行入れて同じ操作をする。恒久的に入れないのは、shutdown 後の失敗は
+   誰にも surface されない正常系であり、ログを汚すだけのため。
+5. サムネイル側（`ThumbnailService` の再入経路）は、大きめのフォルダをグリッド表示で開いて
+   サムネイル取得中に閉じることで同様に踏める。
 
 **R2-4 [中・実行時到達可能] `ThumbnailController::mModel` が他オブジェクトの内部を指す**
 
@@ -733,7 +807,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 - なお `src/qml` の他の跨スレッド手段は**ゼロ**: `QTimer::singleShot` 0 件、
   `Qt::QueuedConnection` の `connect` 0 件、非 GUI スレッドからの `emit` 0 件、`moveToThread` 0 件。
 
-**R2-7 [中] コントローラがサービスへ登録した生 `this` コールバックを解除しない**
+**R2-7 [中] コントローラがサービスへ登録した生 `this` コールバックを解除しない** —
+**修正済み（2026-08-06、R2-3 と同時）**
 
 - `DownloadController.cpp:36/41`, `UploadController.cpp:35/40` は `setOnProgress`/`setOnJobFinished`
   に `[this]` を永続登録するが、**どのコントローラにもデストラクタが無い**
@@ -745,6 +820,19 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 - 今日は外側ラムダ本体が `this` を実際には触らない（`invokeOnGuiThread` へ転送するだけ）ので
   辛うじて生きているが、`UploadController.cpp:42` の `--mBatch.pendingJobs;` は内側ラムダにあり、
   イベント処理が 1 回でも走れば死んだオブジェクトを触る。**デストラクタ 1 つで塞げる。**
+
+**修正結果**:
+
+- `~DownloadController` / `~UploadController` を足し、`setOnProgress(nullptr)` /
+  `setOnJobFinished(nullptr)` で解除した。空の `std::function` を入れて壊れる経路は無い
+  （setter は `mMutex` 下で代入し、呼び出し側はロック下でコピーしてから `if (onProgress)` で
+  空チェックする ＝ R2-13 が確認済みの形）。
+- **位置づけは R2-3 で変わった**: 両コントローラは `main.cpp` のスタック上でアプリ寿命なので、
+  R2-7 の窓は**シャットダウンしか無かった**。その窓は R2-3 の停止点が閉じたので、この解除は
+  実害を消す変更ではなく「登録したら解除する」という規律の担保である。
+- **解除できないものが 1 つ残る**: `UploadController.cpp:59` の
+  `mFileOps->moveToRubbish(..., [this]…)` は一発限りのコールバックで、解除 API が無い。
+  安全なのは R2-3 の停止点のおかげ（サービスもコントローラも生存中）で、その旨をコメントに残した。
 
 **R2-8 [中・設計] `mQueue.front()` の「先頭だけが in-flight」前提**
 
@@ -813,7 +901,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   `CancelToken` 自体が `shared_ptr<bool>` を持つ共有ハンドル（`mega/types.h:1223-1227`）。
   害は無い（過剰保持）が、リスナの状態を削る改修を妨げる。なお `cancel()` は `src/` のどこからも
   呼ばれておらず、現状は純粋なオーバーヘッド（= `cancel(jobId)` 実装時のフック）。
-- `MegaSdkClient.h:147-149` — 「`mApi` より前に宣言＝先に構築されるので、`mApi` が何かログを出す前に
+- `MegaSdkClient.h:147-149` — **是正済み（2026-08-06、R2-3 と同時）**。
+  「`mApi` より前に宣言＝先に構築されるので、`mApi` が何かログを出す前に
   ロガーが登録される」。前半（後に破棄される）は正しく load-bearing だが、後半は**誤り**:
   登録はコンストラクタの**本体**（`MegaSdkClient.cpp:398`）で、`mApi` のメンバ初期化＝
   `MegaApiImpl::init` は既に終わっており、`init` は最後に SDK スレッドを起動する
@@ -836,6 +925,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 - **落とし穴として記録すべき点**: `removeRequestListener`（`:17895-17903`）は `setListener(NULL)` する。
   つまり「終了処理が無い」と言って後からこれを呼ぶと**確実にリークする**。
   呼んでいないのが正解、という理由が今どこにも書かれていない（R2-3 の修正時に併記する）。
+  → **併記済み（2026-08-06、R2-3 と同時）**。`MegaSdkClient.cpp` のリスナ群の先頭に、
+  自己削除が唯一正しい作法である根拠ごと書いた。
 
 **R2-13 `std::function` observer の扱いは正しい**
 
@@ -865,6 +956,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   そのミューテックス下でしか触られない。
 - 破棄順も正しい（`removeLoggerObject` が `~MegaSdkClient` の**本体** = `mApi` 破棄より前、
   `MegaSdkClient.cpp:403`）。代償として SDK の終了時ログは失われる（意図的かは不明、1 行コメント推奨）。
+  → **この代償は R2-3 で解消（2026-08-06）**。デストラクタが `shutdown()` →
+  `removeLoggerObject` の順になり、`~MegaApi` の間ロガーが登録されたままになった。
 
 **R2-17 非所有生ポインタの宣言順保証は（R2-5 のケースを除き）成立**
 
@@ -918,10 +1011,10 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 
 ```
 R2-1  currentJob() の optional 化            … 単独・小・UB を確実に消す      [済 2026-08-06]
-R2-7  コントローラのデストラクタで observer 解除 … 単独・極小
+R2-7  コントローラのデストラクタで observer 解除 … 単独・極小                  [済 2026-08-06]
 R2-6  invokeOnGuiThread を B に統一（8→1）    … 単独・機械的
 R2-2  再帰のループ化 + IMegaClient 契約の書き直し … R2-19 の「同期失敗 N 件モック」とセット [済 2026-08-06]
-R2-3  MegaSdkClient::shutdown() の導入        … 寿命系の根。R2-5 の窓もここで狭まる
+R2-3  MegaSdkClient::shutdown() の導入        … 寿命系の根。R2-5 の窓もここで狭まる [済 2026-08-06]
 R2-4  FileListModel の shared_ptr 化          … R5 の解体と方向一致。R5 に送る選択肢もあり
 R2-9/R2-10/R2-11  docs/ARCHITECTURE.md への記録とコメント是正 … 締め
 R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理に合流させるのが安い
