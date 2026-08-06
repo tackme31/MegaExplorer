@@ -16,11 +16,11 @@ namespace
 struct Sweep
 {
     // Snapshot of the pins at sweep start. A surviving pin gets its name
-    // refreshed in place; usable[i] is what says whether it survived at all.
+    // refreshed in place; status[i] is what says whether it survived at all.
     // Handles stay intact even for dropped pins, because the commit looks
     // results up by handle rather than by position.
     std::vector<PinnedFolder> resolved;
-    std::vector<bool> usable;
+    std::vector<QuickAccessService::PinStatus> status;
     int remaining = 0;
 };
 } // namespace
@@ -175,10 +175,28 @@ void QuickAccessModel::activate(quint64 handle, bool inNewTab)
             invokeOnGuiThread(this, [this, handle, inNewTab, name, generation, resolved]() {
                 if (generation != mGeneration)
                     return;
-                if (QuickAccessService::isUsable(resolved))
-                    emit activated(handle, inNewTab);
-                else
-                    emit missing(handle, name);
+                switch (QuickAccessService::classify(resolved))
+                {
+                    case QuickAccessService::PinStatus::Usable:
+                        emit activated(handle, inNewTab);
+                        break;
+                    case QuickAccessService::PinStatus::Gone:
+                        emit missing(handle, name);
+                        break;
+                    // Not missing(): that offers to unpin, and nothing here
+                    // says the target is actually gone. A toast, so the click
+                    // doesn't just look ignored.
+                    case QuickAccessService::PinStatus::Unknown:
+                        qCWarning(lcQuickAccess)
+                            << "could not verify quick-access pin" << name << "handle=" << handle
+                            << "code=" << resolved.errorCode;
+                        if (mNotifications)
+                        {
+                            mNotifications->notifyError(QStringLiteral("quickAccessUnavailable"),
+                                                        QString());
+                        }
+                        break;
+                }
             });
         });
 }
@@ -191,7 +209,7 @@ void QuickAccessModel::validateAll()
 
     auto sweep = std::make_shared<Sweep>();
     sweep->resolved = snapshot;
-    sweep->usable.assign(snapshot.size(), false);
+    sweep->status.assign(snapshot.size(), QuickAccessService::PinStatus::Unknown);
     sweep->remaining = static_cast<int>(snapshot.size());
 
     const std::uint64_t generation = mGeneration;
@@ -205,18 +223,30 @@ void QuickAccessModel::validateAll()
                         return;
 
                     PinnedFolder& pin = sweep->resolved[i];
-                    if (QuickAccessService::isUsable(resolved))
+                    const QuickAccessService::PinStatus status =
+                        QuickAccessService::classify(resolved);
+                    sweep->status[i] = status;
+                    switch (status)
                     {
-                        // A handle is stable across moves and renames, so
-                        // re-reading the name is all it takes to follow one.
-                        pin.name = resolved.value.name;
-                        sweep->usable[i] = true;
-                    }
-                    else
-                    {
-                        qCInfo(lcQuickAccess)
-                            << "dropping dangling quick-access pin"
-                            << QString::fromStdString(pin.name) << "handle=" << pin.handle;
+                        case QuickAccessService::PinStatus::Usable:
+                            // A handle is stable across moves and renames, so
+                            // re-reading the name is all it takes to follow one.
+                            pin.name = resolved.value.name;
+                            break;
+                        case QuickAccessService::PinStatus::Gone:
+                            qCInfo(lcQuickAccess)
+                                << "dropping dangling quick-access pin"
+                                << QString::fromStdString(pin.name) << "handle=" << pin.handle;
+                            break;
+                        case QuickAccessService::PinStatus::Unknown:
+                            // Left in the list *and* left unrenamed, so the
+                            // commit below sees a value identical to what's
+                            // already stored and skips the write entirely.
+                            qCWarning(lcQuickAccess)
+                                << "keeping unverified quick-access pin"
+                                << QString::fromStdString(pin.name) << "handle=" << pin.handle
+                                << "code=" << resolved.errorCode;
+                            break;
                     }
 
                     if (--sweep->remaining > 0)
@@ -227,7 +257,9 @@ void QuickAccessModel::validateAll()
                     // have landed while the sweep was in flight, and replaying
                     // the snapshot would undo it. The sweep contributes only
                     // names and drops, both keyed by handle; a handle it never
-                    // saw passes through unchecked.
+                    // saw passes through unchecked. Only Gone drops a pin --
+                    // Unknown means the sweep learned nothing about it, so it
+                    // is passed through the same way an unseen handle is.
                     const std::vector<PinnedFolder>& current = mService->pins();
                     std::vector<PinnedFolder> survivors;
                     survivors.reserve(current.size());
@@ -241,8 +273,9 @@ void QuickAccessModel::validateAll()
                                          });
                         if (found == sweep->resolved.end())
                             survivors.push_back(pinned);
-                        else if (sweep->usable[static_cast<std::size_t>(found -
-                                                                        sweep->resolved.begin())])
+                        else if (sweep->status[static_cast<std::size_t>(found -
+                                                                        sweep->resolved.begin())] !=
+                                 QuickAccessService::PinStatus::Gone)
                             survivors.push_back(*found);
                     }
 

@@ -194,6 +194,14 @@ Item {
         case "quickAccessSave":
             text = qsTr("Couldn't save your pinned folders");
             break;
+            // Same no-%1 rule, same reason: the lookup was cut short (the app is
+            // shutting down, or a code nothing classifies came back), so the SDK
+            // string explains nothing. What matters is that the folder wasn't
+            // found to be missing -- it just couldn't be checked, which is why
+            // this is a toast and not the "remove this pin?" dialog.
+        case "quickAccessUnavailable":
+            text = qsTr("Couldn't check this folder right now — please try again");
+            break;
         case "uploadNothingToUpload":
             text = qsTr("Nothing to upload — folders and non-file items can't be uploaded");
             break;

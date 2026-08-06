@@ -47,7 +47,9 @@ public:
     // Login: reads the persisted pins, shows them immediately, then starts an
     // async validation sweep (see validateAll) that follows renames and drops
     // pins whose target is gone. Showing the stored names first means no blank
-    // panel while the sweep runs.
+    // panel while the sweep runs. A pin the sweep couldn't get an answer about
+    // is kept as-is (QuickAccessService::PinStatus::Unknown) -- only a
+    // definitive "gone" removes anything.
     Q_INVOKABLE void reload();
 
     // Sign-out: empties the list without touching the store.

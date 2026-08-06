@@ -1,5 +1,7 @@
 #include "QuickAccessService.h"
 
+#include "MegaErrorCodes.h"
+
 #include <algorithm>
 #include <string>
 #include <utility>
@@ -95,9 +97,23 @@ void QuickAccessService::resolveFolder(std::uint64_t handle,
     mClient->getNodeInfo(handle, std::move(onDone));
 }
 
-bool QuickAccessService::isUsable(const Result<NodeInfo>& resolved)
+QuickAccessService::PinStatus QuickAccessService::classify(const Result<NodeInfo>& resolved)
 {
-    return resolved.success && resolved.value.isFolder && resolved.value.inCloud;
+    if (resolved.success)
+    {
+        return resolved.value.isFolder && resolved.value.inCloud ? PinStatus::Usable
+                                                                 : PinStatus::Gone;
+    }
+
+    switch (resolved.errorCode)
+    {
+        // The handle resolves to nothing at all, which for a logged-in session
+        // with the tree fetched means the node was purged from the Rubbish bin.
+        case MegaErrorCode::kENoEnt:
+            return PinStatus::Gone;
+        default:
+            return PinStatus::Unknown;
+    }
 }
 
 void QuickAccessService::setOnPersistenceFailed(std::function<void(const Result<void>&)> handler)

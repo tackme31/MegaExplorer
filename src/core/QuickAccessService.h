@@ -76,11 +76,32 @@ public:
 
     void resolveFolder(std::uint64_t handle, std::function<void(Result<NodeInfo>)> onDone);
 
+    // What a resolveFolder result says about the pin that produced it.
+    enum class PinStatus
+    {
+        // A live folder in the Cloud Drive.
+        Usable,
+        // Definitively unusable: a file, a node in the Rubbish bin, or a handle
+        // that doesn't resolve at all.
+        Gone,
+        // The question couldn't be answered. Says nothing about the target, so
+        // the pin has to be left alone.
+        Unknown,
+    };
+
     // The single definition of "this pin still points at something usable",
     // shared by the login-time sweep and the click-time check. A deleted node
     // is only moved to the Rubbish bin, so it keeps resolving successfully --
     // inCloud is what actually rules it out.
-    static bool isUsable(const Result<NodeInfo>& resolved);
+    //
+    // Gone and Unknown are kept apart because the sweep *deletes* on Gone: this
+    // used to be one bool, so a shutdown mid-sweep failed every resolve, marked
+    // every pin dangling, and wrote the emptied list through to disk. The
+    // definitive codes are therefore an allowlist and anything unrecognized
+    // falls through to Unknown, same shape and same reasoning as
+    // isSessionDefinitivelyInvalid (AuthService.h): wrongly keeping a dead pin
+    // costs one dialog, wrongly dropping a live one is unrecoverable.
+    static PinStatus classify(const Result<NodeInfo>& resolved);
 
     // Where a failed write-through goes. Called synchronously from inside the
     // mutator that failed, on the caller's thread (see the class comment: that

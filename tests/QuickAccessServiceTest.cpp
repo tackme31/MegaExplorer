@@ -14,6 +14,8 @@ using ::testing::Return;
 namespace
 {
 
+using PinStatus = QuickAccessService::PinStatus;
+
 PinnedFolder makePin(const char* name, std::uint64_t handle)
 {
     PinnedFolder pin;
@@ -353,31 +355,55 @@ TEST_F(QuickAccessServiceTest, ResolveFolderDelegatesToGetNodeInfo)
     EXPECT_EQ(received.value, info);
 }
 
-// isUsable is the single definition of "this pin still points at something
-// usable", shared by the login-time sweep and the click-time check, so each
-// way it can say no is pinned down here.
-TEST(QuickAccessServiceIsUsableTest, AcceptsALiveCloudDriveFolder)
+// classify is the single definition of what a pin's resolved target means,
+// shared by the login-time sweep and the click-time check, so each verdict is
+// pinned down here. The Gone/Unknown split is the load-bearing part: the sweep
+// deletes on Gone.
+TEST(QuickAccessServiceClassifyTest, AcceptsALiveCloudDriveFolder)
 {
-    EXPECT_TRUE(
-        QuickAccessService::isUsable(Result<NodeInfo>::ok(makeNodeInfo("Photos", 11, true, true))));
+    EXPECT_EQ(
+        QuickAccessService::classify(Result<NodeInfo>::ok(makeNodeInfo("Photos", 11, true, true))),
+        PinStatus::Usable);
 }
 
-TEST(QuickAccessServiceIsUsableTest, RejectsAnUnresolvableHandle)
+TEST(QuickAccessServiceClassifyTest, TreatsAnUnresolvableHandleAsGone)
 {
-    EXPECT_FALSE(QuickAccessService::isUsable(
-        Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)));
+    EXPECT_EQ(QuickAccessService::classify(
+                  Result<NodeInfo>::fail("no such node", MegaErrorCode::kENoEnt)),
+              PinStatus::Gone);
 }
 
-TEST(QuickAccessServiceIsUsableTest, RejectsANodeOutsideTheCloudDrive)
+TEST(QuickAccessServiceClassifyTest, TreatsANodeOutsideTheCloudDriveAsGone)
 {
     // A MEGA delete only moves the node to the Rubbish bin, so it still
     // resolves -- inCloud is what rules it out.
-    EXPECT_FALSE(QuickAccessService::isUsable(
-        Result<NodeInfo>::ok(makeNodeInfo("Photos", 11, true, false))));
+    EXPECT_EQ(
+        QuickAccessService::classify(Result<NodeInfo>::ok(makeNodeInfo("Photos", 11, true, false))),
+        PinStatus::Gone);
 }
 
-TEST(QuickAccessServiceIsUsableTest, RejectsAFile)
+TEST(QuickAccessServiceClassifyTest, TreatsAFileAsGone)
 {
-    EXPECT_FALSE(QuickAccessService::isUsable(
-        Result<NodeInfo>::ok(makeNodeInfo("photo.jpg", 11, false, true))));
+    EXPECT_EQ(QuickAccessService::classify(
+                  Result<NodeInfo>::ok(makeNodeInfo("photo.jpg", 11, false, true))),
+              PinStatus::Gone);
+}
+
+TEST(QuickAccessServiceClassifyTest, TreatsAShutDownFailureAsUnknown)
+{
+    // MegaSdkClient's shut-down sentinel (a positive code, so it falls through
+    // every switch written against SDK values). This is the case that used to
+    // wipe the whole pin list: N failed resolves, N "dangling" verdicts, one
+    // write of the emptied list.
+    EXPECT_EQ(QuickAccessService::classify(Result<NodeInfo>::fail("client is shutting down", 2)),
+              PinStatus::Unknown);
+}
+
+TEST(QuickAccessServiceClassifyTest, TreatsAnUnrecognizedSdkCodeAsUnknown)
+{
+    // The allowlist's default arm: anything not named stays non-definitive, so
+    // a code added later can't start deleting pins on its own.
+    EXPECT_EQ(
+        QuickAccessService::classify(Result<NodeInfo>::fail("try again", MegaErrorCode::kEAgain)),
+        PinStatus::Unknown);
 }

@@ -52,6 +52,13 @@ Result<NodeInfo> inRubbish(const char* name, std::uint64_t handle)
     return Result<NodeInfo>::ok(info);
 }
 
+// A resolve that couldn't be answered at all -- MegaSdkClient's shut-down
+// sentinel, the realistic way this happens. Classified Unknown, never Gone.
+Result<NodeInfo> unverifiable()
+{
+    return Result<NodeInfo>::fail("client is shutting down", 2);
+}
+
 class QuickAccessModelTest : public ::testing::Test
 {
 protected:
@@ -152,6 +159,42 @@ TEST_F(QuickAccessModelTest, ReloadDropsAPinWhoseHandleNoLongerResolves)
     flushQueuedEvents();
 
     EXPECT_EQ(model->count(), 0);
+}
+
+// R3-2's whole point. Before the Usable/Gone/Unknown split, an unanswerable
+// resolve read as "dangling" and the sweep wrote the emptied list through to
+// disk -- so shutting the app down during a login wiped every pin permanently.
+TEST_F(QuickAccessModelTest, ReloadKeepsAPinWhoseCheckCouldNotBeAnswered)
+{
+    givenStoredPins({makePin("Photos", 11)});
+    EXPECT_CALL(*client, getNodeInfo(11u, _)).WillOnce(InvokeArgument<1>(unverifiable()));
+    EXPECT_CALL(*store, save(_, _)).Times(0);
+
+    model->reload();
+    flushQueuedEvents();
+
+    ASSERT_EQ(model->count(), 1);
+    EXPECT_EQ(handleAt(0), 11u);
+}
+
+TEST_F(QuickAccessModelTest, ReloadDropsOnlyTheGoneOnesWhenSomeChecksFail)
+{
+    givenStoredPins({makePin("Photos", 11), makePin("Work", 22), makePin("Archive", 33)});
+    EXPECT_CALL(*client, getNodeInfo(11u, _)).WillOnce(InvokeArgument<1>(liveFolder("Photos", 11)));
+    EXPECT_CALL(*client, getNodeInfo(22u, _)).WillOnce(InvokeArgument<1>(inRubbish("Work", 22)));
+    EXPECT_CALL(*client, getNodeInfo(33u, _)).WillOnce(InvokeArgument<1>(unverifiable()));
+    // The unverified pin keeps its stored name too: the sweep learned nothing
+    // about it, so it contributes nothing.
+    EXPECT_CALL(*store,
+                save(_, std::vector<PinnedFolder>{makePin("Photos", 11), makePin("Archive", 33)}))
+        .WillOnce(Return(Result<void>::ok()));
+
+    model->reload();
+    flushQueuedEvents();
+
+    ASSERT_EQ(model->count(), 2);
+    EXPECT_EQ(handleAt(0), 11u);
+    EXPECT_EQ(handleAt(1), 33u);
 }
 
 TEST_F(QuickAccessModelTest, ReloadWithNothingChangedDoesNotRewriteTheStore)
@@ -339,6 +382,37 @@ TEST_F(QuickAccessModelTest, ActivateEmitsMissingWithTheClickedLabelForADeletedP
     // The label the user actually clicked, so the confirmation dialog can name it.
     EXPECT_EQ(missingName, QStringLiteral("Photos"));
     // Declining is the default: activate() itself never removes the pin.
+    EXPECT_EQ(model->count(), 1);
+}
+
+// missing() opens a dialog offering to unpin, so a check that simply couldn't
+// be answered must not reach it -- nothing here says the folder is gone.
+TEST_F(QuickAccessModelTest, ActivateRaisesAToastInsteadOfOfferingToUnpinWhenTheCheckFails)
+{
+    givenStoredPins({makePin("Photos", 11)});
+    EXPECT_CALL(*client, getNodeInfo(11u, _))
+        .WillOnce(InvokeArgument<1>(liveFolder("Photos", 11)))
+        .WillOnce(InvokeArgument<1>(unverifiable()));
+    model->reload();
+    flushQueuedEvents();
+
+    int missingCount = 0;
+    QObject::connect(model.get(), &QuickAccessModel::missing, model.get(), [&](quint64, QString) {
+        ++missingCount;
+    });
+    QString context;
+    QObject::connect(&notifications,
+                     &NotificationController::errorOccurred,
+                     model.get(),
+                     [&context](const QString& reported) {
+                         context = reported;
+                     });
+
+    model->activate(11, false);
+    flushQueuedEvents();
+
+    EXPECT_EQ(missingCount, 0);
+    EXPECT_EQ(context, QStringLiteral("quickAccessUnavailable"));
     EXPECT_EQ(model->count(), 1);
 }
 

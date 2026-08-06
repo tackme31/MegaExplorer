@@ -696,6 +696,11 @@ ApplicationWindow {
     // session (e.g. on another device), since the login-time sweep in
     // QuickAccessModel::reload silently drops the ones already gone.
     // Declining leaves the pin in place, so clicking it again asks again.
+    //
+    // Only a *definitive* answer gets here. A check that couldn't be answered
+    // at all raises the quickAccessUnavailable toast instead, because offering
+    // to delete a pin on the strength of a failed lookup is exactly the bug
+    // this split was made to avoid.
     Dialog {
         id: missingPinDialog
         anchors.centerIn: Overlay.overlay
