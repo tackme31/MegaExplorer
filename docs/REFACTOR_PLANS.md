@@ -1621,7 +1621,439 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     assert の役割と Release での挙動、`std::expected` を採らなかった理由、`QuickAccessModel` が
     唯一の間接ガードであること）。**これで本節は完成**。
 
-### R4 — 未着手
+### R4 — 調査済み / R4-1 のみ対応済み、次は R4-4（調査 2026-08-07）
+
+計画の「種」4 件 +「持ち越し」の [R4] 2 件を現物で検証した結果。**確認 6 件 / 種の誤り 4 件 /
+問題なしと確認 4 件 / 新規 3 件**。R1〜R3 と同じく、以下はそのまま plan mode の作業単位として使える
+粒度で書いてある。**調査セッションではコードを一切変更していない**。
+
+**R4-4 は (b)（`qt_add_qml_module` をライブラリ target へ）で決定済み（2026-08-07）**。
+その決定が R4-3・R4-5・R4-9 の前提を動かしているので、各項目を単独で読まないこと。
+
+#### 前提: 現状の測定値（2026-08-07 時点）
+
+節 0 の表は 2026-08-06 のもので、R3 の修正で `tests/` が増えている。R4 の判断はこちらに乗る。
+
+| 領域 | 規模 | テスト |
+| --- | --- | --- |
+| `src/core`（11 サービス） | 1,379 行（`.cpp` のみ） | **11/11 にテストあり。穴なし** |
+| `src/qml`（31 ファイル） | 5,529 行 | 10 クラスに専用テスト、1 クラスはリンクのみ、4 クラスは未リンク |
+| `src/platform`（2 アダプタ） | 318 行 | 1/2（`WindowsSessionStore` のみ） |
+| `src/mega` | 1,000 行超 | 0（実アカウントが要るため意図的） |
+| `qml/`（29 ファイル） | 7,356 行 | **0 件** |
+| `tests/` | 7,919 行 / 26 ファイル（22 テスト + 4 ヘッダ） | 387 ケース |
+
+- 387 は `build/msvc-debug/tests/MegaExplorerTests[1]_tests.cmake` の `add_test` 実数。
+  `DISABLED_` / `GTEST_SKIP` は**ゼロ**。
+- 最大は `FolderNavigationControllerTest.cpp` の **1,190 行 / 49 ケース**（節 0 の 1,152 行は
+  R3 前の値）。次が `MenuActionResolverTest.cpp` 47 ケース、`FileOperationServiceTest.cpp` 37 ケース。
+- `src/qml` のテスト状況を正確に分けると 3 層ある。この区別が R4-1 の土台:
+
+  | 層 | クラス |
+  | --- | --- |
+  | 専用テストあり（10） | `FolderNavigationController` / `FileListModel` / `TabsController` / `UploadController` / `QuickAccessModel` / `AccountController` / `FolderTreeModel` / `ClipboardController` / `NotificationController` / `LicenseModel` |
+  | テストターゲットにリンクだけされている（1） | `ThumbnailController`（`TabsControllerTest` がタブ毎に構築するため必要。単体の検証はゼロ） |
+  | テストターゲットに存在しない（4） | `AuthController` / `DownloadController` / `MenuActions` / `KeyboardState` |
+
+- CI は無い（`.github` 不在）。linter も無い。サニタイザ構成も無い（`CMakePresets.json` は
+  `msvc-debug` のみ。Release プリセットが無い件は既に節 5 の持ち越しにある）。
+
+#### 確認された問題
+
+**R4-1 [中] ✅対応済み 「`src/qml` は未テスト」という慣例は既に無効で、その残骸が 9 箇所にある**
+
+- 慣例を**断言している**ヘッダが 2 箇所:
+  - `src/qml/FolderNavigationController.h:42`「Untested by convention: src/qml is GUI glue」。
+    当の `FolderNavigationControllerTest.cpp` が **1,190 行 / 49 ケース**で最大のテスト。
+  - `src/qml/DownloadController.h:17-18`「Untested by convention, same as
+    FolderNavigationController: src/qml is GUI glue, and **MegaExplorerTests only links
+    MegaExplorerCore**」。後半は事実として誤り — `tests/CMakeLists.txt:33-56` は `src/qml` の
+    **22 ファイル（11 クラス）**と `src/platform`・`src/app` を直接コンパイルしている。
+- 慣例を**破ったことを弁解している**テストが 7 箇所: `AccountControllerTest.cpp:14`,
+  `ClipboardControllerTest.cpp:10`, `FolderNavigationControllerTest.cpp:22-24`,
+  `FolderTreeModelTest.cpp:11-12`, `QuickAccessModelTest.cpp:17-18`, `TabsControllerTest.cpp:16-18`,
+  `UploadControllerTest.cpp:20-21`。いずれも「FileListModel/TabsController/QuickAccessModel が
+  既に破っているのと同じ理由で破る」と互いを参照し合っており、**7 個の弁解が円環している**。
+- 根本原因: `docs/ARCHITECTURE.md` の `Design: testability and dependency injection` 節の
+  「Testing」箇条書きは `MockMegaClient` と `MegaSdkClient` に触れるだけで、**この慣例をどこにも
+  書いていない**。規約の単一の置き場が無いので、コメントのコピーが 9 個に増えて個別に腐った。
+- 実際に運用されている基準は、弁解文自体が言い当てている:「bookkeeping であって rendering では
+  ない」。これを規約として書き直すのが実態に合う。案:
+  > `src/qml` のうち**状態と分岐を持つもの（モデル・コントローラ）はテストする**。テストしないのは
+  > (a) Qt/OS API の 1 行ラッパ（`KeyboardState`）と (b) QML エンジン無しでは意味を持たないもの
+  > （`WindowAgentForeign`）だけ。
+- 修正方針: (a) `docs/ARCHITECTURE.md` の Testing 箇条書きを上記の規約に書き換える、
+  (b) テスト側 7 箇所の弁解コメントを削除（各ファイルに固有の情報 — `UploadControllerTest.cpp` の
+  `checkUpload` トラップ、`AccountControllerTest.cpp` の `currentAccountIdentity` トラップ、
+  `TabsControllerTest.cpp` の「未応答モックのまま返る」注記 — は残す）、(c) ヘッダ 2 箇所を直す。
+  ドキュメントとコメントだけなので**コード変更ゼロ・テスト再実行のみ**。R4 の最初に置くのが安い。
+- **対応（2026-08-07）**: (a)(b)(c) を方針どおり実施。決めた点:
+  - **残骸は 9 箇所ではなく 10 箇所だった**。調査が数え漏らしていた 10 個目が
+    `src/qml/ThumbnailController.h:22-24`。文面は `DownloadController.h` と同じ
+    「`MegaExplorerTests` only links `MegaExplorerCore`」で、しかも当の `ThumbnailController` は
+    `TabsControllerTest` のためにテストターゲットへリンク済み（前提節の「リンクだけ 1 クラス」）
+    という、**最も分かりやすく事実に反する 1 箇所**。同じ文面のコピーだったので R4-1 に含めた。
+  - **規約の置き場は `docs/ARCHITECTURE.md` の Testing 箇条書き**。ディレクトリではなく
+    「状態と分岐を持つか」で決める、と書き、例外を `KeyboardState`（Qt/OS API の 1 行ラッパ）と
+    `WindowAgentForeign`（QML エンジン無しでは無意味）の 2 種類だけに限定した。
+    「per-file コメントに書き写すな、それで 9 個に腐った」を規約本文に明記してある。
+  - **「まだテストが無い」と「テストしないと決めた」を分けて書いた**。前者
+    （`AuthController` / `DownloadController` / `MenuActions`）は R4-2/R4-3 への参照付きで
+    「gap であって decision ではない」と書く。これを書かないと、次に読む人が今回と同じ
+    「未テスト＝方針」という誤読を再生産する。
+  - **スレッドの既知の限界を独立した箇条書きにした**（成果物の (c)）。`MockMegaClient` が
+    同期配達しかしない以上 `std::mutex` も `makeGuiOwned` のクロススレッド分岐も
+    **消してもテストは緑のまま**、という具体形まで書いてある。Threading model 節の主張は
+    レビューで支えられていてテストでは支えられていない、という対応関係を明示するのが狙い。
+  - **テスト側 7 箇所は「弁解だけの塊」は全削除、固有情報は残す**。残したのは
+    `AccountControllerTest`（`currentAccountIdentity` トラップ）、`TabsControllerTest`
+    （未応答モックのまま返る注記）、`UploadControllerTest`（`QDesktopServices`→`QtGui` の事実、
+    `QSignalSpy` 不使用の理由、`checkUpload` トラップ）。`FolderTreeModelTest` /
+    `QuickAccessModelTest` の「real service, mocked SDK」は規約側に昇格したので削除した。
+  - `FolderNavigationControllerTest` の「bent here for exactly one thing …
+    Everything else in this class stays untested」は**現物が 1,190 行 / 49 ケース**で
+    既に事実と反対だったため、丸ごと削除。
+  - コード変更はゼロ（コメントのみ）。**ビルド不要・テスト不要**と判断した。
+
+**R4-2 [中] `AuthController` の `LoadingStage` 状態機械が最大の未テスト論理**
+
+- 482 行（`.cpp` 322 + `.h` 160）。テストターゲットに入っていない。持っている状態は
+  `AuthState` 7 値 × `LoadingStage` 5 値 + 世代カウンタ + ストールタイマ + 2FA 保留資格情報。
+- テストする価値がある具体的な振る舞い（いずれも `.h` のコメントが「こう設計した」と主張している
+  ものの、それを保証する検証が無い）:
+  1. **世代による古い進捗の破棄** — `mLoadGeneration`（`.h:148`）。ログアウト→再ログイン後に
+     前回の fetch の進捗イベントが届いても無視されること。
+  2. **ストールタイマがラッチではないこと** — `.h:149-155` が「後続イベントで
+     `DownloadingNodes` に戻る」と明記。`AuthController.cpp:21` の `kStallTimeoutMs = 8000` は
+     **ハードコードされた定数**なので、そのままでは 1 ケース 8 秒かかる。
+     コンストラクタ引数か protected setter で注入可能にする小さな製品側変更が要る
+     （挙動は変わらないが、実施手順 3 の対象として一応提示する）。
+  3. **2FA のキャンセル/成功で `mPendingEmail`/`mPendingPassword` が消えること**（`.h:156-159`）。
+     消えていないと平文パスワードがプロセスに残るので、R1 の観点とも接続する。
+  4. `classifyError` の 4 値マッピングと `default: → UnknownError`
+     （`AuthController.cpp`、`MegaErrorCode::kENoEnt`/`kEBlocked`/`kETooMany`/`kEAgain`）。
+     R3-1 で `kEInternal = -1` が入ったので、`-1` が `UnknownError` に落ちて生英文が出る経路が
+     ここにある。
+  5. `fetchProgress()` が総量未知のとき `0.0` を返すこと、`fetchProgressText()` が総量未知の間
+     空であること（`.h:114-118`）。
+- **コストは低い**: 依存は `core/AuthService` と QtCore（`QTimer`/`QString`）だけで、`QtGui` を
+  引かない。既存の `MegaExplorerTests` に `AuthService` のモック（既存の `AuthServiceTest` と同じ
+  `MockMegaClient` + `MockSessionStore`）でそのまま入る。`QTimer` を使うので `TestApp.h` の
+  `testApp()` が必須。
+
+**R4-3 [中] `DownloadController` にテストが無い（節 5 の持ち越しを回収）**
+
+- 持ち越しの前提が **R1-1 で既に半分解消している**: 「`computeDestinationPath` にパス検証が
+  入るならテスト可能な形に出すべき」という指摘に対し、R1-1 は
+  `DownloadService::safeLocalFileName`（`src/core/DownloadService.h:69`）として `src/core` の
+  静的純関数に出し、`tests/DownloadServiceTest.cpp` が **19 アサーション**で検証済み。
+  `computeDestinationPath` の残りは `QStandardPaths::writableLocation` +
+  `QDir::toNativeSeparators` だけで、テストしても OS を確認するだけになる。
+- **残っている未テストの論理はそこではない**:
+  - `downloadFile()` の**重複抑止**（`.h:45` の「No-ops if handle is already queued or active」）。
+    連打で同じファイルが二重にキューされないこと。
+  - `downloadFinished` の**フィールド構成**（`.h:56-72`）— 成功時の `fileName` が要求名ではなく
+    `localPath` の basename であること（SDK のリネームで `photo (1).jpg` になった場合に元の名前を
+    返すと「上書きされた」と読める、という理由が書いてある）、`alreadyPresent` の真偽、
+    失敗時は要求名のままであること。
+  - `refreshActiveJob()` の `downloadActive`/`activeFileName`/`activeProgress` 更新、
+    `activeProgress` が総量未知のとき `0.0`（`.h:34`）。
+- **障害は 1 つだけ**: `DownloadController.cpp:9` の `QDesktopServices` が `QtGui` を引く
+  （`tests/UploadControllerTest.cpp:17-19` が「だから Download 側は入っていない」と説明している
+  唯一の理由）。`QDesktopServices` は `openFile()` からしか使われないので、選択肢は
+  (a) テストターゲットに `Qt6::Gui` を足す（`openFile` は呼ばない。リンクするだけなら GUI は不要）、
+  (b) `openFile()` の 1 行を `src/platform` の小さなポートに出す。
+  **(a) を推す** — (b) は 1 行のためにポートを 1 本増やすことになり、R5 の判断を先取りしてしまう。
+  → **R4-4(b) の採用（2026-08-07）でこの論点自体が消えた**。`MegaExplorerQml` をリンクすれば
+  `Qt6::Gui` は `Qt6::Quick` 経由で推移的に入る。`Qt6Gui.dll` は既に `PATH` に要る Qt の
+  `bin` にあるので追加要求も無い。**R4-3 は R4-4 の後に回し、テストを書くだけの作業にする**。
+
+**R4-4 [中] ビルド定義が `src/qml` を 3 箇所で列挙している**
+
+- 種は「`tests/CMakeLists.txt` が 20 ファイル手書き」としていたが、実際は**ルート側にも 2 分割が
+  あり、三重管理**になっている:
+
+  | 場所 | 対象 | ファイル数 |
+  | --- | --- | --- |
+  | `CMakeLists.txt:106-124`（`qt_add_executable`） | QML 登録の無い素の `QObject` | 19 |
+  | `CMakeLists.txt:171-182`（`qt_add_qml_module` の `SOURCES`） | `QML_ELEMENT` を持つ型 | 12 |
+  | `tests/CMakeLists.txt:33-56` | 上記のうちテストに要る分 | 22（＋ platform/app 2） |
+
+- **ルート側の 2 分割それ自体は正しい**。確認したところ `SOURCES` 側の 6 クラスは全て
+  `QML_ELEMENT`（`AccountController`/`AuthController`/`LicenseModel`/`KeyboardState`/`MenuActions`/
+  `NotificationController`）＋ `QML_FOREIGN` の `WindowAgentForeign` で、型登録の生成に
+  `SOURCES` が要る。素の `QObject` を `SOURCES` に入れると無意味な登録コードが増える。
+  **問題は 3 番目の `tests/` が 1・2 の部分集合を手で写していること**。
+- 実害: `src/qml` にクラスを 1 つ足すと 2〜3 箇所を直す必要があり、`tests/` 側を忘れると
+  「テストは書いたのにリンクエラー」になる。逆に不要になったファイルが `tests/` 側に残っても
+  誰も気づかない（現に `ThumbnailController` は専用テストが無いままリンクされ続けている）。
+- 検討した 2 案:
+  - **(a) 変数に括るだけ** — ルートで `set(MEGAEXPLORER_QML_PLAIN_SOURCES ...)` /
+    `set(MEGAEXPLORER_QML_REGISTERED_SOURCES ...)` を定義し、`tests/` は前者＋必要分を参照する。
+    安い。ただし「テストに要る分だけ」の選択は手で書いたまま残る。
+  - **(b) `qt_add_qml_module` をライブラリ target に移す** — Qt の推奨形（モジュールを持つ
+    ライブラリ + それをリンクする実行ファイル）。
+  - 種の「`MegaExplorerCore` に寄せる」は**不可能**（下の「種が不正確だった」参照）。
+- **決定: (b) を採用（2026-08-07、承認済み）**。理由は「コスト回避より Qt の推奨形に寄せる」。
+  (a) は列挙の重複を隠すだけで三重管理の根を残し、R4-5 も R5 送りになる。
+
+**R4-4 の実施設計（(b) の具体形）**
+
+- **target は 1 本にする**（`MegaExplorerQml`、STATIC）。`src/qml` の 31 ファイル全部をこれに入れ、
+  `qt_add_qml_module` をこの target に付ける。`appMegaExplorer` は `main.cpp` +
+  `src/app`/`src/mega`/`src/platform` だけになり、`MegaExplorerQml` をリンクする。
+  - **2 本に割る案（Qml 登録型とそれ以外）は却下**。テストが要る 11 クラスのうち
+    `AccountController`/`LicenseModel`/`NotificationController` が `QML_ELEMENT` 側にあるので、
+    割ってもテストは結局両方をリンクすることになり、列挙が 2 本に戻るだけ。
+  - ルート側の `qt_add_executable` / `SOURCES` の 2 分割は**そのまま `MegaExplorerQml` 内の
+    2 分割として残す**（`SOURCES` は型登録の生成に要る、という R4-4 冒頭の確認は有効）。
+    消えるのは 3 番目の `tests/` 側 22 行。
+- **`qt_add_qml_module` はルートの `CMakeLists.txt` に置いたままにする**（`src/qml/CMakeLists.txt`
+  を新設しない）。理由 2 つ:
+  1. `set_source_files_properties(qml/Theme.qml qml/ActionCatalog.qml PROPERTIES
+     QT_QML_SINGLETON_TYPE TRUE)`（`CMakeLists.txt:135-136`）は**同一ディレクトリスコープでしか
+     効かない**。`.qml` は `qml/` にあるので、モジュール定義をサブディレクトリへ移すとここが
+     黙って無効化され、`qmldir` から `singleton` 行が落ちる（＝ `Theme`/`ActionCatalog` が
+     シングルトンでなくなる、実行時まで気づかない壊れ方）。
+  2. モジュールの出力先は target のバイナリディレクトリ基準。現状
+     `build/msvc-debug/MegaExplorer/`（`qmldir` の `prefer :/qt/qml/MegaExplorer/` を確認済み）に
+     出ており、ルートに置いたままなら**この配置が変わらない**。`main.cpp:171` の
+     `engine.loadFromModule("MegaExplorer", "Main")` も無変更で済む。
+- **`MegaExplorerQml` が要るリンク**: `Qt6::Quick`（`.qml` と QML 型登録）、`MegaExplorerCore`、
+  `QWindowKit::Quick`（`src/qml/WindowAgentForeign.h` の `QML_FOREIGN(QWK::QuickWindowAgent)`）。
+  `crypt32` は `src/platform` 側なので `appMegaExplorer` に残る。
+- **`MegaExplorerTests` への波及（これが (b) の実質的な代償）**: 現在 `Qt6::Core` + `Qt6::Qml`
+  だけの test target が、`MegaExplorerQml` 経由で `Qt6::Quick`／`Qt6::Gui`／`QWindowKit::Quick` を
+  引く。評価:
+  - **DLL の追加要求は無い**。`Qt6Qml.dll` は既に必要で、`Qt6Quick.dll`/`Qt6Gui.dll` は同じ
+    `C:/Qt/6.11.1/msvc2022_64/bin` にある（確認済み）。`PATH` の指定は現状のままでよい。
+    QWindowKit は `QWINDOWKIT_BUILD_STATIC ON`（`CMakeLists.txt:27`）なので DLL を増やさない。
+  - `gtest_discover_tests` はビルド時に exe を起動して列挙するので、そこが通ることは
+    ビルド 1 回で確認できる。
+  - **副産物: R4-3 の唯一の障害が消える**。`DownloadController` の `QDesktopServices` が要求する
+    `Qt6::Gui` が推移的に入るので、R4-3 は「`Qt6::Gui` を足す判断」ではなく素直にテストを書く
+    作業になる。**R4-4 を R4-3 より先にやる理由がここにもある**。
+- **`/W4` を落とさないこと（R4-9 参照）**。`/W4` は `appMegaExplorer` に target 単位で付いている
+  （`CMakeLists.txt:216`）ので、`src/qml` の 5,529 行を新 target へ移すと**そのまま `/W4` の
+  監視対象から外れる**。`target_compile_options(MegaExplorerQml PRIVATE /W4)` を**同じコミットで**
+  入れる。これを忘れると `CLAUDE.md` の「`src/` を触ったら警告を確認」が静かに嘘になる。
+- **既知の落とし穴**: AOT の `qmlcache_loader.cpp` アグリゲータは target 名を含むので、
+  **再 configure（`cmake --preset msvc-debug`）が必須**（`CLAUDE.md` Build 節の Phase 9 の件と
+  同じ機構）。`CMakeLists.txt:203-211` の「`qmltyperegistrations.cpp` が `<AuthController.h>` を
+  裸のファイル名で include する」ための `target_include_directories(... src/qml)` も
+  `MegaExplorerQml` 側へ移す。
+- **検証**: `MegaExplorerTests` 387 ケースが緑、`/W4` 警告ゼロ、そして**アプリが実際に起動して
+  ウィンドウが出ること**（`ui-style` スキルの `ui_shot.py cycle` でスクショ 1 枚）。
+  静的ライブラリに入った QML リソースの初期化漏れは**ビルドもテストも通ったうえで起動時に
+  `module "MegaExplorer" is not installed` で落ちる**タイプなので、起動確認を省略できない。
+
+**R4-5 [中] `qml/` 7,356 行が全面ノーテストで、かつ現在のビルド構成ではテスト用に import できない**
+
+- 種は「対象を絞って `qt-development-skills:qt-qml-test` を使う」としており方向は正しいが、
+  **先に構成上の障害がある**: `qt_add_qml_module` は `appMegaExplorer`（`WIN32_EXECUTABLE` な
+  実行ファイル）に付いている（`CMakeLists.txt:138`）ので、URI `MegaExplorer` は exe の中にしか
+  存在せず、`qmltestrunner` / Qt Quick Test の target から import できない。
+  → **R4-4(b) が前提。(b) 採用が決まったので、この障害は R4-4 で解消される見込み**
+  （`MegaExplorerQml` を Quick Test の target からリンクすれば URI `MegaExplorer` が import 可能に
+  なる）。R4-5 は R4 の範囲内に確定。
+- 環境側は揃っている: `C:/Qt/6.11.1/msvc2022_64/lib/cmake/Qt6QuickTest` が存在し、
+  `find_package(Qt6 COMPONENTS QuickTest)` は通る。現状 `CMakeLists.txt`/`CMakePresets.json` に
+  `QuickTest`/`qmltestrunner`/`qmllint` の記述は 1 つも無い。
+- 対象の絞り込み（関数を実測して選定）。**純粋な入力→出力の関数だけを狙う**:
+  - `qml/components/ToastStack.qml` — `describeReason(clause, reason, rawMessage)`（:162）、
+    `showError(context, reason, rawMessage)`（:185）、`showOperation(context, succeeded, failed)`
+    （:98）、`showDownload(...)`（:82）。**R3-4/R3-5 で C++ から enum（context + reason）だけを
+    受け取る形にしたばかりの文面合成器**で、分岐が最も多く、壊れても静かに間違った文が出るだけ。
+    R4 で最も費用対効果が高い。
+  - `qml/ActionCatalog.qml` — `label` / `icon` / `isEnabled` / `trigger`（:143-167）。
+    引数は呼び出し側が組み立てる `ctx` オブジェクト 1 個だけなので、偽の `ctx` を渡せば足りる
+    （:16 のコメントが「Every entry is a function of one `ctx` object」と設計を明示している）。
+  - `qml/components/DragProxy.qml` — `canDropOn(handle, isRoot)`（:179）と
+    `sampleCopyMode()`（:58）。後者は `KeyboardState` に触るので R4 では `canDropOn` だけでよい。
+- **対象外にすると決めておくもの**: `FileTableView.qml`（1,060 行）/ `FileGridView.qml`（766 行）/
+  `TabStrip.qml`（537 行）。描画とジェスチャが本体で、Qt Quick Test で書くと壊れやすいテストに
+  なる。R6 の安全網としては上記 3 ファイルの純関数で足りる、と割り切る。
+
+**R4-6 [中〜大] スレッド起因の欠陥を構造的に検出できない（R2-19 / 節 5 の持ち越しを回収）**
+
+- 事実確認（R2-19 の再確認）: `tests/MockMegaClient.h` は純 gmock で、完了は全て
+  `testing::InvokeArgument<N>` によりテスト自身のスレッドで同期に配達される。
+  `std::thread` / `QThread` / `std::atomic` は `src/` `tests/` ともにゼロヒット。
+- 帰結: `DownloadService` / `ThumbnailService` の `std::mutex` は一度も競合せず、
+  **ロックを削除する変更もテストが通る**。R2-1 の TOCTOU と R2-5 の `makeGuiOwned` の
+  クロススレッド分岐（`src/qml/GuiThread.h`）は**現行の枠組みでは到達不能**。
+- R4 で決めるべきは「やる/やらない」であって、やるなら 3 段階ある。**段階ごとに独立して価値が
+  あるので、途中で止めてよい**:
+  1. **同期のまま取れる分を取る** — R2-19 自身が「多段再帰（R2-2）はスレッドと無関係なので
+     単一スレッドで再現できる」と結論している。「同期失敗を N 件返すモック」を足すだけ。安い。
+  2. **`MockMegaClient` にワーカスレッド配達モードを足す** — `InvokeArgument` の代わりに
+     `std::thread` でコールバックを撃つオプション。`makeGuiOwned` のクロススレッド分岐と
+     `invokeOnGuiThread` の実配達が初めて走る。`testApp()` の `QCoreApplication` が
+     全プロセスで要る（→ R4-8 と衝突するので順序に注意）。
+  3. **サニタイザ構成** — MSVC は `/fsanitize=address` を持つが、**ThreadSanitizer は無い**
+     （clang-cl でも Windows 版 TSan は未サポート）。つまり本命のデータ競合検出器は
+     この toolchain では使えない。ASan で取れるのは UAF（R2-5 の系列）まで。
+     `CROSS_PLATFORM_INVESTIGATION.md` の結論（Linux 化の障害は `WindowsSessionStore` だけ）と
+     合わせると、「TSan のためだけに Linux ビルドを起こす」は R4 の範囲を超える。**3 は見送りを
+     推奨**し、ASan 付きプリセットの追加だけを Release プリセット整備（節 5 の持ち越し）と
+     一緒に扱う。
+- **1 と 2 のどちらまでやるかは着手前に承認が要る**（2 は `MockMegaClient` の全 16 利用箇所に
+  影響しうる設計変更）。
+
+#### 種が不正確だった / 判断が要るもの
+
+- **「`MegaExplorerCore` に寄せる」は不可能**。`MegaExplorerCore` は `CMakeLists.txt:46-89` の
+  とおり **Qt を一切リンクしていない**静的ライブラリで、`target_compile_features(... cxx_std_17)`
+  だけが付いている（:86-89 のコメントが「links no Qt at all」と明記）。`src/qml` は全て
+  `QObject` 派生で moc が要るので、寄せた瞬間に `MegaExplorerCore` の「SDK-free かつ Qt-free な
+  ドメイン層」という性質が壊れる。**R4-4 の (a) か (b) のどちらかしか無い**。
+- **「20 ファイル手書き」→ 実数は 22**（`src/qml` の 11 クラス × 2）。加えて
+  `src/platform/WindowsSessionStore.cpp` と `src/app/Logging.cpp` の 2 行があり、こちらには
+  `tests/CMakeLists.txt:3-9` に**理由がきちんと書いてある**ので手書きのままでよい。
+- **「未テストの `src/qml`: AuthController, DownloadController, ThumbnailController, MenuActions,
+  KeyboardState」→ 3 件は要修正**:
+  - `ThumbnailController` は**未テストではなくテストターゲットにリンク済み**
+    （`tests/CMakeLists.txt:41-42`）。`TabsControllerTest` がタブ毎に構築するために必要。
+    実体は 125 行（`.cpp` 64 + `.h` 61）で分岐がほぼ無く、専用テストの価値は低い。
+  - `MenuActions` は 82 行で、中身は `MenuActions::Site` → `MenuSite` の 2 値 switch と
+    `resolveMenuActions` の呼び出しだけ（`MenuActions.cpp`）。肝心の `MenuActionResolver` は
+    **47 ケースで検証済み**。「未知の site で空リストを返す」1 ケースで足り、優先度は低い。
+  - `KeyboardState` は `QGuiApplication::queryKeyboardModifiers()` を 1 行返すだけ
+    （`KeyboardState.h:33-36`）。**テスト不要**と明記して閉じる側。
+- **「`AuthController` は `LoadingStage` 状態機械を持つのでテスト価値が高い」→ 正しい**。R4-2 で
+  そのまま採用。ただし 8 秒のストールタイマがハードコードされている点は種に無かった追加条件。
+
+#### 問題なしと確認できた種
+
+- **`src/core` にカバレッジの穴は無い**。11 サービス全てに対応する `*ServiceTest.cpp` / 
+  `MenuActionResolverTest.cpp` があり、行数と密度も釣り合っている（最大の
+  `DownloadService.cpp` 241 行に 17 ケース、`FileOperationService.cpp` 149 行に 37 ケース）。
+- **モックの重複が無い**。`IMegaClient` の偽物は `tests/MockMegaClient.h` 1 つだけで、
+  16 テストが共有している。テスト内でローカルに `class Fake...: public IMegaClient` を定義して
+  いる箇所はゼロ。`ISessionStore`/`IPinnedFolderStore` も同様に 1 つずつ。
+- **無効化されたテストが無い**。`DISABLED_` / `GTEST_SKIP` ともにゼロヒット。
+- **`FileEntry` ビルダの重複は 3 箇所だが、寄せる価値は低い**。`FileListModelTest.cpp:12,20` の
+  `makeEntry`/`makeFolderEntry`、`FolderNavigationControllerTest.cpp:58` の `entry`、
+  `UploadControllerTest.cpp:41` の `entry` — シグネチャが 3 者で違い（フォルダ判定の扱いが違う）、
+  共通化すると呼び出し側が長くなる。**現状維持でよい**と判断する。
+
+#### 新規発見
+
+**R4-7 [低] `QSettingsPinnedFolderStore` にアダプタテストが無い**
+
+- `tests/CMakeLists.txt:3-9` は `WindowsSessionStore` を実アダプタとしてテストする理由を
+  「`MegaSdkClient` と違って完全にオフラインでテスト可能だから」と書いている。
+  `QSettingsPinnedFolderStore`（97 行）は**まったく同じ基準を満たすのにテストが無い**。
+- テストする価値のある振る舞いは `.h` のコメントが自分で挙げている:
+  - **アカウント毎のキー入れ子**（Phase 11a）。フラットキー時代の実バグは「アカウントを
+    切り替えると前のアカウントのピンを読んで上書きする」で、**これはまさに回帰テストが要る型**。
+  - **JSON 単一文字列にした理由**（`beginWriteArray` だとリストを縮めたとき古い index が残る）。
+    つまり「5 件 → 2 件に減らして読み直すと 2 件」が壊れやすい点として自己申告されている。
+  - `Result` の失敗経路（R3-3 で `[[nodiscard]]` と失敗報告が入った側）。
+- コストは低い: `QSettings` に明示パス（`QSettings(tempFile, QSettings::IniFormat)`）を渡すか
+  `QCoreApplication::setOrganizationName` をテスト用に振れば、レジストリを汚さずに済む。
+  ただし現状のコンストラクタは引数を取らないので、**パス注入の口を開ける小さな製品側変更が要る**。
+
+**R4-8 [低] 387 ケースが 387 プロセスに分かれ、`QCoreApplication` の有無がフィルタ依存になっている**
+
+- `tests/CMakeLists.txt:83` の `gtest_discover_tests` は **1 gtest ケース = 1 ctest テスト**を
+  生成するので、`ctest` は exe を 387 回起動する（`--gtest_filter` 付き）。
+- `TestApp.h` の `testApp()` は関数内 static なので、**呼ばれたプロセスにしか
+  `QCoreApplication` が存在しない**。呼んでいるのは 22 テスト中 **7 つ**だけ。
+- 具体的なずれ: `TabsControllerTest.cpp` は `qml/GuiThread.h` を include し
+  `makeGuiOwned`/`invokeOnGuiThread` の経路を通るが、`TestApp.h` を include していない。
+  そのケースだけを走らせるプロセスには `QCoreApplication` もイベントループも無いので、
+  キューされた呼び出しは**一度も配達されずに `~QObject` で捨てられる**。
+  **今は無害**（同ファイル :16-25 が自ら「モックに `EXPECT_CALL` が無いので未応答のまま返る、
+  どのアサーションも fetch の完了に依存しない」と宣言している）。
+- しかし: 将来 `TabsControllerTest` にキュー済みコールバックを検証するケースを 1 つ足すと、
+  **exe 全体で走らせれば通り、ctest の単体フィルタでは落ちる**（あるいはその逆）という
+  再現性の無い失敗になる。R4-6 の段階 2（ワーカスレッド配達モード）を入れると全テストが
+  この経路に乗るので、**先に閉じておく必要がある**。
+- 修正方針: `::testing::AddGlobalTestEnvironment` で `QCoreApplication` をプロセス毎に 1 回
+  構築する（`TestApp.h` の「1 プロセス 1 インスタンス」制約はそのまま満たせる）。
+  全 fixture の `SetUp` に `testApp()` を書き足すより漏れが無い。
+
+**R4-9 [中] `/W4` は `appMegaExplorer` にしか掛かっておらず、`src/core` は既に監視外**
+
+- `CLAUDE.md` の Build 節は「`main.cpp`/`src/` を触ったら `/W4` の新規警告を潰す」と指示するが、
+  `target_compile_options(... /W4)` は `CMakeLists.txt:216` の `appMegaExplorer` **1 target
+  だけ**に付いている。生成された `.vcxproj` で実測:
+
+  | target | `WarningLevel` | 対象 |
+  | --- | --- | --- |
+  | `appMegaExplorer` | `Level4` | `main.cpp` / `src/app` / `src/mega` / `src/platform` / `src/qml` |
+  | `MegaExplorerCore` | **指定なし（＝ MSVC 既定の `/W1`）** | `src/core` 1,379 行 |
+  | `MegaExplorerTests` | **指定なし（＝ `/W1`）** | `tests/` 7,919 行 |
+
+- つまり `src/core` の `.cpp` は**一度も `/W4` で見られていない**。`appMegaExplorer` は
+  `MegaExplorerCore` をリンクするだけで再コンパイルしないので、ヘッダ経由で漏れてくる分しか
+  出てこない。R3 で `src/core` を広範に触ったが、その警告確認は実質 `MegaExplorerCore` を
+  素通りしていたことになる。
+- **R4-4(b) はこれを悪化させる**: `src/qml` の 5,529 行が `appMegaExplorer` から
+  `MegaExplorerQml` へ移るので、放置すると `/W4` の対象が `main.cpp` + 3 ディレクトリだけに縮む。
+- 修正方針: `/W4` を target 毎に書き足すのではなく、**自前の 3 target に一括で掛ける**
+  （ルートで一度 `foreach` するか、`MEGAEXPLORER_WARNINGS` インターフェース target を 1 つ作って
+  3 つが `target_link_libraries` する）。`third_party`/`SDKlib` に波及しないことが要件なので、
+  `CMAKE_CXX_FLAGS` へのグローバル追加は**採ってはいけない**（`CMakeLists.txt:213-215` が
+  target 単位にした理由をそう書いている）。
+- **`src/core`/`tests` を `/W4` にした初回は既存警告が出る前提**。件数次第で「R4-9 で潰す」か
+  「R7 に送る」かを決める。`MegaExplorerQml` への `/W4` 付与（現状維持のため）だけは
+  R4-4 と同じコミットで必ず入れる。
+
+#### 推奨実施順（各項目 1 セッション）
+
+**R4-4 は (b) で確定（2026-08-07）**。これで R4-5 が範囲内に入り、R4-3 が安くなり、
+R4-9 が R4-4 と同時実施の必須項目になった。
+
+```
+R4-1  慣例の書き直し（ARCHITECTURE.md + コメント 10 箇所）✅ … コード変更ゼロ。認識を先に揃える
+R4-4  MegaExplorerQml への分離（(b) 確定）                  … ★R4 の背骨。R4-9 の /W4 維持を同梱
+      + R4-9  /W4 を自前 3 target へ                        … 既存警告の件数次第で一部 R7 送り
+R4-2  AuthController のテスト                               … 最大の穴。R4-4 と独立に着手可
+R4-3  DownloadController のテスト                           … R4-4 後なら Qt6::Gui は解決済み
+R4-7  QSettingsPinnedFolderStore のテスト                   … 小。パス注入の口だけ製品側に開ける
+R4-8  QCoreApplication のプロセス毎 1 回化                  … 小。R4-6 段階 2 の前提
+R4-5  QML テスト（ToastStack / ActionCatalog / DragProxy）  … R4-4 完了後。R6 の安全網
+R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）          … ★範囲の承認が要る。最後
+```
+
+順序の要点:
+
+- **R4-1 を最初に**: 以降の全項目が「何をテストする方針なのか」に依存する。ドキュメントとコメント
+  だけなので空振りが無い。
+- **R4-4 を 2 番目に、かつ R4-9 と同一セッションで**: `/W4` の維持を分けると、その間に入った
+  `src/qml` の警告を誰も見ない窓ができる。R4-3 の障害解消も R4-5 の前提充足もここで起きるので、
+  **後続 3 項目がこのセッションの成否に乗っている**。失敗したら R4-4 だけ切り戻して
+  R4-2/R4-7/R4-8 を先に進める（いずれも R4-4 非依存）。
+- **R4-2/R4-7/R4-8 は R4-4 と独立**。R4-4 が長引くなら並行に回してよい。
+- **R4-8 → R4-6 の順は固定**。逆順だと段階 2 の失敗が「スレッドのせい」か
+  「`QCoreApplication` が無いせい」か切り分けられない。
+- **R4-6 だけが依然 R4 の可変部分**。R5 の着手を急ぐなら R4-6 を R5 の後ろへ送ってよい
+  （R5 は C++ 構造の整理で、担保は C++ 側の 387 ケース。R4-6 が本当に効くのは
+  R2-8 のキャンセル実装や Phase 16 の実時間反映を入れるとき）。
+
+#### 成果物
+
+- ✅ `docs/ARCHITECTURE.md` の `Design: testability and dependency injection` 節の「Testing」
+  箇条書きを、R4-1 で決めたテスト方針の規約に書き換える。R1 の「サーバ由来文字列の信頼境界」、
+  R2 の「スレッドモデル」、R3 の「エラー表現の規約」と同じ位置づけの、**単一の置き場**にする。
+  最低限含める内容: (a) `src/qml` のうち何をテストし何をしないかの基準、(b) `src/mega` を
+  テストしない理由（既存）、(c) R4-6 で決めた「スレッド起因の欠陥はテストで担保していない」という
+  **既知の限界の明記**（これを書かないと、次に読む人が R2-19 を再発見することになる）。
+- ✅ `tests/` 側のコメント 7 箇所の削除と `src/qml` ヘッダ **3** 箇所の訂正（R4-1。ヘッダは調査時の
+  2 箇所に `ThumbnailController.h` を加えた 3 箇所）。
+- `docs/ARCHITECTURE.md` の `Directory overview` に target 構成の変更（`MegaExplorerQml` の追加、
+  `appMegaExplorer` が `main.cpp` + 3 ディレクトリだけになること）を反映する。**(b) 確定により
+  これは必須**。同節の `MegaExplorerCore` の説明が「`appMegaExplorer` と `MegaExplorerTests` が
+  同じドメインロジックをリンクするため」と書いているのと同じ形で、`MegaExplorerQml` にも
+  「なぜ実行ファイルではなくライブラリがモジュールを持つのか」を 1 文で書く。
+- `docs/BUILD.md` に `qmlcache_loader` の再 configure が要る条件を追記（現状は
+  「`QML_FILES` を増減したとき」だけが書かれているが、R4-4 で **target を移したときも**同じ
+  再 configure が要ることが分かったため）。
+- `CLAUDE.md` の Build 節の `/W4` の記述を R4-9 の結果に合わせて更新（どの target が対象かを
+  明示する。現状の「`appMegaExplorer` builds at /W4」は R4-4 後には不正確になる）。
+
 ### R5 — 未着手
 ### R6 — 未着手
 ### R7 — 未着手
@@ -1643,6 +2075,10 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
 - **[R4] `DownloadController` にテストが無い** — `tests/UploadControllerTest.cpp:19` が理由を
   「`QDesktopServices` が QtGui を引く」と説明している。R1-1 の修正で `computeDestinationPath` に
   検証ロジックが入るなら、テスト可能な形（`src/core` の純関数）に出すのが望ましい。（R1 調査中に発見）
+  → **R4 調査で回収（2026-08-07）、R4-3 に統合**。後半の要望は R1-1 が既に果たしていた
+  （`DownloadService::safeLocalFileName` として `src/core` に出され、19 アサーションで検証済み）。
+  残る未テスト論理は `computeDestinationPath` ではなく重複抑止と `downloadFinished` の
+  フィールド構成の側。`QtGui` の件は「テストターゲットに `Qt6::Gui` を足す」で閉じる方針。
 - **[スコープ未割当] 配布パイプラインが存在しない** — `windeployqt` /
   `qt_generate_deploy_qml_app_script` / CPack のいずれも `CMakeLists.txt` に無い。`install()` しても
   実行可能なツリーにならない。R1-2 はライセンスファイルの同梱だけを閉じ、デプロイ整備はここに残す。
@@ -1653,6 +2089,10 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
   同期にコールバックを呼ぶ。`std::thread`/`QThread`/`std::atomic` は `src/` `tests/` ともにゼロヒット。
   mutex は CI で一度も競合せず、**ロックを消す変更もテストを通ってしまう**。R4 で
   「ワーカスレッドから完了を配達するモックモード」と ASan 構成を検討する。詳細は R2-19。（R2 調査中に発見）
+  → **R4 調査で回収（2026-08-07）、R4-6 に統合**。3 段階に分解し、段階 3（サニタイザ）は
+  **見送りを推奨**する結論になった — MSVC/clang-cl には Windows 版 ThreadSanitizer が無く、
+  本命のデータ競合検出器がこの toolchain では使えないため。ASan で取れる UAF までに限る。
+  段階 2 の前提として R4-8（`QCoreApplication` のプロセス毎 1 回化）が要る。
 - **[R5] `FolderNavigationService` / `QuickAccessService` が mutex 無しで安全な根拠が別ファイルにある** —
   根拠（`MegaSdkClient` の `getChildren`/`getNodeInfo` が同期であること）は
   `src/core/DownloadService.h:49-51` に書かれており、当の 2 ファイルには何も無い。R2-2 の契約書き直しで

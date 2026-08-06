@@ -8,13 +8,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-// FolderTreeModel is src/qml GUI glue, which this codebase otherwise leaves
-// untested by convention -- deliberately bent here, same rationale as
-// FileListModel/TabsController: index()/parent() round-tripping and
-// load-state bookkeeping are pure and genuinely bug-prone, not rendering
-// glue. Builds a real FolderTreeService against MockMegaClient (same
-// "real service, mocked SDK" approach as TabsControllerTest) rather than
-// mocking FolderTreeService itself.
 namespace
 {
 

@@ -19,9 +19,7 @@ class NotificationController;
 // That model is *shared* with FolderNavigationController rather than
 // borrowed from it, because enable_shared_from_this only keeps this object
 // alive -- not the one whose interior a raw pointer would name
-// (REFACTOR_PLANS.md's R2-4). Untested by convention, same as
-// FolderNavigationController/DownloadController: src/qml is GUI glue, and
-// MegaExplorerTests only links MegaExplorerCore.
+// (REFACTOR_PLANS.md's R2-4).
 //
 // enable_shared_from_this for the same reason as
 // FolderNavigationController: since a tab (and this controller with it) can

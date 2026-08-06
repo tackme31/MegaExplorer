@@ -14,13 +14,6 @@ using ::testing::InvokeArgument;
 using ::testing::Return;
 using ::testing::SaveArg;
 
-// QuickAccessModel is src/qml GUI glue, which this codebase otherwise leaves
-// untested by convention -- deliberately bent here, same rationale as
-// FileListModel/TabsController/FolderTreeModel: the login-time validation
-// sweep's reconciliation and its generation guard are pure, genuinely
-// bug-prone bookkeeping, not rendering glue. Builds a real QuickAccessService
-// against MockMegaClient/MockPinnedFolderStore (the same "real service, mocked
-// dependencies" approach as FolderTreeModelTest).
 namespace
 {
 

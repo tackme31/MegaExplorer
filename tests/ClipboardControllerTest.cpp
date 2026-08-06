@@ -6,8 +6,6 @@
 
 #include <gtest/gtest.h>
 
-// Bookkeeping, not rendering -- the same reason FileListModel/TabsController
-// bend this codebase's "src/qml is untested by convention" rule.
 namespace
 {
 

@@ -10,9 +10,6 @@
 #include <string>
 #include <utility>
 
-// Bookkeeping, not rendering -- the same reason FileListModel/TabsController
-// bend this codebase's "src/qml is untested by convention" rule.
-//
 // Trap worth knowing, same shape as UploadControllerTest's note about
 // checkUpload: Result<T>::success defaults to *false*, so an un-stubbed
 // currentAccountIdentity() reports failure and the whole profile load bails

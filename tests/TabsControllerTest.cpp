@@ -13,16 +13,10 @@
 
 #include <gtest/gtest.h>
 
-// TabsController is src/qml GUI glue, which this codebase otherwise leaves
-// untested by convention (see FolderNavigationController.h's own comment) --
-// deliberately bent here, same rationale as FileListModel: this is pure
-// bookkeeping (row/currentIndex accounting) with real bug potential, not
-// view/rendering glue. What's exercised is exactly that bookkeeping; no
-// assertion here depends on a navigation fetch actually completing --
-// MockMegaClient has no EXPECT_CALL set up, so
-// loadRoot()/openFolder()/reset() below just fire an unanswered mock call
-// and return, same as a real fetch that's still in flight when the test
-// finishes.
+// No assertion here depends on a navigation fetch actually completing --
+// MockMegaClient has no EXPECT_CALL set up, so loadRoot()/openFolder()/reset()
+// below just fire an unanswered mock call and return, same as a real fetch
+// that's still in flight when the test finishes.
 namespace
 {
 

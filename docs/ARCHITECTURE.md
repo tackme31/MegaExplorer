@@ -114,8 +114,30 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
   in Phase 7b — see `docs/PROGRESS.md`).
 - **Testing**: GoogleTest/GoogleMock, pulled via vcpkg's `sdk-tests` feature (see `docs/BUILD.md`).
   `MockMegaClient` (`tests/MockMegaClient.h`) `MOCK_METHOD`-fakes `IMegaClient`; mocks drive
-  callback args with `testing::InvokeArgument`. `MegaSdkClient` itself has no adapter-level test
-  since it needs a live MEGA account.
+  callback args with `testing::InvokeArgument`. **What gets a test is decided by what a class does,
+  not by which directory it sits in.** This is the only place that rule lives — don't restate it in
+  per-file comments, which is how it previously rotted into nine mutually-citing copies:
+  - `src/core` — all of it. SDK-free, Qt-free domain logic; nothing here has an excuse.
+  - `src/qml` — everything that holds state or branches on it (the models and the controllers) is
+    tested, driving a *real* `src/core` service over `MockMegaClient` rather than mocking the
+    service. Exactly two kinds of file are exempt: one-line wrappers over a Qt/OS API
+    (`KeyboardState`) and types that mean nothing without a live QML engine (`WindowAgentForeign`).
+    Rendering and gestures live in `qml/`, not here, so "it's GUI glue" is not a reason to skip a
+    class.
+  - `src/mega` — none. `MegaSdkClient` would need a live MEGA account.
+  - `qml/` — none. `qt_add_qml_module` hangs off the `appMegaExplorer` executable, so URI
+    `MegaExplorer` cannot be imported from a Qt Quick Test target at all; see R4-4/R4-5 in
+    `docs/REFACTOR_PLANS.md`.
+
+  Classes the rule says to test but that have none yet (`AuthController`, `DownloadController`,
+  `MenuActions`) are tracked as R4-2/R4-3 there. Those are gaps, not decisions.
+- **Known limit of the suite**: no test in this repo runs more than one thread. `MockMegaClient`
+  delivers every completion synchronously on the calling thread via `testing::InvokeArgument`, so
+  the `std::mutex`es in `DownloadService`/`UploadService`/`ThumbnailService` never contend and
+  `makeGuiOwned`'s cross-thread branch (`src/qml/GuiThread.h`) is never reached — deleting either
+  would leave the suite green. Everything the "Threading model" section below asserts is held up by
+  review, not by a test. Windows has no ThreadSanitizer under MSVC or clang-cl either, so no build
+  flag closes this; see R4-6 in `docs/REFACTOR_PLANS.md`.
 - **`MegaExplorerCore`**: a static library target (root `CMakeLists.txt`) bundling `src/core`'s
   SDK-free headers/`.cpp` files. Exists so `appMegaExplorer` and `MegaExplorerTests` link the same
   compiled domain logic instead of each recompiling it standalone.

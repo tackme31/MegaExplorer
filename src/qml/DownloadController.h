@@ -14,8 +14,6 @@ class NotificationController;
 // from FolderNavigationController since it's an independent concern
 // (download queue vs. folder browsing). Both double-click-on-a-file and the
 // context menu's "Download" item call the same downloadFile() entry point.
-// Untested by convention, same as FolderNavigationController: src/qml is
-// GUI glue, and MegaExplorerTests only links MegaExplorerCore.
 class DownloadController : public QObject
 {
     Q_OBJECT

@@ -16,11 +16,7 @@
 
 // Unlike DownloadController, this one *is* in the test target: it only touches
 // QtCore types (QUrl/QFileInfo/QDir/QStringList/QMetaObject), whereas
-// DownloadController's QDesktopServices would pull in QtGui. The "src/qml is
-// untested by convention" rule is bent here for the same reason
-// FolderNavigationController/TabsController/QuickAccessModel already bend it --
-// dropUrls' classification and the collision bookkeeping are real logic, not
-// rendering.
+// DownloadController's QDesktopServices would pull in QtGui.
 //
 // Signals are observed with plain QObject::connect lambdas rather than
 // QSignalSpy, which lives in Qt6::Test and would be a new dependency for this

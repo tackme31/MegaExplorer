@@ -39,8 +39,7 @@ class NotificationController;
 // FileListModel. QML can't pass C++ callbacks, so the Q_INVOKABLE entry
 // points below are fire-and-forget: internally they hand the service a bound
 // lambda, marshal its result onto the GUI thread, then update the owned
-// FileListModel and canGoBack. Untested by convention: src/qml is GUI glue,
-// and MegaExplorerTests only links MegaExplorerCore.
+// FileListModel and canGoBack.
 //
 // DownloadController deliberately never touches FileListModel (stays
 // decoupled from folder navigation). ThumbnailController is an intentional

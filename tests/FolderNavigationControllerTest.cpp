@@ -19,12 +19,6 @@ using ::testing::Invoke;
 using ::testing::InvokeArgument;
 using ::testing::Return;
 
-// FolderNavigationController is src/qml GUI glue, which this codebase otherwise
-// leaves untested by convention -- bent here for exactly one thing, the same way
-// FileListModel/TabsController/QuickAccessModel bend it:
-// moveSelectionToRubbish()'s N-way fan-out has to collapse N independent SDK
-// results into exactly one refetch and one notification, which is
-// bookkeeping, not rendering. Everything else in this class stays untested.
 namespace
 {
 
