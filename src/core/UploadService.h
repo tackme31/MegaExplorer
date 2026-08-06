@@ -99,12 +99,13 @@ public:
     void setOnJobFinished(std::function<void(UploadJob)> onJobFinished);
 
 private:
-    // Starts mQueue.front() if it's Queued and nothing else is active.
-    // Locks/unlocks mMutex internally rather than requiring the caller to
-    // hold it: IMegaClient::upload() is called with no lock held, since
-    // MockMegaClient-based tests invoke onProgress/onDone synchronously
-    // (from this very call), and holding mMutex across it would
-    // self-deadlock the first such test.
+    // Starts mQueue.front() if it's Queued and nothing else is active, then
+    // keeps going for as long as jobs keep finishing inside this call.
+    //
+    // Locks/unlocks mMutex internally rather than requiring the caller to hold
+    // it: checkUpload() answers on the spot and IMegaClient::upload() may run
+    // onProgress/onDone before it returns (IMegaClient.h's delivery mode 3),
+    // so holding mMutex across either would self-deadlock.
     void startNextIfIdle();
 
     std::shared_ptr<IMegaClient> mClient;
@@ -113,4 +114,11 @@ private:
     std::vector<UploadJob> mQueue;
     std::function<void(UploadJob)> mOnProgress;
     std::function<void(UploadJob)> mOnJobFinished;
+
+    // Re-entrancy trampoline for startNextIfIdle(), identical to
+    // DownloadService's -- see its comment for why the recursion it replaces
+    // was a real risk rather than a mock-only one. Both flags live under
+    // mMutex.
+    bool mAdvancing = false;
+    bool mAdvanceRequested = false;
 };

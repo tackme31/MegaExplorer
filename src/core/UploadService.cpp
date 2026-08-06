@@ -72,11 +72,24 @@ void UploadService::setOnJobFinished(std::function<void(UploadJob)> onJobFinishe
 
 void UploadService::startNextIfIdle()
 {
-    // A loop rather than DownloadService's tail recursion: the destination
-    // re-validation below fails *synchronously*, and it's reachable in
+    // Two synchronous failure paths feed this loop, both reachable in
     // production (drop 200 files onto a folder that has just been deleted
-    // elsewhere), which would otherwise mean 200 nested frames. Download's
-    // equivalent only recurses under a mock.
+    // elsewhere): the destination re-validation below, and IMegaClient::upload
+    // itself when the parent handle no longer resolves. The first returns here
+    // directly; the second comes back through onDone's startNextIfIdle(),
+    // which the mAdvancing trampoline turns into another turn of this loop
+    // rather than a nested frame. Same shape in DownloadService and
+    // ThumbnailService.
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        if (mAdvancing)
+        {
+            mAdvanceRequested = true;
+            return;
+        }
+        mAdvancing = true;
+    }
+
     for (;;)
     {
         std::string localPath;
@@ -84,8 +97,12 @@ void UploadService::startNextIfIdle()
         bool parentIsRoot;
         {
             std::lock_guard<std::mutex> lock(mMutex);
+            mAdvanceRequested = false;
             if (mQueue.empty() || mQueue.front().state != UploadState::Queued)
+            {
+                mAdvancing = false;
                 return;
+            }
             mQueue.front().state = UploadState::Active;
             localPath = mQueue.front().localPath;
             parentHandle = mQueue.front().parentHandle;
@@ -102,7 +119,10 @@ void UploadService::startNextIfIdle()
             {
                 std::lock_guard<std::mutex> lock(mMutex);
                 if (mQueue.empty())
+                {
+                    mAdvancing = false; // every exit past the flag must clear it
                     return;
+                }
                 mQueue.front().state = UploadState::Failed;
                 mQueue.front().errorMessage = allowed.errorMessage;
                 mQueue.front().errorCode = allowed.errorCode;
@@ -160,6 +180,18 @@ void UploadService::startNextIfIdle()
                     onJobFinished(snapshot);
                 startNextIfIdle(); // auto-advance; mMutex isn't held here
             });
-        return;
+
+        // A synchronous failure has already run the whole onDone above by now,
+        // and its startNextIfIdle() only set the flag -- so keep looping here
+        // instead of letting it recurse. A genuinely in-flight transfer leaves
+        // the flag clear and this call ends. Both branches must share one lock:
+        // splitting them lets a completion land in between, set the flag, and
+        // find nobody left to act on it.
+        std::lock_guard<std::mutex> lock(mMutex);
+        if (!mAdvanceRequested)
+        {
+            mAdvancing = false;
+            return;
+        }
     }
 }

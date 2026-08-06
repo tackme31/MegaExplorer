@@ -2,6 +2,7 @@
 
 #include "MockMegaClient.h"
 
+#include <algorithm>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -154,4 +155,52 @@ TEST(ThumbnailServiceTest, FailedRequestIsNotCachedAndRetriedOnNextRequest)
     EXPECT_EQ(firstResult.errorMessage, "no thumbnail");
     EXPECT_TRUE(secondResult.success);
     EXPECT_EQ(secondResult.value, "/tmp/7.jpg");
+}
+
+TEST(ThumbnailServiceTest, SynchronousFailuresDrainTheQueueWithoutRecursing)
+{
+    // Regression guard for startNextIfCapacity()'s re-entrancy trampoline.
+    // IMegaClient::getThumbnail() fails in-stack when the handle no longer
+    // resolves (IMegaClient.h's delivery mode 3), which a fast grid scroll can
+    // queue up by the dozen; finishJob()'s auto-advance would otherwise nest
+    // one frame per queued handle.
+    //
+    // Handle 1 is left in flight while 2..50 pile up behind it: an
+    // all-synchronous queue drains one job per request() call and never
+    // stacks, so firing handle 1's onDone is what triggers the cascade.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::string>)> firstOnDone;
+    int depth = 0;
+    int maxDepth = 0;
+    EXPECT_CALL(*mockClient, getThumbnail(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<2>(&firstOnDone))
+        .WillRepeatedly(::testing::Invoke([&](std::uint64_t,
+                                              const std::string&,
+                                              std::function<void(Result<std::string>)> onDone) {
+            ++depth;
+            maxDepth = std::max(maxDepth, depth);
+            onDone(Result<std::string>::fail("gone", 2));
+            --depth;
+        }));
+
+    // maxConcurrent 1 so every request past the first has to go through the
+    // queue rather than starting straight away.
+    ThumbnailService service(mockClient, 1);
+    int finishedCount = 0;
+
+    // Distinct handles, since request() dedupes by handle
+    for (std::uint64_t handle = 1; handle <= 50; ++handle)
+    {
+        service.request(handle, "/tmp/t.jpg", [&](Result<std::string>) {
+            ++finishedCount;
+        });
+    }
+    ASSERT_TRUE(static_cast<bool>(firstOnDone));
+
+    // Act: handle 1 finishes, and 2..50 all fail the moment they start
+    firstOnDone(Result<std::string>::fail("gone", 2));
+
+    // Assert
+    EXPECT_EQ(finishedCount, 50);
+    EXPECT_EQ(maxDepth, 1); // recursing would make this 49
 }

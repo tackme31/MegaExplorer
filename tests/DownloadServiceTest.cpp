@@ -2,6 +2,7 @@
 
 #include "MockMegaClient.h"
 
+#include <algorithm>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -277,4 +278,51 @@ TEST(DownloadServiceTest, JobsReturnsActiveJobFirstThenQueuedJobsInOrder)
     EXPECT_EQ(jobs[1].state, DownloadState::Queued);
     EXPECT_EQ(jobs[2].id, id3);
     EXPECT_EQ(jobs[2].state, DownloadState::Queued);
+}
+
+TEST(DownloadServiceTest, SynchronousFailuresDrainTheQueueWithoutRecursing)
+{
+    // Regression guard for startNextIfIdle()'s re-entrancy trampoline.
+    // IMegaClient::download() fails *in-stack* when the handle no longer
+    // resolves (IMegaClient.h's delivery mode 3 -- logged out mid-download, or
+    // the folder deleted from another client), so onDone's auto-advance would
+    // otherwise nest one frame per queued job.
+    //
+    // The first job must complete *asynchronously* for the nesting to build:
+    // an all-synchronous queue drains one job per enqueue() call and never
+    // stacks. So job 1 is left in flight while 2..50 pile up behind it, and
+    // firing its onDone is what triggers the cascade.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<DownloadOutcome>)> firstOnDone;
+    int depth = 0;
+    int maxDepth = 0;
+    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<3>(&firstOnDone))
+        .WillRepeatedly(::testing::Invoke([&](std::uint64_t,
+                                              const std::string&,
+                                              std::function<void(std::uint64_t, std::uint64_t)>,
+                                              std::function<void(Result<DownloadOutcome>)> onDone) {
+            ++depth;
+            maxDepth = std::max(maxDepth, depth);
+            onDone(Result<DownloadOutcome>::fail("gone", 2));
+            --depth;
+        }));
+
+    DownloadService service(mockClient);
+    int finishedCount = 0;
+    service.setOnJobFinished([&](DownloadJob) {
+        ++finishedCount;
+    });
+
+    for (int i = 0; i < 50; ++i)
+        service.enqueue(7, "a.txt", "/tmp/a.txt", 0);
+    ASSERT_TRUE(static_cast<bool>(firstOnDone));
+
+    // Act: job 1 finishes, and jobs 2..50 all fail the moment they start
+    firstOnDone(Result<DownloadOutcome>::fail("gone", 2));
+
+    // Assert
+    EXPECT_EQ(finishedCount, 50);
+    EXPECT_EQ(maxDepth, 1); // recursing would make this 49
+    EXPECT_FALSE(service.currentJob().has_value());
 }

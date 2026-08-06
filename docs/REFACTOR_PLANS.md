@@ -513,7 +513,7 @@ R7 ドキュメント/コメント整理
   → **R1-1 / R1-7 ぶんは記述済み**（`## Trust boundary: strings that come from the server`）。
   R1-3 のログ出口と寿命は R1-3 実施時にこの節へ追記する。
 
-### R2 — 調査済み / R2-1 のみ修正済み（2026-08-06）
+### R2 — 調査済み / R2-1・R2-2 修正済み（2026-08-06）
 
 計画の「種」5 件を現物 + **ベンダーされた MEGA SDK 本体**（`third_party/sdk`）で検証した結果。
 **確認 3 件 / 種の誤り 1 件（重要）/ 問題なし 6 件 / 新規 4 件**。R1 と同じく、以下はそのまま
@@ -575,7 +575,7 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   限定して修正（ベンダーされた `third_party/*` の標準を動かさないため、ディレクトリ変数ではなく
   ターゲット単位）。他の全ターゲットは Qt の interface 要求から C++17 を得ていたので影響なし。
 
-**R2-2 [高] 同期エラーパスによる無制限再帰 — 既存コメント 2 箇所が事実に反する**
+**R2-2 [高] 同期エラーパスによる無制限再帰 — 既存コメント 2 箇所が事実に反する** — **修正済み（2026-08-06）**
 
 - `src/core/DownloadService.h:117-120` は「`MockMegaClient` ベースのテストが同期に呼ぶので」
   ロックを持たずに `download()` を呼ぶと書き、`src/core/UploadService.cpp:80-83` は
@@ -607,6 +607,45 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   実装詳細に依存しており、その根拠が当該ファイルに書かれていない**。
 - 修正方針: 3 サービスとも `for(;;)` ループ化で統一 + `IMegaClient.h` の契約を実態に書き直す
   （「呼び出し側スレッドで同期に呼ばれることがある」）+ 上記の暗黙依存を当該ファイルへ移す。
+
+**修正結果**:
+
+- **`for(;;)` 単体では足りなかった**。onDone 経由の再帰は「ループの次周回」ではなく**入れ子呼び出し**
+  として起きるので、ループ化だけでは 1 段も減らない（`UploadService` の既存 `for(;;)` が
+  `checkUpload` の同期拒否しか救えていなかったのは、まさにこれが理由）。3 サービスとも
+  `mAdvancing` / `mAdvanceRequested` の 2 bool による**トランポリン**にした: 入れ子呼び出しは
+  `mAdvanceRequested` を立てて即 return し、既にループを回しているフレームがもう一周する。
+  スタック深さは同期完了が何段続いても **O(1)**。
+- 要注意点が 2 つあり、どちらもコメントで現場に残した:
+  1. 末尾の「フラグ確認」と `mAdvancing = false` は**同一ロック内**でなければならない。分けると
+     非同期完了が隙間に割り込んで `mAdvanceRequested` を立てたまま誰も回さず、キューが恒久停止する。
+  2. `mAdvancing = true` を立てた後の `return` は**全部**フラグを戻す必要がある。
+     `UploadService` の `checkUpload` 失敗ブランチ内にある `if (mQueue.empty()) return;` が該当した。
+- 抽象化はしなかった（共通ヘルパを作るとフラグがサービスの `mMutex` 下にある都合でロックを跨ぐ
+  不自然なインタフェースになる）。R5 のサービス解体と方向が衝突しないことも理由。
+- `IMegaClient.h` の冒頭コメント（1 行だった）を**配達 3 モードの記述**に差し替え、
+  モード 2 のメソッド名とモード 3 の発生条件を明記。加えて「onDone は自分の呼び出しの中で走りうるので、
+  ロックを跨がない・自己再帰に備える」という**呼び出し側への要求**まで書いた。
+  `download` / `upload` / `getThumbnail` と mutating 群の先頭コメントにも個別に注記
+  （mutating 群の "genuinely asynchronous" はモード 3 を無視していたので是正）。
+  数字付きの「synchronous 例外 N 番目」の連番は別軸なので**触っていない**。
+- 暗黙依存を移した: 「`FolderNavigationService` が mutex を持たないのは `getChildren` 等が同期だから」
+  という根拠は `DownloadService.h` に書かれていた。`FolderNavigationService.h` の先頭へ移し、
+  「借り物の保証であり、モード 2 が崩れたら mutex が要る」と条件付きで書いた。
+- R2-11 のコメント 4 件のうち 2 件（`DownloadService.h` / `UploadService.cpp` の「モック下でしか
+  再帰しない」）は嘘なので削除・書き直し済み。`ThumbnailService.h` の「no loop is needed」も同様に是正。
+  残る 2 件（`MegaSdkClient.cpp:338,380` と `MegaSdkClient.h:147-149`）は締めのセッションに残す。
+- **新規テスト 3 本**（`DownloadServiceTest` / `UploadServiceTest` / `ThumbnailServiceTest` の
+  `*WithoutRecursing`）。モックのアクションを `Invoke` ラムダにして**再入深さを実測**し `maxDepth == 1`
+  を assert する。単なるドレイン件数の assert ではスタックオーバーフロー頼みになり検出できない。
+  **テストの形に 1 つ罠があった**: 全ジョブが同期失敗するだけでは 1 件ずつ独立に排水されて再帰が積まれない。
+  先頭ジョブだけ `SaveArg` で in-flight にし、残り 49 件を積んでからその onDone を発火させて初めて
+  カスケードが起きる（＝実運用の「ダウンロード中にログアウト」そのもの）。修正前のコードに当てると
+  3 本とも `maxDepth == 49` になることを確認してから修正した。
+- 既存 373 テスト全通過、`/W4` 新規警告ゼロ。**挙動差・QML 側の変更はゼロ**（キューの処理順・通知内容・
+  完了件数はすべて不変で、変わるのはスタックの積み方だけ）。
+- ついでに `FolderNavigationService.h` / `FileEntry.h` の C++ 標準に関する古いコメントを是正
+  （R2-1 で `cxx_std_17` が入ったため前者は事実に反し、後者は消滅した `Result.h` のコメントを参照していた）。
 
 **R2-3 [高] シャットダウン時の use-after-free — `~MegaApi` が破棄済みサービスへコールバックする**
 
@@ -768,6 +807,7 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 **R2-11 [低] 誤っているコメント 4 件**
 
 - `DownloadService.h:117-120` / `UploadService.cpp:80-83` — 「モック下でしか再帰しない」＝**嘘**（R2-2）。
+  **是正済み（2026-08-06、R2-2 と同時）**。`ThumbnailService.h` の「no loop is needed」も同様に是正した。
 - `MegaSdkClient.cpp:338,380` — 「`delete this;` も `mCancelToken` を壊す。SDK がここまで生存を要求する」。
   SDK は要求していない: `convertToCancelToken`（`megaapi_impl.h:1467`）が値でコピーし、
   `CancelToken` 自体が `shared_ptr<bool>` を持つ共有ハンドル（`mega/types.h:1223-1227`）。
@@ -880,7 +920,7 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 R2-1  currentJob() の optional 化            … 単独・小・UB を確実に消す      [済 2026-08-06]
 R2-7  コントローラのデストラクタで observer 解除 … 単独・極小
 R2-6  invokeOnGuiThread を B に統一（8→1）    … 単独・機械的
-R2-2  再帰のループ化 + IMegaClient 契約の書き直し … R2-19 の「同期失敗 N 件モック」とセット
+R2-2  再帰のループ化 + IMegaClient 契約の書き直し … R2-19 の「同期失敗 N 件モック」とセット [済 2026-08-06]
 R2-3  MegaSdkClient::shutdown() の導入        … 寿命系の根。R2-5 の窓もここで狭まる
 R2-4  FileListModel の shared_ptr 化          … R5 の解体と方向一致。R5 に送る選択肢もあり
 R2-9/R2-10/R2-11  docs/ARCHITECTURE.md への記録とコメント是正 … 締め

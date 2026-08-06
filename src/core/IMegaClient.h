@@ -14,7 +14,32 @@
 #include <string>
 #include <vector>
 
-// Callbacks may be invoked from a background thread, not the caller's thread.
+// How the callback-shaped methods below actually deliver, which is three ways,
+// not one. MegaSdkClient is the implementation this describes; a caller that
+// only handles the first mode is wrong on the other two.
+//
+//   1. Truly asynchronous, on an SDK-internal thread. The listener-backed
+//      methods: login/fetchNodes/download/upload/getThumbnail and every
+//      mutating call. This is the mode the rest of this file's comments mean
+//      by "background thread".
+//   2. Always synchronous, on the calling thread -- onDone has already run by
+//      the time the method returns. getRootChildren, getChildren, search,
+//      getPath and getNodeInfo, all of which are in-memory reads of the node
+//      tree the SDK holds after fetchNodes. FolderNavigationService's
+//      lock-free design rests on this; see its own header comment.
+//   3. Synchronous *on failure only*, on the calling thread. Every method that
+//      resolves a handle first fails in-stack when that handle resolves to
+//      nothing -- logged out, fetchNodes not run yet, or the node deleted from
+//      another client -- and only reaches mode 1 once the handle is good. This
+//      is the mode that is easy to miss, because the happy path looks purely
+//      asynchronous.
+//
+// Consequence for callers, and the reason mode 3 is spelled out here: onDone
+// may run inside your own call, before the method returns. Do not hold a lock
+// across the call, and if onDone re-enters the code that issued the call --
+// a queue that auto-starts its next job, say -- guard against recursing once
+// per pending item. DownloadService/UploadService/ThumbnailService each carry
+// an explicit trampoline for exactly this.
 class IMegaClient
 {
 public:
@@ -126,7 +151,9 @@ public:
     // distinguishes that rename case from the other collision outcome (an
     // identical file already at destinationPath, which the SDK detects via
     // fingerprint and skips re-downloading entirely). Same background-thread
-    // caveat as the rest of this file applies to both callbacks.
+    // caveat as the rest of this file applies to both callbacks -- except that
+    // an unresolvable handle fails in delivery mode 3, running onDone on the
+    // calling thread before this call returns.
     virtual void download(
         std::uint64_t handle,
         const std::string& destinationPath,
@@ -147,7 +174,9 @@ public:
     // Same two-callback shape as download() and for the same reason
     // (MegaTransferListener, not MegaRequestListener): onProgress may fire
     // zero or more times with (transferredBytes, totalBytes), onDone fires
-    // exactly once, terminally.
+    // exactly once, terminally. Also like download(), a parentHandle that no
+    // longer resolves fails in delivery mode 3 -- onDone on the calling
+    // thread, before this call returns.
     virtual void
     upload(const std::string& localPath,
            std::uint64_t parentHandle,
@@ -168,6 +197,8 @@ public:
     // Fails with the SDK's API_ENOENT when the node has no server-side
     // thumbnail; callers are expected to gate on FileEntry::hasThumbnail
     // instead of relying on that, so it is not modeled as a distinct outcome.
+    // A handle that no longer resolves is the separate delivery-mode-3 case:
+    // onDone on the calling thread, before this call returns.
     virtual void getThumbnail(std::uint64_t handle,
                               const std::string& destinationPath,
                               std::function<void(Result<std::string>)> onDone) = 0;
@@ -196,9 +227,11 @@ public:
     // reads. All are MegaRequestListener-based, so they keep the
     // single-Result<T>-callback shape; Result<void> because none of them
     // reports anything beyond success/failure. Must be called after a successful
-    // fetchNodes(). Unlike the read methods above these are genuinely
-    // asynchronous (a real API round-trip), so the background-thread caveat
-    // at the top of this file is not merely theoretical here.
+    // fetchNodes(). Unlike the read methods above these do a real API
+    // round-trip, so the background-thread caveat at the top of this file is
+    // not merely theoretical here -- but only once their handles resolve.
+    // Handle resolution itself is delivery mode 3: onDone fires on the calling
+    // thread, before the call returns, whenever a handle is already gone.
     virtual void renameNode(std::uint64_t handle,
                             const std::string& newName,
                             std::function<void(Result<void>)> onDone) = 0;

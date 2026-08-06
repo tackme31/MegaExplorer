@@ -45,11 +45,8 @@ struct DownloadJob
 // genuinely be touched from two threads at once: enqueue() is expected to
 // be called from the GUI thread (via DownloadController), while
 // IMegaClient::download's onProgress/onDone callbacks may fire from an
-// SDK-internal background thread (see IMegaClient.h) while a second
-// enqueue() is in flight. mMutex protects mQueue against that race -- the
-// existing services don't need one because MegaSdkClient's
-// getChildren/getRootChildren/search are all synchronous today, so there's
-// never real concurrent access to their state.
+// SDK-internal background thread (delivery mode 1 in IMegaClient.h) while a
+// second enqueue() is in flight. mMutex protects mQueue against that race.
 //
 // mQueue.front(), if present, is always the currently active (or
 // about-to-become-active) job; enqueue() only ever appends to the back.
@@ -116,12 +113,14 @@ public:
     void setOnJobFinished(std::function<void(DownloadJob)> onJobFinished);
 
 private:
-    // Starts mQueue.front() if it's Queued and nothing else is active.
-    // Locks/unlocks mMutex internally rather than requiring the caller to
-    // hold it: IMegaClient::download() is called with no lock held, since
-    // MockMegaClient-based tests invoke onProgress/onDone synchronously
-    // (from this very call), and holding mMutex across it would
-    // self-deadlock the first such test.
+    // Starts mQueue.front() if it's Queued and nothing else is active, then
+    // keeps going for as long as jobs keep finishing inside this call.
+    //
+    // Locks/unlocks mMutex internally rather than requiring the caller to hold
+    // it: IMegaClient::download() may run onProgress/onDone before it returns
+    // (IMegaClient.h's delivery mode 3 -- a handle that no longer resolves
+    // fails on the calling thread, not from the SDK's), so holding mMutex
+    // across it would self-deadlock.
     void startNextIfIdle();
 
     std::shared_ptr<IMegaClient> mClient;
@@ -130,4 +129,13 @@ private:
     std::vector<DownloadJob> mQueue;
     std::function<void(DownloadJob)> mOnProgress;
     std::function<void(DownloadJob)> mOnJobFinished;
+
+    // Re-entrancy trampoline for startNextIfIdle(). That same in-stack failure
+    // means onDone's auto-advance would otherwise nest one frame per queued
+    // job -- 200 selected files against a folder deleted from another client
+    // is 200 frames, laid down by the SDK thread whose stack size this app
+    // doesn't control. A nested call now just asks the frame already looping
+    // to go round again. Both flags live under mMutex.
+    bool mAdvancing = false;
+    bool mAdvanceRequested = false;
 };

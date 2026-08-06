@@ -3,6 +3,7 @@
 #include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
 
+#include <algorithm>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -304,4 +305,53 @@ TEST(UploadServiceTest, FindNameCollisionsDelegatesToClientFindChildFiles)
     ASSERT_TRUE(result.success);
     ASSERT_EQ(result.value.size(), 1u);
     EXPECT_EQ(result.value[0].handle, 55u);
+}
+
+TEST(UploadServiceTest, SynchronousUploadFailuresDrainTheQueueWithoutRecursing)
+{
+    // Companion to DestinationGoneDrainsEveryQueuedJobForThatDestination
+    // above, which only covers the checkUpload() fast-fail. This one is the
+    // other synchronous path: checkUpload passes, but IMegaClient::upload()
+    // itself fails in-stack because the parent handle no longer resolves
+    // (IMegaClient.h's delivery mode 3). onDone's auto-advance would nest one
+    // frame per queued job without startNextIfIdle()'s trampoline.
+    //
+    // Job 1 is left in flight while 2..50 pile up behind it: an
+    // all-synchronous queue drains one job per enqueue() call and never
+    // stacks, so firing job 1's onDone is what triggers the cascade.
+    auto mockClient = makeClient();
+    std::function<void(Result<UploadOutcome>)> firstOnDone;
+    int depth = 0;
+    int maxDepth = 0;
+    EXPECT_CALL(*mockClient,
+                upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&firstOnDone))
+        .WillRepeatedly(::testing::Invoke([&](const std::string&,
+                                              std::uint64_t,
+                                              bool,
+                                              std::function<void(std::uint64_t, std::uint64_t)>,
+                                              std::function<void(Result<UploadOutcome>)> onDone) {
+            ++depth;
+            maxDepth = std::max(maxDepth, depth);
+            onDone(Result<UploadOutcome>::fail("gone", MegaErrorCode::kENoEnt));
+            --depth;
+        }));
+
+    UploadService service(mockClient);
+    int finishedCount = 0;
+    service.setOnJobFinished([&](UploadJob) {
+        ++finishedCount;
+    });
+
+    for (int i = 0; i < 50; ++i)
+        service.enqueue("C:\\tmp\\a.txt", "a.txt", 7, false, 0);
+    ASSERT_TRUE(static_cast<bool>(firstOnDone));
+
+    // Act: job 1 finishes, and jobs 2..50 all fail the moment they start
+    firstOnDone(Result<UploadOutcome>::fail("gone", MegaErrorCode::kENoEnt));
+
+    // Assert
+    EXPECT_EQ(finishedCount, 50);
+    EXPECT_EQ(maxDepth, 1); // recursing would make this 49
+    EXPECT_EQ(service.queueLength(), 0u);
 }

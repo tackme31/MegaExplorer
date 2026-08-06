@@ -152,60 +152,90 @@ void DownloadService::setOnJobFinished(std::function<void(DownloadJob)> onJobFin
 
 void DownloadService::startNextIfIdle()
 {
-    std::uint64_t handle;
-    std::string destinationPath;
     {
         std::lock_guard<std::mutex> lock(mMutex);
-        if (mQueue.empty() || mQueue.front().state != DownloadState::Queued)
+        if (mAdvancing)
+        {
+            mAdvanceRequested = true; // whoever is in the loop below picks it up
             return;
-        mQueue.front().state = DownloadState::Active;
-        handle = mQueue.front().handle;
-        destinationPath = mQueue.front().destinationPath;
+        }
+        mAdvancing = true;
     }
 
-    mClient->download(
-        handle,
-        destinationPath,
-        [this](std::uint64_t transferred, std::uint64_t total) {
-            std::function<void(DownloadJob)> onProgress;
-            DownloadJob snapshot;
+    for (;;)
+    {
+        std::uint64_t handle;
+        std::string destinationPath;
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            mAdvanceRequested = false;
+            if (mQueue.empty() || mQueue.front().state != DownloadState::Queued)
             {
-                std::lock_guard<std::mutex> lock(mMutex);
-                if (mQueue.empty())
-                    return;
-                mQueue.front().transferredBytes = transferred;
-                mQueue.front().totalBytes = total;
-                snapshot = mQueue.front();
-                onProgress = mOnProgress;
+                mAdvancing = false;
+                return;
             }
-            if (onProgress)
-                onProgress(snapshot);
-        },
-        [this](Result<DownloadOutcome> result) {
-            std::function<void(DownloadJob)> onJobFinished;
-            DownloadJob snapshot;
-            {
-                std::lock_guard<std::mutex> lock(mMutex);
-                if (mQueue.empty())
-                    return;
-                mQueue.front().state =
-                    result.success ? DownloadState::Completed : DownloadState::Failed;
-                if (result.success)
+            mQueue.front().state = DownloadState::Active;
+            handle = mQueue.front().handle;
+            destinationPath = mQueue.front().destinationPath;
+        }
+
+        mClient->download(
+            handle,
+            destinationPath,
+            [this](std::uint64_t transferred, std::uint64_t total) {
+                std::function<void(DownloadJob)> onProgress;
+                DownloadJob snapshot;
                 {
-                    mQueue.front().resolvedLocalPath = result.value.localPath;
-                    mQueue.front().alreadyPresent = result.value.alreadyPresent;
+                    std::lock_guard<std::mutex> lock(mMutex);
+                    if (mQueue.empty())
+                        return;
+                    mQueue.front().transferredBytes = transferred;
+                    mQueue.front().totalBytes = total;
+                    snapshot = mQueue.front();
+                    onProgress = mOnProgress;
                 }
-                else
+                if (onProgress)
+                    onProgress(snapshot);
+            },
+            [this](Result<DownloadOutcome> result) {
+                std::function<void(DownloadJob)> onJobFinished;
+                DownloadJob snapshot;
                 {
-                    mQueue.front().errorMessage = result.errorMessage;
-                    mQueue.front().errorCode = result.errorCode;
+                    std::lock_guard<std::mutex> lock(mMutex);
+                    if (mQueue.empty())
+                        return;
+                    mQueue.front().state =
+                        result.success ? DownloadState::Completed : DownloadState::Failed;
+                    if (result.success)
+                    {
+                        mQueue.front().resolvedLocalPath = result.value.localPath;
+                        mQueue.front().alreadyPresent = result.value.alreadyPresent;
+                    }
+                    else
+                    {
+                        mQueue.front().errorMessage = result.errorMessage;
+                        mQueue.front().errorCode = result.errorCode;
+                    }
+                    snapshot = mQueue.front();
+                    onJobFinished = mOnJobFinished;
+                    mQueue.erase(mQueue.begin());
                 }
-                snapshot = mQueue.front();
-                onJobFinished = mOnJobFinished;
-                mQueue.erase(mQueue.begin());
-            }
-            if (onJobFinished)
-                onJobFinished(snapshot);
-            startNextIfIdle(); // auto-advance; mMutex isn't held here
-        });
+                if (onJobFinished)
+                    onJobFinished(snapshot);
+                startNextIfIdle(); // auto-advance; mMutex isn't held here
+            });
+
+        // A synchronous failure has already run the whole onDone above by now,
+        // and its startNextIfIdle() only set the flag -- so keep looping here
+        // instead of letting it recurse. A genuinely in-flight transfer leaves
+        // the flag clear and this call ends. Both branches must share one lock:
+        // splitting them lets a completion land in between, set the flag, and
+        // find nobody left to act on it.
+        std::lock_guard<std::mutex> lock(mMutex);
+        if (!mAdvanceRequested)
+        {
+            mAdvancing = false;
+            return;
+        }
+    }
 }

@@ -13,9 +13,14 @@
 //
 // IMegaClient has no handle for "root" (getRootChildren takes none), so
 // Location::isRoot is used as the "currently at root" / "back-stack entry is
-// root" sentinel throughout. Not std::optional<uint64_t>: this project's
-// CMAKE_CXX_STANDARD isn't pinned to C++17+ (see Result.h's own comment on
-// avoiding std::expected), so std::optional can't be assumed available.
+// root" sentinel throughout.
+//
+// This class carries no mutex, unlike DownloadService/UploadService/
+// ThumbnailService, and that is a borrowed guarantee rather than a local one:
+// getRootChildren/getChildren/search are delivery mode 2 in IMegaClient.h --
+// always synchronous, on the calling thread -- so mCurrent and the back-stack
+// are only ever touched from the GUI thread. If any of those three ever
+// starts answering from an SDK thread, this class needs one.
 //
 // openRoot/openFolder/goBack/refreshCurrent all share the same
 // single-callback shape: onDone fires exactly once with the authoritative

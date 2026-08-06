@@ -29,7 +29,7 @@
 // background thread. mMutex protects all the members below against that
 // race; IMegaClient::getThumbnail() itself is called with no lock held, for
 // the same self-deadlock-avoidance reason as DownloadService::
-// startNextIfIdle (MockMegaClient-based tests invoke onDone synchronously).
+// startNextIfIdle (onDone can run before getThumbnail() returns).
 class ThumbnailService
 {
 public:
@@ -51,9 +51,9 @@ private:
     };
 
     // Starts the next queued handle if capacity allows. Called once after a
-    // new job is queued and once after each job finishes -- each call frees
-    // or claims exactly one slot, so no loop is needed (mirrors
-    // DownloadService::startNextIfIdle's single-job-per-call shape).
+    // new job is queued and once after each job finishes; one slot per turn,
+    // and it loops only when a request finished inside this very call
+    // (mirrors DownloadService::startNextIfIdle, trampoline included).
     void startNextIfCapacity();
 
     // Common completion path for a job, whether it started directly from
@@ -67,4 +67,11 @@ private:
     std::unordered_map<std::uint64_t, Job> mJobs;          // handle -> active or queued job
     std::deque<std::uint64_t> mQueue;                      // handles waiting for capacity
     std::size_t mActiveCount = 0;
+
+    // Re-entrancy trampoline for startNextIfCapacity(), identical to
+    // DownloadService's -- see its comment. The reachable case here is a fast
+    // grid scroll queueing dozens of handles that no longer resolve. Both
+    // flags live under mMutex.
+    bool mAdvancing = false;
+    bool mAdvanceRequested = false;
 };

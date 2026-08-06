@@ -12,8 +12,7 @@ struct FileEntry
     bool hasThumbnail = false;
 
     // Value-type equality, field-by-field. Not defaulted via <=> -- this
-    // project's CMAKE_CXX_STANDARD isn't pinned to C++20+ (see Result.h's
-    // comment on avoiding std::expected for the same reason). Added for
+    // project builds at C++17, not C++20. Added for
     // Phase 6 test assertions (e.g. gmock's EXPECT_CALL(..., someVector)
     // implicitly builds an Eq() matcher over std::vector<FileEntry>, which
     // needs this).

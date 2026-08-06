@@ -43,26 +43,51 @@ void ThumbnailService::request(std::uint64_t handle,
 
 void ThumbnailService::startNextIfCapacity()
 {
-    std::uint64_t handle = 0;
-    std::string destinationPath;
-    bool started = false;
     {
         std::lock_guard<std::mutex> lock(mMutex);
-        if (mActiveCount < mMaxConcurrent && !mQueue.empty())
+        if (mAdvancing)
         {
+            mAdvanceRequested = true; // whoever is in the loop below picks it up
+            return;
+        }
+        mAdvancing = true;
+    }
+
+    for (;;)
+    {
+        std::uint64_t handle = 0;
+        std::string destinationPath;
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            mAdvanceRequested = false;
+            if (mActiveCount >= mMaxConcurrent || mQueue.empty())
+            {
+                mAdvancing = false;
+                return;
+            }
             handle = mQueue.front();
             mQueue.pop_front();
             destinationPath = mJobs.at(handle).destinationPath;
             ++mActiveCount;
-            started = true;
+        }
+
+        mClient->getThumbnail(handle, destinationPath, [this, handle](Result<std::string> result) {
+            finishJob(handle, result);
+        });
+
+        // A synchronous failure has already run the whole finishJob above by
+        // now, and its startNextIfCapacity() only set the flag -- so keep
+        // looping here instead of letting it recurse. A genuinely in-flight
+        // request leaves the flag clear and this call ends. Both branches must
+        // share one lock: splitting them lets a completion land in between,
+        // set the flag, and find nobody left to act on it.
+        std::lock_guard<std::mutex> lock(mMutex);
+        if (!mAdvanceRequested)
+        {
+            mAdvancing = false;
+            return;
         }
     }
-    if (!started)
-        return;
-
-    mClient->getThumbnail(handle, destinationPath, [this, handle](Result<std::string> result) {
-        finishJob(handle, result);
-    });
 }
 
 void ThumbnailService::finishJob(std::uint64_t handle, Result<std::string> result)
