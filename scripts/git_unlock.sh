@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
-# Clears a stale .git/index.lock -- the recurring failure described in
-# docs/TROUBLESHOOTING.md. Safe to run unconditionally before any git write:
-# the lock is removed only when nothing can plausibly be holding it.
+# Clears a stale .git/index.lock. This repo drops one intermittently -- root
+# cause never pinned down; candidates are Qt Creator's own git integration and
+# tool calls killed mid-command -- so every git write in this project is
+# expected to be chained behind this script rather than repaired after it
+# fails. See CLAUDE.md's "Git: every write goes through scripts/git_unlock.sh".
+#
+# Removing a lock out from under a live git process corrupts the index, so
+# both checks below have to pass before anything is deleted. Manual equivalent,
+# should this ever need rewriting: tasklist //FI "IMAGENAME eq git.exe" (or
+# Get-Process git from PowerShell), then rm -f .git/index.lock only if that
+# comes back empty.
 #
 # Windows/Git Bash only (it asks tasklist whether git.exe is running).
 #

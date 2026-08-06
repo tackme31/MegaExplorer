@@ -18,7 +18,6 @@ session lives in companion docs, linked from the relevant section below rather t
 - `docs/ARCHITECTURE.md` — directory layout detail + the ports-and-adapters/DI design.
 - `docs/BUILD.md` — rationale behind each build gotcha below (why VS generator, why
   `CMakePresets.json`, the FFmpeg link fix, etc.).
-- `docs/TROUBLESHOOTING.md` — recurring environment issues (e.g. stale git `index.lock`).
 - `docs/*_INVESTIGATION.md` — standing feasibility studies, written before the phase they feed and
   kept afterwards (Japanese). Read the relevant one *before* planning that phase; each states its
   own conclusion up front, so the outline + first section is usually enough:
@@ -185,10 +184,12 @@ through that interface, never call `MegaApi`/`std::filesystem` directly. Manual 
 injection against abstract interfaces (ports-and-adapters), no DI framework. Full directory
 breakdown and the DI/testability design rationale: `docs/ARCHITECTURE.md`.
 
-## Known environment issues
+## Git: every write goes through `scripts/git_unlock.sh`
 
-Git commands intermittently fail with a stale `.git/index.lock`. **Run `bash scripts/git_unlock.sh`
-before every git write** (commit/add/checkout) — chain it, so a non-zero exit stops the write:
+This repo intermittently leaves a stale `.git/index.lock` behind, so a later `git add`/`commit`/
+`checkout` fails with `Unable to create '.git/index.lock': File exists` while nothing is actually
+running. That is normal here, not an incident. **Chain the unlock script ahead of every git write**,
+so a non-zero exit stops the write instead of you reacting to a failure afterwards:
 
 ```
 bash scripts/git_unlock.sh && git commit -F - <<'EOF'
@@ -196,7 +197,16 @@ bash scripts/git_unlock.sh && git commit -F - <<'EOF'
 EOF
 ```
 
-It prints one line, and only removes the lock when nothing can be holding it, so it's safe to run
-unconditionally — don't check by hand first. A non-zero exit means a git operation may be live:
-**wait and re-run, never `rm` the lock yourself.** Output table and the manual equivalent:
-`docs/TROUBLESHOOTING.md`.
+The script prints one line and removes the lock only when nothing can plausibly be holding it (no
+`git.exe` running, lock at least 10s old), so running it unconditionally is the intended use — don't
+inspect anything by hand first. **Never `rm` the lock yourself**: doing that under a live git process
+corrupts the index, which is the whole reason those two checks exist.
+
+| Output | Exit | Meaning |
+| --- | --- | --- |
+| `no lock` | 0 | Nothing to do; the git command runs. |
+| `removed stale lock (Ns old)` | 0 | Cleared; the git command runs. |
+| `git.exe is running -- lock left alone` | 1 | A real operation is live. Wait, re-run. |
+| `lock is Ns old -- too fresh to call stale` | 1 | Same: wait, re-run. |
+
+Windows/Git Bash only. Rationale for each check is in the script's own header comment.
