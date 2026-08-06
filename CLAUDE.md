@@ -12,6 +12,9 @@ session lives in companion docs, linked from the relevant section below rather t
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
   and the per-stage log for S0–S11 (S0–S10 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
   the four C++ changes it caused are cross-linked from both.
+- `docs/REFACTOR_PLANS.md` — the pre-Phase-15 code-tidying pass (Japanese): the R1–R6 scope split,
+  the per-item findings, and the log of what each fix decided. Active work stream; check it before
+  starting anything that looks like cleanup.
 - `docs/ARCHITECTURE.md` — directory layout detail + the ports-and-adapters/DI design.
 - `docs/BUILD.md` — rationale behind each build gotcha below (why VS generator, why
   `CMakePresets.json`, the FFmpeg link fix, etc.).
@@ -22,8 +25,8 @@ session lives in companion docs, linked from the relevant section below rather t
   - `TITLEBAR_TABS_INVESTIGATION.md` — fed Phase 17 (frameless window + caption-row tabs).
   - `FETCHNODES_PROGRESS_INVESTIGATION.md` — fed Phase 18; carries the measured 600k-node timings
     and the reason the decrypt phase can't show progress.
-  - `CROSS_TAB_DND_INVESTIGATION.md` — spring-loaded tabs, i.e. the drop-onto-tab half of the
-    planned Phase 22b. Not yet implemented.
+  - `CROSS_TAB_DND_INVESTIGATION.md` — spring-loaded tabs, i.e. the drop-onto-tab half of
+    Phase 22b, which shipped. Its one open risk did not materialize; see the Phase 22b log.
   - `CROSS_PLATFORM_INVESTIGATION.md` — whether the MSVC/vcpkg-only build could go
     Linux/macOS. No phase attached; conclusion is that `WindowsSessionStore` (DPAPI) is the real
     work, not the build files.
@@ -83,226 +86,18 @@ go-ahead before proceeding (as part of normal plan review, not a separate approv
 
 ## Project status
 
-Phases 0–6, 6a, 6b, 7a, 7, 7b, 8, 9, 10, 11, 11a, and 12 are done (Phase 7 closes out login screen +
-session persistence; Phase 7b removes Phase 6's local node cache; Phase 8 adds the breadcrumb trail;
-Phase 9 adds Explorer-style tabs, each with its own independent navigation/search/sort/view-mode
-state; Phase 10 adds the left `SplitView` folder-tree panel, shared across every tab, with lazy
-expansion and a navigation-driven highlight — no auto-expand/auto-scroll; Phase 11 adds the
-quick-access pinned-folder section above that tree, persisted by node handle so pins follow moves
-*and* renames, with a login-time validation sweep that silently drops deleted targets and a
-click-time confirmation dialog for ones deleted mid-session; Phase 11a is an unplanned correction of
-Phase 11's own known limitation — pins are now scoped per MEGA account (via the account's user
-handle, `IMegaClient::currentUserHandle()`) instead of one machine-wide list, so logging into a
-different account no longer has the login-time sweep silently wipe the previous account's pins;
-pre-existing flat-key pin data is not migrated and is simply abandoned; Phase 12 adds inline rename
-plus move-to-Rubbish-bin — the codebase's first *mutating* SDK calls — with **move deliberately
-deferred to Phase 14**, since choosing a destination realistically needs drag & drop).
-Phases 13a (selection model) and 13b (multi-select context menu + declarative action-resolution
-logic) were pulled forward out of numeric order — both are self-contained and didn't need phases
-9–12 first — and are also done; Phase 14a then closed out phase 13's last remaining item (bulk
-*move*) by making drag & drop its trigger, so nothing is left in 13. Phase 14a adds move via
-drag & drop: drag from the grid/list views, drop onto a folder row, a view's empty space, a
-folder-tree row, a quick-access pin, or a breadcrumb segment — backed by `IMegaClient::moveNode`
-plus a *synchronous*
-`checkMove` (the interface's third sync method) that a hovering drag queries to paint accept/reject
-feedback. It deliberately does **not** refresh other tabs or the folder tree (so a moved folder
-shows in two places in the tree until the next login) — both are left to Phase 16's remote-change
-reflection. Phase 14b then adds *upload* onto those same five drop targets (no new ones): external
-file drops are told apart from 14a's internal node drag by a `"text/uri-list"` `DropArea` key plus a
-`dragProxy.active` guard, and are backed by `IMegaClient::upload` (`MegaApi::startUpload` with
-`options = nullptr`) plus two more *synchronous* methods, `checkUpload` (fourth) and `findChildFiles`
-(fifth, the same-name check, `getChildNodeOfType(TYPE_FILE)` so a same-named folder is never
-"replaced"). Files only — folders in a drop are skipped after a confirmation dialog; a second dialog
-offers Replace/Skip/Cancel for same-named files, "replace" being upload-then-move-old-node-to-Rubbish
-since MEGA has no native overwrite. Unlike 14a it *does* refresh every tab showing the destination
-(an upload has no "source tab"), via the new guarded
-`FolderNavigationController::refreshIfShowing`; the folder tree still isn't refreshed, but that's
-vacuous here since uploads only create files. Phase 17 was then also pulled forward ahead of 15/16
-(same "self-contained" reasoning): it integrates the tabs into the window's title bar, Explorer-11
-style, by vendoring **QWindowKit** (`third_party/qwindowkit`, Apache-2.0, tag 1.5.0) — 17a makes the
-window frameless and replaces the native caption with `qml/components/CaptionBar.qml` (no visible
-change by design), 17b then moves `TabStrip` onto that caption row. Windows-only, no
-`#ifdef Q_OS_WIN` fallback. Tab drag-to-reorder / tear-off is explicitly **not** in scope. Phase 18
-was pulled forward on the same grounds and fixes the login screen's blank 6m25s wait: the SDK's
-state-cache DB moves from the launch CWD to `AppLocalDataLocation` (which alone turns a 384.8s
-fetchNodes into 619ms on the same account), and the wait that remains gets a staged loading screen —
-`IMegaClient::fetchNodes` gained an `onProgress` callback, `AuthController` gained a `LoadingStage`
-state machine (authenticating → downloading, with a determinate bar → decrypting, indeterminate),
-and `LoginView.qml` became a three-page `StackLayout`. The bar is labelled
-"downloading" and never rescaled into an overall percentage, because the decrypt phase after it is
-~57% of the wall time and the SDK exposes no progress for it at all. Phase 19 then reworked the
-context-menu machinery and added "New folder" on top of it: `FileAction`/`FileActionResolver`
-became `MenuAction`/`MenuActionResolver` and gained a `MenuSite` dimension
-(`FileSelection`/`FolderBackground`/`FolderRow`) that decides *membership only* — display order
-stays global — so all three menus now share one table, and `qml/ActionCatalog.qml` (a new QML
-singleton) owns every action's label/greying/execution while C++ owns applicability. The two
-fixed-target sites read their IDs from the new `MenuActions` C++ singleton (`src/qml`); the file
-views' selection menu still uses `FileListModel::availableActions`. On that base,
-`IMegaClient::createFolder` (fourth mutating method) plus `FolderNavigationController::createFolder`
-back a per-tab `NewFolderDialog`, where the *only* duplicate-name check is the server's
-`API_EEXIST` — that and an invalid name keep the dialog open with red inline text, every other
-failure closes it and reports by toast. Like 14a it refreshes only the creating tab. Phase 20a then
-opened the 20a–23 detail pass with a per-tab busy indicator, after finding that **the phase's own
-premise was false**: the SDK holds the whole node tree in memory after `fetchNodes`, so
-`getChildren`/`search`/`getPath` are synchronous in-memory reads (`IMegaClient.h` says so outright)
-and a spinner for "the listing is loading" could never have painted — Phase 7b's claim of a
-per-navigation network round-trip was wrong. So `FolderNavigationController` gained a delayed `busy`
-property (a *count*, not a flag, since the bulk fan-outs issue N calls; published only after a 250ms
-`QTimer`) covering the genuinely async work — rename / createFolder / move / moveToRubbish — surfaced
-via a new `TabsController` `BusyRole` and a `BusyIndicator` pinned to 16px beside `TabStrip.qml`'s
-`FileIcon`. Uploads were then folded into that same role — not through the controller's counter,
-since `UploadController` is app-global and owns no tab, but as a pure OR in `TabsController::data`
-against a new `UploadController::isUploadingTo(handle, isRoot)`, so a tab is busy exactly while it is
-showing an upload destination. It also fixed the toolbar refresh button, which re-read the in-memory tree and so
-guaranteed nothing about freshness: `IMegaClient::syncPendingChanges` (`MegaApi::catchup`, the sixth
-mutating-side method) now runs before the re-read, with `refreshIfShowing` deliberately split off so
-the post-upload fan-out doesn't sync once per tab. Phase 20b then added the "More" menu's About and
-"Open source licenses" dialogs, on top of a generated inventory of all 36 third-party components:
-`scripts/gen_third_party_notices.py` (the repo's first script, **run by hand — re-run it after any
-dependency bump**) turns vcpkg's per-port `copyright`/`vcpkg.spdx.json` plus a hand-maintained table
-for the non-vcpkg entries into `licenses/manifest.json` + `licenses/texts/*.txt` +
-`licenses/licenses.cmake` + a re-rendered `THIRD-PARTY-NOTICES.txt`, all committed. Those files are
-embedded via `qt_add_qml_module`'s `RESOURCES` (the project's first qrc use) and read by
-`src/qml/LicenseModel`, the codebase's second true QML singleton. Licenses require the license text
-to *accompany the distribution*, not merely be reachable, so a link can't substitute — but copying
-`LICENSE`/`THIRD-PARTY-NOTICES.txt` into the build/install output is **still outstanding** and
-recorded as such in the Phase 20b log. Phase 21 then added rubber-band (rectangle) selection to both
-file views: `qml/components/BandSelector.qml` owns the gesture (pointer, content-coordinate origin so
-the band keeps growing while `DragAutoScroller` scrolls under it, and the rectangle itself), each view
-supplies the geometry — a `isOnItem(viewPos)` start rule plus a rect→rows conversion done by
-*arithmetic*, since `itemAtIndex`/`cellAtPosition` only resolve realized delegates and an
-auto-scrolling band outruns them — and `FileListModel` gained a band *session*
-(`beginBandSelection`/`updateBandSelection`(`Grid`)/`endBandSelection`/`cancelBandSelection`) whose
-`mBandBase` is what makes Ctrl+band additive, plus a row-range `dataChanged` so a drag doesn't repaint
-the whole table per frame. Two hit-test rules changed with it: the grid delegate's `DragHandler` moved
-onto the inset tile so the inter-tile gap starts a band (matching S8a's tap/hover/drop rule), and the
-list's strip right of the last column starts one too. Phase 22a then made quick-access pins
-drag-reorderable, and **dropped the roadmap's own premise** while doing it: the gesture never starts
-a Qt drag (it never leaves `pinList`), so the planned second `Drag.keys` value to tell it apart from
-14a's node drag was unnecessary and no drop target's accept logic changed. `DragProxy` gained a
-`ghostOnly` mode (`beginGhost`/`finishGhost`, `Drag.active` untouched) so the reorder can borrow just
-the ghost; the insertion point is arithmetic like Phase 21's band. `QuickAccessService::move` +
-`QuickAccessModel::move` (handle-keyed, `beginMoveRows`) back it, and `QuickAccessModel::validateAll`
-was reworked to commit against the *current* pin list rather than replaying its own start-of-sweep
-snapshot — which would have silently undone a reorder (and, already, a mid-sweep `pin()`). Phase 22b
-then applied that same gesture to the tab strip and added the drop-onto-tab half, and **the
-`CROSS_TAB_DND_INVESTIGATION.md` risk it was gated on did not materialize**: switching tabs mid-drag
-does *not* cancel the source `DragHandler`'s grab (the grabber is the handler, not the item that goes
-invisible), so the planned `StackLayout` → `Item`-stack rework of `Main.qml` was never done and
-`Main.qml`'s pane block is untouched. `TabsController::moveTab` (`std::rotate` + `beginMoveRows`,
-plus a `currentIndex` follow so the active tab keeps its identity rather than its row) backs the
-reorder — verified to move rather than rebuild both the `TabBar`'s and the pane `Repeater`'s
-delegates — while the reorder's own QML re-derives three things for the horizontal case: the tab
-pitch hoisted out of `TabButton.width` into `TabStrip.tabWidth` (the arithmetic needs a number),
-22a's `xAxis.enabled` trap read as `yAxis.enabled`, and an insertion line that must be declared
-*outside* the `TabBar` and reparented, since `TabBar` is a `Container` and anything declared in it
-becomes a tab. Each tab is also the sixth drop target: a `DropArea` + 600ms `Timer` (armed in
-`onEntered` only, never restarted on position, since an internal drag delivers no events while the
-pointer is still) springs the tab open, and a drop on the button itself moves/uploads into that tab's
-current folder through the unchanged 14a/14b entry points. That last part forced **Phase 14a's known
-limitation to be paid off**: `FolderNavigationController` gained a `nodesMoved` signal (via a new
-`BulkOperationBatch::onComplete`) and `TabsController` fans `refreshIfShowing` out to every other tab
-for both ends of the move, because the destination listing is now sitting in view. The folder tree is
-still not refreshed — that stays Phase 16's. Phase 23 then added copy/cut/paste, and **dropped the
-roadmap's collision premise**: `MegaApi::copyNode` has no `API_EEXIST` (only `createFolder` does),
-and worse, a copy whose name collides with an existing *file* attaches as a new **version over** it
-(`copyTreeFromOwnedNode` → `getovnode`, FILENODE-only), a byte-identical one being dropped outright
-while still reporting success — so the auto-rename (`report.pdf` → `report - Copy.pdf`, via
-`FileOperationService::uniqueCopyName` plus a *fresh* `refreshCurrent` read of the destination's
-names, never the cached listing) is what prevents an unasked-for overwrite, and 14b's replace/skip
-dialog was not reproduced. An app-global `ClipboardController` (`src/qml`, context property) holds
-only state — entries, a cut flag, and the *source folder*, that last one forcing `moveHandlesTo`'s
-body out into a `moveHandlesFrom` taking an explicit source, since a cut-paste's origin is wherever
-the clipboard was filled rather than the pasting tab; pasting itself is
-`FolderNavigationController::paste()` (+ `canPaste()`, `nodesCopied`), which reuses the existing
-bulk fan-out and 14a's `moveNode` for cut. Five rows joined `defaultMenuActions()` — Cut/Copy on the
-selection menu, Paste/Select all/Refresh on the background one, the last two being Phase 19's own
-leftover — and Ctrl+C/X/V are `Keys.onPressed` branches placed *after* the existing `Qt.Key_Delete`
-one, because `StandardKey.Cut` is also Shift+Delete. Cut rows are ghosted via a binding on
-`clipboardController.cutHandles` (a property, not a method — a method call reads nothing a binding
-could track), so no model role was needed. No OS-clipboard interop, and paste targets the current
-folder only. Phase 23a then put that copy onto 14a/22b's drag gesture — **Ctrl (without Shift) makes
-a drag a copy**, Shift being the explicit move — and the phase is really about the fact that Qt
-supplies no modifier: QML's `DragEvent` carries none, `DragHandler.centroid.modifiers` only updates
-when the pointer *moves*, and `Keys` handlers are focus-dependent (22b's spring-loaded tab switch
-moves focus mid-drag). So `src/qml/KeyboardState.h` — header-only, `QML_ELEMENT`/`QML_SINGLETON`
-like `WindowAgentForeign.h` — exposes `QGuiApplication::queryKeyboardModifiers()`, which `DragProxy`
-samples in `begin()` (before `Drag.active`), `moveTo()` and `finish()` (before `Drag.drop()`, so the
-modifier at button-release decides) plus a 100ms `Timer` for the stationary pointer. Re-asking the
-hovered `DropArea` is a `Connections`-on-`copyModeChanged` per target, **not** a position nudge
-(`QQuickDragAttached` coalesces those into one *asynchronous* event, too late for the drop) and
-**not** a binding on `containsDrag` (which `QQuickDropArea` sets *after* `entered()`, so it would
-break every target's upload branch). `DragProxy` now carries `entries` (the `{handle, name,
-isFolder}` maps — a copy needs the names) with `handles` derived from it, plus `canDropOn`/`dropOn`
-that branch on the mode, so all six drop targets got *shorter*. C++ side:
-`FileOperationService::canCopy` (there is no `checkCopy` anywhere — it reuses `checkMove` and treats
-only `kEArgs`, "already in that folder", as allowed, so duplicate-in-place works and a folder into
-its own subtree is refused), `FolderNavigationService::listChildrenOf` (a drop target isn't the
-folder you're standing in, so `refreshCurrent` can't read its names), and
-`FolderNavigationController::copyEntriesTo`/`canCopyEntriesOn`. A failed destination read **refuses
-the whole drop** rather than falling back — `paste()` keeps its `mLastFolderEntries` fallback
-because there the destination *is* this tab. It also **changed Phase 23's paste**: the same
-`canCopy` check now greys out and refuses pasting a folder into its own subtree. Phase 20c is a
-late, unplanned addition to Phase 20b's "More" menu — an account header (avatar / display name /
-email / storage bar / plan) above its two entries, so the app finally says which account is signed
-in. Nothing is fetched at login: `Menu::onAboutToShow` calls `AccountController::refresh()`, which
-loads the profile once per session and re-reads storage on every open (stale-while-revalidate, so
-the loading state is only ever seen once), all of it behind `AccountService` (`src/core`) and four
-methods appended to `IMegaClient` — `currentAccountIdentity` being its **seventh** synchronous
-exception, appended at the tail precisely because that header's exception tally is positional. Its
-lasting trap is visual: the menu appeared to snap shut mid-open, and instrumenting it proved the
-popup never closes at all — a popup that owns a window (`popupType: Popup.Window`) can present one
-frame of the *un-animated* state before its `enter` transition's first tick lands, 26–71ms later,
-so the menu shows itself, snaps to the transition's `from`, and only then animates in. `enter` is
-therefore `null`: no open animation. Two contributing traps were fixed on the way and are worth not
-re-learning — FluentWinUI3's `Menu` animates its own `height` over a `clip: true` `ListView` whose
-`contentHeight` *extrapolates* unrealized rows from the average of realized ones, so a 150px header
-makes size and content chase each other; and that ListView never aggregates its children's
-`implicitWidth`, so the menu's `width` has to be stated. **Two known issues stay open** (first open
-draws the menu 32px too high for a frame; a reported one-in-two blink that could not be reproduced
-afterwards) — both, with the diagnostic recipe, are in the Phase 20c log. The full
-roadmap — next up are phases 15–16 (in-app preview, real-time remote-change reflection) — lives in
-`docs/PROGRESS.md`'s Roadmap section; see the companion-docs list above.
-`docs/MEMO.md` keeps only non-roadmap notes. Undo and full bidirectional local sync stay out of
-scope.
+Phases 0–14b and 17–23a are done — several were pulled forward out of numeric order. **Next up:
+phases 15–16** (in-app preview, real-time remote-change reflection), with a pre-15 code-tidying pass
+running first in `docs/REFACTOR_PLANS.md`.
 
-Core pieces in place: `IMegaClient`/`MegaSdkClient` (`src/core`/`src/mega`), `AuthService`/
-`FolderNavigationService`/`SearchService`/`DownloadService`/`UploadService`/`ThumbnailService`/
-`FileOperationService`
-(`src/core`) backed
-by `ISessionStore`/`WindowsSessionStore` for session persistence (folder listings are always
-fetched live from the network, no local cache), their QML-facing controllers/`FileListModel`
-(`src/qml`) — including `AuthController`,
-the codebase's first `QML_ELEMENT`-registered type, driving `qml/views/LoginView.qml` — an
-Explorer-style sortable detail list view (`qml/views/FileTableView.qml`, Phase 6b) alongside the
-thumbnail grid view (`qml/views/FileGridView.qml`, split out of `Main.qml` in Phase 9), both now
-instantiated per-tab by `qml/views/TabContentPane.qml` and driven by `src/qml/TabsController` (a
-`QAbstractListModel` owning N independent `FolderNavigationController`/`ThumbnailController`
-instances, Phase 9 — see its `docs/ARCHITECTURE.md`-style lifetime notes in `docs/PROGRESS.md`'s
-Phase 9 log for why those two classes now use `enable_shared_from_this`), a shared (not per-tab)
-`FolderTreeService`/`FolderTreeModel` (`src/core`/`src/qml`) backing `qml/components/
-FolderTreePanel.qml`'s lazily-expanded `TreeView` side panel (Phase 10), an equally shared
-`QuickAccessService`/`QuickAccessModel` (`src/core`/`src/qml`) backed by `IPinnedFolderStore`/
-`QSettingsPinnedFolderStore` (account-scoped since Phase 11a) behind `qml/components/
-QuickAccessSection.qml` — both panel halves now stacked by `qml/components/SidePanel.qml`
-(Phase 11) — a single window-wide `qml/components/DragProxy.qml` parented to the window `Overlay`
-that carries every move drag (a delegate can't: the views' `Flickable` viewport would clip it before
-it reached the side panel) plus `qml/components/DragAutoScroller.qml` for the edge scrolling Qt
-doesn't provide (Phase 14a), the app-global `UploadController` (`src/qml`) behind all five drop
-targets' external-drop path and Main.qml's two upload confirmation dialogs (Phase 14b), the equally
-app-global but service-free `ClipboardController` (`src/qml`, Phase 23) that every tab's
-`FolderNavigationController` holds a non-owning pointer to, the header-only `KeyboardState`
-(`src/qml`, Phase 23a) that `DragProxy` reads Ctrl/Shift from during a drag, the equally app-global
-`AccountService`/`AccountController` (`src/core`/`src/qml`, Phase 20c) behind
-`qml/components/AccountMenuHeader.qml`, `qml/components/CaptionBar.qml` — the window's own caption row, carrying `TabStrip` and the three
-system buttons, registered with QWindowKit's `WindowAgent` (exposed to QML by the header-only
-`src/qml/WindowAgentForeign.h`, `QML_FOREIGN`) from `Main.qml`'s root `Component.onCompleted`,
-Phase 17a/17b — the `qml/Theme.qml` design-token singleton and `qml/components/FileIcon.qml` that
-the UI-polish pass (S0–S10, `docs/DESIGN_IMPROVEMENT.md`) introduced — and cross-cutting app
-infrastructure — categorized logging + a MEGA SDK logger bridge (`src/app`, `src/mega`) and a shared
-`NotificationController`/`ToastStack.qml` for user-facing failures (`src/qml`, `qml/`) — see
-`docs/ARCHITECTURE.md` for the layering and `docs/PROGRESS.md` for what each phase actually built
-and why.
+That one paragraph is deliberately all this file tracks. What a phase actually built, what it
+changed its mind about mid-way, and what it knowingly left open is `docs/PROGRESS.md`: its Roadmap
+section lists every phase with status, and `ast-outline outline docs/PROGRESS.md` gets you that list
+without the 61k-token file behind it. Likewise the current architecture is `docs/ARCHITECTURE.md` —
+there is no inventory of classes here to fall out of date.
+
+Permanently out of scope: undo, full bidirectional local sync, and tearing a tab off into its own
+window.
 
 ## Build
 
