@@ -226,6 +226,11 @@ TabContext TabsController::createTab()
     // out from under the shared_ptrs still holding it alive.
     QQmlEngine::setObjectOwnership(context.navigation.get(), QQmlEngine::CppOwnership);
     QQmlEngine::setObjectOwnership(context.thumbnails.get(), QQmlEngine::CppOwnership);
+    // Same reason once more: since R2-4 the FileListModel is an unparented
+    // heap QObject too, and it crosses the engine boundary through
+    // FolderNavigationController's fileListModel property.
+    QQmlEngine::setObjectOwnership(context.navigation->fileListModelForThumbnails().get(),
+                                   QQmlEngine::CppOwnership);
 
     // Relays this tab's own changes into a per-row dataChanged() so
     // TabStrip.qml's TabButton delegates update without needing their own

@@ -9,10 +9,11 @@
 #include <QStandardPaths>
 
 ThumbnailController::ThumbnailController(std::shared_ptr<ThumbnailService> service,
-                                         FileListModel* model,
+                                         std::shared_ptr<FileListModel> model,
                                          NotificationController* notifications,
                                          QObject* parent)
-    : QObject(parent), mService(std::move(service)), mModel(model), mNotifications(notifications)
+    : QObject(parent), mService(std::move(service)), mModel(std::move(model)),
+      mNotifications(notifications)
 {}
 
 void ThumbnailController::requestThumbnail(quint64 handle)

@@ -32,7 +32,8 @@ FolderNavigationController::FolderNavigationController(
     QObject* parent)
     : QObject(parent), mService(std::move(navigationService)),
       mSearchService(std::move(searchService)), mFileOps(std::move(fileOperationService)),
-      mNotifications(notifications), mClipboard(clipboard)
+      mNotifications(notifications), mClipboard(clipboard),
+      mFileListModel(std::make_shared<FileListModel>())
 {
     mBusyDelayTimer.setSingleShot(true);
     mBusyDelayTimer.setInterval(kBusyIndicatorDelayMs);
@@ -49,12 +50,12 @@ FolderNavigationController::FolderNavigationController(
 
 QObject* FolderNavigationController::fileListModel()
 {
-    return &mFileListModel;
+    return mFileListModel.get();
 }
 
-FileListModel* FolderNavigationController::fileListModelForThumbnails()
+std::shared_ptr<FileListModel> FolderNavigationController::fileListModelForThumbnails()
 {
-    return &mFileListModel;
+    return mFileListModel;
 }
 
 bool FolderNavigationController::canGoBack() const
@@ -188,7 +189,7 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
     }
     mHasLoadedOnce = true;
     mLastFolderEntries = result.value;
-    mFileListModel.setEntries(std::move(result.value));
+    mFileListModel->setEntries(std::move(result.value));
     emit canGoBackChanged();
     refreshBreadcrumb();
 }
@@ -236,7 +237,7 @@ void FolderNavigationController::search(QString query)
 
     if (query.isEmpty())
     {
-        mFileListModel.setEntries(mLastFolderEntries);
+        mFileListModel->setEntries(mLastFolderEntries);
         return;
     }
 
@@ -260,7 +261,7 @@ void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>
                                     QString::fromStdString(result.errorMessage));
         return;
     }
-    mFileListModel.setEntries(std::move(result.value));
+    mFileListModel->setEntries(std::move(result.value));
 }
 
 void FolderNavigationController::refreshCurrentFolder()
@@ -396,7 +397,7 @@ void FolderNavigationController::createFolder(const QString& name)
 
 void FolderNavigationController::moveSelectionToRubbish()
 {
-    const QVariantList entries = mFileListModel.selectedEntries();
+    const QVariantList entries = mFileListModel->selectedEntries();
     if (entries.isEmpty())
         return;
 
@@ -782,7 +783,7 @@ void FolderNavigationController::accountForBulkOutcome(
 void FolderNavigationController::reset()
 {
     mService->resetToRoot();
-    mFileListModel.setEntries({});
+    mFileListModel->setEntries({});
     mLastFolderEntries.clear();
     mLastSearchQuery.clear();
     mHasLoadedOnce = false;

@@ -513,7 +513,7 @@ R7 ドキュメント/コメント整理
   → **R1-1 / R1-7 ぶんは記述済み**（`## Trust boundary: strings that come from the server`）。
   R1-3 のログ出口と寿命は R1-3 実施時にこの節へ追記する。
 
-### R2 — 調査済み / R2-1・R2-2・R2-3・R2-5・R2-6・R2-7 修正済み（2026-08-06）
+### R2 — 調査済み / R2-1・R2-2・R2-3・R2-4・R2-5・R2-6・R2-7 修正済み（2026-08-06）
 
 計画の「種」5 件を現物 + **ベンダーされた MEGA SDK 本体**（`third_party/sdk`）で検証した結果。
 **確認 3 件 / 種の誤り 1 件（重要）/ 問題なし 6 件 / 新規 4 件**。R1 と同じく、以下はそのまま
@@ -756,25 +756,49 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 5. サムネイル側（`ThumbnailService` の再入経路）は、大きめのフォルダをグリッド表示で開いて
    サムネイル取得中に閉じることで同様に踏める。
 
-**R2-4 [中・実行時到達可能] `ThumbnailController::mModel` が他オブジェクトの内部を指す**
+**R2-4 [中・実行時到達可能] `ThumbnailController::mModel` が他オブジェクトの内部を指す** —
+**修正済み（2026-08-06）**
 
-- `ThumbnailController.h:56` の `FileListModel* mModel` は
+- `ThumbnailController.h:54`（種は `:56` と書いていた）の `FileListModel* mModel` は
   `navigation->fileListModelForThumbnails()`(`main.cpp:137`) ＝
   `&FolderNavigationController::mFileListModel`（`FolderNavigationController.h:366` の**値メンバ**、
-  `.cpp:76-79` がそのアドレスを返す）。
+  `.cpp:50-58` がそのアドレスを返す。種の `:76-79` は古い）。
 - `TabContext`（`TabsController.h`）は `navigation` と `thumbnails` を**独立した shared_ptr** で持ち、
   逆順（thumbnails → navigation）に壊れる。
 - 再現シナリオ（シャットダウンではなく**通常操作**）: サムネイル取得中にタブを閉じる
-  （`TabsController.cpp:138` の `mTabs.erase`）。`thumbnails` は `ThumbnailController.cpp:49` の
+  （`TabsController.cpp:138` の `mTabs.erase`）。`thumbnails` は `ThumbnailController.cpp:31` の
   `self = shared_from_this()` で生き残るが、`navigation` の参照カウントは 0 になり
   `FolderNavigationController` ごと `mFileListModel` が消える。`ThumbnailController` 自身は
-  生きているので `removePostedEvents` は働かず、GUI スレッドのラムダが `.cpp:60` の
-  `mModel->setThumbnailPath(...)` を解放済みメモリに対して実行する。
+  生きているので `removePostedEvents` は働かず、GUI スレッドのラムダが `.cpp:42` の
+  `mModel->setThumbnailPath(...)` を解放済みメモリに対して実行する（種の `.cpp:49/60` は古い）。
 - **`enable_shared_from_this` は自分自身しか守らない**、という点が既存コメント
   （`ThumbnailController.h:23-30`）から抜けている。
 - 修正方針: `FileListModel` を値メンバから `std::shared_ptr` にして `ThumbnailController` が
   共有所有する（**R5 の `FolderNavigationController` 解体と方向が一致する**）。
   応急なら `ThumbnailController` に `navigation` の shared_ptr を持たせるだけでも塞がる。
+
+**修正結果**:
+
+- 本線（`shared_ptr<FileListModel>`）を採った。応急案は `ThumbnailController` が
+  `FolderNavigationController` 全体に依存することになり、R5 の解体と逆方向。
+- `FolderNavigationController` 側: `mFileListModel` を `std::shared_ptr<FileListModel>` にして
+  コンストラクタで `make_shared`、`fileListModelForThumbnails()` の戻り値を `shared_ptr` に変更、
+  `.cpp` の使用 7 箇所を `->`/`.get()` に機械変換。**`Q_PROPERTY(QObject* fileListModel …)` と
+  `fileListModel()` の `QObject*` は据え置いたので QML 側の変更はゼロ** — 両ビューの `model:` も
+  約 19 箇所ずつの `navController.fileListModel.…` 呼び出しもそのまま。
+- `ThumbnailController` 側: コンストラクタ引数とメンバを `shared_ptr` に。`.cpp:42` の
+  `mModel->setThumbnailPath(...)` は表記そのまま。
+- `TabsController::createTab()` に `setObjectOwnership(…CppOwnership)` を 1 行追加した。
+  モデルが親無しのヒープ QObject になり `navigation`/`thumbnails` と同じ条件になったため
+  （プロパティ読み取りは既定で CppOwnership なので実害があったわけではなく、同じ理由の同じ保険）。
+- **R2-5 との関係**: 本件の修正は「SDK スレッドで壊れうる QObject」を 1 個増やす
+  （タブを跨いで生き残った `ThumbnailController` がモデルの最後の参照を持ちうる）。
+  先に入れた R2-5 の `makeGuiOwned` が `~ThumbnailController` を GUI スレッドに戻すので、
+  そこから落ちるモデルの参照も GUI スレッドで落ちる。**この順序で入れたのはそのため**。
+- `FileListModel.h:13-14` の「`setContextProperty()` で QML に出している」というコメントは
+  Phase 9 以降すでに嘘（実際は `FolderNavigationController` のプロパティ経由）だったので同時に是正。
+- 既存 373 テスト全通過、`/W4` 新規警告ゼロ。テスト側の変更は
+  `tests/FolderNavigationControllerTest.cpp:161` のヘルパに `.get()` を足した 1 箇所のみ。
 
 **R2-5 [中] `self` が SDK スレッドで最後の参照を落とすと QObject が異スレッドで破棄される** —
 **修正済み（2026-08-06）**
@@ -1027,7 +1051,9 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 - `src/qml` の非所有ポインタ全リスト: `DownloadController.h:77`, `UploadController.h:167`,
   `FolderNavigationController.h:364,365`, `ThumbnailController.h:56,57`, `TabsController.h:150`,
   `FolderTreeModel.cpp:136`（世代ガード付きで正しい）。
-  **他オブジェクトの内部を指しているのは `ThumbnailController.h:56` だけ**（= R2-4）。
+  **他オブジェクトの内部を指しているのは `ThumbnailController.h:54` だけ**（= R2-4）。
+  → **R2-4 で解消（2026-08-06）**。`shared_ptr<FileListModel>` になり、非所有生ポインタで
+  他オブジェクトの内部を指す箇所は `src/qml` から無くなった。
 
 **R2-18 `std::atomic` が無いのは現状問題ない**
 
@@ -1077,7 +1103,7 @@ R2-6  invokeOnGuiThread を B に統一（8→1）    … 単独・機械的    
 R2-2  再帰のループ化 + IMegaClient 契約の書き直し … R2-19 の「同期失敗 N 件モック」とセット [済 2026-08-06]
 R2-3  MegaSdkClient::shutdown() の導入        … 寿命系の根。R2-5 の窓もここで狭まる [済 2026-08-06]
 R2-5  makeGuiOwned で破棄を GUI スレッドへ    … 元の一覧に無かった。R2-4 の前に置くと安全 [済 2026-08-06]
-R2-4  FileListModel の shared_ptr 化          … R5 の解体と方向一致。R5 に送る選択肢もあり
+R2-4  FileListModel の shared_ptr 化          … R5 の解体と方向一致 [済 2026-08-06]
 R2-9/R2-10/R2-11  docs/ARCHITECTURE.md への記録とコメント是正 … 締め
 R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理に合流させるのが安い
 ```

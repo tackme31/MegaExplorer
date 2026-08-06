@@ -15,8 +15,11 @@ class NotificationController;
 // FolderNavigationController/DownloadController -- see
 // FolderNavigationController::fileListModelForThumbnails() for why this
 // class (unlike DownloadController) is allowed to write directly into the
-// FileListModel FolderNavigationController owns: thumbnails have to update
-// visible rows in place. Untested by convention, same as
+// tab's FileListModel: thumbnails have to update visible rows in place.
+// That model is *shared* with FolderNavigationController rather than
+// borrowed from it, because enable_shared_from_this only keeps this object
+// alive -- not the one whose interior a raw pointer would name
+// (REFACTOR_PLANS.md's R2-4). Untested by convention, same as
 // FolderNavigationController/DownloadController: src/qml is GUI glue, and
 // MegaExplorerTests only links MegaExplorerCore.
 //
@@ -34,7 +37,7 @@ class ThumbnailController : public QObject, public std::enable_shared_from_this<
 
 public:
     explicit ThumbnailController(std::shared_ptr<ThumbnailService> service,
-                                 FileListModel* model,
+                                 std::shared_ptr<FileListModel> model,
                                  NotificationController* notifications,
                                  QObject* parent = nullptr);
 
@@ -53,6 +56,6 @@ private:
     QString computeDestinationPath(quint64 handle) const;
 
     std::shared_ptr<ThumbnailService> mService;
-    FileListModel* mModel;
+    std::shared_ptr<FileListModel> mModel;
     NotificationController* mNotifications;
 };

@@ -158,7 +158,7 @@ protected:
 
     FileListModel* model()
     {
-        return controller->fileListModelForThumbnails();
+        return controller->fileListModelForThumbnails().get();
     }
 
     std::shared_ptr<MockMegaClient> client;

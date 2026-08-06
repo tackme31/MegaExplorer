@@ -10,8 +10,10 @@
 #include <unordered_set>
 #include <vector>
 
-// Owned by main.cpp's composition root and exposed to QML via
-// setContextProperty(); not instantiated from QML, so no QML_ELEMENT needed.
+// One per tab, owned jointly by that tab's FolderNavigationController and
+// ThumbnailController (both hold a shared_ptr), and reaching QML only through
+// FolderNavigationController's fileListModel property -- not instantiated
+// from QML, so no QML_ELEMENT needed.
 //
 // QAbstractTableModel (not QAbstractListModel) since Phase 6b: columnCount()
 // reports 3 (Name/Modified/Size) so TableView+HorizontalHeaderView can

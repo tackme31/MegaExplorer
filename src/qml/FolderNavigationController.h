@@ -45,8 +45,8 @@ class NotificationController;
 // DownloadController deliberately never touches FileListModel (stays
 // decoupled from folder navigation). ThumbnailController is an intentional
 // exception to that: it needs to update visible rows in place, so
-// fileListModelForThumbnails() below hands it a typed pointer to the same
-// FileListModel instance this controller owns.
+// fileListModelForThumbnails() below hands it shared ownership of the same
+// FileListModel instance this controller uses.
 class FolderNavigationController : public QObject,
                                    public std::enable_shared_from_this<FolderNavigationController>
 {
@@ -91,11 +91,17 @@ public:
 
     QObject* fileListModel();
 
-    // Typed accessor to the same FileListModel instance as fileListModel()
+    // Shared ownership of the same FileListModel instance as fileListModel()
     // above, for main.cpp's composition root to hand to ThumbnailController.
     // Not Q_INVOKABLE/not QML-facing -- QML only ever needs the QObject*
     // property for its view's model:.
-    FileListModel* fileListModelForThumbnails();
+    //
+    // Shared rather than a bare pointer because TabContext destroys
+    // thumbnails before navigation, while a thumbnail fetch in flight keeps
+    // ThumbnailController alive past its tab: a raw pointer here would leave
+    // its queued setThumbnailPath() writing into a freed model
+    // (REFACTOR_PLANS.md's R2-4).
+    std::shared_ptr<FileListModel> fileListModelForThumbnails();
 
     bool canGoBack() const;
 
@@ -370,7 +376,7 @@ private:
     std::shared_ptr<FileOperationService> mFileOps;
     NotificationController* mNotifications;
     ClipboardController* mClipboard;
-    FileListModel mFileListModel;
+    std::shared_ptr<FileListModel> mFileListModel;
     QVariantList mBreadcrumb;
     std::vector<FileEntry> mLastFolderEntries; // restored when search is cleared
     SortOrder mSortOrder{SortKey::Name, true};
