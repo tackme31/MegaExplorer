@@ -128,7 +128,15 @@ QString DownloadController::computeDestinationPath(const QString& fileName) cons
     // the whole string (including the "C:" drive letter) look like a bare
     // leaf name and tripping an internal invariant assert. Qt's own APIs are
     // fine with '/', but this string crosses into non-Qt code.
-    return QDir::toNativeSeparators(dir + "/" + fileName);
+    //
+    // fileName is a MEGA node name, i.e. server-side data nothing upstream
+    // validates (E2E encryption rules out server-side checks, and the SDK only
+    // escapes startUpload/startDownload's customName, which MegaSdkClient
+    // passes as nullptr). This concatenation is therefore the trust boundary:
+    // safeLocalFileName is what keeps the result a leaf inside dir.
+    const QString leaf =
+        QString::fromStdString(DownloadService::safeLocalFileName(fileName.toStdString()));
+    return QDir::toNativeSeparators(dir + "/" + leaf);
 }
 
 void DownloadController::refreshActiveJob()

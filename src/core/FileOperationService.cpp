@@ -22,7 +22,10 @@ bool FileOperationService::isValidName(const std::string& name)
     if (name.find_first_not_of(" \t\r\n") == std::string::npos)
         return false;
     // Path separators would break DownloadService's local-path composition
-    // downstream, so they're rejected here rather than at download time.
+    // downstream, so names this app creates are rejected here, at the entry.
+    // Names that arrive already-made (a link import, another client's rename)
+    // never pass through here, so the download path defends itself too --
+    // DownloadService::safeLocalFileName.
     return name.find('/') == std::string::npos && name.find('\\') == std::string::npos;
 }
 
