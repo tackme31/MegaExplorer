@@ -392,5 +392,16 @@ breakdown and the DI/testability design rationale: `docs/ARCHITECTURE.md`.
 
 ## Known environment issues
 
-Git commands intermittently fail with a stale `.git/index.lock`. Recovery steps:
-`docs/TROUBLESHOOTING.md` — follow them exactly (there's a safety check before removing the lock).
+Git commands intermittently fail with a stale `.git/index.lock`. **Run `bash scripts/git_unlock.sh`
+before every git write** (commit/add/checkout) — chain it, so a non-zero exit stops the write:
+
+```
+bash scripts/git_unlock.sh && git commit -F - <<'EOF'
+...
+EOF
+```
+
+It prints one line, and only removes the lock when nothing can be holding it, so it's safe to run
+unconditionally — don't check by hand first. A non-zero exit means a git operation may be live:
+**wait and re-run, never `rm` the lock yourself.** Output table and the manual equivalent:
+`docs/TROUBLESHOOTING.md`.
