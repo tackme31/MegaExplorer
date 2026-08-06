@@ -513,7 +513,362 @@ R7 ドキュメント/コメント整理
   → **R1-1 / R1-7 ぶんは記述済み**（`## Trust boundary: strings that come from the server`）。
   R1-3 のログ出口と寿命は R1-3 実施時にこの節へ追記する。
 
-### R2 — 未着手
+### R2 — 調査済み / 修正未着手（2026-08-06）
+
+計画の「種」5 件を現物 + **ベンダーされた MEGA SDK 本体**（`third_party/sdk`）で検証した結果。
+**確認 3 件 / 種の誤り 1 件（重要）/ 問題なし 6 件 / 新規 4 件**。R1 と同じく、以下はそのまま
+plan mode の作業単位として使える粒度で書いてある。**修正は各項目ごとに別セッション**。
+
+#### 前提: このアプリのスレッドモデルは 2 本しかない
+
+先に確定させた事実。以降の判断は全部これに乗っている。
+
+- SDK 側のコールバックは **`MegaApiImpl` のループスレッド 1 本**に集約される
+  （`third_party/sdk/src/megaapi_impl.cpp:7140` で生成）。別ワーカから来た完了は
+  `:17992-18011` の `executeOnThread` で同スレッドへマーシャルされる。
+  → **リスナ同士は並行しない**。競合は常に「SDK スレッド vs GUI スレッド」の 1 組だけ。
+- そのコールバックは **`sdkMutex` を保持したまま**配達される
+  （`megaapi_impl.cpp:20809`, `:19904`, `:18046`）。この事実が R2-9 / R2-10 の根拠。
+
+#### 確認された問題
+
+**R2-1 [高] `currentJob()` の TOCTOU — 空 vector への `front()`（UB）**
+
+- 現物: `src/core/DownloadService.cpp:116-126` が 2 つの別々のロックとして公開されている。
+
+  ```cpp
+  bool DownloadService::hasCurrentJob() const   { std::lock_guard ...; return !mQueue.empty(); }
+  DownloadJob DownloadService::currentJob() const { std::lock_guard ...; return mQueue.front(); }
+  ```
+
+- 呼び出し側は GUI スレッドで 2 回に分けて呼ぶ（`src/qml/DownloadController.cpp:142-148`）:
+  `mHasActiveJob = mService->hasCurrentJob();` → `mActiveJob = mService->currentJob();`
+- その隙間で SDK スレッドが `DownloadService.cpp:209` の `mQueue.erase(mQueue.begin())` を実行し、
+  それが最後の 1 件だった場合、`currentJob()` は空 vector に `front()` を呼ぶ。**例外ではなく UB**。
+  `src/core/DownloadService.h:89` の `// precondition: hasCurrentJob()` は、スレッドを跨いだ時点で
+  構造的に満たしえない。
+- `UploadService.cpp:30-40` + `UploadController.cpp:285-287` がまったく同じ形。
+- 修正方針: `std::optional<Job>` を返す 1 回ロックの API に変え、`hasCurrentJob()` を削除。
+  波及は 2 service + 2 controller + 該当テストのみ。**このスコープで最も直しやすく、最も明確な UB**。
+
+**R2-2 [高] 同期エラーパスによる無制限再帰 — 既存コメント 2 箇所が事実に反する**
+
+- `src/core/DownloadService.h:117-120` は「`MockMegaClient` ベースのテストが同期に呼ぶので」
+  ロックを持たずに `download()` を呼ぶと書き、`src/core/UploadService.cpp:80-83` は
+  「Download 側の同等物はモック下でしか再帰しない」と明言する。**どちらも誤り**。
+- 現物: `src/mega/MegaSdkClient.cpp:515-521` — `resolveNode` 失敗時、リスナを作る前に
+  **呼び出し側スレッドで同期に** `onDone` を呼んで return する。`resolveNode` は
+  `getNodeByHandle` なので、ログアウト後・`fetchNodes` 前・他クライアントで削除されたハンドル、
+  いずれでも null になる。
+- 経路: `startNextIfIdle()`(`DownloadService.cpp:213`) → `download()` → 同期 `onDone` →
+  `:188` のラムダ → `:209` erase → `:213` `startNextIfIdle()` → …
+  **N 件キューして全部 resolve 失敗すると N 段のスタックフレーム**。積むのは「最初の完了を配達した
+  スレッド」＝通常 SDK スレッドで、こちらはスタックサイズを制御していない。
+  再現条件: 複数選択ダウンロード中にログアウト、または別クライアントでフォルダ削除。
+- 同じ形が `src/core/ThumbnailService.cpp:84`（`startNextIfCapacity` → `getThumbnail` →
+  `MegaSdkClient.cpp:570-576` の同期失敗 → `finishJob` → `:84`）。グリッド高速スクロールで
+  古いハンドルが大量にキューされた状態で起きうる。
+- `UploadService` だけは `UploadService.cpp:84` の `for(;;)` で **`checkUpload` の同期拒否パスのみ**
+  保護済み。`:165` の `onDone` 内 `startNextIfIdle()` は素の末尾再帰のままで、
+  `MegaSdkClient.cpp:546-553`（親フォルダ resolve 失敗）はそこを通る。
+- 根本原因は **`MegaSdkClient` が 3 通りの配達をしている**のに `IMegaClient.h:17` の契約が
+  1 通りしか書いていないこと:
+  1. 真に非同期（SDK スレッド）— リスナ 18 箇所
+  2. **常に同期・呼び出し側スレッド** — `getRootChildren`(:468) / `getChildren`(:477) /
+     `search`(:488) / `getPath`(:584) / `getNodeInfo`(:616)。`listChildren`(:892-905) が inline で `onDone`
+  3. **エラー時のみ同期・呼び出し側スレッド** — `resolveNode` 失敗の全 15 箇所
+     （`:497,518,549,573,591,621,644,657,667,682,691,709,718,742,899`）
+- モード 2 は `FolderNavigationService` が mutex を持たない根拠にもなっている
+  （`DownloadService.h:49-51` が明言）。つまり**別ファイルのスレッド安全性が `MegaSdkClient` の
+  実装詳細に依存しており、その根拠が当該ファイルに書かれていない**。
+- 修正方針: 3 サービスとも `for(;;)` ループ化で統一 + `IMegaClient.h` の契約を実態に書き直す
+  （「呼び出し側スレッドで同期に呼ばれることがある」）+ 上記の暗黙依存を当該ファイルへ移す。
+
+**R2-3 [高] シャットダウン時の use-after-free — `~MegaApi` が破棄済みサービスへコールバックする**
+
+- `main.cpp` の宣言順は `client`(:81) → 各サービス(:85-97) → コントローラ(:100-107) → `tabs`(:143)。
+  スタック変数は逆順に壊れるので、**`MegaSdkClient` が最後**。
+- SDK のデストラクタは保留中の全リクエストを**発火してから**終わる:
+
+  ```cpp
+  // third_party/sdk/src/megaapi_impl.cpp:7146
+  MegaApiImpl::~MegaApiImpl() {
+      auto shutdownRequest = ... TYPE_DELETE ...;
+      requestQueue.push(shutdownRequest.get());
+      waiter->notify();
+      thread.join();   // ← この間に SDK スレッドが abortPendingActions() を走らせる
+  ```
+
+  `abortPendingActions`（`:9669-9699`、既定 `preverror = API_EACCESS`）が
+  `fireOnRequestFinish` を全件回す。
+- 一方 `src/core` のサービスは**全て生 `this` を捕獲**し（`ThumbnailService.cpp:63`,
+  `DownloadService.cpp:173,188`, `UploadService.cpp:126,141`,
+  `AuthService.cpp:45,62,79,91,102`, `AccountService.cpp:46`）、`enable_shared_from_this` を
+  使うものはゼロ、**デストラクタも存在しない**（`src/core/*.h` の `~` はインタフェースの
+  `= default` のみ）。
+- したがって: ウィンドウを閉じる → `app.exec()` が返る → サービス群が壊れる → `~MegaSdkClient` →
+  `~MegaApi` → SDK スレッドが `abortPendingActions()` → `AttributeFileListener::onRequestFinish`
+  (`MegaSdkClient.cpp:155`) → `ThumbnailService::finishJob` が**破棄済み `std::mutex` を lock**。
+  メインスレッドは `thread.join()` でブロック中なので助けられない。
+  ダウンロード中の終了はさらに悪く、`DownloadService.cpp:188` の onDone が死んだオブジェクトで走り、
+  末尾で `startNextIfIdle()`(:213) まで呼ぶ。
+- 唯一の緩衝材: `QGuiApplication app` は `main.cpp:39` なので `client` より後に壊れ、`qApp` 宛の
+  queued イベントは「イベントループが無いので実行されない」だけで済む。
+  **だが外側のラムダが `this` を触る時点で既に手遅れ**。
+- 修正方針（推奨）: `MegaSdkClient` に明示的な `shutdown()`（`mApi.reset()`）を足し、
+  `app.exec()` の直後に `main.cpp` から呼ぶ。`client` は複数の shared_ptr に保持されているので
+  **宣言順の入れ替えでは直せない — 明示的な停止点を作るのが唯一の手**。
+
+**R2-4 [中・実行時到達可能] `ThumbnailController::mModel` が他オブジェクトの内部を指す**
+
+- `ThumbnailController.h:56` の `FileListModel* mModel` は
+  `navigation->fileListModelForThumbnails()`(`main.cpp:137`) ＝
+  `&FolderNavigationController::mFileListModel`（`FolderNavigationController.h:366` の**値メンバ**、
+  `.cpp:76-79` がそのアドレスを返す）。
+- `TabContext`（`TabsController.h`）は `navigation` と `thumbnails` を**独立した shared_ptr** で持ち、
+  逆順（thumbnails → navigation）に壊れる。
+- 再現シナリオ（シャットダウンではなく**通常操作**）: サムネイル取得中にタブを閉じる
+  （`TabsController.cpp:138` の `mTabs.erase`）。`thumbnails` は `ThumbnailController.cpp:49` の
+  `self = shared_from_this()` で生き残るが、`navigation` の参照カウントは 0 になり
+  `FolderNavigationController` ごと `mFileListModel` が消える。`ThumbnailController` 自身は
+  生きているので `removePostedEvents` は働かず、GUI スレッドのラムダが `.cpp:60` の
+  `mModel->setThumbnailPath(...)` を解放済みメモリに対して実行する。
+- **`enable_shared_from_this` は自分自身しか守らない**、という点が既存コメント
+  （`ThumbnailController.h:23-30`）から抜けている。
+- 修正方針: `FileListModel` を値メンバから `std::shared_ptr` にして `ThumbnailController` が
+  共有所有する（**R5 の `FolderNavigationController` 解体と方向が一致する**）。
+  応急なら `ThumbnailController` に `navigation` の shared_ptr を持たせるだけでも塞がる。
+
+**R2-5 [中] `self` が SDK スレッドで最後の参照を落とすと QObject が異スレッドで破棄される**
+
+- 外側ラムダは SDK リスナが所有し、リスナは SDK スレッドで `delete this` する
+  （`MegaSdkClient.cpp:91,137,167,195,235,338,380`）。その時点でクロージャが壊れて `self` が解放される。
+- タブが既に閉じられていれば `self` が**最後の参照**となり、`~FolderNavigationController` が
+  **MEGA SDK スレッドで走る**。このオブジェクトは GUI スレッド affinity の
+  `QTimer mBusyDelayTimer`（`FolderNavigationController.h:383`）を値で持つので、`~QTimer` が
+  「Timers cannot be stopped from another thread」経路に入りタイマ ID を漏らし、
+  `removePostedEvents(this)` が GUI スレッドのキュー処理と競合する。
+- `ThumbnailController` も同型（タイマが無いぶん軽症）。既存コメント群はこの向きに一切触れていない。
+- R2-3 を直せば「SDK スレッドが動くのは全オーナー生存中だけ」が保証されるので窓は狭まるが、
+  タブを閉じた直後の in-flight は残る。
+
+**R2-6 [中] `invokeOnGuiThread` が 8 コピー・2 セマンティクス**（種は「4 箇所」と書いていた）
+
+| 変種 | ターゲット | 定義箇所 |
+| --- | --- | --- |
+| A | `qApp` | `AuthController.cpp:29`, `DownloadController.cpp:24`, `UploadController.cpp:21`, `FolderTreeModel.cpp:20`, `QuickAccessModel.cpp:17` |
+| B | 引数 `target`（全呼び出しで `this`） | `FolderNavigationController.cpp:40`, `ThumbnailController.cpp:22`, `AccountController.cpp:19` |
+
+- 差の意味は `FolderNavigationController.cpp:31-39` のコメントが正確に説明している
+  （`~QObject` の `removePostedEvents(this)` が B のイベントだけを落とす）。**種の指摘どおり差は意味を持つ**。
+- 問題は**分類の根拠が「アプリ寿命かどうか」という散文にしかない**こと: `AccountController` は
+  アプリ寿命なのに B、`FolderTreeModel`/`QuickAccessModel` はアプリ寿命で A。コメントが互いを
+  相互参照する連鎖（`AccountController.cpp:16-18` → Thumbnail/FolderNav、
+  `FolderTreeModel.cpp:15-19` → Download）になっており、規則ではなく慣習。
+- **B は A の上位互換**（アプリ寿命のオブジェクトが `this` を渡しても損は無い）なので、
+  統一先は B 一本でよい。header-only の `src/qml/GuiThread.h` に 1 つ置いて 8 コピーを消す。
+- なお `src/qml` の他の跨スレッド手段は**ゼロ**: `QTimer::singleShot` 0 件、
+  `Qt::QueuedConnection` の `connect` 0 件、非 GUI スレッドからの `emit` 0 件、`moveToThread` 0 件。
+
+**R2-7 [中] コントローラがサービスへ登録した生 `this` コールバックを解除しない**
+
+- `DownloadController.cpp:36/41`, `UploadController.cpp:35/40` は `setOnProgress`/`setOnJobFinished`
+  に `[this]` を永続登録するが、**どのコントローラにもデストラクタが無い**
+  （`src/qml` の `~` は `FolderTreeModel`/`QuickAccessModel` の `= default` のみ）。
+- サービス（`main.cpp:85-86`）はコントローラ（`:104-105`）より先に宣言＝後に破棄されるので、
+  R2-3 の窓でこの `std::function` が呼ばれうる。`DownloadService.cpp:183/208` は observer を
+  ロック下でコピーしロック外で呼ぶ設計なので、コピーされた `std::function` がぶら下がった
+  `this` を保持したまま起動する。
+- 今日は外側ラムダ本体が `this` を実際には触らない（`invokeOnGuiThread` へ転送するだけ）ので
+  辛うじて生きているが、`UploadController.cpp:42` の `--mBatch.pendingJobs;` は内側ラムダにあり、
+  イベント処理が 1 回でも走れば死んだオブジェクトを触る。**デストラクタ 1 つで塞げる。**
+
+**R2-8 [中・設計] `mQueue.front()` の「先頭だけが in-flight」前提**
+
+- コールバック側のガードは全て `if (mQueue.empty()) return;`（`DownloadService.cpp:179,194`,
+  `UploadService.cpp:132,147`）で、**空かどうかしか見ておらず同一性を見ていない**。
+  `job.id` はコールバックに渡っていない。
+- 今日成立しているのは 3 つの偶然による:
+  1. `startNextIfIdle` が `state = Active` を**ロック下で**立てる（`DownloadService.cpp:163-165`）
+     ので、同時 `enqueue()` による二重開始は起きない（**ここは問題なし**）。
+  2. キュー先頭を消せる API が存在しない（`cancel(jobId)` は `DownloadService.h:82` に
+     「将来やる」と書かれているだけ）。
+  3. SDK が 1 転送につき `onTransferUpdate` → `onTransferFinish` の順を保証する。
+- `cancel(jobId)` を実装した瞬間に、古い `onProgress` が**別のジョブ**の
+  `transferredBytes`/`state`/`errorMessage` を書き潰し、`:209` の `erase(begin())` が
+  無関係なジョブを消す。上の §1 が書いている `std::optional<Job> mActive` ＋待ち行列分離が
+  正しい方向で、加えて**コールバックに job.id を持たせる**必要がある。
+  R5 のサービス整理とまとめたほうが安い。
+- `ThumbnailService` はこの種のバグに**構造的に免疫**（`deque<handle>` をロック下で pop し、
+  ジョブはハンドルで引く、`finishJob` もハンドル keyed）。良い側の実例。
+
+#### 種が不正確だった / 判断が要るもの
+
+**R2-9 [中・設計・R2 では直せない] 同期例外 7 個は「安全だが GUI をブロックする」**
+
+- **種が心配していた「GUI スレッドが読む間に SDK スレッドがノードツリーを書き換える」データ競合は
+  存在しない。** 7 つの同期例外は全て SDK 内部で `sdkMutex` を取ることを確認した:
+
+  | # | `IMegaClient.h` | SDK 側のロック根拠（`megaapi_impl.cpp`） |
+  | --- | --- | --- |
+  | 1 | `currentSessionToken` | `:7906` |
+  | 2 | `currentUserHandle` | `:7228-7231` |
+  | 3 | `checkMove` | `:19572`, `:10924`, `:18737` |
+  | 4 | `checkUpload` | `:19572`, `:12606` |
+  | 5 | `findChildFiles` | `:19417` |
+  | 6 | `hasSubfolders` | `:19210` |
+  | 7 | `currentAccountIdentity` | `:7196`（`mLastRecievedLoggedMeMutex`）, `:7230` |
+
+  （`getChildren` `:19275` / `search` `:13268` も同様。返る `MegaNode` は
+  `MegaNodePrivate::fromNode` によるスナップショットコピーなので、ロック解放後も有効。）
+- **実在するのは競合ではなく待ち時間**。`sdkMutex` は `mutable std::recursive_timed_mutex`
+  （`megaapi_impl.h:5307`）で、SDK ループは `megaapi_impl.cpp:8147` の
+  `SdkMutexGuard g(sdkMutex); client->exec();` として長時間保持する。`IMegaClient.h:63-71` が
+  自分で記録している 640k ノードの `fetchNodes` ≒ 218 秒の decrypt は**この `exec()` の中**。
+  その間にドラッグホバーの `checkMove`（`IMegaClient.h:265-267` が「連続的に問い合わせられる」と明記）や
+  `hasSubfolders`（`:316-319`）が来れば GUI がその分固まる。
+- クラッシュではなくハングのクラスで、**インタフェースの設計そのもの**（「その場で答える」が定義）
+  なので R2 の修正対象にはならない。`docs/ARCHITECTURE.md` に記録し、R5 の入力にする。
+- ついでに確認できた良い性質: 再入は安全（`ThumbnailService::finishJob` → `startNextIfCapacity` →
+  `getThumbnail` → `getNodeByHandle` が同一スレッドで `sdkMutex` を再取得する）。ただし
+  **`recursive_timed_mutex` であることに依存している** — SDK の実装詳細への依存として記録。
+
+**R2-10 [中・不文律] `Qt::BlockingQueuedConnection` は 1 つでも入れたら恒久デッドロック**
+
+- コールバックは `sdkMutex` を保持したまま配達され（`megaapi_impl.cpp:20809`, `:19904`, `:18046`）、
+  GUI スレッドは R2-9 の同期メソッドで同じ `sdkMutex` を取る。
+- したがって将来どこかのコールバック経路に `Qt::BlockingQueuedConnection` を入れると、
+  SDK スレッドが `sdkMutex` を持って GUI を待ち、GUI は `checkMove` の中で `sdkMutex` を待つ。
+- 現状は全箇所 `Qt::QueuedConnection` なので安全だが、**この不文律はどこにも書かれていない**。
+
+**R2-11 [低] 誤っているコメント 4 件**
+
+- `DownloadService.h:117-120` / `UploadService.cpp:80-83` — 「モック下でしか再帰しない」＝**嘘**（R2-2）。
+- `MegaSdkClient.cpp:338,380` — 「`delete this;` も `mCancelToken` を壊す。SDK がここまで生存を要求する」。
+  SDK は要求していない: `convertToCancelToken`（`megaapi_impl.h:1467`）が値でコピーし、
+  `CancelToken` 自体が `shared_ptr<bool>` を持つ共有ハンドル（`mega/types.h:1223-1227`）。
+  害は無い（過剰保持）が、リスナの状態を削る改修を妨げる。なお `cancel()` は `src/` のどこからも
+  呼ばれておらず、現状は純粋なオーバーヘッド（= `cancel(jobId)` 実装時のフック）。
+- `MegaSdkClient.h:147-149` — 「`mApi` より前に宣言＝先に構築されるので、`mApi` が何かログを出す前に
+  ロガーが登録される」。前半（後に破棄される）は正しく load-bearing だが、後半は**誤り**:
+  登録はコンストラクタの**本体**（`MegaSdkClient.cpp:398`）で、`mApi` のメンバ初期化＝
+  `MegaApiImpl::init` は既に終わっており、`init` は最後に SDK スレッドを起動する
+  （`megaapi_impl.cpp:7140-7143`）。その間のログ行は落ちる（実害は起動時ログのみ）。
+- `main.cpp:98-103` — 宣言順による寿命保証。通常経路では正しいが、**shared_ptr で延命された
+  コントローラ**（R2-5）は `clipboard`/`notifications` より長生きしうるので、そのケースを覆っていない。
+
+#### 問題なしと確認できた種
+
+**R2-12 リスナのリークは無い — 種の「リクエストが発行されず listener が漏れる経路」は空振り**
+
+- アプリ側: 18 箇所すべて `new` は `mApi->…` 呼び出しの引数位置にあり、早期 return は全て `new` より前
+  （`MegaSdkClient.cpp:497,518,549,573,591,621,644,657,667,682,691,709,718,742,899`）。
+  「確保してから bail」という形はどこにも無い。
+- SDK 側: `startDownload`(`megaapi_impl.cpp:10416`) / `startUpload`(`:10365`) / `getUserAttr`(`:9425`)
+  に早期 return が無く、必ずキューに積まれる。
+- 所有権契約: SDK はリスナを**削除しない**（`:18032`, `:18192` は request/transfer だけを delete、
+  `delete listener` は 0 ヒット）。よって `delete this` の作法は正しい。
+  エラー・中断時も `onRequestFinish` は必ず発火する（`:20830`, `:9692`）ので取りこぼしも無い。
+- **落とし穴として記録すべき点**: `removeRequestListener`（`:17895-17903`）は `setListener(NULL)` する。
+  つまり「終了処理が無い」と言って後からこれを呼ぶと**確実にリークする**。
+  呼んでいないのが正解、という理由が今どこにも書かれていない（R2-3 の修正時に併記する）。
+
+**R2-13 `std::function` observer の扱いは正しい**
+
+- 全てロック下でコピー/move してからロック外で呼ぶ（`DownloadService.cpp:183-186`,
+  `UploadService.cpp:136,160`, `ThumbnailService.cpp:76,82`）。呼び出し中の再代入で壊れる穴は無い。
+
+**R2-14 `shared_from_this()` は正しく捕獲パスに入っている**
+
+- `FolderNavigationController` の非同期 17 箇所すべてと `ThumbnailController.cpp:49` で、
+  外側ラムダの**キャプチャリスト内**で評価されている（構築時や登録時だけ、ではない）。
+- 全インスタンスが `make_shared` 生成（`main.cpp:134,136`,
+  `tests/FolderNavigationControllerTest.cpp:78`）なので `bad_weak_ptr` 経路は現時点で存在しない。
+  ただし**コンストラクタが public のまま**なので不変条件は強制されていない（`static create()` 化は R5 で）。
+- リポジトリ全体で `weak_ptr` は**ゼロ**。この設計には weak-lock のイディオムが無い、という事実。
+
+**R2-15 QObject の生成スレッド / `moveToThread` / タイマの start・stop スレッドは全て正常**
+
+- `src/qml` に `new <QObject>` は 1 つも無く、`moveToThread` はリポジトリ全体でゼロ。
+- `mBusyDelayTimer`（`FolderNavigationController.h:383`）と `mStallTimer`（`AuthController.h:155`）の
+  `start()`/`stop()` は全て GUI スレッド経路。「非 GUI スレッドから start して黙って発火しない」は無い。
+- 唯一の affinity 違反は R2-5 の**破棄**。
+
+**R2-16 SDK ロガーブリッジは両側でスレッド安全**
+
+- SDK 側は `third_party/sdk/src/logging.cpp:92-102,130-150` の `recursive_mutex` で登録と配達を保護。
+- アプリ側は `src/app/Logging.cpp:111-140` の `QMutexLocker`。`logFile()` は関数ローカル static で
+  そのミューテックス下でしか触られない。
+- 破棄順も正しい（`removeLoggerObject` が `~MegaSdkClient` の**本体** = `mApi` 破棄より前、
+  `MegaSdkClient.cpp:403`）。代償として SDK の終了時ログは失われる（意図的かは不明、1 行コメント推奨）。
+
+**R2-17 非所有生ポインタの宣言順保証は（R2-5 のケースを除き）成立**
+
+- `NotificationController`(`main.cpp:100`) / `ClipboardController`(`:103`) は、それを持つ
+  コントローラより前に宣言されている。通常の破棄経路では正しい。
+- `src/qml` の非所有ポインタ全リスト: `DownloadController.h:77`, `UploadController.h:167`,
+  `FolderNavigationController.h:364,365`, `ThumbnailController.h:56,57`, `TabsController.h:150`,
+  `FolderTreeModel.cpp:136`（世代ガード付きで正しい）。
+  **他オブジェクトの内部を指しているのは `ThumbnailController.h:56` だけ**（= R2-4）。
+
+**R2-18 `std::atomic` が無いのは現状問題ない**
+
+- `mHasActiveJob`/`mActiveJob`（`DownloadController.h:78-79`）、`mLoadGeneration`
+  （`AuthController.h:148`）はいずれも GUI スレッドでしか読み書きしていない。
+
+#### 新規発見
+
+**R2-19 [検証の穴・修正の前提] テストが全てシングルスレッドで、R2 の修正を検証できない**
+
+- `tests/MockMegaClient.h` は純 gmock で、全テストが `InvokeArgument<N>` により**テスト自身の
+  スレッドで同期に**コールバックを呼ぶ（`tests/DownloadServiceTest.cpp:73,104,126,152-155`,
+  `ThumbnailServiceTest.cpp:13,37,88,125` ほか）。
+- `grep "std::thread\|QThread\|std::atomic\|std::async"` は `src/` `tests/` ともに**ゼロヒット**。
+- 帰結:
+  - mutex は CI で一度も競合せず、**ロックを消す変更もテストを通ってしまう**。
+  - 同期再入（R2-2）は 1 段だけテストされており、多段再帰は見えない。
+  - R2-1 の TOCTOU はシングルスレッドでは**到達不能＝現行の枠組みでは検証不可**。
+- ただし**多段再帰（R2-2）だけは単一スレッドのまま再現できる**（「同期失敗を N 件返すモック」で足りる。
+  再帰はスレッドと無関係）。TOCTOU とシャットダウン UAF は設計上の証明＋手動確認か、
+  `MockMegaClient` へのワーカスレッド配達モード追加（R4 の領分）かの二択。
+
+**R2-20 [低] `MegaCancelToken` を作っているが `cancel()` はどこからも呼ばれていない**
+
+- `MegaSdkClient.cpp:523,555` で生成しリスナに持たせているが、`src/` 全体で `cancel()` の
+  呼び出しはゼロ。現状は純粋なオーバーヘッドであり、同時に「転送キャンセル」を実装するときの
+  既製フックでもある（R2-8 の `cancel(jobId)` と同じ話）。
+
+**R2-21 [低] `QuickAccessService::pins()` がメンバ vector への参照を返す**
+
+- 現状シングルスレッド・同期呼び出しなので実害なし。R2-2 のモード 2 依存と同じ「同期だから安全」
+  の系列にあることだけ記録する。
+
+**R2-22 [低] `currentAccountIdentity` は 2 つの別ロックの合成**
+
+- `MegaSdkClient.cpp:835-859` は `getMyEmail`（`mLastRecievedLoggedMeMutex` 下）と
+  `getMyUserHandleBinary`（`sdkMutex` 下）を続けて読む。理論上、間にログアウトが入ると
+  email 非 null ＋ handle `INVALID` の裂けた値を返しうる（`:839` の `if (!email)` ガードは通過する）。
+- 実害のある呼び出し側は見つからなかった。`AccountIdentity` を単位として検証するかは R5 で判断。
+
+#### 推奨実施順（各項目 1 セッション）
+
+```
+R2-1  currentJob() の optional 化            … 単独・小・UB を確実に消す
+R2-7  コントローラのデストラクタで observer 解除 … 単独・極小
+R2-6  invokeOnGuiThread を B に統一（8→1）    … 単独・機械的
+R2-2  再帰のループ化 + IMegaClient 契約の書き直し … R2-19 の「同期失敗 N 件モック」とセット
+R2-3  MegaSdkClient::shutdown() の導入        … 寿命系の根。R2-5 の窓もここで狭まる
+R2-4  FileListModel の shared_ptr 化          … R5 の解体と方向一致。R5 に送る選択肢もあり
+R2-9/R2-10/R2-11  docs/ARCHITECTURE.md への記録とコメント是正 … 締め
+R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理に合流させるのが安い
+```
+
+#### 成果物
+
+- `docs/ARCHITECTURE.md` に「スレッドモデル」節を 1 つ。内容は上の「前提」+ R2-9（`sdkMutex` が
+  GUI をブロックしうること）+ R2-10（`BlockingQueuedConnection` 禁止）+ R2-12（`removeRequestListener`
+  を呼んではいけない理由）。R1 が同ファイルに足した「サーバ由来文字列の信頼境界」と並ぶ形にする。
+
 ### R3 — 未着手
 ### R4 — 未着手
 ### R5 — 未着手
@@ -537,3 +892,12 @@ R7 ドキュメント/コメント整理
   実行可能なツリーにならない。R1-2 はライセンスファイルの同梱だけを閉じ、デプロイ整備はここに残す。
   なお `CMakePresets.json` には `msvc-debug` しかなく、**Release プリセットも無い**ので、着手時は
   そこからになる。（R1 調査中に発見、Release の件は R1-2 実施時に追記）
+- **[R4] テストが全てシングルスレッドで、スレッド起因の欠陥を構造的に検出できない** —
+  `tests/MockMegaClient.h` は純 gmock で、全テストが `InvokeArgument<N>` によりテスト自身のスレッドで
+  同期にコールバックを呼ぶ。`std::thread`/`QThread`/`std::atomic` は `src/` `tests/` ともにゼロヒット。
+  mutex は CI で一度も競合せず、**ロックを消す変更もテストを通ってしまう**。R4 で
+  「ワーカスレッドから完了を配達するモックモード」と ASan 構成を検討する。詳細は R2-19。（R2 調査中に発見）
+- **[R5] `FolderNavigationService` / `QuickAccessService` が mutex 無しで安全な根拠が別ファイルにある** —
+  根拠（`MegaSdkClient` の `getChildren`/`getNodeInfo` が同期であること）は
+  `src/core/DownloadService.h:49-51` に書かれており、当の 2 ファイルには何も無い。R2-2 の契約書き直しで
+  一部は移すが、サービス整理そのものは R5。（R2 調査中に発見）
