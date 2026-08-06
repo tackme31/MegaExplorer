@@ -3,6 +3,7 @@
 #include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
 #include "qml/ClipboardController.h"
+#include "qml/GuiThread.h"
 #include "qml/NotificationController.h"
 #include "TestApp.h"
 
@@ -75,7 +76,8 @@ protected:
         fileOps = std::make_shared<FileOperationService>(client);
         notifications = std::make_unique<NotificationController>();
         clipboard = std::make_unique<ClipboardController>();
-        controller = std::make_shared<FolderNavigationController>(
+        // makeGuiOwned like main.cpp -- see TabsControllerTest's note.
+        controller = makeGuiOwned<FolderNavigationController>(
             navigationService, searchService, fileOps, notifications.get(), clipboard.get());
 
         QObject::connect(notifications.get(),
@@ -1062,7 +1064,8 @@ TEST_F(FolderNavigationControllerTest, CopyEntriesToRefusesTheWholeDropWhenTheTa
     EXPECT_EQ(lastErrorContext, QStringLiteral("copy"));
 }
 
-TEST_F(FolderNavigationControllerTest, CopyEntriesToReportsAnErrorWithoutReadingWhenTheTargetRefuses)
+TEST_F(FolderNavigationControllerTest,
+       CopyEntriesToReportsAnErrorWithoutReadingWhenTheTargetRefuses)
 {
     givenRootListing({});
     controller->loadRoot();
@@ -1088,8 +1091,7 @@ TEST_F(FolderNavigationControllerTest, CopyEntriesToEmitsNodesCopiedForTheDropTa
 
     EXPECT_CALL(*client, getChildren(7u, _, _))
         .WillOnce(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok({})));
-    EXPECT_CALL(*client, copyNode(_, _, _, _, _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
     quint64 destination = 0;
     bool destinationIsRoot = true;
@@ -1117,8 +1119,7 @@ TEST_F(FolderNavigationControllerTest, CopyEntriesToDoesNotRefetchAListingItDidN
 
     EXPECT_CALL(*client, getChildren(7u, _, _))
         .WillOnce(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok({})));
-    EXPECT_CALL(*client, copyNode(_, _, _, _, _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
     const int fetchesBefore = rootFetches;
 
     controller->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);

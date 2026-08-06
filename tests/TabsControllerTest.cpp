@@ -6,6 +6,7 @@
 #include "MockMegaClient.h"
 #include "qml/ClipboardController.h"
 #include "qml/FolderNavigationController.h"
+#include "qml/GuiThread.h"
 #include "qml/NotificationController.h"
 #include "qml/ThumbnailController.h"
 #include "qml/UploadController.h"
@@ -48,10 +49,13 @@ protected:
         auto navigationService = std::make_shared<FolderNavigationService>(client);
         auto searchService = std::make_shared<SearchService>(client, navigationService);
         auto fileOperationService = std::make_shared<FileOperationService>(client);
-        auto navigation = std::make_shared<FolderNavigationController>(
+        // makeGuiOwned like main.cpp: these tests are single-threaded so it
+        // always takes the plain-delete branch, but the wiring stays the same
+        // shape as production.
+        auto navigation = makeGuiOwned<FolderNavigationController>(
             navigationService, searchService, fileOperationService, &notifications, &clipboard);
         auto thumbnailService = std::make_shared<ThumbnailService>(client);
-        auto thumbnails = std::make_shared<ThumbnailController>(
+        auto thumbnails = makeGuiOwned<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
         return TabContext{std::move(navigationService),
                           std::move(searchService),

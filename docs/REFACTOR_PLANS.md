@@ -513,7 +513,7 @@ R7 ドキュメント/コメント整理
   → **R1-1 / R1-7 ぶんは記述済み**（`## Trust boundary: strings that come from the server`）。
   R1-3 のログ出口と寿命は R1-3 実施時にこの節へ追記する。
 
-### R2 — 調査済み / R2-1・R2-2・R2-3・R2-6・R2-7 修正済み（2026-08-06）
+### R2 — 調査済み / R2-1・R2-2・R2-3・R2-5・R2-6・R2-7 修正済み（2026-08-06）
 
 計画の「種」5 件を現物 + **ベンダーされた MEGA SDK 本体**（`third_party/sdk`）で検証した結果。
 **確認 3 件 / 種の誤り 1 件（重要）/ 問題なし 6 件 / 新規 4 件**。R1 と同じく、以下はそのまま
@@ -776,10 +776,13 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   共有所有する（**R5 の `FolderNavigationController` 解体と方向が一致する**）。
   応急なら `ThumbnailController` に `navigation` の shared_ptr を持たせるだけでも塞がる。
 
-**R2-5 [中] `self` が SDK スレッドで最後の参照を落とすと QObject が異スレッドで破棄される**
+**R2-5 [中] `self` が SDK スレッドで最後の参照を落とすと QObject が異スレッドで破棄される** —
+**修正済み（2026-08-06）**
 
 - 外側ラムダは SDK リスナが所有し、リスナは SDK スレッドで `delete this` する
-  （`MegaSdkClient.cpp:91,137,167,195,235,338,380`）。その時点でクロージャが壊れて `self` が解放される。
+  （`MegaSdkClient.cpp:108,154,184,212,252,355,397` ＝ 7 クラスすべて、コールバックを呼んだ**後**に
+  自分を消す。種が挙げていた `:91,137,167,195,235,338,380` はコンストラクタ行で、`delete this` の
+  位置ではない）。その時点でクロージャが壊れて `self` が解放される。
 - タブが既に閉じられていれば `self` が**最後の参照**となり、`~FolderNavigationController` が
   **MEGA SDK スレッドで走る**。このオブジェクトは GUI スレッド affinity の
   `QTimer mBusyDelayTimer`（`FolderNavigationController.h:383`）を値で持つので、`~QTimer` が
@@ -788,6 +791,35 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 - `ThumbnailController` も同型（タイマが無いぶん軽症）。既存コメント群はこの向きに一切触れていない。
 - R2-3 を直せば「SDK スレッドが動くのは全オーナー生存中だけ」が保証されるので窓は狭まるが、
   タブを閉じた直後の in-flight は残る。
+
+**修正結果**:
+
+- `src/qml/GuiThread.h` に `makeGuiOwned<T>(args…)` を足した（`invokeOnGuiThread` の直下、
+  同じ header-only 様式）。`std::shared_ptr<T>(new T(…), deleter)` で、デリータは
+  **`object->thread() == QThread::currentThread()` なら素の `delete`、そうでなければ
+  `deleteLater()`**。生成箇所を `make_shared` から差し替えたのは 3 ファイル 5 箇所
+  （`main.cpp` の `tabFactory` 2 つ、`tests/TabsControllerTest.cpp` 2 つ、
+  `tests/FolderNavigationControllerTest.cpp` 1 つ）。`TabContext`/`TabsController` は無変更 —
+  デリータは `std::shared_ptr<T>` の型に出ない。
+- **同スレッド分岐を素の `delete` にしたのが設計の要**。通常経路（GUI スレッドでタブを閉じる）は
+  今日とビット単位で同じ挙動になり、R2-6 が確立した「未処理のキュー済みコールバックは
+  `~QObject` の `removePostedEvents` で捨てる」意味論が保たれる。
+- **採らなかった案**: 18 箇所の内側ラムダにも `self` を持たせて所有権ごと GUI スレッドの
+  イベントへ渡す方式。破棄スレッドは同じく直るが、オブジェクトが必ず生き残るので
+  `removePostedEvents` が効かなくなり、**閉じたタブのコールバックが必ず走る**
+  （閉じたタブのエラートーストが出る等の挙動変化）。編集箇所も 18 と多い。
+- **受け入れた残余**: `client->shutdown()`（`app.exec()` の後）の最中に SDK スレッドが最後の参照を
+  落とすと、DeferredDelete を配達するイベントループがもう無く、そのコントローラは破棄されずに
+  プロセスが終わる。**クラッシュが終了時リークに変わるだけ**。
+  `sendPostedEvents(nullptr, QEvent::DeferredDelete)` で流せるが QML エンジン内部の
+  `deleteLater` まで巻き込むので入れていない。判断は `GuiThread.h` のコメントに残した。
+- ゾンビ期間（デリータが走ってから DeferredDelete が処理されるまで）にキュー済みコールバックが
+  走りうるが、**安全であることを確認済み**: オブジェクトは完全に生きており、
+  `TabsController::emitRowChangedFor` は `mTabs` を線形探索して見つからなければ何もしない
+  （`TabsController.cpp:282-`）、`nodesMoved`/`nodesCopied` のファンアウトも残ったタブへの
+  `refreshIfShowing` で無害。
+- 既存 373 テスト全通過、`/W4` 新規警告ゼロ（残る 51 件は Qt ヘッダ内の C4702 で既存）。
+  **自動テストによる検証は無い** — R2-19 のとおりテストにはそもそも SDK スレッドが存在しない。
 
 **R2-6 [中] `invokeOnGuiThread` が 8 コピー・2 セマンティクス**（種は「4 箇所」と書いていた）—
 **修正済み（2026-08-06）**
@@ -824,7 +856,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 - **統一しても覆えない窓が残る**ことを `GuiThread.h` のコメントに明記した:
   「SDK スレッドが外側ラムダに入ってから、この関数がイベントを投函するまで」。タブ単位の
   コントローラは外側ラムダの `shared_from_this()`、アプリ寿命のクラスは R2-3 の
-  `MegaSdkClient::shutdown()` 停止点が覆っている。**R2-5 はこれでは塞がらない**。
+  `MegaSdkClient::shutdown()` 停止点が覆っている。**R2-5 はこれでは塞がらない**
+  （→ 同じヘッダに足した `makeGuiOwned` が別途覆った。R2-5 の修正結果を参照）。
 - コメントの相互参照連鎖（`AccountController` → Thumbnail/FolderNav、`FolderTreeModel` → Download）は
   定義ごと消滅。これで嘘になる 4 件（`ThumbnailController.h` / `FolderTreeModel.h` /
   `QuickAccessModel.h` の「qApp を狙う」記述、`tests/TestApp.h` と `tests/FolderTreeModelTest.cpp` の
@@ -965,6 +998,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   外側ラムダの**キャプチャリスト内**で評価されている（構築時や登録時だけ、ではない）。
 - 全インスタンスが `make_shared` 生成（`main.cpp:134,136`,
   `tests/FolderNavigationControllerTest.cpp:78`）なので `bad_weak_ptr` 経路は現時点で存在しない。
+  → **R2-5 で `makeGuiOwned`（`shared_ptr<T>(new T(…), deleter)`）に変わった**ので「`make_shared`」は
+  文字どおりには偽になったが、`shared_ptr` に所有されている点は同じで結論は変わらない。
   ただし**コンストラクタが public のまま**なので不変条件は強制されていない（`static create()` 化は R5 で）。
 - リポジトリ全体で `weak_ptr` は**ゼロ**。この設計には weak-lock のイディオムが無い、という事実。
 
@@ -1041,6 +1076,7 @@ R2-7  コントローラのデストラクタで observer 解除 … 単独・�
 R2-6  invokeOnGuiThread を B に統一（8→1）    … 単独・機械的                  [済 2026-08-06]
 R2-2  再帰のループ化 + IMegaClient 契約の書き直し … R2-19 の「同期失敗 N 件モック」とセット [済 2026-08-06]
 R2-3  MegaSdkClient::shutdown() の導入        … 寿命系の根。R2-5 の窓もここで狭まる [済 2026-08-06]
+R2-5  makeGuiOwned で破棄を GUI スレッドへ    … 元の一覧に無かった。R2-4 の前に置くと安全 [済 2026-08-06]
 R2-4  FileListModel の shared_ptr 化          … R5 の解体と方向一致。R5 に送る選択肢もあり
 R2-9/R2-10/R2-11  docs/ARCHITECTURE.md への記録とコメント是正 … 締め
 R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理に合流させるのが安い

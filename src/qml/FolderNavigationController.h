@@ -27,6 +27,13 @@ class NotificationController;
 // for the full rationale -- Phase 9 introduced per-tab instances of this
 // controller, so it's no longer guaranteed to outlive every in-flight
 // callback the way a single app-lifetime instance was).
+//
+// Staying alive is only half of it: that shared_from_this() copy lives in a
+// closure the SDK's listener destroys on the SDK thread, so it can be the
+// last reference and would run ~QTimer (mBusyDelayTimer below) there.
+// Instances are therefore created through GuiThread.h's makeGuiOwned, which
+// sends the destruction back to the GUI thread -- see REFACTOR_PLANS.md's
+// R2-5.
 
 // QML-facing GUI glue wrapping FolderNavigationService + SearchService +
 // FileListModel. QML can't pass C++ callbacks, so the Q_INVOKABLE entry

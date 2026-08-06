@@ -25,7 +25,9 @@ class NotificationController;
 // now be closed while a requestThumbnail() fetch is still in flight, the
 // async callback below captures a shared_from_this() copy to stay alive
 // until it runs; the queued invoke that follows is what covers the rest of
-// the window (see GuiThread.h).
+// the window (see GuiThread.h). And because that copy is destroyed on the
+// SDK thread, instances are created through GuiThread.h's makeGuiOwned so
+// the destructor still runs on the GUI thread (REFACTOR_PLANS.md's R2-5).
 class ThumbnailController : public QObject, public std::enable_shared_from_this<ThumbnailController>
 {
     Q_OBJECT

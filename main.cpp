@@ -18,6 +18,7 @@
 #include "qml/DownloadController.h"
 #include "qml/FolderNavigationController.h"
 #include "qml/FolderTreeModel.h"
+#include "qml/GuiThread.h"
 #include "qml/NotificationController.h"
 #include "qml/QuickAccessModel.h"
 #include "qml/TabsController.h"
@@ -131,9 +132,12 @@ int main(int argc, char* argv[])
         -> TabContext {
         auto navigationService = std::make_shared<FolderNavigationService>(client);
         auto searchService = std::make_shared<SearchService>(client, navigationService);
-        auto navigation = std::make_shared<FolderNavigationController>(
+        // makeGuiOwned, not make_shared: an in-flight callback can drop the
+        // last reference to either of these from the SDK thread once the tab
+        // is closed, and both are QObjects (GuiThread.h explains the rest).
+        auto navigation = makeGuiOwned<FolderNavigationController>(
             navigationService, searchService, fileOperationService, &notifications, &clipboard);
-        auto thumbnails = std::make_shared<ThumbnailController>(
+        auto thumbnails = makeGuiOwned<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
         return TabContext{std::move(navigationService),
                           std::move(searchService),
