@@ -9,19 +9,22 @@ QuickAccessService::QuickAccessService(std::shared_ptr<IMegaClient> client,
     : mClient(std::move(client)), mStore(std::move(store))
 {}
 
-void QuickAccessService::load()
+Result<void> QuickAccessService::load()
 {
     Result<std::uint64_t> handle = mClient->currentUserHandle();
     if (!handle.success)
     {
         mAccountKey.clear();
         mPins.clear();
-        return;
+        return Result<void>::fail(std::move(handle.errorMessage), handle.errorCode);
     }
 
     mAccountKey = std::to_string(handle.value);
     Result<std::vector<PinnedFolder>> stored = mStore->load(mAccountKey);
     mPins = stored.success ? std::move(stored.value) : std::vector<PinnedFolder>();
+    if (!stored.success)
+        return Result<void>::fail(std::move(stored.errorMessage), stored.errorCode);
+    return Result<void>::ok();
 }
 
 const std::vector<PinnedFolder>& QuickAccessService::pins() const
@@ -40,8 +43,7 @@ bool QuickAccessService::pin(const PinnedFolder& folder)
         return false;
 
     mPins.push_back(folder);
-    if (!mAccountKey.empty())
-        mStore->save(mAccountKey, mPins);
+    persist();
     return true;
 }
 
@@ -52,8 +54,7 @@ bool QuickAccessService::unpin(std::uint64_t handle)
         return false;
 
     mPins.erase(existing);
-    if (!mAccountKey.empty())
-        mStore->save(mAccountKey, mPins);
+    persist();
     return true;
 }
 
@@ -72,16 +73,14 @@ bool QuickAccessService::move(std::size_t from, std::size_t to)
     else
         std::rotate(at(to), at(from), at(from + 1));
 
-    if (!mAccountKey.empty())
-        mStore->save(mAccountKey, mPins);
+    persist();
     return true;
 }
 
 void QuickAccessService::replaceAll(std::vector<PinnedFolder> pins)
 {
     mPins = std::move(pins);
-    if (!mAccountKey.empty())
-        mStore->save(mAccountKey, mPins);
+    persist();
 }
 
 void QuickAccessService::clear()
@@ -99,6 +98,23 @@ void QuickAccessService::resolveFolder(std::uint64_t handle,
 bool QuickAccessService::isUsable(const Result<NodeInfo>& resolved)
 {
     return resolved.success && resolved.value.isFolder && resolved.value.inCloud;
+}
+
+void QuickAccessService::setOnPersistenceFailed(std::function<void(const Result<void>&)> handler)
+{
+    mOnPersistenceFailed = std::move(handler);
+}
+
+void QuickAccessService::persist()
+{
+    // No account resolved means there's no storage slot to write to (Phase
+    // 11a), not a failed write -- load() has already reported that.
+    if (mAccountKey.empty())
+        return;
+
+    const Result<void> saved = mStore->save(mAccountKey, mPins);
+    if (!saved.success && mOnPersistenceFailed)
+        mOnPersistenceFailed(saved);
 }
 
 std::vector<PinnedFolder>::const_iterator QuickAccessService::find(std::uint64_t handle) const

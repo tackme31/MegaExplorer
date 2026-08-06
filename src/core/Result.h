@@ -4,8 +4,13 @@
 // `code` is a MegaErrorCode.h value and is mandatory: callers branch on
 // errorCode, never on errorMessage (which is a fixed English SDK string).
 // See "Error representation" in docs/ARCHITECTURE.md.
+//
+// [[nodiscard]] on the class, so discarding *any* Result-returning call is a
+// compile warning. Ignoring a failure on purpose is written as
+// `(void)foo();` plus a comment saying why (AuthService.cpp does this for
+// best-effort session clears).
 template<typename T>
-struct Result
+struct [[nodiscard]] Result
 {
     bool success = false;
     T value{};
@@ -31,7 +36,7 @@ struct Result
 
 // void has no value member, so this needs its own specialization.
 template<>
-struct Result<void>
+struct [[nodiscard]] Result<void>
 {
     bool success = false;
     std::string errorMessage;

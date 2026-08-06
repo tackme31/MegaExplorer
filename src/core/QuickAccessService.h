@@ -30,14 +30,20 @@ public:
                        std::shared_ptr<IPinnedFolderStore> store);
 
     // Reads the persisted list into memory as-is, without validating any pin
-    // against the node tree. A load failure degrades to an empty list (the
-    // adapter has already logged the cause) -- a broken pin list is never
-    // worth blocking startup over. Also resolves and caches the current
-    // account's key (Phase 11a, via IMegaClient::currentUserHandle) so every
-    // subsequent mutator persists under that account's own storage slot; if
-    // the client isn't logged in, the account key is cleared instead and the
-    // list degrades to empty, same as a load failure.
-    void load();
+    // against the node tree. A load failure degrades to an empty list -- a
+    // broken pin list is never worth blocking startup over -- and says why in
+    // the returned Result, which is the caller's only chance to log it (this
+    // class is Qt-free and can't). Note that the next mutator will then
+    // overwrite the unreadable data: corrupt stored JSON isn't recoverable
+    // from inside the app anyway, and refusing to save would silently throw
+    // away everything the user pins from then on.
+    //
+    // Also resolves and caches the current account's key (Phase 11a, via
+    // IMegaClient::currentUserHandle) so every subsequent mutator persists
+    // under that account's own storage slot; if the client isn't logged in,
+    // the account key is cleared instead and the list degrades to empty, same
+    // as a load failure.
+    Result<void> load();
 
     const std::vector<PinnedFolder>& pins() const;
 
@@ -76,11 +82,24 @@ public:
     // inCloud is what actually rules it out.
     static bool isUsable(const Result<NodeInfo>& resolved);
 
+    // Where a failed write-through goes. Called synchronously from inside the
+    // mutator that failed, on the caller's thread (see the class comment: that
+    // is always the GUI thread), so the handler needs no marshaling. It means
+    // "the in-memory list is already updated, but the change won't survive a
+    // restart" -- the mutator's own bool return still answers the separate
+    // question of whether the change was accepted at all.
+    void setOnPersistenceFailed(std::function<void(const Result<void>&)> handler);
+
 private:
+    // Single write-through point for every mutator, so Result's [[nodiscard]]
+    // can't be dropped in four places again.
+    void persist();
+
     std::vector<PinnedFolder>::const_iterator find(std::uint64_t handle) const;
 
     std::shared_ptr<IMegaClient> mClient;
     std::shared_ptr<IPinnedFolderStore> mStore;
+    std::function<void(const Result<void>&)> mOnPersistenceFailed;
     std::vector<PinnedFolder> mPins;
     // Empty when not logged in / load() hasn't resolved an account yet.
     // Set by load(), consumed by pin()/unpin()/replaceAll() to scope
