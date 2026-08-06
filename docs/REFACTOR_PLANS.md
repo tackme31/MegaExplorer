@@ -1125,7 +1125,285 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   という SDK 実装詳細に依存している事実（R2-9 の副産物）も残した。3 つの配達モードそのものは
   R2-2 で `IMegaClient.h` の先頭に書いたので、重複させず参照だけ張っている。
 
-### R3 — 未着手
+### R3 — 調査済み / 未修正（2026-08-06）
+
+計画の「種」4 件を現物で検証した結果。**確認 8 件 / 種の誤り 3 件（うち 1 件は方針判断が要る）/
+問題なし 6 件 / 新規 5 件**。R1・R2 と同じく、以下はそのまま plan mode の作業単位として使える粒度で
+書いてある。**このセッションではコードを一切変更していない**（調査のみ）。
+
+#### 前提: 失敗の表現は 1 つではなく 3 つある
+
+種は `Result<T>` だけを対象にしているが、現物には並行する表現が 3 つある。以降の判断は全部これに
+乗っている。
+
+1. **`Result<T>`**（`src/core/Result.h`） — `success` / `value` / `errorMessage` / `errorCode`。
+   79 箇所の `fail()` がこれ。
+2. **「常に `ok()` を返す `Result`」+ 値側にエラー** — `AccountService::loadAvatar`
+   （`src/core/AccountService.cpp:60-77`）は `Result<AvatarOutcome>::ok()` しか返さず、失敗は
+   `AvatarOutcome::errorCode` / `errorMessage`（`src/core/AccountInfo.h:57`）に入る。外側の
+   `Result` は情報をゼロビットしか運んでいない。
+3. **ジョブの状態機械** — `DownloadJob` / `UploadJob` が `state == Failed` + `errorMessage` +
+   `errorCode` を持つ。`src/core/DownloadService.h:34` と `src/core/UploadService.h:40` が自ら
+   `// mirrors Result<T>::errorCode` と書いており、`Result` からのコピーであることを認めている。
+
+加えて、`Result` を **`bool` に畳んで捨てる**境界が 2 つある（`FolderTreeService::hasSubfolders`、
+`QuickAccessService::isUsable`）。後者が R3-2 の本体。
+
+#### 確認された問題
+
+**R3-1 [高] `fail()` の既定コード `-1` は SDK の `API_EINTERNAL` そのもの — 79 中 52 箇所**
+
+- `src/core/Result.h:13`・`:28` の `fail(std::string message, int code = -1)`。一方
+  `third_party/sdk/include/megaapi.h:8933` が `API_EINTERNAL = -1`。つまり「コードを指定し忘れた」と
+  「内部エラーだった」が同じ値で、**`MegaErrorCodes.h` には -1 のエントリが無い**ので表を見ても
+  区別できない。
+- 実測（`::fail(` の全 79 箇所を引数の最上位カンマで分類）:
+
+  | 区分 | 件数 | 備考 |
+  | --- | --- | --- |
+  | コードを明示 | 27 | `checkMove`/`checkUpload`/`createFolder` 系。正しい側 |
+  | 既定 -1 のまま | 52 | 内訳 ↓ |
+  | ├ `fail(kShutDownMessage)` | 29 | 表に出ない（→「問題なし」節） |
+  | ├ `MegaSdkClient` のハンドル解決失敗 | 13 | **意味的には `kENoEnt`** |
+  | ├ `WindowsSessionStore` | 6 | I/O・DPAPI 失敗 |
+  | ├ `QSettingsPinnedFolderStore` | 2 | |
+  | └ `src/core`（`goBack` / `search`） | 2 | R3-8 |
+
+- 一番効く不整合はファイル内で完結している。`src/mega/MegaSdkClient.cpp:743`（`getNodeInfo`）、
+  `:771`（`renameNode`）、`:819`・`:851`・`:889` などは「ハンドルが解決しない」を -1 で返すのに、
+  同じファイルの `checkMove`（`:909`）と `checkUpload`（`:935`）は**まったく同じ条件**を
+  `MegaErrorCode::kENoEnt` で返す。`src/core/IMegaClient.h:302-306` と `:320-326` は後者について
+  「失敗コードこそが結果の本体で、呼び出し側は `errorCode` で分岐し `errorMessage` では分岐しない」と
+  明記しており、規約はあるが**同期メソッド 3 本にしか適用されていない**。
+- 波及先: R3-2（ピンの誤削除）、`AuthController::classifyError`（-1 → `UnknownError` → 生英文表示）。
+- 修正方針: (a) `MegaErrorCodes.h` に `kEInternal = -1` を足し `static_assert` に載せる、
+  (b) `fail()` の既定引数を**廃止してコードを必須**にする（呼び出し側 79 箇所が機械的に洗われ、
+  「考えていない」箇所が漏れなく出る）、(c) ハンドル解決失敗 13 箇所を `kENoEnt` にする。
+  (b) は 79 箇所に触るので単独セッション。
+
+**R3-2 [高] `isUsable()` が「問い合わせ失敗」を「ピンが消えた」に畳み、ピンを永久削除する**
+
+- `src/core/QuickAccessService.cpp:99-102`:
+  `return resolved.success && resolved.value.isFolder && resolved.value.inCloud;`
+  — 3 つの別々の意味（**呼べなかった** / フォルダでない / ゴミ箱にある）が 1 つの `false` になる。
+- `src/qml/QuickAccessModel.cpp:183-195` はその `false` を「dangling pin」と断定してログに出し
+  （`qCInfo(lcQuickAccess) << "dropping dangling quick-access pin"`）、`:228-234` で `replaceAll`
+  → **`IPinnedFolderStore::save` まで走ってディスクから消える**。ユーザ操作は不要、ログイン直後の
+  `validateAll()` が自動で行う。
+- `getNodeInfo` の失敗は現状 shutdown 中か「ハンドル未解決」の 2 つで、**どちらも -1**（R3-1）。
+  区別しようにも情報が無い、という形で R3-1 と一組になっている。
+- 修正方針: R3-1(c) の後に、`isUsable` を 3 値（`Usable` / `Gone` / `Unknown`）にし、`Unknown` は
+  ピンを**残す**。`AuthService` の `isSessionDefinitivelyInvalid` が「未知のコードは transient 扱い、
+  誤って捨てるより残す方が安い」と同じ判断を既に文書化している（`src/core/AuthService.h:17-25`）ので、
+  規約はそこから借りればよく、新しく決めることは無い。
+
+**R3-3 [高] `IPinnedFolderStore::save()` の `Result<void>` が 4 箇所で破棄されている**
+
+- `src/core/QuickAccessService.cpp:44`・`:56`・`:76`・`:84`（`pin` / `unpin` / `move` / `replaceAll`）。
+  `(void)` キャストすら無い純粋な破棄。`QSettingsPinnedFolderStore::save` は
+  `fail("failed to save quick-access pins")` を返しうる（`src/platform/QSettingsPinnedFolderStore.cpp:91`）。
+- 結果: 保存に失敗するとピンは**次回起動で消えるのに、ログもトーストも出ない**。
+- `Result` に `[[nodiscard]]` が無いため MSVC の C4834 が出ず、`/W4` は何も言わない。
+  対照的に `AuthService` は同じ状況で `(void)mSessionStore->clearSession();` と意図を書いている
+  （`src/core/AuthService.cpp:34`・`:49`・`:94`・`:106`・`:116`）。**同じコードベース内で作法が割れている**。
+- 同ファイル `:23-24` の load 側も無音: `mPins = stored.success ? ... : {}` で、壊れた保存データは
+  黙って空になり、**その直後の `save()` が上書きして復旧不能にする**。`src/core/IPinnedFolderStore.h:13-18`
+  は「load 失敗と空を区別しない」ことを意図として書いているが、ログを出さない点までは正当化していない。
+- 修正方針: `Result` に `[[nodiscard]]` を付ける（これ単体で破棄箇所が全部コンパイル警告として出る）→
+  save 失敗をログ + `NotificationController` に流す。**R3 の中で最も小さく、最も明確に直る項目**。
+
+**R3-4 [中] トースト 8 文脈が SDK の英語文字列を生のまま `%1` に差し込む**
+
+- `qml/components/ToastStack.qml:155-202` の `showError`。`navigation` / `search` / `thumbnail` /
+  `openFile` / `rename` / `createFolder` / `paste` / `copy` の 8 つが
+  `qsTr("...: %1").arg(errorMessage)` の形。`:85` の `showDownload` も同型（持ち越し節に記録済みの件、
+  → 本調査で回収）。
+- その `errorMessage` は SDK 経路では `MegaError::getErrorString()`
+  （`third_party/sdk/src/megaapi.cpp:1572-1611`）＝ **`errorCode` から一意に引かれる固定英語表**。
+  "Not found" / "Internal error" / "Invalid argument" の類で、**`errorCode` を超える情報はゼロ**。
+  日本語化しても「フォルダを読み込めません: Not found」になる。
+- 良い対比が同じコードベースにある: `AuthController::classifyError`
+  （`src/qml/AuthController.cpp:307-322`）はコードを `AuthErrorKind` の enum に落とし、
+  `UnknownError` のときだけ生文字列を渡す（`:146-149`）。Phase 19 以降の「C++ が構造・QML が文言」は
+  ここでは守られていて、トーストでだけ破れている。
+- 修正方針: `notifyError(context, errorMessage)` を `notifyError(context, reason)` に変え、`reason` は
+  `errorCode` を数個の enum（`NotFound` / `NoPermission` / `Offline` / `Unknown`）に畳んだもの。
+  文言は `ToastStack.qml` が持つ。**QML も動くので R6 と衝突しうる — R3 で API だけ決めて、
+  文面の作り込みは R6 に渡すのが安い**。
+
+**R3-5 [中] `"refresh"` 文脈だけ QML 側に case が無く、生の英語メッセージが単独で出る**
+
+- C++ 側の `notifyError` 文脈は 11 個（`navigation` / `search` / `thumbnail` / `openFile` / `rename` /
+  `createFolder` / `paste` / `copy` / `refresh` / `uploadNothingToUpload` / `uploadReplaceFailed`）。
+  `ToastStack.qml:155-202` が扱うのは 10 個で、**`refresh` が無い**
+  （`src/qml/FolderNavigationController.cpp:735` が送っている）。
+- `default: text = errorMessage;`（`:198`）に落ちるので、トーストには文章も `qsTr` も無い
+  "Internal error" だけが出る。Phase 20a が `syncPendingChanges` を足したときの取りこぼし。
+- `showOperation` 側（`move` / `copy` / `moveToRubbish` / `upload` / `uploadDestinationGone` /
+  `createFolder`）は C++ 側と過不足なく一致している。抜けは `showError` だけ。
+- 修正方針: R3-4 と同じ場所を触るので**同一セッションで片付ける**。文字列の対応表が C++ と QML に
+  分かれている限り同じ取りこぼしが再発するので、R3-4 の enum 化がそのまま再発防止になる。
+
+**R3-6 [中] 同じ「名前が不正」を rename だけ -1、createFolder / copy は `kEArgs` で返す**
+
+- `src/core/FileOperationService.cpp:38` — `rename` は
+  `fail("Invalid name: empty, or contains a path separator")`（コード無し = -1）。
+  `:73-74`（`copy`）と `:95-96`（`createFolder`）は同じ文言に `MegaErrorCode::kEArgs` を付けている。
+- 結果の差が UI に出る: `createFolder` は `kEArgs` を見て `NewFolderDialog` 内の赤字
+  （`folderCreationFailed("invalidName")`、`src/qml/FolderNavigationController.cpp:382-386`）に落とすが、
+  rename は分岐できずトースト「名前を変更できません: Invalid name: ...」になる（`:340-347`）。
+  **ユーザの入力ミスが「操作の失敗」として出る**。
+- 修正方針: rename に `kEArgs` を付け、`renameEntry` に `createFolder` と同じ分岐を足す。
+  R3-1(b) を先にやれば、この 1 件は自動的に炙り出される。
+
+**R3-7 [低] 失敗した `Result` の `value` が読める — 実際に読んでいる箇所が 1 つある**
+
+- 種の指摘どおり `T value{}` は常時デフォルト構築され、`success` を見なくても読める。
+- 実例: `src/qml/AccountController.cpp:105-120` は `result.success` を確認せず
+  `result.value.hasAvatar` を読む。**今は安全**（前提節 2 のとおり `loadAvatar` が常に `ok()` を返す）
+  が、安全なのは型ではなく規約のおかげで、`loadAvatar` が将来 `fail()` を返すようになった瞬間、
+  デフォルト構築された `AvatarOutcome`（`hasAvatar == false`）を読んで**黙って「アバター無し」に落ちる**。
+- 他 40 箇所の `.value` 参照は全て成功分岐の中にあることを確認済み。
+- 修正方針: R3-9（下記「判断が要るもの」）とセット。`value` を private + `value()` アクセサにして
+  失敗時は `assert` にするだけでも、この形は型で防げる。
+
+**R3-8 [低] 「やることが無い」がエラーとして表現され、エラートーストの経路に乗っている**
+
+- `src/core/FolderNavigationService.cpp:62` — 履歴が空の `goBack` が `fail("no back history")`。これは
+  `applyResult`（`src/qml/FolderNavigationController.cpp:181-189`）に届き、
+  **「フォルダを読み込めません: no back history」というトーストになる**。
+- 現状の唯一の防御が QML の `enabled: tabsController.currentNavigation?.canGoBack ?? false`
+  （`qml/Main.qml:324`）で、C++ 側に `canGoBack()` のガードが無い。`goUp()` は
+  `if (!canGoUp()) return;` を持っている（`src/qml/FolderNavigationController.cpp:160-161`）ので、
+  **同じクラスの中で非対称**。`goBack` は `Q_INVOKABLE` なので QML から誰でも呼べる。
+- 同型が `src/core/SearchService.cpp:14` の `fail("empty query")`。こちらは呼び出し側
+  （`FolderNavigationController::search`、`:238-242`）が早期 return するので到達しない。
+- 修正方針: `goBack` に `goUp` と同じ早期 return を足す。`fail("no back history")` 自体は
+  サービス単体の契約としては残してよい（テストが見ている）。
+
+#### 種が不正確だった / 判断が要るもの
+
+**R3-9 [判断] `std::expected` への置き換えは現状の標準設定では不可能**
+
+- 種は「`std::expected`（C++23）/ `std::variant` への置き換えが妥当か、`/W4` と MSVC の C++ 標準設定を
+  見て判断する」としていた。**設定を見た結果、選択肢が 1 つ消える**。
+- `CMakeLists.txt:9` は `CMAKE_CXX_STANDARD_REQUIRED ON` **だけ**で `CMAKE_CXX_STANDARD` を設定して
+  いない。Qt をリンクするターゲットは Qt の interface 要求から C++17 を得ており、Qt を引かない
+  `MegaExplorerCore` は R2-1 で足した `target_compile_features(... cxx_std_17)`
+  （`CMakeLists.txt:89`）から得ている。**プロジェクト全体が C++17**。
+- `<expected>` は C++23。MSVC では `/std:c++latest` 相当が要り、安定した標準モードでは有効にならない。
+  ベンダーされた `third_party/sdk` / `qwindowkit` も巻き込む変更になるため、**エラー表現の整理のために
+  払うコストとして釣り合わない**。
+- 推奨する結論（**要承認**）: 独自 `Result<T>` を維持し、次の 3 点だけ入れる。
+  (a) `[[nodiscard]]`（R3-3 が即座に直る）、(b) `value` の直接公開をやめてアクセサ化（R3-7）、
+  (c) `fail()` の既定コードを廃止（R3-1）。`std::variant` 化は (b) と実質同じ効果しか無いのに
+  全 service に波及するので**採らない**。
+- 波及規模の実測: `Result` に触れるファイルは `src/` + `tests/` で 57、`tests/` 内の `Result<` は
+  452 箇所。(a)(b)(c) はいずれもコンパイルエラーとして全件出るので機械的に洗えるが、**それでも
+  単独セッション必須**という種の判断は正しい。
+
+**種「`errorCode` のデフォルトが -1、成功時は 0」は半分不正確**
+
+- メンバ既定値は **`0`**（`src/core/Result.h:10`・`:25`）で、-1 は `fail()` の既定**引数**。
+- 実害のある帰結は種が書いていない方: `Result<T> r;` と素で作ると
+  **`success == false` かつ `errorCode == 0`（= `API_OK`）** という、意味の付かない組み合わせになる。
+  `ok()` も `errorCode` を触らないので 0 のまま。「成功時は 0」は結果的にそう見えるだけで、
+  `fail("msg", 0)` も型としては書ける。
+
+**種「`MegaErrorCodes.h` の値域と衝突しないか」→ 衝突している**
+
+- -1 = `API_EINTERNAL` が表に無いまま既定値に使われている（R3-1）。
+- 一方 `kNoStoredSession = 1`（`src/core/AuthService.h:11-15`）は正の値を選び、
+  「`MegaErrorCodes.h` の値は全て 0 以下なので衝突しない」と根拠つきで書かれている。
+  **センチネルの設計としては正しく、ここは真似すべき側**。
+
+#### 問題なしと確認できた種
+
+- **`kShutDownMessage` の -1 群 29 箇所は表に出ない。** `src/mega/MegaSdkClient.cpp:65-68` の
+  「Nothing surfaces it」は正しい。`client->shutdown()` は `app.exec()` が返った**後**
+  （`main.cpp:184`）に呼ばれるので、`invokeOnGuiThread` が投函したイベントは配達されない。
+  R3-1 の 52 件のうち 29 件は、したがって**優先度が下がる**（直すなら機械的な一括のついで）。
+- **`errorMessage` はサーバ由来文字列ではない。** SDK 経路のそれは
+  `MegaError::getErrorString()`（`third_party/sdk/src/megaapi.cpp:1572-1611`）の固定 switch 表で、
+  ネットワークから来た文字列は混じらない。**R1 の「サーバ由来文字列の信頼境界」は R3 には掛からない**。
+  寿命も安全（静的表を指す `const char*` を `std::string` にコピーしている）。
+- **`isSessionDefinitivelyInvalid` / `classifyError` は正しい形。** コードで分岐し、文言は UI が持つ。
+  -1 は両方で「未知 → transient / UnknownError」に落ちるだけで、セッションを誤って捨てることはない
+  （`src/core/AuthService.cpp:5-19`、`src/qml/AuthController.cpp:307-322`）。
+- **`showOperation` の文脈は C++ と QML で一致している。** 取りこぼしは `showError` 側だけ（R3-5）。
+- **`FolderTreeService::hasSubfolders` の `result.success && result.value`
+  （`src/core/FolderTreeService.cpp:37-38`）は安全側に倒れている。** 失敗時に展開矢印を出さない側で、
+  `src/qml/FolderTreeModel.cpp:88-92` が「出してしまうと後から取り消せない」理由を書いている。
+- **`AccountService::loadDisplayName` が属性取得失敗を `""` に畳むのは意図どおり**
+  （`src/core/AccountService.cpp:46-49`）。名前が未設定なのは異常ではない。
+
+#### 新規発見
+
+- **R3-10 [中] 「常に `ok()` を返す `Result`」が 2 つ目のエラー表現になっている。**
+  前提節の 2。`Result<AvatarOutcome>` は型として何も保証しておらず、R3-7 の未チェック `.value` 参照は
+  この設計の直接の帰結。R5 で service を割るときにこの形が増えると、失敗の表現が service ごとに
+  変わる。R3 のうちに「常に成功する非同期処理は `Result` で包まない」と決めておくのが安い。
+- **R3-11 [低] `DownloadJob` / `UploadJob` が 3 つ目の表現。** 前提節の 3。`Result` の
+  `errorMessage` / `errorCode` をコピーして持つので、R3-1 でコードの意味を変えると 2 箇所
+  （`src/core/DownloadService.cpp:217`、`src/core/UploadService.cpp:128`・`:173`）が自動的に追随する
+  — つまり害は今のところ重複だけ。R2-8（キューの `optional<Job>` 化）と同じ場所なので、**R5 での
+  サービス整理に合流させる**。
+- **R3-12 [中] 検索中の裏側リフレッシュが失敗を完全に無音で捨てる。**
+  `src/qml/FolderNavigationController.cpp:318-324` は `refreshCurrent` の結果を
+  `if (result.success) mLastFolderEntries = ...` とだけ扱い、**ログすら出さない**。失敗すると
+  検索を消したときに古い一覧が出る。`:307-309` のコメントはまさにそれを防ぐためにこの呼び出しが
+  あると説明しているので、**コメントと実装が食い違っている**。
+- **R3-13 [低] セッショントークンの取得失敗が無音。** `src/core/AuthService.cpp:111-117` は
+  `currentSessionToken()` が失敗すると保存を飛ばす。ヘッダ（`AuthService.h:67-73`）が
+  「best-effort」と書いているのは**保存の失敗**についてで、取得の失敗には触れていない。ユーザから見ると
+  「次回起動でなぜかパスワードを聞かれる」だけになる。ログ 1 行で足りる。
+- **R3-14 [低] 同名チェックのスキップが無ログ。** `src/qml/UploadController.cpp:242-243` は
+  `findChildFiles` 失敗時に同名チェックを丸ごと飛ばす（`// can't ask the question, so don't`）。
+  意図は明示されているが、**MEGA は同名アップロードを新バージョンとして重ねる**ので、
+  スキップの結果は「黙って上書き」に近い。ログ 1 行と、R3-4 の enum 化のときに
+  「チェックできなかった」を言えるかの検討。
+
+#### 無音失敗の棚卸し（種 4 番目の答え）
+
+`Result` を受け取って何も報告しない箇所は 10。「意図的に黙る」と「報告漏れ」の仕分けは以下。
+
+| 箇所 | 現状 | 判定 | 対応 |
+| --- | --- | --- | --- |
+| `QuickAccessService.cpp:44,56,76,84` | `save()` の戻り値を破棄 | **報告漏れ** | R3-3 |
+| `QuickAccessService.cpp:23-24` | load 失敗 → 空リスト、無ログ | **報告漏れ**（畳むこと自体は意図的） | R3-3 |
+| `QuickAccessService.cpp:15-20` | `currentUserHandle()` 失敗 → ピン全消し、無ログ | **報告漏れ** | R3-3 |
+| `QuickAccessModel.cpp:183-195` | 失敗を「dangling」と断定してピン削除 | **報告漏れ**（ログの文言も誤り） | R3-2 |
+| `FolderNavigationController.cpp:318-324` | 裏側 refresh 失敗、無ログ | **報告漏れ** | R3-12 |
+| `AuthService.cpp:111-117` | トークン取得失敗、無ログ | **報告漏れ** | R3-13 |
+| `UploadController.cpp:242-243` | 同名チェック不能 → スキップ | 意図的（ただし無ログ） | R3-14 |
+| `AuthService.cpp:34,49,94,106,116` | `(void)` 付きで破棄 | 意図的・明示済み | 対応不要 |
+| `AccountService.cpp:46-55` | 属性未設定 → `""` | 意図的・コメント済み | 対応不要 |
+| `FolderTreeService.cpp:37-38` | 失敗 → `false`（安全側） | 意図的・コメント済み | 対応不要 |
+
+#### 推奨実施順（各項目 1 セッション）
+
+```
+R3-3  [[nodiscard]] + save/load 失敗の報告      … 単独・最小・データ損失を止める
+R3-1  errorCode の意味づけ（既定引数の廃止）    … 79 箇所。以降 3 件の前提
+R3-2  isUsable の 3 値化（ピンを誤削除しない）  … R3-1(c) に依存
+R3-6  rename の kEArgs + ダイアログ分岐         … R3-1 が炙り出す 1 件
+R3-12 / R3-13 / R3-14  無音の 3 箇所にログ      … 極小・まとめて 1 コミット
+R3-8  goBack のガード                           … 極小
+R3-4 + R3-5  notifyError の enum 化（+ refresh 追加） … QML も動く。R6 と要調整
+R3-7  value のアクセサ化                        … R3-9 の承認が前提
+R3-9  Result 型そのものの方針                   … ★先に承認を取る。R5 の入力
+```
+
+R3-9 の承認だけは着手前に要る（`実施手順` 3 の「製品挙動が変わるもの」ではないが、R5 全体の入力に
+なるため）。それ以外は上から順に独立して進められる。
+
+#### 成果物
+
+- `docs/ARCHITECTURE.md` に「エラー表現の規約」節を 1 つ。R1 の「サーバ由来文字列の信頼境界」、
+  R2 の「スレッドモデル」と並ぶ形にする。内容は前提節（表現が 3 つあること）+ R3-1 の結論
+  （`errorCode` で分岐し `errorMessage` では分岐しない、を `IMegaClient.h` の同期 3 メソッドから
+  全体規約に格上げ）+ R3-4 の C++/QML 分担 + R3-9 で決めた `Result` の方針。
+
 ### R4 — 未着手
 ### R5 — 未着手
 ### R6 — 未着手
@@ -1140,6 +1418,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   `Result::fail()` の生文字列。`AuthController` は `classifyError` で構造化してから渡しているのに
   （`src/qml/AuthController.cpp:155-159`）、ダウンロードだけ生のまま。R3 の「`fail()` の
   `errorMessage` がそのまま UI に出る経路がないか」の答えの 1 つ。（R1 調査中に発見）
+  → **R3 調査で回収済み（2026-08-06）**。同型が `showError` にも 8 文脈あり、R3-4 に統合した。
 - **[R4] `DownloadController` にテストが無い** — `tests/UploadControllerTest.cpp:19` が理由を
   「`QDesktopServices` が QtGui を引く」と説明している。R1-1 の修正で `computeDestinationPath` に
   検証ロジックが入るなら、テスト可能な形（`src/core` の純関数）に出すのが望ましい。（R1 調査中に発見）
