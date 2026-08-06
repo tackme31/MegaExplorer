@@ -11,6 +11,8 @@
 // Keeps MegaErrorCodes.h's mirror in sync with the real SDK values -- this
 // is the only file that can see both headers, since src/core/src/qml can't
 // include megaapi.h.
+static_assert(MegaErrorCode::kEInternal == mega::MegaError::API_EINTERNAL,
+              "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kEArgs == mega::MegaError::API_EARGS, "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kEAgain == mega::MegaError::API_EAGAIN,
               "MegaErrorCodes.h out of sync");
@@ -66,6 +68,11 @@ namespace
 // only caller left at that point is a teardown callback re-entering from the
 // SDK thread, and the GUI event loop it would post to has already stopped.
 constexpr char kShutDownMessage[] = "the MEGA client has been shut down";
+
+// Its errorCode. Positive so it can never collide with an SDK value, and so it
+// falls through every `switch` that branches on one -- see MegaErrorCodes.h for
+// the ledger of allocated positive sentinels.
+constexpr int kClientShutDownCode = 2;
 
 // Listener lifetime, once for all seven classes below: each one is `new`ed at
 // the call site, handed to MegaApi, and deletes itself from its finish
