@@ -1,9 +1,7 @@
 #include "QuickAccessModel.h"
 
 #include "app/Logging.h"
-
-#include <QCoreApplication>
-#include <QMetaObject>
+#include "GuiThread.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -12,13 +10,6 @@
 
 namespace
 {
-// Same helper (and same qApp target) as FolderTreeModel's: this model is an
-// app-lifetime singleton, so there's no per-tab destruction race to close.
-void invokeOnGuiThread(std::function<void()> fn)
-{
-    QMetaObject::invokeMethod(qApp, std::move(fn), Qt::QueuedConnection);
-}
-
 // One in-flight validation sweep. Shared by all N callbacks so the last one
 // to arrive can commit the reconciled list in a single write.
 struct Sweep
@@ -156,7 +147,7 @@ void QuickAccessModel::activate(quint64 handle, bool inNewTab)
 
     mService->resolveFolder(
         handle, [this, handle, inNewTab, name, generation](Result<NodeInfo> resolved) {
-            invokeOnGuiThread([this, handle, inNewTab, name, generation, resolved]() {
+            invokeOnGuiThread(this, [this, handle, inNewTab, name, generation, resolved]() {
                 if (generation != mGeneration)
                     return;
                 if (QuickAccessService::isUsable(resolved))
@@ -184,7 +175,7 @@ void QuickAccessModel::validateAll()
     {
         mService->resolveFolder(
             snapshot[i].handle, [this, sweep, i, generation](Result<NodeInfo> resolved) {
-                invokeOnGuiThread([this, sweep, i, generation, resolved]() {
+                invokeOnGuiThread(this, [this, sweep, i, generation, resolved]() {
                     if (generation != mGeneration)
                         return;
 
@@ -218,14 +209,15 @@ void QuickAccessModel::validateAll()
                     for (const PinnedFolder& pinned : current)
                     {
                         const auto found =
-                            std::find_if(sweep->resolved.begin(), sweep->resolved.end(),
+                            std::find_if(sweep->resolved.begin(),
+                                         sweep->resolved.end(),
                                          [&pinned](const PinnedFolder& candidate) {
                                              return candidate.handle == pinned.handle;
                                          });
                         if (found == sweep->resolved.end())
                             survivors.push_back(pinned);
-                        else if (sweep->usable[static_cast<std::size_t>(
-                                     found - sweep->resolved.begin())])
+                        else if (sweep->usable[static_cast<std::size_t>(found -
+                                                                        sweep->resolved.begin())])
                             survivors.push_back(*found);
                     }
 

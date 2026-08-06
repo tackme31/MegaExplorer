@@ -18,7 +18,7 @@ namespace
 {
 
 // ensureLoaded()'s result always arrives via a queued invoke onto the GUI
-// thread (see FolderTreeModel.cpp's invokeOnGuiThread), even though
+// thread (see src/qml/GuiThread.h), even though
 // MockMegaClient's InvokeArgument action below fires synchronously, so this
 // fixture needs the shared QCoreApplication from TestApp.h and an explicit
 // flushQueuedEvents() after triggering a load.

@@ -3,27 +3,12 @@
 #include "app/Logging.h"
 #include "core/FileOperationService.h"
 #include "core/MegaErrorCodes.h"
+#include "GuiThread.h"
 #include "NotificationController.h"
 
-#include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
-#include <QMetaObject>
-
-namespace
-{
-
-// UploadService's callbacks may fire on an SDK-internal background thread
-// (see IMegaClient.h), so touching QML-facing state from there has to hop
-// onto the GUI thread first. Same file-local duplicate as
-// DownloadController's, per that existing precedent.
-void invokeOnGuiThread(std::function<void()> fn)
-{
-    QMetaObject::invokeMethod(qApp, std::move(fn), Qt::QueuedConnection);
-}
-
-} // namespace
 
 UploadController::UploadController(std::shared_ptr<UploadService> service,
                                    std::shared_ptr<FileOperationService> fileOperations,
@@ -33,12 +18,12 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
       mNotifications(notifications)
 {
     mService->setOnProgress([this](UploadJob) {
-        invokeOnGuiThread([this] {
+        invokeOnGuiThread(this, [this] {
             refreshActiveJob();
         });
     });
     mService->setOnJobFinished([this](UploadJob job) {
-        invokeOnGuiThread([this, job = std::move(job)]() mutable {
+        invokeOnGuiThread(this, [this, job = std::move(job)]() mutable {
             --mBatch.pendingJobs;
             const Destination destination{static_cast<quint64>(job.parentHandle), job.parentIsRoot};
             bool replaceStarted = false;
@@ -57,19 +42,20 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
                     ++mBatch.pendingReplaces;
                     mFileOps->moveToRubbish(
                         job.replaceHandle, [this, destination](Result<void> result) {
-                            invokeOnGuiThread([this, destination, result = std::move(result)] {
-                                --mBatch.pendingReplaces;
-                                releaseDestination(destination);
-                                if (!result.success)
-                                {
-                                    ++mBatch.replaceFailed;
-                                    qCWarning(lcUpload)
-                                        << "failed to remove the replaced file:"
-                                        << QString::fromStdString(result.errorMessage)
-                                        << "code=" << result.errorCode;
-                                }
-                                flushBatchIfDone();
-                            });
+                            invokeOnGuiThread(
+                                this, [this, destination, result = std::move(result)] {
+                                    --mBatch.pendingReplaces;
+                                    releaseDestination(destination);
+                                    if (!result.success)
+                                    {
+                                        ++mBatch.replaceFailed;
+                                        qCWarning(lcUpload)
+                                            << "failed to remove the replaced file:"
+                                            << QString::fromStdString(result.errorMessage)
+                                            << "code=" << result.errorCode;
+                                    }
+                                    flushBatchIfDone();
+                                });
                         });
                 }
             }

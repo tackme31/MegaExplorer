@@ -24,10 +24,8 @@ class NotificationController;
 // FolderNavigationController: since a tab (and this controller with it) can
 // now be closed while a requestThumbnail() fetch is still in flight, the
 // async callback below captures a shared_from_this() copy to stay alive
-// until it runs, and invokeOnGuiThread posts to `this` rather than qApp so a
-// controller destroyed after the post but before the GUI thread processes it
-// simply drops the queued event (see FolderNavigationController.cpp's
-// invokeOnGuiThread comment for the full mechanism).
+// until it runs; the queued invoke that follows is what covers the rest of
+// the window (see GuiThread.h).
 class ThumbnailController : public QObject, public std::enable_shared_from_this<ThumbnailController>
 {
     Q_OBJECT

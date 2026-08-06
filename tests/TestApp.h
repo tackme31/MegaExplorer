@@ -2,8 +2,8 @@
 #include <QCoreApplication>
 
 // Shared by every test that exercises an src/qml class whose async results
-// arrive through a queued invoke onto the GUI thread (see FolderTreeModel.cpp
-// and QuickAccessModel.cpp's invokeOnGuiThread): the queued event still needs
+// arrive through a queued invoke onto the GUI thread (see
+// src/qml/GuiThread.h): the queued event still needs
 // real QCoreApplication/event-loop plumbing to be delivered to, even though
 // MockMegaClient's InvokeArgument action fires the SDK callback synchronously.
 //

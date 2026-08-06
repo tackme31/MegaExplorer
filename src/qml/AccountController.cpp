@@ -1,25 +1,17 @@
 #include "AccountController.h"
 
 #include "app/Logging.h"
+#include "GuiThread.h"
 
 #include <QDebug>
 #include <QDir>
 #include <QLocale>
-#include <QMetaObject>
 #include <QStandardPaths>
 
 #include <utility>
 
 namespace
 {
-
-// Same 3-line idiom as ThumbnailController/FolderNavigationController's own
-// invokeOnGuiThread, duplicated rather than shared per that precedent.
-// AccountService's callbacks may fire on an SDK-internal background thread.
-void invokeOnGuiThread(QObject* target, std::function<void()> fn)
-{
-    QMetaObject::invokeMethod(target, std::move(fn), Qt::QueuedConnection);
-}
 
 // The avatar fallback's letter. Takes a whole code point, not a single UTF-16
 // code unit, so a name starting outside the BMP (an emoji, say) doesn't get

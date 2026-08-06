@@ -16,8 +16,7 @@
 // (Phase 9), this class does NOT use enable_shared_from_this: those two
 // needed it because a tab (and its controllers) can be destroyed mid-fetch
 // by closing it, but this model has no such per-tab lifetime -- it lives as
-// long as the app does, so a bare `this` capture in async callbacks is safe,
-// same reasoning as DownloadController's own plain invokeOnGuiThread.
+// long as the app does, so a bare `this` capture in async callbacks is safe.
 //
 // Lazily expands via FolderTreeService::loadSubfolders (folders only, always
 // name-ascending -- independent of whatever sort order any tab's file list

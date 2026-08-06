@@ -1,28 +1,9 @@
 #include "FolderTreeModel.h"
 
 #include "app/Logging.h"
-
-#include <QCoreApplication>
-#include <QMetaObject>
+#include "GuiThread.h"
 
 #include <utility>
-
-namespace
-{
-
-// mService's loadSubfolders callback may fire on an SDK-internal background
-// thread (see IMegaClient.h), so touching the model from there must go
-// through a queued invoke onto the GUI thread. Targets qApp, not `this` --
-// unlike FolderNavigationController/ThumbnailController (Phase 9), this
-// model is an app-lifetime singleton with no per-tab destruction race to
-// guard against, same reasoning as DownloadController's own plain
-// invokeOnGuiThread.
-void invokeOnGuiThread(std::function<void()> fn)
-{
-    QMetaObject::invokeMethod(qApp, std::move(fn), Qt::QueuedConnection);
-}
-
-} // namespace
 
 FolderTreeModel::FolderTreeModel(std::shared_ptr<FolderTreeService> service, QObject* parent)
     : QAbstractItemModel(parent), mService(std::move(service))
@@ -134,7 +115,7 @@ void FolderTreeModel::ensureLoaded(const QModelIndex& index)
         node->handle,
         node->isRoot,
         [this, node, generation](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread([this, node, generation, result = std::move(result)]() mutable {
+            invokeOnGuiThread(this, [this, node, generation, result = std::move(result)]() mutable {
                 // The tree was reset out from under this fetch (sign-out, or
                 // a sign-in's reload()) -- node has been destroyed since.
                 if (generation != mGeneration)

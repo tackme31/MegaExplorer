@@ -14,7 +14,7 @@
 // setContextProperty), shared across every tab like FolderTreeModel -- so,
 // same as that class and unlike FolderNavigationController/ThumbnailController,
 // it does NOT use enable_shared_from_this and a bare `this` capture in async
-// callbacks is safe. invokeOnGuiThread targets qApp for the same reason.
+// callbacks is safe.
 //
 // Everything is keyed by handle rather than row index, following
 // FileListModel's Phase 13a convention: the login-time validation sweep drops

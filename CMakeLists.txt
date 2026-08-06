@@ -103,6 +103,7 @@ qt_add_executable(appMegaExplorer
     src/platform/WindowsSessionStore.cpp
     src/platform/QSettingsPinnedFolderStore.h
     src/platform/QSettingsPinnedFolderStore.cpp
+    src/qml/GuiThread.h
     src/qml/FileListModel.h
     src/qml/FileListModel.cpp
     src/qml/FolderNavigationController.h

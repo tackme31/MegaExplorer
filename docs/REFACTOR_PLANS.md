@@ -513,7 +513,7 @@ R7 ドキュメント/コメント整理
   → **R1-1 / R1-7 ぶんは記述済み**（`## Trust boundary: strings that come from the server`）。
   R1-3 のログ出口と寿命は R1-3 実施時にこの節へ追記する。
 
-### R2 — 調査済み / R2-1・R2-2・R2-3・R2-7 修正済み（2026-08-06）
+### R2 — 調査済み / R2-1・R2-2・R2-3・R2-6・R2-7 修正済み（2026-08-06）
 
 計画の「種」5 件を現物 + **ベンダーされた MEGA SDK 本体**（`third_party/sdk`）で検証した結果。
 **確認 3 件 / 種の誤り 1 件（重要）/ 問題なし 6 件 / 新規 4 件**。R1 と同じく、以下はそのまま
@@ -789,7 +789,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 - R2-3 を直せば「SDK スレッドが動くのは全オーナー生存中だけ」が保証されるので窓は狭まるが、
   タブを閉じた直後の in-flight は残る。
 
-**R2-6 [中] `invokeOnGuiThread` が 8 コピー・2 セマンティクス**（種は「4 箇所」と書いていた）
+**R2-6 [中] `invokeOnGuiThread` が 8 コピー・2 セマンティクス**（種は「4 箇所」と書いていた）—
+**修正済み（2026-08-06）**
 
 | 変種 | ターゲット | 定義箇所 |
 | --- | --- | --- |
@@ -806,6 +807,31 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   統一先は B 一本でよい。header-only の `src/qml/GuiThread.h` に 1 つ置いて 8 コピーを消す。
 - なお `src/qml` の他の跨スレッド手段は**ゼロ**: `QTimer::singleShot` 0 件、
   `Qt::QueuedConnection` の `connect` 0 件、非 GUI スレッドからの `emit` 0 件、`moveToThread` 0 件。
+
+**修正結果**:
+
+- `src/qml/GuiThread.h`（header-only、グローバル `inline`、名前空間なし ＝ `tests/TestApp.h` の
+  `flushQueuedEvents()` と同じ既存様式）に 1 つ置き、8 つの匿名名前空間内コピーを消した。
+  シグネチャは `std::function<void()>` 据え置き、target のスレッド affinity を検査する
+  `Q_ASSERT` は入れていない（規約は文章で残す方針、R2-10 と同じ扱い）。
+- 呼び出しは全 33 箇所で、**すべて QObject のメンバ関数内で `[this, …]` をキャプチャしていた**ので、
+  A 変種の 11 箇所に `this,` を足すだけで済んだ。B 変種の 22 箇所は無変更。
+  8 ファイルとも `<QCoreApplication>`/`<QMetaObject>` が未使用になったので落とした。
+- **挙動が変わったのは A→B にした 5 クラス（`Auth`/`Download`/`Upload`Controller、
+  `FolderTree`/`QuickAccess`Model）の破棄時だけ**: 未処理のキュー済みイベントが
+  `~QObject` の `removePostedEvents` で落ちるようになった。5 つとも `main.cpp` の
+  スタックローカル＝アプリ寿命なので実質シャットダウン時のみで、かつ安全側の変化。
+- **統一しても覆えない窓が残る**ことを `GuiThread.h` のコメントに明記した:
+  「SDK スレッドが外側ラムダに入ってから、この関数がイベントを投函するまで」。タブ単位の
+  コントローラは外側ラムダの `shared_from_this()`、アプリ寿命のクラスは R2-3 の
+  `MegaSdkClient::shutdown()` 停止点が覆っている。**R2-5 はこれでは塞がらない**。
+- コメントの相互参照連鎖（`AccountController` → Thumbnail/FolderNav、`FolderTreeModel` → Download）は
+  定義ごと消滅。これで嘘になる 4 件（`ThumbnailController.h` / `FolderTreeModel.h` /
+  `QuickAccessModel.h` の「qApp を狙う」記述、`tests/TestApp.h` と `tests/FolderTreeModelTest.cpp` の
+  参照先）も同時に直した。
+- 副作用: `QuickAccessModel.cpp` の `std::find_if` 周り 6 行が、リポジトリの clang-format
+  （設定は v18 想定、ローカルは v22）の版差で再整形された。本件とは無関係だが、
+  フォーマッタフックが編集時に自動適用するため戻せない。
 
 **R2-7 [中] コントローラがサービスへ登録した生 `this` コールバックを解除しない** —
 **修正済み（2026-08-06、R2-3 と同時）**
@@ -1012,7 +1038,7 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 ```
 R2-1  currentJob() の optional 化            … 単独・小・UB を確実に消す      [済 2026-08-06]
 R2-7  コントローラのデストラクタで observer 解除 … 単独・極小                  [済 2026-08-06]
-R2-6  invokeOnGuiThread を B に統一（8→1）    … 単独・機械的
+R2-6  invokeOnGuiThread を B に統一（8→1）    … 単独・機械的                  [済 2026-08-06]
 R2-2  再帰のループ化 + IMegaClient 契約の書き直し … R2-19 の「同期失敗 N 件モック」とセット [済 2026-08-06]
 R2-3  MegaSdkClient::shutdown() の導入        … 寿命系の根。R2-5 の窓もここで狭まる [済 2026-08-06]
 R2-4  FileListModel の shared_ptr 化          … R5 の解体と方向一致。R5 に送る選択肢もあり

@@ -3,11 +3,10 @@
 #include "app/Logging.h"
 #include "ClipboardController.h"
 #include "core/MegaErrorCodes.h"
+#include "GuiThread.h"
 #include "NotificationController.h"
 
-#include <QCoreApplication>
 #include <QDebug>
-#include <QMetaObject>
 #include <QString>
 #include <QVariantMap>
 
@@ -21,26 +20,6 @@ namespace
 // well inside this and never flash one; the ones that don't are the ones
 // worth reporting.
 constexpr int kBusyIndicatorDelayMs = 250;
-
-// Service callbacks may fire on an SDK-internal background thread (see
-// IMegaClient.h), so touching the QML-facing model/property from there must
-// go through a queued invoke onto the GUI thread. Same idiom as main.cpp's
-// own invokeOnGuiThread; duplicated here rather than shared since it's a
-// trivial 3-line, stateless helper.
-//
-// target is `this` at every call site below (Phase 9), not qApp: QObject's
-// destructor removes any posted events still queued for it, so a controller
-// destroyed (tab closed) after this call but before the GUI thread processes
-// the queued fn simply drops it instead of running fn against a dangling
-// `this`. Every outer lambda passed to the service methods below also
-// captures a shared_from_this() copy, covering the earlier window (between
-// the SDK background thread invoking that outer lambda and this function
-// actually posting the event) during which the controller must stay alive
-// for `this`/`target` itself to be valid.
-void invokeOnGuiThread(QObject* target, std::function<void()> fn)
-{
-    QMetaObject::invokeMethod(target, std::move(fn), Qt::QueuedConnection);
-}
 
 } // namespace
 

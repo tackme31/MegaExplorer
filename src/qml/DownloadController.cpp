@@ -1,32 +1,15 @@
 #include "DownloadController.h"
 
 #include "app/Logging.h"
+#include "GuiThread.h"
 #include "NotificationController.h"
 
-#include <QCoreApplication>
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
-#include <QMetaObject>
 #include <QStandardPaths>
 #include <QUrl>
-
-namespace
-{
-
-// DownloadService's onProgress/onJobFinished callbacks may fire on an
-// SDK-internal background thread (see IMegaClient.h), so touching the
-// QML-facing properties/signals from there must go through a queued invoke
-// onto the GUI thread. Same idiom as FolderNavigationController's own
-// invokeOnGuiThread; duplicated here rather than shared, per that existing
-// precedent (trivial, 3-line, stateless helper).
-void invokeOnGuiThread(std::function<void()> fn)
-{
-    QMetaObject::invokeMethod(qApp, std::move(fn), Qt::QueuedConnection);
-}
-
-} // namespace
 
 DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
                                        NotificationController* notifications,
@@ -34,12 +17,12 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
     : QObject(parent), mService(std::move(service)), mNotifications(notifications)
 {
     mService->setOnProgress([this](DownloadJob) {
-        invokeOnGuiThread([this] {
+        invokeOnGuiThread(this, [this] {
             refreshActiveJob();
         });
     });
     mService->setOnJobFinished([this](DownloadJob job) {
-        invokeOnGuiThread([this, job = std::move(job)]() mutable {
+        invokeOnGuiThread(this, [this, job = std::move(job)]() mutable {
             // On success, report the *actual* saved leaf name (from
             // resolvedLocalPath), not the originally-requested job.name --
             // they differ when a name collision caused the SDK to rename the

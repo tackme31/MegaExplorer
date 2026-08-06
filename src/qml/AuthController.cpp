@@ -2,10 +2,9 @@
 
 #include "app/Logging.h"
 #include "core/MegaErrorCodes.h"
+#include "GuiThread.h"
 
-#include <QCoreApplication>
 #include <QLocale>
-#include <QMetaObject>
 #include <QString>
 
 namespace
@@ -20,16 +19,6 @@ namespace
 // unless the fetchnodes CS request is still pending), so a long quiet spell
 // really does mean the download finished.
 constexpr int kStallTimeoutMs = 8000;
-
-// Same idiom as FolderNavigationController.cpp's own copy -- AuthService's
-// callbacks may fire on an SDK-internal background thread (see
-// IMegaClient.h), so touching the QML-facing state from there must go
-// through a queued invoke onto the GUI thread. Duplicated rather than shared
-// since it's a trivial 3-line, stateless helper.
-void invokeOnGuiThread(std::function<void()> fn)
-{
-    QMetaObject::invokeMethod(qApp, std::move(fn), Qt::QueuedConnection);
-}
 
 } // namespace
 
@@ -48,7 +37,7 @@ AuthService::FetchProgressCallback AuthController::makeFetchProgressCallback()
 {
     const std::uint64_t generation = ++mLoadGeneration;
     return [this, generation](std::uint64_t transferredBytes, std::uint64_t totalBytes) {
-        invokeOnGuiThread([this, generation, transferredBytes, totalBytes]() {
+        invokeOnGuiThread(this, [this, generation, transferredBytes, totalBytes]() {
             if (generation != mLoadGeneration)
                 return; // superseded by a newer login attempt
             handleFetchProgress(transferredBytes, totalBytes);
@@ -93,7 +82,7 @@ void AuthController::restoreSession()
         return;
 
     mAuthService->restoreSession(makeFetchProgressCallback(), [this](Result<void> result) {
-        invokeOnGuiThread([this, result = std::move(result)]() mutable {
+        invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
             if (result.success)
             {
                 setState(LoggedIn);
@@ -135,29 +124,31 @@ void AuthController::login(const QString& email, const QString& password)
         passwordStd,
         makeFetchProgressCallback(),
         [this, emailStd, passwordStd](Result<void> result) {
-            invokeOnGuiThread([this, result = std::move(result), emailStd, passwordStd]() mutable {
-                if (result.success)
-                {
-                    mPendingEmail.clear();
-                    mPendingPassword.clear();
-                    setState(LoggedIn);
-                    return;
-                }
-                if (result.errorCode == MegaErrorCode::kEMfaRequired)
-                {
-                    mPendingEmail = emailStd;
-                    mPendingPassword = passwordStd;
-                    setState(NeedsTwoFactor);
-                    return;
-                }
-                qCWarning(lcAuth) << "login failed:" << QString::fromStdString(result.errorMessage)
-                                  << "code=" << result.errorCode;
-                const AuthErrorKind kind = classifyError(result.errorCode);
-                setError(kind,
-                         kind == UnknownError ? QString::fromStdString(result.errorMessage)
-                                              : QString());
-                setState(LoggedOut);
-            });
+            invokeOnGuiThread(
+                this, [this, result = std::move(result), emailStd, passwordStd]() mutable {
+                    if (result.success)
+                    {
+                        mPendingEmail.clear();
+                        mPendingPassword.clear();
+                        setState(LoggedIn);
+                        return;
+                    }
+                    if (result.errorCode == MegaErrorCode::kEMfaRequired)
+                    {
+                        mPendingEmail = emailStd;
+                        mPendingPassword = passwordStd;
+                        setState(NeedsTwoFactor);
+                        return;
+                    }
+                    qCWarning(lcAuth)
+                        << "login failed:" << QString::fromStdString(result.errorMessage)
+                        << "code=" << result.errorCode;
+                    const AuthErrorKind kind = classifyError(result.errorCode);
+                    setError(kind,
+                             kind == UnknownError ? QString::fromStdString(result.errorMessage)
+                                                  : QString());
+                    setState(LoggedOut);
+                });
         });
 }
 
@@ -175,7 +166,7 @@ void AuthController::submitTwoFactorCode(const QString& pin)
         pin.toStdString(),
         makeFetchProgressCallback(),
         [this](Result<void> result) {
-            invokeOnGuiThread([this, result = std::move(result)]() mutable {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
                 if (result.success)
                 {
                     mPendingEmail.clear();
@@ -229,7 +220,7 @@ void AuthController::logout()
 
     setState(LoggingOut);
     mAuthService->logout([this](Result<void> result) {
-        invokeOnGuiThread([this, result = std::move(result)]() mutable {
+        invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
             (void)result; // AuthService::logout always succeeds -- see its own header comment.
             setError(NoError);
             setState(LoggedOut);

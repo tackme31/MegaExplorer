@@ -1,30 +1,12 @@
 #include "ThumbnailController.h"
 
 #include "app/Logging.h"
+#include "GuiThread.h"
 #include "NotificationController.h"
 
-#include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
-#include <QMetaObject>
 #include <QStandardPaths>
-
-namespace
-{
-
-// Same idiom as FolderNavigationController/DownloadController's own
-// invokeOnGuiThread; duplicated here rather than shared, per that existing
-// precedent (trivial, 3-line, stateless helper). ThumbnailService's onDone
-// callback may fire on an SDK-internal background thread, so touching
-// mModel from there must go through a queued invoke onto the GUI thread.
-// target is `this`, not qApp -- see FolderNavigationController.cpp's
-// invokeOnGuiThread comment for why.
-void invokeOnGuiThread(QObject* target, std::function<void()> fn)
-{
-    QMetaObject::invokeMethod(target, std::move(fn), Qt::QueuedConnection);
-}
-
-} // namespace
 
 ThumbnailController::ThumbnailController(std::shared_ptr<ThumbnailService> service,
                                          FileListModel* model,
