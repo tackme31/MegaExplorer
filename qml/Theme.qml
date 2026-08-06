@@ -136,6 +136,7 @@ QtObject {
     // than a glyph. file stays an outline; the font has no filled page that
     // reads at 16px.
     readonly property QtObject glyph: QtObject {
+        id: glyphSet
         readonly property string folder: "\uE8D5" // FolderFill
         readonly property string file: "\uE7C3"   // Page
         // Two glyphs rather than one rotated 90 degrees (what Basic's
@@ -172,6 +173,32 @@ QtObject {
         // Toast dismiss (S10). No cmap check needed: TabStrip's tab-close and
         // CaptionBar's window-close already paint this one.
         readonly property string close: "\uE8BB" // ChromeClose
+
+        // Menu-row leading icons. One entry per context-menu action ID (the
+        // same IDs ActionCatalog.qml keys on) plus the three "More" menu rows,
+        // so picking an icon is an edit here and nowhere else.
+        //
+        // PROVISIONAL: chosen to be plausible, not vetted. Unlike every glyph
+        // above, these have been through neither the Segoe MDL2 cmap check nor
+        // the "check how it actually paints" one that E80A Tiles failed (see
+        // viewList above) -- do both when the final set is settled on.
+        readonly property QtObject menu: QtObject {
+            readonly property string newFolder: "\uE8F4"     // NewFolder
+            readonly property string download: "\uE896"      // Download
+            readonly property string openInNewTab: "\uE8A7"  // OpenInNewWindow
+            readonly property string pin: glyphSet.pin
+            readonly property string unpin: "\uE77A"         // Unpin
+            readonly property string cut: "\uE8C6"           // Cut
+            readonly property string copy: "\uE8C8"          // Copy
+            readonly property string paste: "\uE77F"         // Paste
+            readonly property string rename: "\uE8AC"        // Rename
+            readonly property string moveToRubbish: "\uE74D" // Delete
+            readonly property string selectAll: "\uE8B3"     // SelectAll
+            readonly property string refresh: glyphSet.refresh
+            readonly property string about: "\uE946"         // Info
+            readonly property string licenses: "\uE9a4"      // TextBulletListSquare
+            readonly property string signOut: "\uE7E8"       // Leave
+        }
     }
 
     readonly property QtObject color: QtObject {

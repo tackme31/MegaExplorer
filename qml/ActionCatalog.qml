@@ -37,11 +37,13 @@ QtObject {
     readonly property var entries: ({
                                         // ctx: requestNewFolder()
                                         "newFolder": {
+                                            "icon": ctx => Theme.glyph.menu.newFolder,
                                             "label": ctx => qsTr("New folder"),
                                             "trigger": ctx => ctx.requestNewFolder()
                                         },
                                         // ctx: entries
                                         "download": {
+                                            "icon": ctx => Theme.glyph.menu.download,
                                             "label": ctx => qsTr("Download"),
                                             "trigger": ctx => {
                                                 for (let i = 0; i < ctx.entries.length; ++i) {
@@ -54,6 +56,7 @@ QtObject {
                                         },
                                         // ctx: handle, isRoot
                                         "openInNewTab": {
+                                            "icon": ctx => Theme.glyph.menu.openInNewTab,
                                             "label": ctx => qsTr("Open in new tab"),
                                             // Background tab, current tab keeps focus -- same
                                             // convention as the views' and the tree's middle-click.
@@ -62,6 +65,8 @@ QtObject {
                                         },
                                         // ctx: handle, isRoot, name, pinned
                                         "togglePin": {
+                                            "icon": ctx => ctx.pinned ? Theme.glyph.menu.unpin :
+                                                                        Theme.glyph.menu.pin,
                                             "label": ctx => ctx.pinned ? qsTr(
                                                                              "Unpin from Quick access") :
                                                                          qsTr("Pin to Quick access"),
@@ -80,6 +85,7 @@ QtObject {
                                         },
                                         // ctx: entries, navController
                                         "cut": {
+                                            "icon": ctx => Theme.glyph.menu.cut,
                                             "label": ctx => qsTr("Cut"),
                                             "trigger": ctx => clipboardController.cut(ctx.entries,
                                                                                       ctx.navController.currentHandle,
@@ -87,6 +93,7 @@ QtObject {
                                         },
                                         // ctx: entries, navController
                                         "copy": {
+                                            "icon": ctx => Theme.glyph.menu.copy,
                                             "label": ctx => qsTr("Copy"),
                                             "trigger": ctx => clipboardController.copy(ctx.entries,
                                                                                        ctx.navController.currentHandle,
@@ -94,6 +101,7 @@ QtObject {
                                         },
                                         // ctx: canPaste, navController
                                         "paste": {
+                                            "icon": ctx => Theme.glyph.menu.paste,
                                             "label": ctx => qsTr("Paste"),
                                             // Greyed rather than hidden, same as togglePin above:
                                             // a row that comes and goes with the clipboard reads
@@ -103,16 +111,19 @@ QtObject {
                                         },
                                         // ctx: requestRename()
                                         "rename": {
+                                            "icon": ctx => Theme.glyph.menu.rename,
                                             "label": ctx => qsTr("Rename"),
                                             "trigger": ctx => ctx.requestRename()
                                         },
                                         // ctx: requestMoveToRubbish()
                                         "moveToRubbish": {
+                                            "icon": ctx => Theme.glyph.menu.moveToRubbish,
                                             "label": ctx => qsTr("Move to Rubbish bin"),
                                             "trigger": ctx => ctx.requestMoveToRubbish()
                                         },
                                         // ctx: navController
                                         "selectAll": {
+                                            "icon": ctx => Theme.glyph.menu.selectAll,
                                             "label": ctx => qsTr("Select all"),
                                             "trigger": ctx
                                                        => ctx.navController.fileListModel.selectAll(
@@ -120,6 +131,7 @@ QtObject {
                                         },
                                         // ctx: navController
                                         "refresh": {
+                                            "icon": ctx => Theme.glyph.menu.refresh,
                                             "label": ctx => qsTr("Refresh"),
                                             "trigger": ctx => ctx.navController.refresh()
                                         }
@@ -131,6 +143,16 @@ QtObject {
     function label(actionId, ctx) {
         const entry = root.entries[actionId];
         return entry === undefined ? undefined : entry.label(ctx);
+    }
+
+    // "" (not undefined) for an unknown ID, because the caller feeds this
+    // straight to IconMenuItem.glyph: a row with no icon still keeps the
+    // gutter, so an unrecognized action lines up with the rest instead of
+    // starting at the left edge. The code points themselves live in
+    // Theme.glyph.menu -- this file only decides which action gets which.
+    function icon(actionId, ctx) {
+        const entry = root.entries[actionId];
+        return entry === undefined ? "" : entry.icon(ctx);
     }
 
     // Entries without an `enabled` are always enabled -- greying is the

@@ -38,7 +38,7 @@ Menu {
         // covers an action ID the catalog hasn't been updated for yet.
         model: root.actionIds.length > 0 ? root.actionIds : [""]
 
-        delegate: MenuItem {
+        delegate: IconMenuItem {
             required property string modelData
 
             // var, not string: a string-typed property coerces an undefined
@@ -47,6 +47,7 @@ Menu {
             readonly property var label: ActionCatalog.label(modelData, root.context)
 
             text: label !== undefined ? label : qsTr("None")
+            glyph: ActionCatalog.icon(modelData, root.context)
             enabled: label !== undefined && ActionCatalog.isEnabled(modelData, root.context)
 
             onTriggered: ActionCatalog.trigger(modelData, root.context)

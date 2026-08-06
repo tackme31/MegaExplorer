@@ -155,6 +155,7 @@ qt_add_qml_module(appMegaExplorer
         qml/components/FolderBackgroundMenu.qml
         qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
+        qml/components/IconMenuItem.qml
         qml/components/InlineRenameField.qml
         qml/components/LicenseDialog.qml
         qml/components/NewFolderDialog.qml

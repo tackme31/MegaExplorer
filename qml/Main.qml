@@ -504,17 +504,23 @@ ApplicationWindow {
                         AccountMenuHeader {}
                         MenuSeparator {}
 
-                        MenuItem {
+                        // IconMenuItem, not MenuItem, for the leading glyph --
+                        // same rows as a context menu gets, so the two kinds of
+                        // menu don't disagree about whether items have icons.
+                        IconMenuItem {
                             text: qsTr("About MegaExplorer")
+                            glyph: Theme.glyph.menu.about
                             onTriggered: aboutDialog.open()
                         }
-                        MenuItem {
+                        IconMenuItem {
                             text: qsTr("Open source licenses")
+                            glyph: Theme.glyph.menu.licenses
                             onTriggered: licenseDialog.open()
                         }
                         MenuSeparator {}
-                        MenuItem {
+                        IconMenuItem {
                             text: qsTr("Sign out")
+                            glyph: Theme.glyph.menu.signOut
                             onTriggered: signOutConfirmDialog.open()
                         }
                     }
