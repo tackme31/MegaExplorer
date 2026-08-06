@@ -147,6 +147,8 @@ void FolderNavigationController::openFolder(quint64 handle)
 
 void FolderNavigationController::goBack()
 {
+    if (!canGoBack())
+        return;
     mService->goBack(mSortOrder,
                      [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                          invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {

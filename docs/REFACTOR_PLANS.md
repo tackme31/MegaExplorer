@@ -1125,7 +1125,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   という SDK 実装詳細に依存している事実（R2-9 の副産物）も残した。3 つの配達モードそのものは
   R2-2 で `IMegaClient.h` の先頭に書いたので、重複させず参照だけ張っている。
 
-### R3 — 調査済み / R3-1・R3-2・R3-3・R3-6・R3-12〜R3-14 対応済み、残り 5 件（2026-08-06）
+### R3 — 調査済み / R3-1・R3-2・R3-3・R3-6・R3-8・R3-12〜R3-14 対応済み、残り 4 件（2026-08-06）
 
 計画の「種」4 件を現物で検証した結果。**確認 8 件 / 種の誤り 3 件（うち 1 件は方針判断が要る）/
 問題なし 6 件 / 新規 5 件**。R1・R2 と同じく、以下はそのまま plan mode の作業単位として使える粒度で
@@ -1376,7 +1376,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 - 修正方針: R3-9（下記「判断が要るもの」）とセット。`value` を private + `value()` アクセサにして
   失敗時は `assert` にするだけでも、この形は型で防げる。
 
-**R3-8 [低] 「やることが無い」がエラーとして表現され、エラートーストの経路に乗っている**
+**R3-8 [低] ✅対応済み 「やることが無い」がエラーとして表現され、エラートーストの経路に乗っている**
 
 - `src/core/FolderNavigationService.cpp:62` — 履歴が空の `goBack` が `fail("no back history")`。これは
   `applyResult`（`src/qml/FolderNavigationController.cpp:181-189`）に届き、
@@ -1389,6 +1389,16 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   （`FolderNavigationController::search`、`:238-242`）が早期 return するので到達しない。
 - 修正方針: `goBack` に `goUp` と同じ早期 return を足す。`fail("no back history")` 自体は
   サービス単体の契約としては残してよい（テストが見ている）。
+- **対応（2026-08-07）**: 方針どおり `FolderNavigationController::goBack` の先頭に
+  `if (!canGoBack()) return;` を 1 つ足しただけ（`src/qml/FolderNavigationController.cpp:147-149`）。
+  同クラスの `goUp` と字面まで同じ形にしてある。決めた点:
+  - **`FolderNavigationService::goBack` の `fail("no back history")` は残した**。サービス単体では
+    「戻れないのに呼ばれた」は正しく失敗であり、`FolderNavigationServiceTest.cpp` の 7 箇所が
+    この契約に乗っている。潰したのは *UI 経路に流れること* だけで、契約そのものではない。
+  - **ログも出していない**。R3-12〜R3-14 でログを足したのは「握り潰していた失敗」だが、こちらは
+    そもそも失敗ではなく no-op（R3-6 の `kEArgs` 側と同じ理由）。
+  - `SearchService.cpp:14` の `fail("empty query")` は**触っていない**。呼び出し側が既に早期 return
+    しており到達しないため、ガードを重ねても増えるのは行数だけ。
 
 #### 種が不正確だった / 判断が要るもの
 
@@ -1514,8 +1524,8 @@ R3-3  [[nodiscard]] + save/load 失敗の報告      … ✅済。R3-9(a) もこ
 R3-2  isUsable の 3 値化（ピンを誤削除しない）  … ✅済。R3-1(c) の成果を直接使った
 R3-6  renameEntry の QML 分岐だけ               … ✅済。C++ 半分は R3-1 で先に入っていた
 R3-12 / R3-13 / R3-14  無音の 3 箇所にログ      … ✅済。予定どおり 1 コミット
-R3-8  goBack のガード                           … 極小 → 次はこれ
-R3-4 + R3-5  notifyError の enum 化（+ refresh 追加） … QML も動く。R6 と要調整
+R3-8  goBack のガード                           … ✅済。1 行、サービス側の契約は据え置き
+R3-4 + R3-5  notifyError の enum 化（+ refresh 追加） … QML も動く。R6 と要調整 → 次はこれ
 R3-7  value のアクセサ化                        … R3-9 の承認が前提
 R3-9  Result 型そのものの方針                   … ★先に承認を取る。R5 の入力
 ```
