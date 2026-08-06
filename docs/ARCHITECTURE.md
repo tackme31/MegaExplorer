@@ -242,3 +242,20 @@ Where a Qt-free service has no one to report to, it hands the failure out rather
 `QuickAccessService::load()` returns its `Result` for the caller to log, and its write-through
 failures go to a `setOnPersistenceFailed` handler that `QuickAccessModel` turns into a log line plus
 a toast. Services don't log; `src/qml` does.
+
+### Collapsing a code to a verdict: unknown means "don't act"
+
+Some boundaries have to reduce an `errorCode` to a decision. Two rules there:
+
+- **Name the definitive codes; let everything else fall through to non-definitive.** A `switch` with
+  an allowlist and a `default` is the shape — `isSessionDefinitivelyInvalid` (`AuthService.cpp`) and
+  `QuickAccessService::classify` (`QuickAccessService.cpp`) both use it. A code added to the SDK
+  later then arrives as "unknown", not as a licence to act.
+- **The non-definitive branch takes the side that destroys nothing.** An unrecognized login failure
+  keeps the stored session; an unanswerable pin lookup keeps the pin. The asymmetry is the whole
+  argument: a wrongly-kept dead session costs one failed launch, a wrongly-cleared good one costs
+  the user's password.
+
+Don't reduce to `bool` when the boundary needs three answers. `QuickAccessService::classify` returns
+`Usable`/`Gone`/`Unknown` because it used to be a `bool`, and folding "couldn't ask" into "it's
+gone" meant a shutdown during the login-time sweep wrote an emptied pin list to disk.

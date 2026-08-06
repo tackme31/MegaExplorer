@@ -1125,7 +1125,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   という SDK 実装詳細に依存している事実（R2-9 の副産物）も残した。3 つの配達モードそのものは
   R2-2 で `IMegaClient.h` の先頭に書いたので、重複させず参照だけ張っている。
 
-### R3 — 調査済み / R3-1・R3-3 対応済み、残り 7 件（2026-08-06）
+### R3 — 調査済み / R3-1・R3-2・R3-3 対応済み、残り 6 件（2026-08-06）
 
 計画の「種」4 件を現物で検証した結果。**確認 8 件 / 種の誤り 3 件（うち 1 件は方針判断が要る）/
 問題なし 6 件 / 新規 5 件**。R1・R2 と同じく、以下はそのまま plan mode の作業単位として使える粒度で
@@ -1205,7 +1205,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   - `docs/ARCHITECTURE.md` に `## Error representation` 節を追加（R1 の信頼境界・R2 の
     スレッドモデルと並ぶ位置）。R3-4 / R3-9 は未決なので書いていない — 決まった時点で追記する。
 
-**R3-2 [高] `isUsable()` が「問い合わせ失敗」を「ピンが消えた」に畳み、ピンを永久削除する**
+**R3-2 [高] ✅対応済み `isUsable()` が「問い合わせ失敗」を「ピンが消えた」に畳み、ピンを永久削除する**
 
 - `src/core/QuickAccessService.cpp:99-102`:
   `return resolved.success && resolved.value.isFolder && resolved.value.inCloud;`
@@ -1220,6 +1220,40 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   ピンを**残す**。`AuthService` の `isSessionDefinitivelyInvalid` が「未知のコードは transient 扱い、
   誤って捨てるより残す方が安い」と同じ判断を既に文書化している（`src/core/AuthService.h:17-25`）ので、
   規約はそこから借りればよく、新しく決めることは無い。
+- **対応（2026-08-06）**: 方針どおり 3 値化。決めた点:
+  - **実害の形が調査時より具体化した**。R3-1 後の `getNodeInfo` の失敗はちょうど 2 種類
+    （`kClientShutDownCode = 2` / `kENoEnt`）で、前者は**掃引中の全ピンに一斉に起きる**。つまり
+    ログイン直後にアプリを閉じると N 件すべてが「dangling」判定 → `replaceAll({})` → `save()` で
+    **ピンが全滅する**。これが直った本体。
+  - **`kENoEnt` は `Gone` 側に置いた**（＝既存の削除挙動を維持）。MEGA の通常の削除はゴミ箱移動なので
+    解決には成功し `inCloud == false` で落ちる。`kENoEnt` まで到達するのはゴミ箱を空にして完全削除
+    された場合で、これを `Unknown` にすると**そのピンは永久に残り、クリックしても「確認できません」
+    としか言えなくなる**。既存テスト `ReloadDropsAPinWhoseHandleNoLongerResolves` が無改変で通ることが
+    この判断の固定になっている。
+  - **allowlist 形（`default` → `Unknown`）にした理由は 2 つ**。`isSessionDefinitivelyInvalid` と
+    同じ形にして規約の出所を明示すること、および `kClientShutDownCode` が `MegaSdkClient.cpp` の
+    無名 namespace にあり `src/core` から名前で参照できないこと — 「シャットダウンだけ `Unknown`」と
+    いう書き方はそもそも取れない。結果として将来 SDK コードが増えても勝手に削除側へ回らない。
+  - **掃引の判定は `== Usable` ではなく `!= Gone`**。`Unknown` は名前も更新しないので、コミット時の
+    `survivors` が現行リストと完全一致し、既存の等値ガード（`survivors == mService->pins()`）が効いて
+    **`save()` が 1 回も呼ばれない**。「掃引が見なかったハンドルは素通り」という既存の扱いと形が揃う。
+  - **クリック時の `Unknown` は `missing()` に流さない**。あれは「Quick access から削除しますか？」
+    ダイアログ直結なので、確認できなかっただけで削除を提案してしまう。代わりに固定文トースト
+    `quickAccessUnavailable` を出す。**新シグナルは作らず** `QuickAccessModel` から
+    `NotificationController` を直接叩いた — R3-3 の永続化失敗ハンドラと同じ作法で、`Main.qml` は
+    コメント以外無変更。文言に `%1` を使わないのも R3-3 と同じ理由（原因が打ち切りなので SDK の
+    英語文字列は何も説明しない）で、**R3-4 の enum 化が来てもこの行は動かない**。
+  - `FolderTreeService::hasSubfolders` も `Result` を `bool` に畳んでいる（前提節参照）が、
+    **今回は触っていない**。失敗時に `false`（＝展開矢印を出さない）へ倒すのは既にコメント済みの
+    安全側で、データが消える経路が無い。棚卸し表でも「対応不要」のまま。
+  - `docs/ARCHITECTURE.md` の `## Error representation` に
+    「Collapsing a code to a verdict: unknown means "don't act"」小節を追加。R3-1 が「決まった時点で
+    追記する」と書いた枠に入れた。
+  - テスト: `QuickAccessServiceIsUsableTest` を `QuickAccessServiceClassifyTest` へ移行（4 件書き換え）
+    + `Unknown` 側 2 件を新規（シャットダウンのセンチネル / 未知の SDK コード）。モデル側は
+    「答えが返らなかったピンを残し `save()` を呼ばない」「`Usable`/`Gone`/`Unknown` 混在で `Gone` だけ
+    落とす」「クリック時に `missing` が 0 回でトーストが 1 回」の 3 件を追加。382 件全緑、
+    `/W4` 新規警告ゼロ。
 
 **R3-3 [高] ✅対応済み `IPinnedFolderStore::save()` の `Result<void>` が 4 箇所で破棄されている**
 
@@ -1429,7 +1463,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 | `QuickAccessService.cpp:44,56,76,84` | `save()` の戻り値を破棄 | **報告漏れ** | ✅R3-3（`persist()` + sink → ログ + トースト） |
 | `QuickAccessService.cpp:23-24` | load 失敗 → 空リスト、無ログ | **報告漏れ**（畳むこと自体は意図的） | ✅R3-3（`load()` が `Result<void>` を返す → モデルがログ） |
 | `QuickAccessService.cpp:15-20` | `currentUserHandle()` 失敗 → ピン全消し、無ログ | **報告漏れ** | ✅R3-3（同上、client の `Result` をそのまま転送） |
-| `QuickAccessModel.cpp:183-195` | 失敗を「dangling」と断定してピン削除 | **報告漏れ**（ログの文言も誤り） | R3-2 |
+| `QuickAccessModel.cpp:183-195` | 失敗を「dangling」と断定してピン削除 | **報告漏れ**（ログの文言も誤り） | ✅R3-2（`PinStatus` 3 値化 + `Unknown` 用のログ／トースト） |
 | `FolderNavigationController.cpp:318-324` | 裏側 refresh 失敗、無ログ | **報告漏れ** | R3-12 |
 | `AuthService.cpp:111-117` | トークン取得失敗、無ログ | **報告漏れ** | R3-13 |
 | `UploadController.cpp:242-243` | 同名チェック不能 → スキップ | 意図的（ただし無ログ） | R3-14 |
@@ -1442,8 +1476,8 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 ```
 R3-1  errorCode の意味づけ（既定引数の廃止）    … ✅済（先行実施）。以降 3 件の前提
 R3-3  [[nodiscard]] + save/load 失敗の報告      … ✅済。R3-9(a) もこれで入った
-R3-2  isUsable の 3 値化（ピンを誤削除しない）  … R3-1(c) に依存 → 次はこれ
-R3-6  renameEntry の QML 分岐だけ               … ◐C++ 半分は R3-1 で完了
+R3-2  isUsable の 3 値化（ピンを誤削除しない）  … ✅済。R3-1(c) の成果を直接使った
+R3-6  renameEntry の QML 分岐だけ               … ◐C++ 半分は R3-1 で完了 → 次はこれ
 R3-12 / R3-13 / R3-14  無音の 3 箇所にログ      … 極小・まとめて 1 コミット
 R3-8  goBack のガード                           … 極小
 R3-4 + R3-5  notifyError の enum 化（+ refresh 追加） … QML も動く。R6 と要調整
