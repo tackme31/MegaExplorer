@@ -62,6 +62,23 @@ static_assert(AccountPlan::kFeature == mega::MegaAccountDetails::ACCOUNT_TYPE_FE
 namespace
 {
 
+// What every method reports once shutdown() has run. Nothing surfaces it: the
+// only caller left at that point is a teardown callback re-entering from the
+// SDK thread, and the GUI event loop it would post to has already stopped.
+constexpr char kShutDownMessage[] = "the MEGA client has been shut down";
+
+// Listener lifetime, once for all seven classes below: each one is `new`ed at
+// the call site, handed to MegaApi, and deletes itself from its finish
+// callback. That is the only correct arrangement here -- the SDK never deletes
+// listeners (megaapi_impl.cpp:18032,18192 delete the request/transfer, never
+// the listener), and it always fires the finish callback, including on abort
+// (:20830, :9692), so nothing is ever stranded.
+//
+// Do NOT "clean up" by calling removeRequestListener/removeTransferListener.
+// They do not unsubscribe, they setListener(NULL) (:17895-17903), so the finish
+// callback never arrives, `delete this` is never reached, and the listener
+// leaks -- the exact opposite of what the call looks like it does.
+
 // Shared by every SDK call whose completion is a bare success/failure with
 // no extra payload (login, loginWithSession, multiFactorAuthLogin, logout)
 // -- LoginListener and FetchNodesListener used to duplicate this verbatim
@@ -400,19 +417,56 @@ MegaSdkClient::MegaSdkClient(std::string basePath, std::string userAgent)
 
 MegaSdkClient::~MegaSdkClient()
 {
+    // Before removeLoggerObject, so the SDK's own teardown lines still reach
+    // the log -- they used to be dropped, the logger being unregistered first.
+    shutdown();
     mega::MegaApi::removeLoggerObject(mLogger.get());
+}
+
+void MegaSdkClient::shutdown()
+{
+    if (mShuttingDown.exchange(true))
+        return; // main.cpp already called it; the destructor is the second call
+
+    // ~MegaApi pushes a TYPE_DELETE request, then joins the SDK thread, which
+    // runs abortPendingActions() on the way out: every pending request and
+    // transfer is completed with API_EACCESS, so all our listeners fire (and
+    // self-delete) right here, on the SDK thread, while this call blocks.
+    // Those callbacks can re-enter this object -- DownloadService and
+    // ThumbnailService start the next queued job from inside onDone, and
+    // AccountService re-issues getMyUserAttribute from inside its own callback
+    // -- which is why every method above checks mShuttingDown: it is already
+    // true, and unique_ptr::reset() nulls the pointer before deleting, so an
+    // unguarded method would dereference null here.
+    mApi.reset();
 }
 
 void MegaSdkClient::login(const std::string& email,
                           const std::string& password,
                           std::function<void(Result<void>)> onDone)
 {
+    // Every public method below opens with this same guard, and every new one
+    // must too: shutdown() nulls mApi from the GUI thread while the SDK thread
+    // is still delivering teardown callbacks, and those callbacks re-enter here
+    // (see shutdown()). One method missing the guard is one null dereference.
+    // Answering synchronously is safe -- IMegaClient documents delivery mode 3
+    // and the services trampoline their queue advance because of it.
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     mApi->login(email.c_str(), password.c_str(), new SimpleResultListener(std::move(onDone)));
 }
 
 void MegaSdkClient::loginWithSession(const std::string& sessionToken,
                                      std::function<void(Result<void>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     mApi->fastLogin(sessionToken.c_str(), new SimpleResultListener(std::move(onDone)));
 }
 
@@ -421,6 +475,11 @@ void MegaSdkClient::multiFactorAuthLogin(const std::string& email,
                                          const std::string& pin,
                                          std::function<void(Result<void>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     mApi->multiFactorAuthLogin(
         email.c_str(), password.c_str(), pin.c_str(), new SimpleResultListener(std::move(onDone)));
 }
@@ -431,11 +490,18 @@ void MegaSdkClient::logout(std::function<void(Result<void>)> onDone)
     // always on for this project -- the 2-argument overload is the only one
     // that exists here, so no #ifdef branch is needed.
     // keepSyncConfigsFile=false -- this app never uses sync.
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     mApi->logout(false, new SimpleResultListener(std::move(onDone)));
 }
 
 Result<std::string> MegaSdkClient::currentSessionToken() const
 {
+    if (mShuttingDown)
+        return Result<std::string>::fail(kShutDownMessage);
     char* session = mApi->dumpSession(); // non-const, but callable from a const member via
                                          // unique_ptr's operator->
     if (!session)
@@ -447,6 +513,8 @@ Result<std::string> MegaSdkClient::currentSessionToken() const
 
 Result<std::uint64_t> MegaSdkClient::currentUserHandle() const
 {
+    if (mShuttingDown)
+        return Result<std::uint64_t>::fail(kShutDownMessage);
     const mega::MegaHandle handle = mApi->getMyUserHandleBinary();
     if (handle == mega::INVALID_HANDLE)
         return Result<std::uint64_t>::fail("not logged in");
@@ -457,17 +525,32 @@ void MegaSdkClient::fetchNodes(
     std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
     std::function<void(Result<void>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     mApi->fetchNodes(new FetchNodesListener(std::move(onProgress), std::move(onDone)));
 }
 
 void MegaSdkClient::syncPendingChanges(std::function<void(Result<void>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     mApi->catchup(new SimpleResultListener(std::move(onDone)));
 }
 
 void MegaSdkClient::getRootChildren(SortOrder order,
                                     std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<FileEntry>>::fail(kShutDownMessage));
+        return;
+    }
     listChildren(resolveNode(0, true),
                  "No root node (not logged in / nodes not fetched)",
                  order,
@@ -478,6 +561,11 @@ void MegaSdkClient::getChildren(std::uint64_t handle,
                                 SortOrder order,
                                 std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<FileEntry>>::fail(kShutDownMessage));
+        return;
+    }
     listChildren(
         resolveNode(handle, false),
         "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
@@ -491,6 +579,11 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
                            SortOrder order,
                            std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<FileEntry>>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> ancestor = resolveNode(ancestorHandle, isRoot);
     if (!ancestor)
     {
@@ -512,6 +605,11 @@ void MegaSdkClient::download(std::uint64_t handle,
                              std::function<void(std::uint64_t, std::uint64_t)> onProgress,
                              std::function<void(Result<DownloadOutcome>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<DownloadOutcome>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
     {
@@ -543,6 +641,11 @@ void MegaSdkClient::upload(const std::string& localPath,
                            std::function<void(std::uint64_t, std::uint64_t)> onProgress,
                            std::function<void(Result<UploadOutcome>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<UploadOutcome>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
     if (!parent)
     {
@@ -567,6 +670,11 @@ void MegaSdkClient::getThumbnail(std::uint64_t handle,
                                  const std::string& destinationPath,
                                  std::function<void(Result<std::string>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<std::string>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
     {
@@ -585,6 +693,11 @@ void MegaSdkClient::getPath(std::uint64_t handle,
                             bool isRoot,
                             std::function<void(Result<std::vector<PathSegment>>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<PathSegment>>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, isRoot);
     if (!node)
     {
@@ -615,6 +728,11 @@ void MegaSdkClient::getPath(std::uint64_t handle,
 
 void MegaSdkClient::getNodeInfo(std::uint64_t handle, std::function<void(Result<NodeInfo>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<NodeInfo>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
     {
@@ -638,6 +756,11 @@ void MegaSdkClient::renameNode(std::uint64_t handle,
                                const std::string& newName,
                                std::function<void(Result<void>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
     {
@@ -651,6 +774,11 @@ void MegaSdkClient::renameNode(std::uint64_t handle,
 
 void MegaSdkClient::moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
     {
@@ -676,6 +804,11 @@ void MegaSdkClient::moveNode(std::uint64_t handle,
                              bool newParentIsRoot,
                              std::function<void(Result<void>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
     {
@@ -703,6 +836,11 @@ void MegaSdkClient::copyNode(std::uint64_t handle,
                              const std::string& newName,
                              std::function<void(Result<void>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
     {
@@ -736,6 +874,11 @@ void MegaSdkClient::createFolder(std::uint64_t parentHandle,
                                  const std::string& name,
                                  std::function<void(Result<void>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage));
+        return;
+    }
     std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
     if (!parent)
     {
@@ -754,6 +897,8 @@ Result<void> MegaSdkClient::checkMove(std::uint64_t handle,
                                       std::uint64_t newParentHandle,
                                       bool newParentIsRoot) const
 {
+    if (mShuttingDown)
+        return Result<void>::fail(kShutDownMessage);
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     std::unique_ptr<mega::MegaNode> parent = resolveNode(newParentHandle, newParentIsRoot);
     if (!node || !parent)
@@ -779,6 +924,8 @@ Result<void> MegaSdkClient::checkMove(std::uint64_t handle,
 
 Result<void> MegaSdkClient::checkUpload(std::uint64_t parentHandle, bool parentIsRoot) const
 {
+    if (mShuttingDown)
+        return Result<void>::fail(kShutDownMessage);
     std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
     if (!parent)
         return Result<void>::fail("Destination folder no longer exists", MegaErrorCode::kENoEnt);
@@ -803,6 +950,8 @@ Result<void> MegaSdkClient::checkUpload(std::uint64_t parentHandle, bool parentI
 Result<std::vector<FileEntry>> MegaSdkClient::findChildFiles(
     std::uint64_t parentHandle, bool parentIsRoot, const std::vector<std::string>& names) const
 {
+    if (mShuttingDown)
+        return Result<std::vector<FileEntry>>::fail(kShutDownMessage);
     std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
     if (!parent)
         return Result<std::vector<FileEntry>>::fail("Destination folder no longer exists",
@@ -822,6 +971,8 @@ Result<std::vector<FileEntry>> MegaSdkClient::findChildFiles(
 
 Result<bool> MegaSdkClient::hasSubfolders(std::uint64_t handle, bool isRoot) const
 {
+    if (mShuttingDown)
+        return Result<bool>::fail(kShutDownMessage);
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, isRoot);
     if (!node)
         return Result<bool>::fail("No node with the given handle", MegaErrorCode::kENoEnt);
@@ -834,6 +985,8 @@ Result<bool> MegaSdkClient::hasSubfolders(std::uint64_t handle, bool isRoot) con
 
 Result<AccountIdentity> MegaSdkClient::currentAccountIdentity() const
 {
+    if (mShuttingDown)
+        return Result<AccountIdentity>::fail(kShutDownMessage);
     // Three caller-owned char* in one function; all three need releasing.
     const std::unique_ptr<char[]> email(mApi->getMyEmail());
     if (!email)
@@ -863,12 +1016,22 @@ void MegaSdkClient::getMyAvatar(const std::string& destinationPath,
 {
     // No resolveNode pre-flight, unlike getThumbnail: the avatar belongs to
     // the account, not to a node.
+    if (mShuttingDown)
+    {
+        onDone(Result<std::string>::fail(kShutDownMessage));
+        return;
+    }
     mApi->getUserAvatar(destinationPath.c_str(), new AttributeFileListener(std::move(onDone)));
 }
 
 void MegaSdkClient::getMyUserAttribute(UserAttribute attribute,
                                        std::function<void(Result<std::string>)> onDone)
 {
+    if (mShuttingDown)
+    {
+        onDone(Result<std::string>::fail(kShutDownMessage));
+        return;
+    }
     mApi->getUserAttribute(toMegaUserAttribute(attribute),
                            new TextResultListener(std::move(onDone)));
 }
@@ -877,12 +1040,21 @@ void MegaSdkClient::getAccountInfo(std::function<void(Result<AccountInfo>)> onDo
 {
     // storage + pro only; transfer quota is out of scope and megaapi.h asks
     // callers to request no more than they need.
+    if (mShuttingDown)
+    {
+        onDone(Result<AccountInfo>::fail(kShutDownMessage));
+        return;
+    }
     mApi->getSpecificAccountDetails(
         true, false, true, -1, new AccountDetailsListener(std::move(onDone)));
 }
 
 std::unique_ptr<mega::MegaNode> MegaSdkClient::resolveNode(std::uint64_t handle, bool isRoot) const
 {
+    // Second entry point that touches mApi, so it carries the same guard as the
+    // public methods -- the callers all treat a null node as "gone".
+    if (mShuttingDown)
+        return nullptr;
     if (isRoot)
         return std::unique_ptr<mega::MegaNode>(mApi->getRootNode());
     return std::unique_ptr<mega::MegaNode>(
@@ -894,6 +1066,8 @@ void MegaSdkClient::listChildren(std::unique_ptr<mega::MegaNode> node,
                                  SortOrder order,
                                  std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
+    // No mShuttingDown guard: a non-null node means resolveNode ran before the
+    // flag was set, and the null case already bails out below.
     if (!node)
     {
         onDone(Result<std::vector<FileEntry>>::fail(notFoundMessage));

@@ -164,5 +164,15 @@ int main(int argc, char* argv[])
 
     authController.restoreSession();
 
-    return app.exec();
+    const int exitCode = app.exec();
+
+    // Explicit stop point, not left to ~MegaSdkClient. Destroying MegaApi makes
+    // the SDK thread fail every pending request/transfer before it joins, and
+    // client is declared first here, so it is destroyed *last* -- those
+    // callbacks would land on services and controllers that are already gone.
+    // Stopping it here, while everything above is still alive, is the whole
+    // fix; swapping declaration order cannot achieve it, since a dozen
+    // shared_ptrs keep client alive. See REFACTOR_PLANS.md's R2-3.
+    client->shutdown();
+    return exitCode;
 }

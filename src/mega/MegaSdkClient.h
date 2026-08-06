@@ -1,6 +1,7 @@
 #pragma once
 #include "core/IMegaClient.h"
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 
@@ -25,6 +26,18 @@ public:
     // (measured: 385s vs 0.6s on a 640k-node account).
     explicit MegaSdkClient(std::string basePath, std::string userAgent = "MegaExplorer");
     ~MegaSdkClient() override;
+
+    // Explicit stop point for the SDK thread. Destroying MegaApi makes the SDK
+    // thread fire every pending request/transfer as a failure before joining,
+    // and this object is destroyed *after* every service and controller that
+    // those callbacks touch (main.cpp declares it first), so waiting for the
+    // destructor delivers them to freed memory. Call this while all of them are
+    // still alive -- main.cpp does, right after app.exec() returns.
+    //
+    // Afterwards this object is inert: every method fails immediately instead of
+    // touching the destroyed MegaApi. Idempotent, and the destructor calls it
+    // too, so forgetting the explicit call only loses the ordering guarantee.
+    void shutdown();
 
     void login(const std::string& email,
                const std::string& password,
@@ -144,9 +157,20 @@ private:
                       SortOrder order,
                       std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
-    // Declared before mApi: constructed first / destroyed last, so the
-    // logger is registered before mApi can log anything and stays valid
-    // until mApi is gone.
+    // Declared before mApi so it is destroyed last: the logger stays valid
+    // while ~MegaApi runs, which is what makes the SDK's own teardown lines
+    // reach the log at all. (It does *not* mean the logger is registered
+    // before mApi can log -- registration happens in the constructor body,
+    // by which point MegaApiImpl::init has already run and started the SDK
+    // thread. Startup lines emitted in there are lost.)
     std::unique_ptr<MegaSdkLogger> mLogger;
     std::unique_ptr<mega::MegaApi> mApi;
+
+    // Set before mApi is destroyed, so callbacks arriving on the SDK thread
+    // during teardown see it and bail out instead of dereferencing a null
+    // mApi. A mutex would be the obvious tool and is *not usable*: the SDK
+    // delivers callbacks while holding its own sdkMutex, and our synchronous
+    // methods take that same sdkMutex from the GUI thread, so any lock of ours
+    // wrapping both sides inverts the order and deadlocks.
+    std::atomic<bool> mShuttingDown{false};
 };
