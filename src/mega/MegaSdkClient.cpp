@@ -352,12 +352,16 @@ public:
         {
             mOnDone(Result<DownloadOutcome>::fail(e->getErrorString(), code));
         }
-        delete this; // also destroys mCancelToken -- SDK requires it alive until here
+        delete this;
     }
 
 private:
     std::function<void(std::uint64_t, std::uint64_t)> mOnProgress;
     std::function<void(Result<DownloadOutcome>)> mOnDone;
+    // Not required by the SDK: startDownload copies the token by value and
+    // CancelToken is itself a shared handle (mega/types.h), so destroying this
+    // mid-transfer would be harmless. It is held only as the hook a future
+    // cancel(jobId) would call -- nothing in src/ calls cancel() today.
     std::unique_ptr<mega::MegaCancelToken> mCancelToken;
 };
 
@@ -394,7 +398,7 @@ public:
         {
             mOnDone(Result<UploadOutcome>::fail(e->getErrorString(), code));
         }
-        delete this; // also destroys mCancelToken -- SDK requires it alive until here
+        delete this;
     }
 
 private:

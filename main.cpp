@@ -98,6 +98,10 @@ int main(int argc, char* argv[])
     auto accountService = std::make_shared<AccountService>(client);
     // Declared before the controllers below: they hold a non-owning pointer
     // to it, and stack locals are destroyed in reverse construction order.
+    // That covers the stack-allocated holders only -- a per-tab controller kept
+    // alive past tab close by an in-flight callback (see makeGuiOwned in
+    // tabFactory) can outlive both of these, so neither may be touched from a
+    // controller's destructor.
     NotificationController notifications;
     // Same reason as notifications above for being declared here: every tab's
     // FolderNavigationController holds a non-owning pointer to it.

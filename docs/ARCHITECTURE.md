@@ -120,6 +120,51 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
   SDK-free headers/`.cpp` files. Exists so `appMegaExplorer` and `MegaExplorerTests` link the same
   compiled domain logic instead of each recompiling it standalone.
 
+## Threading model
+
+There are exactly **two** threads, and every rule below follows from that.
+
+- The **GUI thread** runs Qt/QML and all of `src/qml`.
+- **One SDK thread** delivers every callback. `MegaApiImpl` starts a single loop thread
+  (`third_party/sdk/src/megaapi_impl.cpp:7140`), and completions raised on other SDK workers are
+  marshaled onto it (`:17992-18011`, `executeOnThread`). Listeners therefore never run concurrently
+  with each other — the only race this app can have is SDK thread vs GUI thread.
+
+`src/core` services that can be called back off the GUI thread (`DownloadService`, `UploadService`,
+`ThumbnailService`) carry their own `std::mutex`; those that only ever see `IMegaClient`'s
+synchronous delivery modes (`FolderNavigationService`, `QuickAccessService`) carry none. `src/qml`
+controllers hop back with `invokeOnGuiThread` (`src/qml/GuiThread.h`), and QObject-owning
+controllers are destroyed on the GUI thread via `makeGuiOwned` because an in-flight callback can
+drop the last `shared_ptr` from the SDK thread. The three delivery modes themselves (truly async /
+always synchronous / synchronous on failure only) are documented at the top of `src/core/IMegaClient.h`.
+
+Callbacks are delivered **while the SDK still holds its `sdkMutex`** (`megaapi_impl.cpp:20809`,
+`:19904`, `:18046`). Two standing rules come out of that fact:
+
+- **The synchronous `IMegaClient` methods can block the GUI thread — by design, not by accident.**
+  All of them (`currentSessionToken`, `currentUserHandle`, `checkMove`, `checkUpload`,
+  `findChildFiles`, `hasSubfolders`, `currentAccountIdentity`, plus `getChildren`/`search`/`getPath`)
+  take `sdkMutex` inside the SDK, so the node tree can never be read torn — there is no data race
+  here. What is real is the *wait*: `sdkMutex` is a `recursive_timed_mutex` (`megaapi_impl.h:5307`)
+  that the SDK loop holds across `client->exec()` (`:8147`), which is where the multi-minute
+  `fetchNodes` decrypt runs. A `checkMove` from a hovering drag or a `hasSubfolders` from the folder
+  tree issued during that window freezes the window for its duration. It is a latency property of
+  the "answer right now" interface shape, not something a lock can fix.
+- **Never use `Qt::BlockingQueuedConnection` on a callback path.** A single one deadlocks the app
+  permanently: the SDK thread would hold `sdkMutex` while waiting on the GUI thread, and the GUI
+  thread is liable to be inside `checkMove` waiting for that same `sdkMutex`. Every connection in
+  the codebase is `Qt::QueuedConnection` today, and must stay that way.
+
+Two more SDK-contract details that are easy to get wrong later:
+
+- Re-entering the SDK from inside a callback (`ThumbnailService::finishJob` → `startNextIfCapacity`
+  → `getThumbnail` → `getNodeByHandle`) is safe **only because `sdkMutex` is recursive** — a
+  dependency on an SDK implementation detail, not on documented API behavior.
+- **Never call `MegaApi::removeRequestListener`.** The SDK deletes requests and transfers but never
+  listeners (`:18032`, `:18192`), so `MegaSdkClient`'s listeners `delete this` in
+  `onRequestFinish`/`onTransferFinish`; `removeRequestListener` does `setListener(NULL)`
+  (`:17895-17903`), which suppresses the very callback that would free them and leaks every one.
+
 ## Trust boundary: strings that come from the server
 
 MEGA node names (`FileEntry::name`) are **untrusted input**. Nothing upstream validates them: MEGA

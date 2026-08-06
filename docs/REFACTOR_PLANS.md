@@ -513,7 +513,7 @@ R7 ドキュメント/コメント整理
   → **R1-1 / R1-7 ぶんは記述済み**（`## Trust boundary: strings that come from the server`）。
   R1-3 のログ出口と寿命は R1-3 実施時にこの節へ追記する。
 
-### R2 — 調査済み / R2-1・R2-2・R2-3・R2-4・R2-5・R2-6・R2-7 修正済み（2026-08-06）
+### R2 — 調査済み / R2-1〜R2-7・R2-9〜R2-11 対応済み、残るは R2-8（2026-08-06）
 
 計画の「種」5 件を現物 + **ベンダーされた MEGA SDK 本体**（`third_party/sdk`）で検証した結果。
 **確認 3 件 / 種の誤り 1 件（重要）/ 問題なし 6 件 / 新規 4 件**。R1 と同じく、以下はそのまま
@@ -938,7 +938,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 
 #### 種が不正確だった / 判断が要るもの
 
-**R2-9 [中・設計・R2 では直せない] 同期例外 7 個は「安全だが GUI をブロックする」**
+**R2-9 [中・設計・R2 では直せない] 同期例外 7 個は「安全だが GUI をブロックする」** —
+**記録済み（2026-08-06）**。`docs/ARCHITECTURE.md` の「Threading model」節へ。
 
 - **種が心配していた「GUI スレッドが読む間に SDK スレッドがノードツリーを書き換える」データ競合は
   存在しない。** 7 つの同期例外は全て SDK 内部で `sdkMutex` を取ることを確認した:
@@ -967,7 +968,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   `getThumbnail` → `getNodeByHandle` が同一スレッドで `sdkMutex` を再取得する）。ただし
   **`recursive_timed_mutex` であることに依存している** — SDK の実装詳細への依存として記録。
 
-**R2-10 [中・不文律] `Qt::BlockingQueuedConnection` は 1 つでも入れたら恒久デッドロック**
+**R2-10 [中・不文律] `Qt::BlockingQueuedConnection` は 1 つでも入れたら恒久デッドロック** —
+**成文化済み（2026-08-06）**。同じく `docs/ARCHITECTURE.md` の「Threading model」節へ。
 
 - コールバックは `sdkMutex` を保持したまま配達され（`megaapi_impl.cpp:20809`, `:19904`, `:18046`）、
   GUI スレッドは R2-9 の同期メソッドで同じ `sdkMutex` を取る。
@@ -975,7 +977,7 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   SDK スレッドが `sdkMutex` を持って GUI を待ち、GUI は `checkMove` の中で `sdkMutex` を待つ。
 - 現状は全箇所 `Qt::QueuedConnection` なので安全だが、**この不文律はどこにも書かれていない**。
 
-**R2-11 [低] 誤っているコメント 4 件**
+**R2-11 [低] 誤っているコメント 4 件** — **4 件とも是正済み（2026-08-06）**。
 
 - `DownloadService.h:117-120` / `UploadService.cpp:80-83` — 「モック下でしか再帰しない」＝**嘘**（R2-2）。
   **是正済み（2026-08-06、R2-2 と同時）**。`ThumbnailService.h` の「no loop is needed」も同様に是正した。
@@ -984,6 +986,8 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   `CancelToken` 自体が `shared_ptr<bool>` を持つ共有ハンドル（`mega/types.h:1223-1227`）。
   害は無い（過剰保持）が、リスナの状態を削る改修を妨げる。なお `cancel()` は `src/` のどこからも
   呼ばれておらず、現状は純粋なオーバーヘッド（= `cancel(jobId)` 実装時のフック）。
+  → **是正済み（2026-08-06）**。`delete this;` 行の嘘コメントを落とし、`mCancelToken` の宣言側に
+  「SDK は要求していない / `cancel(jobId)` 実装時のフックとして持っているだけ」を書いた。
 - `MegaSdkClient.h:147-149` — **是正済み（2026-08-06、R2-3 と同時）**。
   「`mApi` より前に宣言＝先に構築されるので、`mApi` が何かログを出す前に
   ロガーが登録される」。前半（後に破棄される）は正しく load-bearing だが、後半は**誤り**:
@@ -992,6 +996,9 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   （`megaapi_impl.cpp:7140-7143`）。その間のログ行は落ちる（実害は起動時ログのみ）。
 - `main.cpp:98-103` — 宣言順による寿命保証。通常経路では正しいが、**shared_ptr で延命された
   コントローラ**（R2-5）は `clipboard`/`notifications` より長生きしうるので、そのケースを覆っていない。
+  → **是正済み（2026-08-06）**。保証がスタック上の保持者に限る旨と、そこから出る規約
+  （コントローラのデストラクタからこの 2 つを触ってはならない）を追記。現状 `FolderNavigationController` /
+  `ThumbnailController` はデストラクタを持たないので、規約違反は無い。
 
 #### 問題なしと確認できた種
 
@@ -1104,7 +1111,7 @@ R2-2  再帰のループ化 + IMegaClient 契約の書き直し … R2-19 の「
 R2-3  MegaSdkClient::shutdown() の導入        … 寿命系の根。R2-5 の窓もここで狭まる [済 2026-08-06]
 R2-5  makeGuiOwned で破棄を GUI スレッドへ    … 元の一覧に無かった。R2-4 の前に置くと安全 [済 2026-08-06]
 R2-4  FileListModel の shared_ptr 化          … R5 の解体と方向一致 [済 2026-08-06]
-R2-9/R2-10/R2-11  docs/ARCHITECTURE.md への記録とコメント是正 … 締め
+R2-9/R2-10/R2-11  docs/ARCHITECTURE.md への記録とコメント是正 … 締め [済 2026-08-06]
 R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理に合流させるのが安い
 ```
 
@@ -1113,6 +1120,10 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 - `docs/ARCHITECTURE.md` に「スレッドモデル」節を 1 つ。内容は上の「前提」+ R2-9（`sdkMutex` が
   GUI をブロックしうること）+ R2-10（`BlockingQueuedConnection` 禁止）+ R2-12（`removeRequestListener`
   を呼んではいけない理由）。R1 が同ファイルに足した「サーバ由来文字列の信頼境界」と並ぶ形にする。
+  → **作成済み（2026-08-06）**。`## Threading model` として「Design: testability and dependency
+  injection」と「Trust boundary」の間に挿入。上記 4 点に加えて、再入が `recursive_timed_mutex`
+  という SDK 実装詳細に依存している事実（R2-9 の副産物）も残した。3 つの配達モードそのものは
+  R2-2 で `IMegaClient.h` の先頭に書いたので、重複させず参照だけ張っている。
 
 ### R3 — 未着手
 ### R4 — 未着手
