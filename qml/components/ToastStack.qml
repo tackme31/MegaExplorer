@@ -170,6 +170,16 @@ Item {
         case "rename":
             text = qsTr("Failed to rename: %1").arg(errorMessage);
             break;
+            // Deliberately no %1: the name was rejected by
+            // FileOperationService's own validation before the SDK was reached,
+            // so there is no SDK string to show. Carrying no %1 also means
+            // R3-4's planned error-code enum can't change this line -- same
+            // rule as quickAccessSave/quickAccessUnavailable below. The reason
+            // is spelled out because, unlike NewFolderDialog's inline message,
+            // a toast appears with no name field next to it.
+        case "renameInvalidName":
+            text = qsTr("That name can't be used — names can't be empty or contain \\ or /");
+            break;
         case "createFolder":
             text = qsTr("Failed to create folder: %1").arg(errorMessage);
             break;

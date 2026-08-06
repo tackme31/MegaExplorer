@@ -373,6 +373,28 @@ TEST_F(FolderNavigationControllerTest, RenameEntryReportsAnInvalidNameWithoutRef
     flush();
 
     EXPECT_EQ(errorCalls, 1);
+    // Its own context, not "rename": a name the user can retype is an input
+    // mistake, not a failed operation (R3-6).
+    EXPECT_EQ(lastErrorContext, QStringLiteral("renameInvalidName"));
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
+}
+
+TEST_F(FolderNavigationControllerTest, RenameEntryReportsARealFailureAsAnOperationFailure)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    // Anything that isn't kEArgs stays on the generic path -- guards against
+    // the invalid-name branch swallowing every failure.
+    EXPECT_CALL(*client, renameNode(1u, std::string("b"), _))
+        .WillOnce(InvokeArgument<2>(Result<void>::fail("denied", MegaErrorCode::kEAccess)));
+    const int fetchesBefore = rootFetches;
+
+    controller->renameEntry(1, QStringLiteral("b"));
+    flush();
+
+    EXPECT_EQ(errorCalls, 1);
     EXPECT_EQ(lastErrorContext, QStringLiteral("rename"));
     EXPECT_EQ(rootFetches - fetchesBefore, 0);
 }
@@ -761,7 +783,8 @@ TEST_F(FolderNavigationControllerTest, PasteFallsBackToTheCachedListingWhenTheDe
     // Matched ahead of givenRootListing's expectation, so every read from here
     // on fails -- the paste has to fall back to what it already had.
     EXPECT_CALL(*client, getRootChildren(_, _))
-        .WillRepeatedly(InvokeArgument<1>(Result<std::vector<FileEntry>>::fail("offline", MegaErrorCode::kEAgain)));
+        .WillRepeatedly(InvokeArgument<1>(
+            Result<std::vector<FileEntry>>::fail("offline", MegaErrorCode::kEAgain)));
     EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 

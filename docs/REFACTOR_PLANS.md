@@ -1125,7 +1125,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   という SDK 実装詳細に依存している事実（R2-9 の副産物）も残した。3 つの配達モードそのものは
   R2-2 で `IMegaClient.h` の先頭に書いたので、重複させず参照だけ張っている。
 
-### R3 — 調査済み / R3-1・R3-2・R3-3 対応済み、残り 6 件（2026-08-06）
+### R3 — 調査済み / R3-1・R3-2・R3-3・R3-6 対応済み、残り 5 件（2026-08-06）
 
 計画の「種」4 件を現物で検証した結果。**確認 8 件 / 種の誤り 3 件（うち 1 件は方針判断が要る）/
 問題なし 6 件 / 新規 5 件**。R1・R2 と同じく、以下はそのまま plan mode の作業単位として使える粒度で
@@ -1331,7 +1331,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 - 修正方針: R3-4 と同じ場所を触るので**同一セッションで片付ける**。文字列の対応表が C++ と QML に
   分かれている限り同じ取りこぼしが再発するので、R3-4 の enum 化がそのまま再発防止になる。
 
-**R3-6 [中] ◐半分対応済み 同じ「名前が不正」を rename だけ -1、createFolder / copy は `kEArgs` で返す**
+**R3-6 [中] ✅対応済み 同じ「名前が不正」を rename だけ -1、createFolder / copy は `kEArgs` で返す**
 
 - `src/core/FileOperationService.cpp:38` — `rename` は
   `fail("Invalid name: empty, or contains a path separator")`（コード無し = -1）。
@@ -1342,10 +1342,28 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   **ユーザの入力ミスが「操作の失敗」として出る**。
 - 修正方針: rename に `kEArgs` を付け、`renameEntry` に `createFolder` と同じ分岐を足す。
   R3-1(b) を先にやれば、この 1 件は自動的に炙り出される。
-- **対応（2026-08-06）**: C++ 半分（`FileOperationService.cpp:38` への `kEArgs` 付与）は R3-1 で完了
+- **対応（2026-08-06、前半）**: C++ 半分（`FileOperationService.cpp:38` への `kEArgs` 付与）は R3-1 で完了
   — 実際に既定引数の撤廃で真っ先に落ちた 3 箇所の 1 つだった。**残るは `renameEntry` の QML 分岐**
   （`src/qml/FolderNavigationController.cpp:340-347` を `:377-386` と同じ形にする）で、これが
   済むまで挙動は変わらない。
+- **対応（2026-08-06、後半＝完了）**: `renameEntry` の失敗分岐の先頭に `kEArgs` を置き、専用文脈
+  `renameInvalidName` の固定文トーストに落とした。決めた点:
+  - **「編集フィールドを開き直す」形は採らなかった**。`createFolder` の対応物（ダイアログを開いたまま
+    赤字）に一番近いのはそれだが、rename はインライン編集で**コミット時点でフィールドが消えている**。
+    復元するには新シグナル + 両 View（`FileTableView.qml` / `FileGridView.qml`）の受け口 +
+    `InlineRenameField` に入力済みテキストを戻す口（現状 `originalName` は `cell.name` 束縛）が要り、
+    得られるのは「F2 を押し直さずに済む」だけ。R6（QML 構造）と衝突しうる割に合わない。
+    **結果として QML の View 3 ファイルは無変更**、増えたのは `ToastStack.qml` の 1 case のみ。
+  - **文言に `%1` を使わない**のは R3-2 の `quickAccessUnavailable` / R3-3 の `quickAccessSave` と
+    同じ理由（拒否したのは `FileOperationService::isValidName` で SDK に届いてすらいないので、
+    SDK の英語文字列は存在しないし説明にもならない）。**R3-4 の enum 化が来てもこの行は動かない**。
+    ただし文面は 2 者と違って理由まで書いた（「空・`\`・`/` は使えない」）— トーストは
+    `NewFolderDialog` の赤字と違い、直せる入力欄が隣に無いため。
+  - **`kEArgs` 側ではログを出さない**。`createFolder` の `kEExist`/`kEArgs` 分岐も出しておらず、
+    ユーザの打ち間違いは異常ではない。権限エラー等は従来どおり `qCWarning` + `rename` 文脈に残る。
+  - テスト: 既存 `RenameEntryReportsAnInvalidNameWithoutRefetching` の期待文脈を
+    `renameInvalidName` に更新し、**`kEArgs` 以外（`kEAccess`）が `rename` 文脈に残る**ことを見る
+    1 件を追加（分岐が全部を飲み込む退行止め）。383 件全緑、`/W4` 新規警告ゼロ。
 
 **R3-7 [低] 失敗した `Result` の `value` が読める — 実際に読んでいる箇所が 1 つある**
 
@@ -1477,8 +1495,8 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 R3-1  errorCode の意味づけ（既定引数の廃止）    … ✅済（先行実施）。以降 3 件の前提
 R3-3  [[nodiscard]] + save/load 失敗の報告      … ✅済。R3-9(a) もこれで入った
 R3-2  isUsable の 3 値化（ピンを誤削除しない）  … ✅済。R3-1(c) の成果を直接使った
-R3-6  renameEntry の QML 分岐だけ               … ◐C++ 半分は R3-1 で完了 → 次はこれ
-R3-12 / R3-13 / R3-14  無音の 3 箇所にログ      … 極小・まとめて 1 コミット
+R3-6  renameEntry の QML 分岐だけ               … ✅済。C++ 半分は R3-1 で先に入っていた
+R3-12 / R3-13 / R3-14  無音の 3 箇所にログ      … 極小・まとめて 1 コミット → 次はこれ
 R3-8  goBack のガード                           … 極小
 R3-4 + R3-5  notifyError の enum 化（+ refresh 追加） … QML も動く。R6 と要調整
 R3-7  value のアクセサ化                        … R3-9 の承認が前提

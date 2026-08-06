@@ -339,6 +339,14 @@ void FolderNavigationController::renameEntry(quint64 handle, const QString& newN
                 endBusyOperation();
                 if (!result.success)
                 {
+                    // A name the user can retype isn't an operation failure --
+                    // same split as createFolder's kEArgs branch below, and not
+                    // worth a warning either.
+                    if (result.errorCode == MegaErrorCode::kEArgs)
+                    {
+                        mNotifications->notifyError(QStringLiteral("renameInvalidName"), QString());
+                        return;
+                    }
                     qCWarning(lcFileOps)
                         << "rename failed:" << QString::fromStdString(result.errorMessage)
                         << "code=" << result.errorCode;
