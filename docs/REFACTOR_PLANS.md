@@ -513,7 +513,7 @@ R7 ドキュメント/コメント整理
   → **R1-1 / R1-7 ぶんは記述済み**（`## Trust boundary: strings that come from the server`）。
   R1-3 のログ出口と寿命は R1-3 実施時にこの節へ追記する。
 
-### R2 — 調査済み / 修正未着手（2026-08-06）
+### R2 — 調査済み / R2-1 のみ修正済み（2026-08-06）
 
 計画の「種」5 件を現物 + **ベンダーされた MEGA SDK 本体**（`third_party/sdk`）で検証した結果。
 **確認 3 件 / 種の誤り 1 件（重要）/ 問題なし 6 件 / 新規 4 件**。R1 と同じく、以下はそのまま
@@ -532,7 +532,7 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 
 #### 確認された問題
 
-**R2-1 [高] `currentJob()` の TOCTOU — 空 vector への `front()`（UB）**
+**R2-1 [高] `currentJob()` の TOCTOU — 空 vector への `front()`（UB）** — **修正済み（2026-08-06）**
 
 - 現物: `src/core/DownloadService.cpp:116-126` が 2 つの別々のロックとして公開されている。
 
@@ -550,6 +550,30 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 - `UploadService.cpp:30-40` + `UploadController.cpp:285-287` がまったく同じ形。
 - 修正方針: `std::optional<Job>` を返す 1 回ロックの API に変え、`hasCurrentJob()` を削除。
   波及は 2 service + 2 controller + 該当テストのみ。**このスコープで最も直しやすく、最も明確な UB**。
+
+**修正結果**（方針どおり）:
+
+- `DownloadService::currentJob()` / `UploadService::currentJob()` が `std::optional<Job>` を返し、
+  空判定と `front()` の読みが同一ロック内に入った。`hasCurrentJob()` は**残さず削除**
+  （残すと同じペア呼びが再発しうる）。`// precondition: hasCurrentJob()` は「なぜ optional か」の
+  コメントに置き換え、R2 の調査結果を現場に残した。`jobs()` / `hasJobForHandle()` /
+  `queueLength()` は元から 1 回ロックなので変更なし。
+- コントローラ側の `bool mHasActiveJob` + `Job mActiveJob` のペアも `std::optional<Job>` 1 本に統合。
+  サービスが optional を返す以上ペアは冗長で、「フラグと値が食い違う」状態が型として消える。
+  `refreshActiveJob()` は代入 1 行になった。
+- **挙動差は 1 点のみ**: ジョブ完了後 `activeFileName` が空文字になる（従来は直前ジョブの名前を
+  保持し続けた）。`qml/Main.qml` の当該 Label / ProgressBar は全て
+  `visible: downloadController.downloadActive` / `uploadController.uploadActive` で括られており、
+  **QML 側の変更はゼロ・見た目も不変**。
+- **新規テストは追加していない**。R2-19 のとおりテストは全てシングルスレッドで、この TOCTOU は
+  シングルスレッドでは到達不能。空キューでの `nullopt` は既存の `InitiallyHasNoCurrentJob` が
+  カバーしている。マルチスレッド配達モードを `MockMegaClient` に足す話は R4 の領分。
+- **途中で見つかったビルド設定の穴**（別コミット）: `MegaExplorerCore` は Qt を一切リンクしないため
+  C++ 標準の指定が無く、MSVC 既定の **C++14** でビルドされていた（`std::optional` が使えない）。
+  ルート `CMakeLists.txt` は `CMAKE_CXX_STANDARD_REQUIRED ON` だけで `CMAKE_CXX_STANDARD` を
+  設定していない。`target_compile_features(MegaExplorerCore PUBLIC cxx_std_17)` で当該ターゲットに
+  限定して修正（ベンダーされた `third_party/*` の標準を動かさないため、ディレクトリ変数ではなく
+  ターゲット単位）。他の全ターゲットは Qt の interface 要求から C++17 を得ていたので影響なし。
 
 **R2-2 [高] 同期エラーパスによる無制限再帰 — 既存コメント 2 箇所が事実に反する**
 
@@ -853,7 +877,7 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
 #### 推奨実施順（各項目 1 セッション）
 
 ```
-R2-1  currentJob() の optional 化            … 単独・小・UB を確実に消す
+R2-1  currentJob() の optional 化            … 単独・小・UB を確実に消す      [済 2026-08-06]
 R2-7  コントローラのデストラクタで observer 解除 … 単独・極小
 R2-6  invokeOnGuiThread を B に統一（8→1）    … 単独・機械的
 R2-2  再帰のループ化 + IMegaClient 契約の書き直し … R2-19 の「同期失敗 N 件モック」とセット
