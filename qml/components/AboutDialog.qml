@@ -84,7 +84,10 @@ Dialog {
 
         Label {
             textFormat: Text.StyledText
-            text: '<a href="https://github.com/tackme31/MegaExplorer">github.com/tackme31/MegaExplorer</a>'
+            // Named, not bare: this link is the GPLv3 section 6 provision of the
+            // corresponding source, which a naked URL does not say.
+            text: qsTr("Source code: %1").arg(
+                      '<a href="https://github.com/tackme31/MegaExplorer">github.com/tackme31/MegaExplorer</a>')
             onLinkActivated: link => Qt.openUrlExternally(link)
         }
 
