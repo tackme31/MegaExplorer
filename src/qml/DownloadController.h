@@ -27,6 +27,7 @@ public:
     explicit DownloadController(std::shared_ptr<DownloadService> service,
                                 NotificationController* notifications,
                                 QObject* parent = nullptr);
+    ~DownloadController() override;
 
     bool downloadActive() const;
     QString activeFileName() const;

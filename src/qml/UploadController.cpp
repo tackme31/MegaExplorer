@@ -94,6 +94,17 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
     });
 }
 
+UploadController::~UploadController()
+{
+    // Same reason as DownloadController's destructor: the two observers hold a
+    // raw this and the service outlives this object. The one-shot
+    // fileOperations->moveToRubbish callback below cannot be unregistered at
+    // all; it stays safe because main.cpp shuts the SDK client down while this
+    // object is still alive (REFACTOR_PLANS.md's R2-3).
+    mService->setOnProgress(nullptr);
+    mService->setOnJobFinished(nullptr);
+}
+
 bool UploadController::uploadActive() const
 {
     return mActiveJob.has_value();

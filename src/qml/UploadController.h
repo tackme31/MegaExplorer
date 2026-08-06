@@ -39,6 +39,7 @@ public:
                               std::shared_ptr<FileOperationService> fileOperations,
                               NotificationController* notifications,
                               QObject* parent = nullptr);
+    ~UploadController() override;
 
     bool uploadActive() const;
     QString activeFileName() const;

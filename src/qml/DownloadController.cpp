@@ -71,6 +71,18 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
     });
 }
 
+DownloadController::~DownloadController()
+{
+    // The two observers above capture a raw this and stay registered for the
+    // service's whole life, and the service outlives this object (main.cpp
+    // declares it earlier, so it is destroyed later). Unregistering is what
+    // keeps that from being a dangling call. Assigning null is safe mid-flight:
+    // the service copies the observer under its lock and null-checks the copy
+    // before calling it.
+    mService->setOnProgress(nullptr);
+    mService->setOnJobFinished(nullptr);
+}
+
 bool DownloadController::downloadActive() const
 {
     return mActiveJob.has_value();
