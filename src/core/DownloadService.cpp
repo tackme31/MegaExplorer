@@ -17,16 +17,16 @@ bool isForbiddenChar(char c)
         return true;
     switch (c)
     {
-    case '<':
-    case '>':
-    case ':':
-    case '"':
-    case '|':
-    case '?':
-    case '*':
-        return true;
-    default:
-        return false;
+        case '<':
+        case '>':
+        case ':':
+        case '"':
+        case '|':
+        case '?':
+        case '*':
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -113,15 +113,11 @@ std::uint64_t DownloadService::enqueue(std::uint64_t handle,
     return id;
 }
 
-bool DownloadService::hasCurrentJob() const
+std::optional<DownloadJob> DownloadService::currentJob() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    return !mQueue.empty();
-}
-
-DownloadJob DownloadService::currentJob() const
-{
-    std::lock_guard<std::mutex> lock(mMutex);
+    if (mQueue.empty())
+        return std::nullopt;
     return mQueue.front();
 }
 

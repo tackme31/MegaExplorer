@@ -1,7 +1,6 @@
 #include "core/UploadService.h"
 
 #include "core/MegaErrorCodes.h"
-
 #include "MockMegaClient.h"
 
 #include <gmock/gmock.h>
@@ -34,7 +33,7 @@ TEST(UploadServiceTest, InitiallyHasNoCurrentJob)
     UploadService service(mockClient);
 
     // Assert
-    EXPECT_FALSE(service.hasCurrentJob());
+    EXPECT_FALSE(service.currentJob().has_value());
     EXPECT_TRUE(service.jobs().empty());
     EXPECT_EQ(service.queueLength(), 0u);
 }
@@ -63,7 +62,7 @@ TEST(UploadServiceTest, EnqueueSuccessNotifiesJobFinishedWithCompletedStateAndNo
     EXPECT_EQ(finished.id, id);
     EXPECT_EQ(finished.state, UploadState::Completed);
     EXPECT_EQ(finished.nodeHandle, 42u);
-    EXPECT_FALSE(service.hasCurrentJob());
+    EXPECT_FALSE(service.currentJob().has_value());
 }
 
 TEST(UploadServiceTest, EnqueueFailurePropagatesErrorMessageCodeAndState)
@@ -90,7 +89,7 @@ TEST(UploadServiceTest, EnqueueFailurePropagatesErrorMessageCodeAndState)
     EXPECT_EQ(finished.state, UploadState::Failed);
     EXPECT_EQ(finished.errorMessage, "network error");
     EXPECT_EQ(finished.errorCode, 2);
-    EXPECT_FALSE(service.hasCurrentJob());
+    EXPECT_FALSE(service.currentJob().has_value());
 }
 
 TEST(UploadServiceTest, EnqueueSeedsTotalBytesFromExpectedTotalBytesBeforeFirstProgressTick)
@@ -107,8 +106,9 @@ TEST(UploadServiceTest, EnqueueSeedsTotalBytesFromExpectedTotalBytesBeforeFirstP
     service.enqueue("C:\\tmp\\a.txt", "a.txt", 7, false, 12345);
 
     // Assert
-    ASSERT_TRUE(service.hasCurrentJob());
-    EXPECT_EQ(service.currentJob().totalBytes, 12345u);
+    std::optional<UploadJob> job = service.currentJob();
+    ASSERT_TRUE(job.has_value());
+    EXPECT_EQ(job->totalBytes, 12345u);
 }
 
 TEST(UploadServiceTest, ProgressCallbackOverwritesSeededTotalBytes)
@@ -200,7 +200,7 @@ TEST(UploadServiceTest, DestinationGoneAtStartTimeFailsWithoutCallingUpload)
     // Assert
     EXPECT_EQ(finished.state, UploadState::Failed);
     EXPECT_EQ(finished.errorCode, MegaErrorCode::kENoEnt);
-    EXPECT_FALSE(service.hasCurrentJob());
+    EXPECT_FALSE(service.currentJob().has_value());
 }
 
 TEST(UploadServiceTest, DestinationGoneDrainsEveryQueuedJobForThatDestination)

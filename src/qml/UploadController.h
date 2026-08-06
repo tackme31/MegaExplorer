@@ -9,6 +9,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 
 class FileOperationService;
@@ -165,7 +166,6 @@ private:
     std::shared_ptr<UploadService> mService;
     std::shared_ptr<FileOperationService> mFileOps;
     NotificationController* mNotifications;
-    UploadJob mActiveJob;
-    bool mHasActiveJob = false;
+    std::optional<UploadJob> mActiveJob;
     Batch mBatch;
 };

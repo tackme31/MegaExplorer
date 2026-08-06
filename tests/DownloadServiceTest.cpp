@@ -61,7 +61,7 @@ TEST(DownloadServiceTest, InitiallyHasNoCurrentJob)
     DownloadService service(mockClient);
 
     // Assert
-    EXPECT_FALSE(service.hasCurrentJob());
+    EXPECT_FALSE(service.currentJob().has_value());
     EXPECT_TRUE(service.jobs().empty());
 }
 
@@ -91,7 +91,7 @@ TEST(DownloadServiceTest, EnqueueSuccessNotifiesJobFinishedWithCompletedStateAnd
     EXPECT_EQ(finished.state, DownloadState::Completed);
     EXPECT_EQ(finished.resolvedLocalPath, "/tmp/a (1).txt");
     EXPECT_FALSE(finished.alreadyPresent);
-    EXPECT_FALSE(service.hasCurrentJob());
+    EXPECT_FALSE(service.currentJob().has_value());
 }
 
 TEST(DownloadServiceTest, EnqueueSuccessSurfacesAlreadyPresentWhenSdkSkippedIdenticalFile)
@@ -141,7 +141,7 @@ TEST(DownloadServiceTest, EnqueueFailurePropagatesErrorMessageCodeAndState)
     EXPECT_EQ(finished.state, DownloadState::Failed);
     EXPECT_EQ(finished.errorMessage, "network error");
     EXPECT_EQ(finished.errorCode, 2);
-    EXPECT_FALSE(service.hasCurrentJob());
+    EXPECT_FALSE(service.currentJob().has_value());
 }
 
 TEST(DownloadServiceTest, ProgressCallbackForwardsBytesBeforeCompletion)
@@ -182,8 +182,9 @@ TEST(DownloadServiceTest, EnqueueSeedsTotalBytesFromExpectedTotalBytesBeforeFirs
     service.enqueue(1, "a.txt", "/tmp/a.txt", 12345);
 
     // Assert
-    ASSERT_TRUE(service.hasCurrentJob());
-    EXPECT_EQ(service.currentJob().totalBytes, 12345u);
+    std::optional<DownloadJob> job = service.currentJob();
+    ASSERT_TRUE(job.has_value());
+    EXPECT_EQ(job->totalBytes, 12345u);
 }
 
 TEST(DownloadServiceTest, SecondEnqueueWhileFirstActiveDoesNotStartImmediatelyThenAutoStarts)

@@ -27,15 +27,11 @@ std::uint64_t UploadService::enqueue(const std::string& localPath,
     return id;
 }
 
-bool UploadService::hasCurrentJob() const
+std::optional<UploadJob> UploadService::currentJob() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    return !mQueue.empty();
-}
-
-UploadJob UploadService::currentJob() const
-{
-    std::lock_guard<std::mutex> lock(mMutex);
+    if (mQueue.empty())
+        return std::nullopt;
     return mQueue.front();
 }
 

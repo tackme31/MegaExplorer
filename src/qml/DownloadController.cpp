@@ -73,20 +73,20 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
 
 bool DownloadController::downloadActive() const
 {
-    return mHasActiveJob;
+    return mActiveJob.has_value();
 }
 
 QString DownloadController::activeFileName() const
 {
-    return QString::fromStdString(mActiveJob.name);
+    return mActiveJob ? QString::fromStdString(mActiveJob->name) : QString();
 }
 
 qreal DownloadController::activeProgress() const
 {
-    if (!mHasActiveJob || mActiveJob.totalBytes == 0)
+    if (!mActiveJob || mActiveJob->totalBytes == 0)
         return 0.0;
-    return static_cast<qreal>(mActiveJob.transferredBytes) /
-           static_cast<qreal>(mActiveJob.totalBytes);
+    return static_cast<qreal>(mActiveJob->transferredBytes) /
+           static_cast<qreal>(mActiveJob->totalBytes);
 }
 
 void DownloadController::downloadFile(quint64 handle, QString name, quint64 sizeBytes)
@@ -141,8 +141,6 @@ QString DownloadController::computeDestinationPath(const QString& fileName) cons
 
 void DownloadController::refreshActiveJob()
 {
-    mHasActiveJob = mService->hasCurrentJob();
-    if (mHasActiveJob)
-        mActiveJob = mService->currentJob();
+    mActiveJob = mService->currentJob();
     emit downloadActiveChanged();
 }

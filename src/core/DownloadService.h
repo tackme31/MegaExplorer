@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 enum class DownloadState
@@ -85,8 +86,11 @@ public:
                           const std::string& destinationPath,
                           std::uint64_t expectedTotalBytes);
 
-    bool hasCurrentJob() const;
-    DownloadJob currentJob() const; // precondition: hasCurrentJob()
+    // Snapshot of the active job, or nullopt if the queue is empty. One lock
+    // covers both the emptiness test and the read on purpose: the completion
+    // callback runs on an SDK thread and can empty the queue between two
+    // separate calls, so a has-then-get pair can't hold its own precondition.
+    std::optional<DownloadJob> currentJob() const;
 
     // Forward-looking: the full live queue (active job first, if any, then
     // not-yet-started jobs in enqueue order). Not consumed by

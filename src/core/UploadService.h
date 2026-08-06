@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 enum class UploadState
@@ -74,8 +75,9 @@ public:
                           std::uint64_t expectedTotalBytes,
                           std::uint64_t replaceHandle = 0);
 
-    bool hasCurrentJob() const;
-    UploadJob currentJob() const; // precondition: hasCurrentJob()
+    // Snapshot of the active job, or nullopt if the queue is empty. Same
+    // single-lock reason as DownloadService::currentJob().
+    std::optional<UploadJob> currentJob() const;
     std::vector<UploadJob> jobs() const;
 
     // O(1), unlike jobs(). Dropping thousands of files makes this the hot

@@ -96,20 +96,20 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
 
 bool UploadController::uploadActive() const
 {
-    return mHasActiveJob;
+    return mActiveJob.has_value();
 }
 
 QString UploadController::activeFileName() const
 {
-    return QString::fromStdString(mActiveJob.name);
+    return mActiveJob ? QString::fromStdString(mActiveJob->name) : QString();
 }
 
 qreal UploadController::activeProgress() const
 {
-    if (!mHasActiveJob || mActiveJob.totalBytes == 0)
+    if (!mActiveJob || mActiveJob->totalBytes == 0)
         return 0.0;
-    return static_cast<qreal>(mActiveJob.transferredBytes) /
-           static_cast<qreal>(mActiveJob.totalBytes);
+    return static_cast<qreal>(mActiveJob->transferredBytes) /
+           static_cast<qreal>(mActiveJob->totalBytes);
 }
 
 int UploadController::pendingCount() const
@@ -282,9 +282,7 @@ void UploadController::enqueueAll(const QStringList& localPaths,
 
 void UploadController::refreshActiveJob()
 {
-    mHasActiveJob = mService->hasCurrentJob();
-    if (mHasActiveJob)
-        mActiveJob = mService->currentJob();
+    mActiveJob = mService->currentJob();
     emit uploadActiveChanged();
 }
 

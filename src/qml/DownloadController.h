@@ -5,6 +5,7 @@
 #include <QString>
 
 #include <memory>
+#include <optional>
 
 class NotificationController;
 
@@ -75,6 +76,5 @@ private:
 
     std::shared_ptr<DownloadService> mService;
     NotificationController* mNotifications;
-    DownloadJob mActiveJob;
-    bool mHasActiveJob = false;
+    std::optional<DownloadJob> mActiveJob;
 };
