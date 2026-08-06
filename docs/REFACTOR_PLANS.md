@@ -395,6 +395,9 @@ R7 ドキュメント/コメント整理
 - 要確認（ユーザー判断）: GPLv3 の対応ソース提供義務を「public な GitHub リポジトリ」で満たす方針か。
   About ダイアログには URL がある（`qml/components/AboutDialog.qml:87`）ので、それを提供手段と
   みなす旨をどこかに明記すれば足りる想定。
+  → **決着（2026-08-07）**: 本体を MIT に再ライセンスしたので GPLv3 §6 の義務自体が消えた。ただし
+  LibRaw が静的リンクの LGPL であるため、同じ URL が今度は LGPL-2.1 §6 の再リンク手段として要る。
+  `THIRD-PARTY-NOTICES.txt` に明記済み（`docs/PROGRESS.md` の Phase 20b 追補を参照）。
 
 **修正結果**（同梱のみ。デプロイ整備は持ち越しのまま）:
 

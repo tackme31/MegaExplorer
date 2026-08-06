@@ -42,9 +42,12 @@ Windowsエクスプローラー風のUIを持つ、MEGA向けの独自デスク�
 - MEGA SDK本体(`meganz/sdk`)は **BSD 2-Clause**。組み込み・改変・再配布は同ライセンス条件を満たせば可能
 - MEGAsync本体のソース(`meganz/MEGAsync`)は別の制限的ライセンス(Code Review Licence)であり、参考にする場合もコピー&ペーストせず、あくまでSDKの使い方の参考程度に留める
 - MEGAの利用規約(ToS)に従う必要があり、appKeyの取得・レート制限順守が必須
-- QWindowKit(`stdware/qwindowkit`、Phase 17aでベンダリング)は **Apache-2.0**。GPLv3と両立する(Apache-2.0はGPLv3互換)ので、本体がQt経由でGPLv3であることと矛盾しない
-- 依存全体(36コンポーネント)の権利表記は Phase 20b で機械生成に移行した。`scripts/gen_third_party_notices.py` を**手動実行**して `licenses/` と `THIRD-PARTY-NOTICES.txt` を再生成する。依存を bump したら必ず実行すること。デュアルライセンスの選択(freeimage→GPL-3.0、libraw→LGPL-2.1 など)はスクリプト内の override 表に根拠つきで記録
-- 表示義務の本質は「見えること」ではなく「ライセンス文の複製が頒布物に同梱されること」(BSD-3 §2 / Apache-2.0 §4(a) / GPLv3 §4)。URLでの代替は不可。**ビルド成果物への `LICENSE`/`THIRD-PARTY-NOTICES.txt` の同梱は未対応**(Phase 20b のログ参照)
+- 本体は **MIT**(2026-08-07にGPLv3から変更)。強いcopyleftを課す依存が1つも無いことを棚卸しで確認したうえでの変更。詳細は `docs/PROGRESS.md` の Phase 20b ログ末尾を参照
+- **Qt は LGPLv3 として使用**する。使っているのは QtQuick / QtQuick.Controls(+FluentWinUI3) / Layouts / Effects / QtCore / Window の essentials のみで、いずれもLGPLv3側が選べる。GPL専用モジュール(Qt Charts、Virtual Keyboardなど)を足すとMITを維持できなくなるので、モジュール追加時は必ずライセンスを確認すること
+- LGPL依存は3つ。Qt と FFmpeg は DLL(動的リンク)なので差し替え可能性が担保される。**LibRaw だけは静的リンク**(SDKのoverlay tripletがffmpeg以外を静的ビルドするため)で、LGPL-2.1 §6の再リンク要件は「アプリのソースをMITで公開していること」で満たしている ⇒ **ソース非公開化はできない**
+- QWindowKit(`stdware/qwindowkit`、Phase 17aでベンダリング)は **Apache-2.0**。MITと両立する
+- 依存全体(36コンポーネント)の権利表記は Phase 20b で機械生成に移行した。`scripts/gen_third_party_notices.py` を**手動実行**して `licenses/` と `THIRD-PARTY-NOTICES.txt` を再生成する。依存を bump したら必ず実行すること。デュアルライセンスの選択(freeimage→FIPL、libraw→LGPL-2.1 など)はスクリプト内の override 表に根拠つきで記録
+- 表示義務の本質は「見えること」ではなく「ライセンス文の複製が頒布物に同梱されること」(BSD-3 §2 / Apache-2.0 §4(a) / LGPLv3 §4)。URLでの代替は不可。同梱自体は R1-2 で対応済み(`install(FILES LICENSE THIRD-PARTY-NOTICES.txt ...)`)だが、`windeployqt`/CPack が無いのでインストールツリー整備は持ち越し
 
 ## 既知の技術的懸念事項
 

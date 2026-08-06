@@ -236,7 +236,7 @@ log below.
 
 Two entries in `Main.qml`'s existing "More" menu (currently Sign out only). About: version (from
 `PROJECT_VERSION`, passed down as a compile definition) plus a link to the GitHub repo. License:
-this app's own GPLv3 plus third-party notices — Qt, MEGA SDK (BSD-2), QWindowKit (Apache-2.0),
+this app's own license plus third-party notices — Qt, MEGA SDK (BSD-2), QWindowKit (Apache-2.0),
 FreeImage, FFmpeg, pdfium and the rest of the vcpkg set. The dialogs are small; the real work is the
 notice inventory, and with Qt + FFmpeg in the link line this is a shipping prerequisite rather than
 a nicety.
@@ -2537,10 +2537,10 @@ each entry:
 | ffmpeg | `LicenseRef-vcpkg-null` | LGPL-2.1-or-later | copyright file is the LGPL-2.1 text; the port's `gpl` feature is not requested |
 | jasper | `LicenseRef-vcpkg-null` | JasPer-2.0 | named in the copyright file's first line |
 | liblzma | `LicenseRef-vcpkg-null` | 0BSD | XZ Utils 5.8's core |
-| freeimage | GPL-2.0 OR GPL-3.0 OR FreeImage | GPL-3.0-only | matches this app |
+| freeimage | GPL-2.0 OR GPL-3.0 OR FreeImage | FreeImage (FIPL) | §3.6 lets the executable ship under another license; also the text the port's `copyright` actually carries |
 | zstd | BSD-3-Clause OR GPL-2.0-only | BSD-3-Clause | permissive side |
 | freetype | FTL OR GPL-2.0-or-later | FTL | permissive side |
-| libraw | LGPL-2.1-only OR CDDL-1.0 | LGPL-2.1-only | CDDL is GPL-incompatible; LGPL-2.1 §3 relicenses up to the GPL this app ships under |
+| libraw | LGPL-2.1-only OR CDDL-1.0 | LGPL-2.1-only | the LGPL side; statically linked, so §6's relinking is met by publishing this app's source |
 
 `gtest` is excluded (test-only, never in the distribution). Of the SDK's seven vendored libraries
 only five are listed: `third_party/sdk/third_party/CMakeLists.txt` gates `evt-tls` behind
@@ -2550,7 +2550,7 @@ became reachable.
 
 Qt is the one entry whose text is hand-written: it is an external install with no license file in
 the repo, and its own bundled third-party set is far too large to reproduce, so the entry carries
-the GPLv3 pointer plus the URL to Qt's published list.
+the (L)GPL pointer plus the URL to Qt's published list.
 
 ### `LicenseModel` and why the text is not a role
 
@@ -2631,6 +2631,37 @@ Also left:
   `qsTr()`, clickable links, and the version interpolated. `ABOUT.txt` was rewritten by hand to stop
   claiming Qt and the MEGA SDK are the only dependencies, and now points at the generated file.
 - No "copy all" button. The text is selectable, and the flat file exists.
+
+### Addendum 2026-08-07 — relicensed GPLv3 → MIT
+
+The inventory this phase produced made it checkable that **nothing in the dependency set forces
+copyleft**, which is what the GPLv3 choice had assumed. Qt's essentials (QtQuick, Controls +
+FluentWinUI3, Layouts, Effects, QtCore, Window) are all available under LGPLv3, and `freeimage`'s
+vcpkg port is `GPL-2.0 OR GPL-3.0 OR FreeImage` — the GPL side had been picked only "to match this
+app". Everything else was already permissive or weak copyleft. So the app's own code is now MIT.
+
+What that took, beyond swapping `LICENSE` for the MIT text:
+
+- **Qt is declared under LGPLv3, not GPLv3.** No build change — Qt was always dynamically linked —
+  but LGPLv3 is written as additional permissions on top of GPLv3, so both texts have to ship. They
+  used to ride along in the app's own GPLv3 `LICENSE`; now `licenses/upstream/{LGPL,GPL}-3.0.txt`
+  are inputs to the generator and `qt_text()` appends both to the Qt entry. The old `QT_NOTICE`
+  pointed at *"the MegaExplorer entry of this document"* for the GPLv3 text, which a MIT relicense
+  would have left dangling.
+- **`freeimage` → `FreeImage` (FIPL).** FIPL §3.6 explicitly allows the executable form under a
+  different license. This also fixed an existing inconsistency: `licenses/texts/freeimage.txt` was
+  already the FIPL text while the manifest declared GPL-3.0.
+- **LibRaw is statically linked** (the SDK's overlay triplet builds everything but ffmpeg static),
+  so LGPL-2.1 §6's relinking requirement is real. It is met by the app's source being published
+  under MIT, and `NOTICES_PREAMBLE` now says so explicitly instead of leaving it implied — which
+  also closes the "not written down anywhere" item above, for LibRaw as well as FFmpeg. The
+  practical consequence, worth remembering: **this app cannot be taken closed-source** without
+  making LibRaw dynamic first.
+- `NOTICES_PREAMBLE` gained the LGPL-source-availability section and the notice FIPL §3.6 requires;
+  it lost the GPLv3 §6 corresponding-source and §15/§16 warranty paragraphs, which MIT's own text
+  covers.
+- `AboutDialog.qml` says MIT and "Qt … under the LGPLv3"; the FFmpeg sentence is prescribed by
+  ffmpeg.org and was left byte-identical.
 
 ## Phase 21 — rubber-band (rectangle) selection (done)
 

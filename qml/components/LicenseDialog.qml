@@ -8,7 +8,7 @@ import QtQuick.Layouts
 
 // The full third-party license texts, master/detail: components on the left,
 // the selected one's text on the right. Embedded in the binary rather than
-// linked to, because BSD/Apache/GPL all require the license *copy* to travel
+// linked to, because BSD/Apache/LGPL all require the license *copy* to travel
 // with the distribution -- a URL does not satisfy that even for an app that
 // cannot work offline.
 //

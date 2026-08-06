@@ -38,7 +38,7 @@ TEST(LicenseModelTest, ListsTheAppItselfFirst)
     const LicenseModel model(licensesDir());
 
     ASSERT_GT(model.rowCount(), 0);
-    // The dialog opens on row 0, so this app's own GPLv3 is what it shows first.
+    // The dialog opens on row 0, so this app's own MIT text is what it shows first.
     EXPECT_EQ(roleString(model, 0, LicenseModel::NameRole), QStringLiteral("MegaExplorer"));
 }
 

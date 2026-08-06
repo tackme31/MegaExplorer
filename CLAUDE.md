@@ -69,7 +69,10 @@ refresh when a folder is opened, no continuous watching.
 
 - No MEGA app key required (dropped 2023) — pass `nullptr` to `MegaApi`'s constructor
   (`meganz/sdk` issue #2706).
-- Licensing: app is GPLv3 (via Qt), MEGA SDK is BSD-2-Clause. `meganz/MEGAsync`'s own source is
+- Licensing: app is **MIT** (relicensed from GPLv3 on 2026-08-07). Qt is used under **LGPLv3**, so
+  adding a GPL-only Qt module (Charts, Virtual Keyboard, …) would break that — check before
+  importing one. LibRaw is statically linked under the LGPL, which the published source satisfies;
+  the app cannot go closed-source. MEGA SDK is BSD-2-Clause. `meganz/MEGAsync`'s own source is
   under a restrictive Code Review Licence — never copy code from it, reference only for SDK usage
   patterns.
 - Stack detail (thumbnail/cache libraries etc.) is in `docs/MEMO.md`, not repeated here.

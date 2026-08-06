@@ -4,7 +4,7 @@
       "id": "megaexplorer",
       "name": "MegaExplorer",
       "version": "0.1.0",
-      "license": "GPL-3.0-only",
+      "license": "MIT",
       "homepage": "https://github.com/tackme31/MegaExplorer",
       "text": "texts/megaexplorer.txt"
     },
@@ -12,7 +12,7 @@
       "id": "qt",
       "name": "Qt",
       "version": "6.11.1",
-      "license": "GPL-3.0-only",
+      "license": "LGPL-3.0-only",
       "homepage": "https://www.qt.io/",
       "text": "texts/qt.txt"
     },
@@ -116,7 +116,7 @@
       "id": "freeimage",
       "name": "freeimage",
       "version": "3.18.0",
-      "license": "GPL-3.0-only",
+      "license": "FreeImage",
       "homepage": "https://sourceforge.net/projects/freeimage/",
       "text": "texts/freeimage.txt"
     },

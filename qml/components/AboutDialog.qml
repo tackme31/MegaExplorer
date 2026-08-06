@@ -7,10 +7,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 // Product identity plus the attributions that have to be visible in the running
-// program rather than only in a bundled text file: GPLv3 section 5's "appropriate
-// legal notices" for this app, Qt's own requirement that users be told Qt is used
-// under the (L)GPL, and FFmpeg's requirement of an about-box line. The complete
-// per-component texts live one click away in LicenseDialog.qml.
+// program rather than only in a bundled text file: the MIT copyright notice for
+// this app, Qt's own requirement that users be told Qt is used under the LGPL,
+// and FFmpeg's requirement of an about-box line. The complete per-component
+// texts live one click away in LicenseDialog.qml.
 //
 // One instance for the whole app, in Main.qml. Unlike NewFolderDialog this can
 // use standardButtons -- nothing here needs to keep the dialog open (see
@@ -42,18 +42,18 @@ Dialog {
         }
 
         Label {
-            text: qsTr("Copyright (C) 2026 Takumi Yamada")
+            text: qsTr("Copyright (c) 2026 Takumi Yamada (tackme31)")
             color: Theme.color.textSecondary
         }
 
-        // The GPLv3 section 5 short notice, near-verbatim.
+        // The MIT terms in one sentence; the full text is the first entry of
+        // the license dialog.
         Label {
             Layout.fillWidth: true
             Layout.maximumWidth: 420
             wrapMode: Text.Wrap
-            text: qsTr("This program comes with ABSOLUTELY NO WARRANTY. It is free software, "
-                       + "and you are welcome to redistribute it under the terms of the GNU "
-                       + "General Public License version 3.")
+            text: qsTr("This program is free software released under the MIT License, and "
+                       + "comes with ABSOLUTELY NO WARRANTY.")
         }
 
         Label {
@@ -63,9 +63,9 @@ Dialog {
             color: Theme.color.textSecondary
             // Qt's attribution requirement. FFmpeg's wording is prescribed by the
             // project itself (ffmpeg.org/legal.html) -- keep it as-is.
-            text: qsTr("Built with the Qt toolkit, used under the GNU General Public License "
-                       + "version 3. This software uses libraries from the FFmpeg project under "
-                       + "the LGPLv2.1.")
+            text: qsTr("Built with the Qt toolkit, used under the GNU Lesser General Public "
+                       + "License version 3. This software uses libraries from the FFmpeg "
+                       + "project under the LGPLv2.1.")
         }
 
         Label {
@@ -84,8 +84,9 @@ Dialog {
 
         Label {
             textFormat: Text.StyledText
-            // Named, not bare: this link is the GPLv3 section 6 provision of the
-            // corresponding source, which a naked URL does not say.
+            // Named, not bare: LibRaw is linked statically under the LGPL, and
+            // this source is what lets a recipient relink against their own
+            // build of it (LGPL-2.1 section 6). A naked URL does not say that.
             text: qsTr("Source code: %1").arg(
                       '<a href="https://github.com/tackme31/MegaExplorer">github.com/tackme31/MegaExplorer</a>')
             onLinkActivated: link => Qt.openUrlExternally(link)

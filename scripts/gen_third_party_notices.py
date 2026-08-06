@@ -35,11 +35,11 @@ QT_VERSION = "6.11.1"
 SDK_VERSION = "v10.17.0"
 QWINDOWKIT_VERSION = "1.5.0"
 
-# LICENSE is the FSF's document and every other text belongs to someone else, so
-# without these the distribution never names this program's own author, nor says
-# where GPLv3 section 6's corresponding source is. The About dialog says both,
-# but a dialog is not part of an unpacked archive.
-COPYRIGHT_LINE = "MEGA Explorer  Copyright (C) 2026  Takumi Yamada"
+# Every license text in here belongs to someone else, so without these the
+# distribution never names this program's own author, nor says where its source
+# is -- which is what makes the statically linked LGPL components relinkable.
+# The About dialog says both, but a dialog is not part of an unpacked archive.
+COPYRIGHT_LINE = "MEGA Explorer  Copyright (c) 2026  Takumi Yamada (tackme31)"
 SOURCE_URL = "https://github.com/tackme31/MegaExplorer"
 
 # vcpkg's own metadata is unusable for these, either because it failed to reduce
@@ -53,14 +53,19 @@ LICENSE_OVERRIDES = {
     "jasper": "JasPer-2.0",
     # XZ Utils 5.8; the core liblzma sources are public-domain-equivalent.
     "liblzma": "0BSD",
-    # (GPL-2.0-only OR GPL-3.0-only OR FreeImage) -- GPL-3.0 to match this app.
-    "freeimage": "GPL-3.0-only",
+    # (GPL-2.0-only OR GPL-3.0-only OR FreeImage) -- the FIPL side, whose
+    # section 3.6 explicitly allows the executable to be distributed under a
+    # license of our choice. It is also the text the port's `copyright` file
+    # actually carries.
+    "freeimage": "FreeImage",
     # (BSD-3-Clause OR GPL-2.0-only) -- the permissive side.
     "zstd": "BSD-3-Clause",
     # (FTL OR GPL-2.0-or-later) -- the permissive side.
     "freetype": "FTL",
-    # (LGPL-2.1-only OR CDDL-1.0) -- CDDL is GPL-incompatible, so LGPL-2.1,
-    # which section 3 lets us relicense up to the GPL this app ships under.
+    # (LGPL-2.1-only OR CDDL-1.0) -- the LGPL side. This one reaches the exe
+    # statically (the SDK's overlay triplet builds everything but ffmpeg
+    # static), so section 6's relinking requirement is met by publishing this
+    # app's own source; NOTICES_PREAMBLE says so.
     "libraw": "LGPL-2.1-only",
 }
 
@@ -69,20 +74,26 @@ LICENSE_OVERRIDES = {
 EXCLUDED_PORTS = {"gtest"}
 
 # Qt ships no license file inside the repo (it is an external install), and its
-# own bundled third-party set is far too large to reproduce. Both the GPLv3 text
-# and the pointer to Qt's published list cover it.
-QT_NOTICE = """\
+# own bundled third-party set is far too large to reproduce. The LGPLv3 text
+# (appended below by qt_text) plus the pointer to Qt's published list cover it.
+QT_SOURCE_URL = f"https://download.qt.io/archive/qt/{'.'.join(QT_VERSION.split('.')[:2])}/{QT_VERSION}/single/"
+
+QT_NOTICE = f"""\
 The Qt Toolkit is Copyright (C) 2026 The Qt Company Ltd. and other
 contributors.
 Contact: https://www.qt.io/licensing/
 
 MEGA Explorer uses the Qt Community Edition under the terms of the GNU
-General Public License, version 3 (GPLv3).
+Lesser General Public License, version 3 (LGPLv3). Only Qt modules available
+under that license are used; no GPL-only Qt module is linked.
 
 You may use, distribute and copy the Qt libraries used by this application
-under the terms of the GNU General Public License version 3, the full text
-of which is reproduced in the "MegaExplorer" entry of this document and in
-the accompanying "LICENSE" file of this distribution.
+under the terms of the LGPLv3, whose full text is reproduced immediately
+below, followed by the GPLv3 text it builds upon. The Qt libraries are
+shipped as separate dynamic libraries and are not modified, so a recipient
+may replace them with a modified, interface-compatible build. The
+corresponding Qt {QT_VERSION} sources are published by The Qt Company at:
+  {QT_SOURCE_URL}
 
 Qt itself bundles certain third-party code that is licensed under separate
 terms from their original authors, independent of the LGPL/GPL terms above.
@@ -100,12 +111,12 @@ Third-Party Software Notices and Information
 
 {COPYRIGHT_LINE}
 
-This application, MEGA Explorer, is licensed under the GNU General Public
-License version 3 (GPLv3). A copy of that license is included in the file
-named "LICENSE" in the root of this distribution. This program comes with
-ABSOLUTELY NO WARRANTY; see sections 15 and 16 of that license.
+This application, MEGA Explorer, is licensed under the MIT License. A copy of
+that license is included in the file named "LICENSE" in the root of this
+distribution, and the software is provided without warranty of any kind.
 
-The complete corresponding source code is available at
+The complete source code of MEGA Explorer, including the build instructions
+needed to rebuild it, is available at
 {SOURCE_URL}
 
 MEGA Explorer incorporates or links against third-party software components
@@ -113,9 +124,31 @@ that are subject to separate copyright and license terms, as detailed below.
 Reproducing this file, unmodified, alongside the LICENSE file satisfies the
 attribution requirements of those components.
 
-Components covered by the GNU Lesser General Public License (FFmpeg) are
-distributed as separate dynamic libraries, so a modified build of them can be
-substituted without relinking MEGA Explorer.
+Components under the GNU Lesser General Public License
+------------------------------------------------------
+Three components are used under the LGPL. None of them is modified.
+
+  Qt ({QT_VERSION}, LGPLv3) and FFmpeg (LGPLv2.1) are shipped as separate
+  dynamic libraries, so a recipient may substitute a modified,
+  interface-compatible build of either without relinking MEGA Explorer.
+  Their sources are published at {QT_SOURCE_URL}
+  and https://ffmpeg.org/download.html respectively.
+
+  LibRaw (LGPLv2.1), reached through FreeImage, is linked statically. To
+  satisfy section 6 of that license, the complete source code of MEGA
+  Explorer is published at the address above under the MIT License, which
+  permits modification and imposes no restriction on reverse engineering, so
+  a recipient can rebuild this program against a modified LibRaw. LibRaw's
+  own sources are published at https://www.libraw.org/download.
+
+Notice required by the FreeImage Public License
+------------------------------------------------
+FreeImage 3.18.0 is used under the FreeImage Public License, version 1.0
+(section 3.6 of which permits the executable form to be distributed under a
+different license). It is used unmodified, so there are no modifications to
+publish under section 3.2. Its source code is available under that license at
+https://sourceforge.net/projects/freeimage/files/, and the build recipe used
+here is the "freeimage" port of vcpkg (https://github.com/microsoft/vcpkg).
 
 This file is generated by scripts/gen_third_party_notices.py -- do not edit it
 by hand.
@@ -147,6 +180,24 @@ def app_version() -> str:
     return match.group(1)
 
 
+def qt_text() -> str:
+    """LGPLv3 is written as a set of additional permissions on top of GPLv3, so
+    both texts have to travel with the distribution. They used to be covered by
+    this app's own LICENSE being GPLv3; since that is MIT, the Qt entry carries
+    them itself."""
+    upstream = REPO_ROOT / "licenses/upstream"
+    # Narrower than RULE: this one is read inside the license dialog's text pane,
+    # which wraps at ~76 columns and would break a 79-column rule onto two lines.
+    rule = "-" * 70
+    return "\n".join([
+        QT_NOTICE,
+        rule,
+        read_text(upstream / "LGPL-3.0.txt"),
+        rule,
+        read_text(upstream / "GPL-3.0.txt"),
+    ])
+
+
 def fixed_components() -> list[dict]:
     """Everything that does not come from vcpkg. Order here is the order the
     dialog shows: this app first, then the frameworks, then what the SDK vendors."""
@@ -157,16 +208,16 @@ def fixed_components() -> list[dict]:
         {
             "name": "MegaExplorer",
             "version": app_version(),
-            "license": "GPL-3.0-only",
+            "license": "MIT",
             "homepage": "https://github.com/tackme31/MegaExplorer",
             "text": read_text(REPO_ROOT / "LICENSE"),
         },
         {
             "name": "Qt",
             "version": QT_VERSION,
-            "license": "GPL-3.0-only",
+            "license": "LGPL-3.0-only",
             "homepage": "https://www.qt.io/",
-            "text": QT_NOTICE,
+            "text": qt_text(),
         },
         {
             "name": "MEGA C++ SDK",
