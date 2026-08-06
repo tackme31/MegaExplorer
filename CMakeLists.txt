@@ -83,6 +83,10 @@ add_library(MegaExplorerCore STATIC
     src/core/AccountService.cpp
 )
 target_include_directories(MegaExplorerCore PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src)
+# Every other target gets C++17 from Qt's interface requirement; this one links
+# no Qt at all and would otherwise fall back to MSVC's C++14 default, where
+# std::optional doesn't exist.
+target_compile_features(MegaExplorerCore PUBLIC cxx_std_17)
 
 enable_testing()
 add_subdirectory(tests)
