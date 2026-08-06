@@ -119,3 +119,33 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
 - **`MegaExplorerCore`**: a static library target (root `CMakeLists.txt`) bundling `src/core`'s
   SDK-free headers/`.cpp` files. Exists so `appMegaExplorer` and `MegaExplorerTests` link the same
   compiled domain logic instead of each recompiling it standalone.
+
+## Trust boundary: strings that come from the server
+
+MEGA node names (`FileEntry::name`) are **untrusted input**. Nothing upstream validates them: MEGA
+is end-to-end encrypted, so the server cannot inspect a name even in principle, and a name can
+arrive from outside this app entirely — a public-link import keeps the original name, and any other
+client can rename a node to anything. `FileOperationService::isValidName` guards only names *this*
+app creates (rename / new folder), so it is an entry-side rule, not a guarantee about what is
+already in the account.
+
+Consequently, every place a node name becomes part of a local path or an OS-level action needs its
+own defense:
+
+- **Downloads** — `DownloadController::computeDestinationPath` joins the Downloads directory with
+  the node name, and `DownloadService::safeLocalFileName` (a static, Qt-free rule, unit-tested in
+  `tests/DownloadServiceTest.cpp`) is what keeps the result a leaf inside that directory. It keeps
+  only the part after the last separator, drops a drive-letter prefix, replaces control characters
+  and `<>:"|?*`, strips trailing dots/spaces, sidesteps Windows' reserved device names, and falls
+  back to `download` when nothing usable is left. Sanitizing rather than rejecting is deliberate:
+  `CON.txt` is a legitimate MEGA name and refusing it would make a real file undownloadable. The
+  MEGA SDK offers no help here — `MegaApi::startDownload` escapes only its `customName` argument,
+  which `MegaSdkClient::download` passes as `nullptr`.
+- **Local paths derived from other node metadata are safe by construction** — thumbnail and avatar
+  cache files are named from the numeric handle (`src/qml/ThumbnailController.cpp`,
+  `src/qml/AccountController.cpp`) and the log file name is fixed (`src/app/Logging.cpp`), so no
+  server-controlled string reaches those.
+
+The mirror image — **local** data crossing into the app — is `UploadController::dropUrls`, and it
+is the model to copy: it drops anything that isn't `QUrl::isLocalFile()`, classifies with
+`QFileInfo::isDir`/`isFile`, and normalizes via `absoluteFilePath()` before the path is used.

@@ -283,14 +283,14 @@ R7 ドキュメント/コメント整理
 
 （各スコープ完了時にここへ追記。形式は `docs/DESIGN_IMPROVEMENT.md` の段階ログに揃える）
 
-### R1 — 調査済み / 修正未着手（2026-08-06）
+### R1 — 調査済み / R1-1 のみ修正済み（2026-08-06）
 
 計画の「種」5 件を現物で検証した結果。**確認 3 件 / 種の誤り 1 件 / 問題なし 3 件 / 新規 3 件**。
 以下はそのまま plan mode の作業単位として使える粒度で書いてある。
 
 #### 確認された問題
 
-**R1-1 [高] ダウンロード先パスにサーバ由来のノード名を無検証で連結（パストラバーサル）**
+**R1-1 [高] ダウンロード先パスにサーバ由来のノード名を無検証で連結（パストラバーサル）** — **修正済み（2026-08-06）**
 
 - 現物: `src/qml/DownloadController.cpp:114-132` (`computeDestinationPath`)。
   `QDir::toNativeSeparators(dir + "/" + fileName)` のみで、`fileName` に一切の検証がない。
@@ -323,6 +323,63 @@ R7 ドキュメント/コメント整理
 - テスト: **`DownloadController` にテストが無い**（`tests/` に `DownloadControllerTest.cpp` は不在。
   理由は `tests/UploadControllerTest.cpp:19` のコメント = `QDesktopServices` が QtGui を引く）。
   B を採るなら判定を `src/core` の純関数へ出せばテストできる。R4 の「未テストの src/qml」と直結。
+
+**修正結果**（方針 B の変種 = B'）:
+
+- `DownloadService::safeLocalFileName`（`src/core/DownloadService.h/.cpp`）を新設。`static`・Qt 非依存の
+  純関数で、リーフ抽出 → ドライブレター除去 → 不正文字と制御文字の `_` 置換 → 末尾ドット/空白除去 →
+  空なら `download` → Windows 予約デバイス名に `_` 前置、の順。長さ上限は意図的に持たない
+  （切り詰めは衝突を生み、超過は OS のエラーであって信頼境界ではない）。
+- `DownloadController::computeDestinationPath` がこれを通してから連結する。`enqueue` に渡す
+  `name` は元のノード名のまま（失敗トースト用。成功時の表示は既存どおり `resolvedLocalPath` 由来）。
+  **QML 側の変更はゼロ**。
+- **不正名は拒否せずサニタイズして続行**。`CON.txt` は MEGA 上に正当に存在しうるので、拒否すると
+  正当なファイルがダウンロード不能になる。
+- **方針 A（`IMegaClient::download` を dir + name に割り `customName` に委譲）は採らなかった**：
+  SDK の `escapefsincompatible` は*文字*単位のエスケープなので、`..` という*名前*を潰す保証がない。
+  暗黙の SDK 挙動に信頼境界を預ける形になるのも、種が問題視していた点そのもの。
+- テストは `tests/DownloadServiceTest.cpp` に 6 件追加（トラバーサル / 不正文字 / 末尾ドット /
+  フォールバック / 予約名 / 通常名と UTF-8 の素通し）。`DownloadService.cpp` は既に
+  `MegaExplorerCore` に入っているので **`tests/CMakeLists.txt` の変更は不要**だった。
+  `DownloadController` 自体は QtGui 依存でテスト対象外のまま（R4 の持ち越しは有効）。
+- 併せてコメント是正: `FileOperationService::isValidName`（「download 時ではなくここで弾く」が
+  嘘になっていた）と `DownloadService::enqueue` の doc。
+- 検証: `MegaExplorerTests` 370 件全緑、`appMegaExplorer` の `/W4` 新規警告ゼロ。
+
+**手動テスト宿題（R1-1、未実施）**
+
+実アカウントでの確認は残っている。ノード名を作る手段で 2 群に分かれる。
+
+*群 A — MegaExplorer 自身の F2 リネームで作れる*（`isValidName` が弾くのは `/` `\` と
+空白のみの名前だけなので、以下はそのまま付けられる）:
+
+| MEGA 上の名前 | 検証する規則 | Downloads に落ちる名前 |
+| --- | --- | --- |
+| `CON.txt` | 予約デバイス名 | `_CON.txt` |
+| `COM1.log` | 予約デバイス名（番号つき） | `_COM1.log` |
+| `CONS.txt` | 予約名を誤検出しない | `CONS.txt`（無変換） |
+| `a<b>c:d?.txt` | 禁止文字の置換 | `a_b_c_d_.txt` |
+| `test.txt. `（末尾ドット + 空白） | 末尾ドット/空白の除去 | `test.txt` |
+| `..` / `...` | 名前が全部消える → フォールバック | `download` |
+| `日本語 ファイル.txt` | UTF-8 が壊れない回帰確認 | 無変換 |
+
+*群 B — パストラバーサル本体。外部クライアントが要る*（名前にパス区切りが要るため、本アプリの
+リネームでは作れない。mega.nz の web クライアントで弾かれたら WSL + MEGAcmd。Linux では `\` `<`
+`>` `:` `?` も末尾ドットも正当なファイル名文字なので、その名前のままアップロードすればノード名に
+そのまま入る）:
+
+| MEGA 上の名前 | 修正前の書き込み先 | 修正後 |
+| --- | --- | --- |
+| `..\..\..\pwned.txt` | `C:\pwned.txt` | `Downloads\pwned.txt` |
+| `../../pwned.txt` | `C:\Users\pwned.txt`（`toNativeSeparators` が `\` に直すため） | `Downloads\pwned.txt` |
+| `C:\Windows\Temp\pwned.txt` | `C:\Windows\Temp\pwned.txt` | `Downloads\pwned.txt` |
+| `C:pwned.txt`（ドライブ相対） | カレントドライブ基準の別の場所 | `Downloads\pwned.txt` |
+
+確認ポイント: 完了トーストの表示名は保存後の実ファイル名（`resolvedLocalPath` 由来）なので、
+`CON.txt` のダウンロードでは**トーストが `_CON.txt` と出るのが正しい**。群 B では `C:\` /
+`C:\Users\` / `C:\Windows\Temp\` に何も出ていないことも見る。併せて普通の名前を 2 回ダウンロード
+して 2 個目が `report (1).pdf` になること（`COLLISION_RESOLUTION_NEW_WITH_N`）を確認すれば、
+既存のリネーム経路を壊していないことも分かる。
 
 **R1-2 [中] `install()` に `LICENSE` / `THIRD-PARTY-NOTICES.txt` が入っていない（Phase 20b の宿題）**
 
@@ -421,6 +478,8 @@ R7 ドキュメント/コメント整理
 
 - `docs/ARCHITECTURE.md` に「サーバ由来文字列の信頼境界」を 1 節。R1-1（悪い例）と R1-7（良い例）、
   R1-3 のログ出口と寿命をここに集約する。
+  → **R1-1 / R1-7 ぶんは記述済み**（`## Trust boundary: strings that come from the server`）。
+  R1-3 のログ出口と寿命は R1-3 実施時にこの節へ追記する。
 
 ### R2 — 未着手
 ### R3 — 未着手
