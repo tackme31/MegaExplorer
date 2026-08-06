@@ -240,7 +240,15 @@ std::map<QString, quint64> UploadController::collisionsFor(const QStringList& lo
         mService->findNameCollisions(static_cast<std::uint64_t>(target), targetIsRoot, names);
     std::map<QString, quint64> hits;
     if (!result.success)
-        return hits; // can't ask the question, so don't -- just upload
+    {
+        // Can't ask the question, so don't -- just upload. MEGA stacks a
+        // same-name upload as a new version, so this is closer to a silent
+        // overwrite than to a clean add; log it.
+        qCWarning(lcUpload) << "name-collision check skipped:"
+                            << QString::fromStdString(result.errorMessage)
+                            << "code=" << result.errorCode;
+        return hits;
+    }
 
     for (const FileEntry& entry : result.value)
         hits.emplace(QString::fromStdString(entry.name), static_cast<quint64>(entry.handle));

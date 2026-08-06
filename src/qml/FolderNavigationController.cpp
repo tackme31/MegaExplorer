@@ -318,8 +318,18 @@ void FolderNavigationController::refreshVisibleListing()
         mService->refreshCurrent(
             mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                 invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
-                    if (result.success)
-                        mLastFolderEntries = std::move(result.value);
+                    if (!result.success)
+                    {
+                        // No toast: the visible model is the search result,
+                        // which reports its own failure. This one only means
+                        // the cache stays stale, so clearing the search shows
+                        // the pre-refresh listing.
+                        qCWarning(lcNavigation) << "background folder refresh failed:"
+                                                << QString::fromStdString(result.errorMessage)
+                                                << "code=" << result.errorCode;
+                        return;
+                    }
+                    mLastFolderEntries = std::move(result.value);
                 });
             });
         return;

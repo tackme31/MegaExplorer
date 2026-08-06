@@ -1125,7 +1125,7 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   という SDK 実装詳細に依存している事実（R2-9 の副産物）も残した。3 つの配達モードそのものは
   R2-2 で `IMegaClient.h` の先頭に書いたので、重複させず参照だけ張っている。
 
-### R3 — 調査済み / R3-1・R3-2・R3-3・R3-6 対応済み、残り 5 件（2026-08-06）
+### R3 — 調査済み / R3-1・R3-2・R3-3・R3-6・R3-12〜R3-14 対応済み、残り 5 件（2026-08-06）
 
 計画の「種」4 件を現物で検証した結果。**確認 8 件 / 種の誤り 3 件（うち 1 件は方針判断が要る）/
 問題なし 6 件 / 新規 5 件**。R1・R2 と同じく、以下はそのまま plan mode の作業単位として使える粒度で
@@ -1457,20 +1457,37 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
   （`src/core/DownloadService.cpp:217`、`src/core/UploadService.cpp:128`・`:173`）が自動的に追随する
   — つまり害は今のところ重複だけ。R2-8（キューの `optional<Job>` 化）と同じ場所なので、**R5 での
   サービス整理に合流させる**。
-- **R3-12 [中] 検索中の裏側リフレッシュが失敗を完全に無音で捨てる。**
+- **R3-12 [中] ✅対応済み 検索中の裏側リフレッシュが失敗を完全に無音で捨てる。**
   `src/qml/FolderNavigationController.cpp:318-324` は `refreshCurrent` の結果を
   `if (result.success) mLastFolderEntries = ...` とだけ扱い、**ログすら出さない**。失敗すると
   検索を消したときに古い一覧が出る。`:307-309` のコメントはまさにそれを防ぐためにこの呼び出しが
   あると説明しているので、**コメントと実装が食い違っている**。
-- **R3-13 [低] セッショントークンの取得失敗が無音。** `src/core/AuthService.cpp:111-117` は
+- **R3-13 [低] ✅対応済み セッショントークンの取得失敗が無音。** `src/core/AuthService.cpp:111-117` は
   `currentSessionToken()` が失敗すると保存を飛ばす。ヘッダ（`AuthService.h:67-73`）が
   「best-effort」と書いているのは**保存の失敗**についてで、取得の失敗には触れていない。ユーザから見ると
   「次回起動でなぜかパスワードを聞かれる」だけになる。ログ 1 行で足りる。
-- **R3-14 [低] 同名チェックのスキップが無ログ。** `src/qml/UploadController.cpp:242-243` は
+- **R3-14 [低] ✅対応済み 同名チェックのスキップが無ログ。** `src/qml/UploadController.cpp:242-243` は
   `findChildFiles` 失敗時に同名チェックを丸ごと飛ばす（`// can't ask the question, so don't`）。
   意図は明示されているが、**MEGA は同名アップロードを新バージョンとして重ねる**ので、
   スキップの結果は「黙って上書き」に近い。ログ 1 行と、R3-4 の enum 化のときに
   「チェックできなかった」を言えるかの検討。
+
+**R3-12 / R3-13 / R3-14 の対応（2026-08-07、1 コミット）**: 3 件とも `qCWarning` 1 行。トーストは
+どれも出さない（R3-12 は検索結果側が自分で報告する／R3-13・R3-14 はユーザの操作が失敗したわけでは
+ない）。決めた点:
+
+- **R3-13 だけログを書く場所の判断が要った。** `AuthService` は `src/core` にあり、
+  `MegaExplorerCore` は Qt を一切リンクしない（`CMakeLists.txt:86-89` にその旨のコメントがある）ので、
+  **「ログ 1 行」が成立しない** — 調査時の見落とし。R3-3 の先例に倣うなら sink コールバックだが、
+  それはヘッダ + `AuthController` 配線 + テストで ~30 行になり「極小 1 コミット」から外れる。
+  代わりに**失敗の発生源であるアダプタ側**（`src/mega/MegaSdkClient::currentSessionToken`、
+  こちらは Qt リンク済み）に置いた。呼び出し元は `AuthService` の 1 箇所だけなので誤爆しない。
+  引き換えに「保存を飛ばした」文脈がアダプタ側のコメント頼りになる — その 1 文をコメントに書いた。
+  `src/mega` で `app/Logging.h` を include するのは `MegaSdkLogger` 以外では初。
+- **R3-14 の「チェックできなかった」をユーザに伝えるかは R3-4 に持ち越し**（トーストの文脈を
+  足す話なので、enum 化と同じ場所を触る）。今回はログのみ。
+- テスト追加なし。`MegaSdkClient` は実アカウントが要るのでアダプタ級のテストが元々無く、
+  他 2 件は `src/qml`。`/W4` 新規警告ゼロ。
 
 #### 無音失敗の棚卸し（種 4 番目の答え）
 
@@ -1482,9 +1499,9 @@ R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理�
 | `QuickAccessService.cpp:23-24` | load 失敗 → 空リスト、無ログ | **報告漏れ**（畳むこと自体は意図的） | ✅R3-3（`load()` が `Result<void>` を返す → モデルがログ） |
 | `QuickAccessService.cpp:15-20` | `currentUserHandle()` 失敗 → ピン全消し、無ログ | **報告漏れ** | ✅R3-3（同上、client の `Result` をそのまま転送） |
 | `QuickAccessModel.cpp:183-195` | 失敗を「dangling」と断定してピン削除 | **報告漏れ**（ログの文言も誤り） | ✅R3-2（`PinStatus` 3 値化 + `Unknown` 用のログ／トースト） |
-| `FolderNavigationController.cpp:318-324` | 裏側 refresh 失敗、無ログ | **報告漏れ** | R3-12 |
-| `AuthService.cpp:111-117` | トークン取得失敗、無ログ | **報告漏れ** | R3-13 |
-| `UploadController.cpp:242-243` | 同名チェック不能 → スキップ | 意図的（ただし無ログ） | R3-14 |
+| `FolderNavigationController.cpp:318-324` | 裏側 refresh 失敗、無ログ | **報告漏れ** | ✅R3-12（`qCWarning`） |
+| `AuthService.cpp:111-117` | トークン取得失敗、無ログ | **報告漏れ** | ✅R3-13（core は Qt-free なのでアダプタ側で `qCWarning`） |
+| `UploadController.cpp:242-243` | 同名チェック不能 → スキップ | 意図的（ただし無ログ） | ✅R3-14（`qCWarning`。ユーザへの通知は R3-4 へ） |
 | `AuthService.cpp:34,49,94,106,116` | `(void)` 付きで破棄 | 意図的・明示済み | 対応不要 |
 | `AccountService.cpp:46-55` | 属性未設定 → `""` | 意図的・コメント済み | 対応不要 |
 | `FolderTreeService.cpp:37-38` | 失敗 → `false`（安全側） | 意図的・コメント済み | 対応不要 |
@@ -1496,8 +1513,8 @@ R3-1  errorCode の意味づけ（既定引数の廃止）    … ✅済（先�
 R3-3  [[nodiscard]] + save/load 失敗の報告      … ✅済。R3-9(a) もこれで入った
 R3-2  isUsable の 3 値化（ピンを誤削除しない）  … ✅済。R3-1(c) の成果を直接使った
 R3-6  renameEntry の QML 分岐だけ               … ✅済。C++ 半分は R3-1 で先に入っていた
-R3-12 / R3-13 / R3-14  無音の 3 箇所にログ      … 極小・まとめて 1 コミット → 次はこれ
-R3-8  goBack のガード                           … 極小
+R3-12 / R3-13 / R3-14  無音の 3 箇所にログ      … ✅済。予定どおり 1 コミット
+R3-8  goBack のガード                           … 極小 → 次はこれ
 R3-4 + R3-5  notifyError の enum 化（+ refresh 追加） … QML も動く。R6 と要調整
 R3-7  value のアクセサ化                        … R3-9 の承認が前提
 R3-9  Result 型そのものの方針                   … ★先に承認を取る。R5 の入力

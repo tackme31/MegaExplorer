@@ -1,5 +1,6 @@
 #include "MegaSdkClient.h"
 
+#include "app/Logging.h"
 #include "core/AccountPlan.h"
 #include "core/MegaErrorCodes.h"
 #include "MegaSdkLogger.h"
@@ -517,7 +518,13 @@ Result<std::string> MegaSdkClient::currentSessionToken() const
     char* session = mApi->dumpSession(); // non-const, but callable from a const member via
                                          // unique_ptr's operator->
     if (!session)
+    {
+        // Only caller is AuthService's best-effort token save, which skips
+        // saving silently -- without this the user just gets an unexplained
+        // password prompt next launch.
+        qCWarning(lcSession) << "dumpSession returned null -- session token not persisted";
         return Result<std::string>::fail("not logged in", MegaErrorCode::kEInternal);
+    }
     std::string token(session);
     delete[] session; // megaapi.h: "Use delete[] to release the memory"
     return Result<std::string>::ok(std::move(token));
