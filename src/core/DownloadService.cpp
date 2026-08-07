@@ -106,8 +106,8 @@ std::uint64_t DownloadService::enqueue(std::uint64_t handle,
         job.name = name;
         job.destinationPath = destinationPath;
         job.totalBytes = expectedTotalBytes;
-        mQueue.push_back(job);
         id = job.id;
+        mPending.push_back(std::move(job));
     }
     startNextIfIdle();
     return id;
@@ -116,21 +116,26 @@ std::uint64_t DownloadService::enqueue(std::uint64_t handle,
 std::optional<DownloadJob> DownloadService::currentJob() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    if (mQueue.empty())
-        return std::nullopt;
-    return mQueue.front();
+    return mActive;
 }
 
 std::vector<DownloadJob> DownloadService::jobs() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    return mQueue;
+    std::vector<DownloadJob> all;
+    all.reserve(mPending.size() + (mActive ? 1 : 0));
+    if (mActive)
+        all.push_back(*mActive);
+    all.insert(all.end(), mPending.begin(), mPending.end());
+    return all;
 }
 
 bool DownloadService::hasJobForHandle(std::uint64_t handle) const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    for (const DownloadJob& job : mQueue)
+    if (mActive && mActive->handle == handle)
+        return true;
+    for (const DownloadJob& job : mPending)
     {
         if (job.handle == handle)
             return true;
@@ -164,61 +169,68 @@ void DownloadService::startNextIfIdle()
 
     for (;;)
     {
+        std::uint64_t id;
         std::uint64_t handle;
         std::string destinationPath;
         {
             std::lock_guard<std::mutex> lock(mMutex);
             mAdvanceRequested = false;
-            if (mQueue.empty() || mQueue.front().state != DownloadState::Queued)
+            if (mActive || mPending.empty())
             {
                 mAdvancing = false;
                 return;
             }
-            mQueue.front().state = DownloadState::Active;
-            handle = mQueue.front().handle;
-            destinationPath = mQueue.front().destinationPath;
+            mActive = std::move(mPending.front());
+            mPending.pop_front();
+            mActive->state = DownloadState::Active;
+            id = mActive->id;
+            handle = mActive->handle;
+            destinationPath = mActive->destinationPath;
         }
 
         mClient->download(
             handle,
             destinationPath,
-            [this](std::uint64_t transferred, std::uint64_t total) {
+            [this, id](std::uint64_t transferred, std::uint64_t total) {
                 std::function<void(DownloadJob)> onProgress;
                 DownloadJob snapshot;
                 {
                     std::lock_guard<std::mutex> lock(mMutex);
-                    if (mQueue.empty())
+                    // Not ours: this job already finished (or was cancelled) and
+                    // the SDK is still delivering. Writing here would land on
+                    // whichever job was promoted in its place.
+                    if (!mActive || mActive->id != id)
                         return;
-                    mQueue.front().transferredBytes = transferred;
-                    mQueue.front().totalBytes = total;
-                    snapshot = mQueue.front();
+                    mActive->transferredBytes = transferred;
+                    mActive->totalBytes = total;
+                    snapshot = *mActive;
                     onProgress = mOnProgress;
                 }
                 if (onProgress)
                     onProgress(snapshot);
             },
-            [this](Result<DownloadOutcome> result) {
+            [this, id](Result<DownloadOutcome> result) {
                 std::function<void(DownloadJob)> onJobFinished;
                 DownloadJob snapshot;
                 {
                     std::lock_guard<std::mutex> lock(mMutex);
-                    if (mQueue.empty())
-                        return;
-                    mQueue.front().state =
+                    if (!mActive || mActive->id != id)
+                        return; // same as onProgress above
+                    mActive->state =
                         result.success ? DownloadState::Completed : DownloadState::Failed;
                     if (result.success)
                     {
-                        mQueue.front().resolvedLocalPath = result.value().localPath;
-                        mQueue.front().alreadyPresent = result.value().alreadyPresent;
+                        mActive->resolvedLocalPath = result.value().localPath;
+                        mActive->alreadyPresent = result.value().alreadyPresent;
                     }
                     else
                     {
-                        mQueue.front().errorMessage = result.errorMessage;
-                        mQueue.front().errorCode = result.errorCode;
+                        mActive->errorMessage = result.errorMessage;
+                        mActive->errorCode = result.errorCode;
                     }
-                    snapshot = mQueue.front();
+                    snapshot = *mActive;
                     onJobFinished = mOnJobFinished;
-                    mQueue.erase(mQueue.begin());
+                    mActive.reset();
                 }
                 if (onJobFinished)
                     onJobFinished(snapshot);

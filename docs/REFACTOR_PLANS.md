@@ -520,7 +520,7 @@ R7 ドキュメント/コメント整理
   → **R1-1 / R1-7 ぶんは記述済み**（`## Trust boundary: strings that come from the server`）。
   R1-3 のログ出口と寿命は R1-3 実施時にこの節へ追記する。
 
-### R2 — 調査済み / R2-1〜R2-7・R2-9〜R2-11 対応済み、残るは R2-8（2026-08-06）
+### R2 — 全項目対応済み（調査 2026-08-06、最後の R2-8 は R5-8 で 2026-08-08）
 
 計画の「種」5 件を現物 + **ベンダーされた MEGA SDK 本体**（`third_party/sdk`）で検証した結果。
 **確認 3 件 / 種の誤り 1 件（重要）/ 問題なし 6 件 / 新規 4 件**。R1 と同じく、以下はそのまま
@@ -924,7 +924,7 @@ plan mode の作業単位として使える粒度で書いてある。**修正�
   `mFileOps->moveToRubbish(..., [this]…)` は一発限りのコールバックで、解除 API が無い。
   安全なのは R2-3 の停止点のおかげ（サービスもコントローラも生存中）で、その旨をコメントに残した。
 
-**R2-8 [中・設計] `mQueue.front()` の「先頭だけが in-flight」前提**
+**R2-8 [中・設計] ✅対応済み（R5-8、2026-08-08） `mQueue.front()` の「先頭だけが in-flight」前提**
 
 - コールバック側のガードは全て `if (mQueue.empty()) return;`（`DownloadService.cpp:179,194`,
   `UploadService.cpp:132,147`）で、**空かどうかしか見ておらず同一性を見ていない**。
@@ -1119,7 +1119,7 @@ R2-3  MegaSdkClient::shutdown() の導入        … 寿命系の根。R2-5 の�
 R2-5  makeGuiOwned で破棄を GUI スレッドへ    … 元の一覧に無かった。R2-4 の前に置くと安全 [済 2026-08-06]
 R2-4  FileListModel の shared_ptr 化          … R5 の解体と方向一致 [済 2026-08-06]
 R2-9/R2-10/R2-11  docs/ARCHITECTURE.md への記録とコメント是正 … 締め [済 2026-08-06]
-R2-8  キューの optional<Job> mActive 化       … R5 のサービス整理に合流させるのが安い
+R2-8  キューの optional<Job> mActive 化       … ✅済（R5-8、2026-08-08）。合流させた判断は正しかった
 ```
 
 #### 成果物
@@ -2364,7 +2364,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `tests/UploadControllerTest.cpp` 冒頭の「`DownloadController` と違ってこちらは入っている」
   （削除）。R4-1 が意図的に残した箇所だが、`Qt6::Gui` が入った時点で事実として誤りになった。
 
-### R5 — 調査済み / R5-1〜R5-6・R5-9 対応済み（調査 2026-08-07、R5-9 で 2026-08-08）
+### R5 — 調査済み / R5-1〜R5-6・R5-8・R5-9 対応済み（調査 2026-08-07、R5-8 で 2026-08-08）
 
 計画の「種」5 件 +「持ち越し」の [R5] 3 件 + R2/R3 が明示的に R5 送りにした 5 件を現物で検証した
 結果。**確認 10 件 / 種の誤り・判断が要るもの 4 件 / 問題なしと確認 3 件**。R1〜R4 と同じく、
@@ -2710,7 +2710,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   名前付き namespace（`megaexplorer::sdk::detail` 等）に変えることになり、internal linkage を
   失う。得られるのは行数だけで、境界が増えるわけではない。**R5-1〜R5-4 より優先度は下**。
 
-**R5-8 [中] 完了/進捗コールバックがジョブ id を照合していない（持ち越し + R2-8 の合流先）**
+**R5-8 [中] ✅対応済み 完了/進捗コールバックがジョブ id を照合していない（持ち越し + R2-8 の合流先）**
 
 - 現物確認: 進捗・完了とも `if (mQueue.empty()) return;` の後に無条件で `mQueue.front()` へ書く。
   `DownloadService.cpp:185-198`（progress）/ `:199-222`（finish）、`UploadService.cpp:147-151` /
@@ -2722,6 +2722,35 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   コールバックへの id 引き渡し。`ThumbnailService` がハンドル keyed で構造的に免疫という良い前例あり。
 - **R4-6 があえてテストで固定しなかった箇所**なので、先にテストを書くと書き直しになる。修正と
   同時にテストを入れる。
+- **対応（2026-08-08）**: 方針どおり両サービスの `std::vector<Job> mQueue` を
+  `std::optional<Job> mActive` + `std::deque<Job> mPending` に割り、進捗・完了の両ラムダに
+  ジョブ id を値キャプチャして `if (!mActive || mActive->id != id) return;` を置いた。公開 API は
+  1 つも変わっていないので `DownloadController` / `UploadController` は無変更。決めたこと:
+  - **不変条件を 2 本に分けたのが本体で、id 照合はそのうち片方でしかない**。`optional` は
+    「active はたかだか 1 つ」をコンテナ内の**位置**ではなく型で持たせる側、id 照合は
+    「コールバックは自分のジョブにしか書かない」側。種は後者しか挙げていなかったが、前者が無いと
+    `mPending.front()` がまた「実質 active」として読まれ始めるので、片方だけでは元に戻る。
+  - **待ち行列は `deque`**。`erase(mQueue.begin())` の O(N) が `pop_front()` になるのは副産物で、
+    選んだ理由は `ThumbnailService` の `deque<handle>` と同じ形になること。R2-8 が
+    `ThumbnailService` を「構造的に免疫な良い側の実例」として挙げていたので、同じ形に寄せた方が
+    次に読む人が 2 つを比較できる。
+  - **`IMegaClient` のコールバックシグネチャは変えなかった**。id はこのサービス固有の概念で、
+    ポート側の契約に押し出すと `MegaSdkClient` と全モックが道連れになる。値キャプチャ 8 バイトで
+    済む話にインタフェース変更を使わない。
+  - **`UploadService` の 3 つ目の経路（`checkUpload` 再検証の失敗）にも同じガードを置いた**。
+    そこは同期で走り、まだ転送が始まっていないので stale になりようがない。それでも置いたのは、
+    `mActive` を無条件で書く経路を 1 つでも残すと「どのジョブに書いているのか」が名前で追えなく
+    なるため。コメントにもその理由を書いてある。
+  - **既存テストは 1 行も変えていない**（コメント 2 箇所が消えた `mQueue.empty()` を名指ししていたので
+    そこだけ文言を直した）。特に `SynchronousFailuresDrainTheQueueWithoutRecursing` の 50 件が
+    無変更で通ることが、`mAdvancing`/`mAdvanceRequested` トランポリンの意味を分割で壊していない証拠。
+  - 新規 5 件は**今日は起こりえない状況**を初めて固定した — ジョブ 1 完了 → ジョブ 2 昇格 → **その後に**
+    ジョブ 1 の `onProgress`/`onDone` が届く、という `cancel(jobId)` が日常的に作る形。
+    `UploadService` 側の 1 件は `checkUpload` 失敗で 1 件飛ばした先に stale が届く経路を通す。
+    `ctest` 485 件（478 + 新規 7、うち 2 件は既存テストの分割）全通過、`/W4` 警告なし。
+  - **エラー 2 フィールド（`errorMessage`/`errorCode`）には触っていない**。R3-11 が「R5 のサービス
+    整理に合流」と書いていたが、2026-08-07 の決定表どおり R5-10 は固定文に倒す方針なので、
+    `ErrorReason` を `Job` に通す作業はここには入れない。
 
 **R5-9 [中] ✅対応済み `~DownloadController` / `~UploadController` の安全論証が事実と違う（持ち越し）**
 
@@ -2824,7 +2853,7 @@ R5-1  ミューテーション群を別コントローラへ      … ✅済。F
   ↓
 R5-9  観測者解除の競合                          … ✅済。契約の明文化のみ。テスト 1 件で covered 側を固定
   ↓
-R5-8  ジョブ id 照合 + optional<Job> mActive    … R2-8 の合流先。テストは修正と同時
+R5-8  ジョブ id 照合 + optional<Job> mActive    … ✅済。R2 の最後の 1 件もここで閉じた
   ↓
 R5-10 生 errorMessage の 2 経路                 … ErrorReason を DownloadJob へ。R4-2 のテストも直す
   ↓
@@ -2921,6 +2950,7 @@ R5-7  MegaSdkClient のリスナ切り出し            … 行数のみの利�
   （R4-6 実施中に確認、2026-08-07）
   → **R5 調査で回収（2026-08-07）、R5-8 に統合**。R2-8 の `optional<Job> mActive` 化と同じ項目に
   まとめた。`UploadService` には `checkUpload` 失敗を書く 3 つ目の `front()` 経路もある。
+  → **解消済み（2026-08-08、R5-8）**。
 - **[R5] `~DownloadController` / `~UploadController` の `setOnProgress(nullptr)` は競合を防げていない** —
   `DownloadController.cpp:57-67` のコメントは「サービスがロック下でコピーし null チェックしてから
   呼ぶので mid-flight でも安全」と書くが、実際の `DownloadService.cpp:186-198` は**ロック下で

@@ -1,6 +1,7 @@
 #pragma once
 #include "IMegaClient.h"
 
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -43,8 +44,9 @@ struct UploadJob
 // Serializes uploads one at a time over IMegaClient::upload, mirroring
 // DownloadService: enqueue() starts immediately if nothing else is active,
 // otherwise the job waits and is auto-started once every job ahead of it
-// finishes (succeeds or fails). Same mutex discipline, same "mQueue.front()
-// is always the active job", same "finished jobs are erased right after
+// finishes (succeeds or fails). Same mutex discipline, same mActive/mPending
+// split and job-id matching on callbacks (see DownloadService for why both
+// invariants are structural), same "finished jobs are dropped right after
 // their notification" -- this is a live queue, not an upload history log.
 //
 // Deliberately absent, unlike DownloadService:
@@ -67,7 +69,8 @@ public:
     // the UI; expectedTotalBytes seeds totalBytes from already-known metadata
     // so a consumer reading currentJob() right away still has a denominator.
     // replaceHandle is opaque pass-through data, see UploadJob. Returns a job
-    // id usable to correlate later notifications.
+    // id usable to correlate later notifications; the same id is what the
+    // service matches its own SDK callbacks against.
     std::uint64_t enqueue(const std::string& localPath,
                           const std::string& name,
                           std::uint64_t parentHandle,
@@ -75,8 +78,8 @@ public:
                           std::uint64_t expectedTotalBytes,
                           std::uint64_t replaceHandle = 0);
 
-    // Snapshot of the active job, or nullopt if the queue is empty. Same
-    // single-lock reason as DownloadService::currentJob().
+    // Snapshot of the active job, or nullopt if nothing is running. Copies
+    // under the lock for the same reason as DownloadService::currentJob().
     std::optional<UploadJob> currentJob() const;
     std::vector<UploadJob> jobs() const;
 
@@ -99,7 +102,7 @@ public:
     void setOnJobFinished(std::function<void(UploadJob)> onJobFinished);
 
 private:
-    // Starts mQueue.front() if it's Queued and nothing else is active, then
+    // Promotes mPending.front() into mActive if nothing else is running, then
     // keeps going for as long as jobs keep finishing inside this call.
     //
     // Locks/unlocks mMutex internally rather than requiring the caller to hold
@@ -111,7 +114,8 @@ private:
     std::shared_ptr<IMegaClient> mClient;
     mutable std::mutex mMutex;
     std::uint64_t mNextId = 1;
-    std::vector<UploadJob> mQueue;
+    std::optional<UploadJob> mActive; // the one in-flight job, if any
+    std::deque<UploadJob> mPending;   // not yet started, in enqueue order
     std::function<void(UploadJob)> mOnProgress;
     std::function<void(UploadJob)> mOnJobFinished;
 

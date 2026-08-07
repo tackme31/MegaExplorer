@@ -388,16 +388,16 @@ TEST(DownloadServiceTest, MixedSuccessAndFailureQueueKeepsPerJobResultFieldsSepa
 
 TEST(DownloadServiceTest, CompletionArrivingAfterTheQueueDrainedIsIgnored)
 {
-    // The `if (mQueue.empty()) return;` guard at the top of both callbacks.
+    // The `!mActive` half of the guard at the top of both callbacks.
     // MegaSdkClient::shutdown() completes everything still pending as it joins
     // the SDK thread, so a job that already finished can be completed a second
-    // time; the queue is empty by then and front() would be UB.
+    // time, with nothing running by then.
     auto mockClient = std::make_shared<MockMegaClient>();
     std::function<void(std::uint64_t, std::uint64_t)> onProgress;
     std::function<void(Result<DownloadOutcome>)> onDone;
     EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::DoAll(::testing::SaveArg<2>(&onProgress),
-                                   ::testing::SaveArg<3>(&onDone)));
+        .WillOnce(
+            ::testing::DoAll(::testing::SaveArg<2>(&onProgress), ::testing::SaveArg<3>(&onDone)));
 
     DownloadService service(mockClient);
     int finishedCount = 0;
@@ -423,4 +423,74 @@ TEST(DownloadServiceTest, CompletionArrivingAfterTheQueueDrainedIsIgnored)
     EXPECT_EQ(progressCount, 0);
     EXPECT_TRUE(service.jobs().empty());
     EXPECT_FALSE(service.currentJob().has_value());
+}
+
+TEST(DownloadServiceTest, StaleProgressFromAFinishedJobDoesNotTouchTheNextJob)
+{
+    // The job-id half of the guard. Job 1 finishes, job 2 is promoted in its
+    // place, and only then does job 1's onProgress arrive -- exactly what a
+    // cancel(jobId) would produce routinely. Without the id check, job 1's
+    // byte counts land on job 2.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(std::uint64_t, std::uint64_t)> onProgress1;
+    std::function<void(Result<DownloadOutcome>)> onDone1;
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::DoAll(::testing::SaveArg<2>(&onProgress1),
+                                   ::testing::SaveArg<3>(&onDone1)));
+    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_));
+
+    DownloadService service(mockClient);
+    std::vector<DownloadJob> progressSnapshots;
+    service.setOnProgress([&](DownloadJob job) {
+        progressSnapshots.push_back(std::move(job));
+    });
+
+    service.enqueue(1, "a.txt", "/tmp/a.txt", 10);
+    const std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 999);
+    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt", false}));
+
+    // Act: job 1's transfer reports progress after it has already finished
+    onProgress1(50, 100);
+
+    // Assert: job 2 still shows its seeded numbers, and nobody was notified
+    std::optional<DownloadJob> active = service.currentJob();
+    ASSERT_TRUE(active.has_value());
+    EXPECT_EQ(active->id, id2);
+    EXPECT_EQ(active->transferredBytes, 0u);
+    EXPECT_EQ(active->totalBytes, 999u);
+    EXPECT_TRUE(progressSnapshots.empty());
+}
+
+TEST(DownloadServiceTest, StaleCompletionFromAFinishedJobDoesNotFinishTheNextJob)
+{
+    // Same setup, completion side: without the id check the late onDone would
+    // report job 2 as finished and drop it, losing a download that is still
+    // running.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<DownloadOutcome>)> onDone1;
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<3>(&onDone1));
+    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_));
+
+    DownloadService service(mockClient);
+    std::vector<DownloadJob> finished;
+    service.setOnJobFinished([&](DownloadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    const std::uint64_t id1 = service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
+    const std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 0);
+    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt", false}));
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished[0].id, id1);
+
+    // Act: job 1's transfer completes a second time
+    onDone1(Result<DownloadOutcome>::fail("late", 2));
+
+    // Assert: dropped -- job 2 is untouched and still running
+    EXPECT_EQ(finished.size(), 1u);
+    std::vector<DownloadJob> remaining = service.jobs();
+    ASSERT_EQ(remaining.size(), 1u);
+    EXPECT_EQ(remaining[0].id, id2);
+    EXPECT_EQ(remaining[0].state, DownloadState::Active);
 }

@@ -20,8 +20,8 @@ std::uint64_t UploadService::enqueue(const std::string& localPath,
         job.parentIsRoot = parentIsRoot;
         job.replaceHandle = replaceHandle;
         job.totalBytes = expectedTotalBytes;
-        mQueue.push_back(job);
         id = job.id;
+        mPending.push_back(std::move(job));
     }
     startNextIfIdle();
     return id;
@@ -30,21 +30,24 @@ std::uint64_t UploadService::enqueue(const std::string& localPath,
 std::optional<UploadJob> UploadService::currentJob() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    if (mQueue.empty())
-        return std::nullopt;
-    return mQueue.front();
+    return mActive;
 }
 
 std::vector<UploadJob> UploadService::jobs() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    return mQueue;
+    std::vector<UploadJob> all;
+    all.reserve(mPending.size() + (mActive ? 1 : 0));
+    if (mActive)
+        all.push_back(*mActive);
+    all.insert(all.end(), mPending.begin(), mPending.end());
+    return all;
 }
 
 std::size_t UploadService::queueLength() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    return mQueue.size();
+    return mPending.size() + (mActive ? 1 : 0);
 }
 
 Result<void> UploadService::canUploadTo(std::uint64_t parentHandle, bool parentIsRoot) const
@@ -92,21 +95,25 @@ void UploadService::startNextIfIdle()
 
     for (;;)
     {
+        std::uint64_t id;
         std::string localPath;
         std::uint64_t parentHandle;
         bool parentIsRoot;
         {
             std::lock_guard<std::mutex> lock(mMutex);
             mAdvanceRequested = false;
-            if (mQueue.empty() || mQueue.front().state != UploadState::Queued)
+            if (mActive || mPending.empty())
             {
                 mAdvancing = false;
                 return;
             }
-            mQueue.front().state = UploadState::Active;
-            localPath = mQueue.front().localPath;
-            parentHandle = mQueue.front().parentHandle;
-            parentIsRoot = mQueue.front().parentIsRoot;
+            mActive = std::move(mPending.front());
+            mPending.pop_front();
+            mActive->state = UploadState::Active;
+            id = mActive->id;
+            localPath = mActive->localPath;
+            parentHandle = mActive->parentHandle;
+            parentIsRoot = mActive->parentIsRoot;
         }
 
         // The destination may have been deleted between the drop and this
@@ -118,17 +125,20 @@ void UploadService::startNextIfIdle()
             UploadJob snapshot;
             {
                 std::lock_guard<std::mutex> lock(mMutex);
-                if (mQueue.empty())
+                // Nothing can steal mActive here: no transfer has started, so
+                // no SDK thread knows this job yet. Spelled out anyway so that
+                // no path writes mActive without naming which job it means.
+                if (!mActive || mActive->id != id)
                 {
                     mAdvancing = false; // every exit past the flag must clear it
                     return;
                 }
-                mQueue.front().state = UploadState::Failed;
-                mQueue.front().errorMessage = allowed.errorMessage;
-                mQueue.front().errorCode = allowed.errorCode;
-                snapshot = mQueue.front();
+                mActive->state = UploadState::Failed;
+                mActive->errorMessage = allowed.errorMessage;
+                mActive->errorCode = allowed.errorCode;
+                snapshot = *mActive;
                 onJobFinished = mOnJobFinished;
-                mQueue.erase(mQueue.begin());
+                mActive.reset();
             }
             if (onJobFinished)
                 onJobFinished(snapshot);
@@ -139,42 +149,44 @@ void UploadService::startNextIfIdle()
             localPath,
             parentHandle,
             parentIsRoot,
-            [this](std::uint64_t transferred, std::uint64_t total) {
+            [this, id](std::uint64_t transferred, std::uint64_t total) {
                 std::function<void(UploadJob)> onProgress;
                 UploadJob snapshot;
                 {
                     std::lock_guard<std::mutex> lock(mMutex);
-                    if (mQueue.empty())
+                    // Not ours: this job already finished (or was cancelled) and
+                    // the SDK is still delivering. Writing here would land on
+                    // whichever job was promoted in its place.
+                    if (!mActive || mActive->id != id)
                         return;
-                    mQueue.front().transferredBytes = transferred;
-                    mQueue.front().totalBytes = total;
-                    snapshot = mQueue.front();
+                    mActive->transferredBytes = transferred;
+                    mActive->totalBytes = total;
+                    snapshot = *mActive;
                     onProgress = mOnProgress;
                 }
                 if (onProgress)
                     onProgress(snapshot);
             },
-            [this](Result<UploadOutcome> result) {
+            [this, id](Result<UploadOutcome> result) {
                 std::function<void(UploadJob)> onJobFinished;
                 UploadJob snapshot;
                 {
                     std::lock_guard<std::mutex> lock(mMutex);
-                    if (mQueue.empty())
-                        return;
-                    mQueue.front().state =
-                        result.success ? UploadState::Completed : UploadState::Failed;
+                    if (!mActive || mActive->id != id)
+                        return; // same as onProgress above
+                    mActive->state = result.success ? UploadState::Completed : UploadState::Failed;
                     if (result.success)
                     {
-                        mQueue.front().nodeHandle = result.value().nodeHandle;
+                        mActive->nodeHandle = result.value().nodeHandle;
                     }
                     else
                     {
-                        mQueue.front().errorMessage = result.errorMessage;
-                        mQueue.front().errorCode = result.errorCode;
+                        mActive->errorMessage = result.errorMessage;
+                        mActive->errorCode = result.errorCode;
                     }
-                    snapshot = mQueue.front();
+                    snapshot = *mActive;
                     onJobFinished = mOnJobFinished;
-                    mQueue.erase(mQueue.begin());
+                    mActive.reset();
                 }
                 if (onJobFinished)
                     onJobFinished(snapshot);

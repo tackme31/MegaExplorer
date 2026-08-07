@@ -1,6 +1,7 @@
 #pragma once
 #include "IMegaClient.h"
 
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -48,9 +49,24 @@ struct DownloadJob
 // SDK-internal background thread (delivery mode 1 in IMegaClient.h) while a
 // second enqueue() is in flight. mMutex protects mQueue against that race.
 //
-// mQueue.front(), if present, is always the currently active (or
-// about-to-become-active) job; enqueue() only ever appends to the back.
-// Completed/failed jobs are removed right after their onJobFinished
+// Two invariants make that safe, and both are enforced structurally rather
+// than by convention:
+//
+//  - There is at most one active job, because mActive is an optional rather
+//    than a position in a container. mPending holds only not-yet-started
+//    jobs, so no code can mistake a waiting job for the running one.
+//  - A callback only ever writes to the job it belongs to: the job id is
+//    captured by value when the transfer starts and re-checked against
+//    mActive->id on arrival, so a callback for an already-finished job is
+//    dropped instead of landing on whichever job happens to be active now.
+//
+// The second one is what a future cancel(jobId) needs: cancelling the active
+// job lets the SDK deliver a late onProgress/onDone afterwards, and without
+// the id check that would corrupt the job promoted in its place. See
+// ThumbnailService, which gets the same property for free by keying jobs on
+// the node handle.
+//
+// Completed/failed jobs are dropped right after their onJobFinished
 // notification fires -- this exposes a live queue, not a download history
 // log.
 class DownloadService
@@ -77,17 +93,17 @@ public:
     // consumer reading currentJob() right after this call still gets a real
     // denominator, before MegaApi's first onTransferUpdate arrives. Starts
     // immediately if the queue was empty, otherwise waits its turn. Returns
-    // a job id usable to correlate later notifications (and, in the
-    // future, to target a cancel(jobId) call).
+    // a job id usable to correlate later notifications; the same id is what
+    // the service matches its own SDK callbacks against, and what a future
+    // cancel(jobId) would name.
     std::uint64_t enqueue(std::uint64_t handle,
                           const std::string& name,
                           const std::string& destinationPath,
                           std::uint64_t expectedTotalBytes);
 
-    // Snapshot of the active job, or nullopt if the queue is empty. One lock
-    // covers both the emptiness test and the read on purpose: the completion
-    // callback runs on an SDK thread and can empty the queue between two
-    // separate calls, so a has-then-get pair can't hold its own precondition.
+    // Snapshot of the active job, or nullopt if nothing is running. Copies
+    // under the lock rather than handing out a reference: the completion
+    // callback runs on an SDK thread and can clear mActive at any moment.
     std::optional<DownloadJob> currentJob() const;
 
     // Forward-looking: the full live queue (active job first, if any, then
@@ -114,7 +130,7 @@ public:
     void setOnJobFinished(std::function<void(DownloadJob)> onJobFinished);
 
 private:
-    // Starts mQueue.front() if it's Queued and nothing else is active, then
+    // Promotes mPending.front() into mActive if nothing else is running, then
     // keeps going for as long as jobs keep finishing inside this call.
     //
     // Locks/unlocks mMutex internally rather than requiring the caller to hold
@@ -127,7 +143,8 @@ private:
     std::shared_ptr<IMegaClient> mClient;
     mutable std::mutex mMutex;
     std::uint64_t mNextId = 1;
-    std::vector<DownloadJob> mQueue;
+    std::optional<DownloadJob> mActive;  // the one in-flight job, if any
+    std::deque<DownloadJob> mPending;    // not yet started, in enqueue order
     std::function<void(DownloadJob)> mOnProgress;
     std::function<void(DownloadJob)> mOnJobFinished;
 
