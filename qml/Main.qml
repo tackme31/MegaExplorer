@@ -132,10 +132,12 @@ ApplicationWindow {
         property alias treePanelWidth: window.treePanelWidth
     }
 
-    // A window-level Shortcut is fine here, unlike FileTableView's Ctrl+A: F5
-    // means nothing to a focused text field, so ignoring focus costs nothing.
+    // A window-level Shortcut is fine here, unlike FileTableView's Ctrl+A:
+    // neither F5 nor Ctrl+R means anything to a focused text field, so ignoring
+    // focus costs nothing. `sequences`, not `sequence`: StandardKey.Refresh is
+    // both of those on Windows and the singular form silently binds only F5.
     Shortcut {
-        sequence: StandardKey.Refresh
+        sequences: [StandardKey.Refresh]
         onActivated: tabsController.currentNavigation?.refresh()
     }
 
