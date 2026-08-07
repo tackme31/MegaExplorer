@@ -1,5 +1,6 @@
 #include "TabsController.h"
 
+#include "FileMutationController.h"
 #include "FolderNavigationController.h"
 #include "ThumbnailController.h"
 #include "UploadController.h"
@@ -49,6 +50,9 @@ QVariant TabsController::data(const QModelIndex& index, int role) const
         case NavigationRole:
             return QVariant::fromValue(static_cast<QObject*>(
                 mTabs[static_cast<std::size_t>(index.row())].navigation.get()));
+        case MutationsRole:
+            return QVariant::fromValue(static_cast<QObject*>(
+                mTabs[static_cast<std::size_t>(index.row())].mutations.get()));
         case ThumbnailsRole:
             return QVariant::fromValue(static_cast<QObject*>(
                 mTabs[static_cast<std::size_t>(index.row())].thumbnails.get()));
@@ -68,6 +72,7 @@ QHash<int, QByteArray> TabsController::roleNames() const
         {TitleRole, "title"},
         {AtRootRole, "atRoot"},
         {NavigationRole, "navigation"},
+        {MutationsRole, "mutations"},
         {ThumbnailsRole, "thumbnails"},
         {BusyRole, "busy"},
     };
@@ -225,6 +230,7 @@ TabContext TabsController::createTab()
     // across the engine boundary -- its GC could then delete a controller
     // out from under the shared_ptrs still holding it alive.
     QQmlEngine::setObjectOwnership(context.navigation.get(), QQmlEngine::CppOwnership);
+    QQmlEngine::setObjectOwnership(context.mutations.get(), QQmlEngine::CppOwnership);
     QQmlEngine::setObjectOwnership(context.thumbnails.get(), QQmlEngine::CppOwnership);
     // Same reason once more: since R2-4 the FileListModel is an unparented
     // heap QObject too, and it crosses the engine boundary through
@@ -253,8 +259,12 @@ TabContext TabsController::createTab()
     // one folder lost nodes and another gained them. The folder tree still
     // isn't refreshed; that stays Phase 16's, for copies (Phase 23) as much as
     // for moves.
-    connect(navigation,
-            &FolderNavigationController::nodesMoved,
+    //
+    // Sent by the mutation half, received on behalf of the navigation halves:
+    // the two are 1:1 per tab, so the skip-self check below still compares
+    // navigation pointers (R5-1).
+    connect(context.mutations.get(),
+            &FileMutationController::nodesMoved,
             this,
             [this, navigation](
                 quint64 destination, bool destinationIsRoot, quint64 source, bool sourceIsRoot) {
@@ -269,8 +279,8 @@ TabContext TabsController::createTab()
 
     // Same fan-out for a paste-copy, but with one end: a copy fills the
     // destination and leaves the folder the nodes came from alone.
-    connect(navigation,
-            &FolderNavigationController::nodesCopied,
+    connect(context.mutations.get(),
+            &FileMutationController::nodesCopied,
             this,
             [this, navigation](quint64 destination, bool destinationIsRoot) {
                 for (const TabContext& tab : mTabs)

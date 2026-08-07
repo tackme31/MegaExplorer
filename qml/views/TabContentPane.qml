@@ -13,6 +13,11 @@ ColumnLayout {
     spacing: 0
 
     required property var navController
+    // This tab's FileMutationController. Not named "mutations" to match the
+    // model role it comes from: a property of that name would shadow the outer
+    // role inside Main.qml's delegate and self-bind to undefined -- the same
+    // trap Main.qml documents for dragProxy.
+    required property var mutController
     required property var thumbController
     // Main.qml's single window-wide DragProxy, passed through to both views --
     // see Main.qml's own comment on why this is drilled down rather than
@@ -88,6 +93,7 @@ ColumnLayout {
         FileTableView {
             id: fileTableView
             navController: pane.navController
+            mutController: pane.mutController
             dragProxy: pane.dragProxy
             initialSortColumn: pane.initialSortColumn
             initialSortAscending: pane.initialSortAscending
@@ -118,6 +124,7 @@ ColumnLayout {
         FileGridView {
             id: fileGridView
             navController: pane.navController
+            mutController: pane.mutController
             thumbController: pane.thumbController
             dragProxy: pane.dragProxy
             StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
@@ -132,12 +139,12 @@ ColumnLayout {
     }
 
     // One per tab rather than per view: it reports through this tab's
-    // navController, which both views share, so a second instance would react
+    // mutController, which both views share, so a second instance would react
     // to the same signals. Dialog is a Popup, not an Item, so it isn't laid
     // out by this ColumnLayout.
     NewFolderDialog {
         id: newFolderDialog
-        navController: pane.navController
+        mutController: pane.mutController
     }
 
     // uploadController is app-global (three of the five drop targets are shared

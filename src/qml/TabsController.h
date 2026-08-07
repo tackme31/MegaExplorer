@@ -8,6 +8,7 @@
 
 class FolderNavigationService;
 class SearchService;
+class FileMutationController;
 class FolderNavigationController;
 class ThumbnailController;
 class UploadController;
@@ -18,7 +19,7 @@ class UploadController;
 // (handle-keyed disk/network cache) and DownloadService/AuthService/
 // NotificationController all stay app-lifetime singletons, shared across
 // every tab -- only the pieces that are inherently per-navigation-scope are
-// duplicated here. Deliberately no QObject parent on navigation/thumbnails:
+// duplicated here. Deliberately no QObject parent on the controllers:
 // TabContext's shared_ptr members are the sole owners, so a tab's
 // controllers are destroyed exactly when the last shared_ptr to them (here,
 // or in a still-running async callback's shared_from_this() capture) goes
@@ -28,6 +29,9 @@ struct TabContext
     std::shared_ptr<FolderNavigationService> navigationService;
     std::shared_ptr<SearchService> searchService;
     std::shared_ptr<FolderNavigationController> navigation;
+    // Holds a shared_ptr to navigation above, so it can only outlive it, never
+    // the other way round -- see FileMutationController.h.
+    std::shared_ptr<FileMutationController> mutations;
     std::shared_ptr<ThumbnailController> thumbnails;
 };
 
@@ -66,6 +70,7 @@ public:
         TitleRole = Qt::UserRole + 1, // raw currentFolderName(), "" at root
         AtRootRole,                   // true if this tab is showing the root
         NavigationRole,               // FolderNavigationController* (QObject*)
+        MutationsRole,                // FileMutationController* (QObject*)
         ThumbnailsRole,               // ThumbnailController* (QObject*)
         BusyRole,                     // that tab has an operation in flight
     };

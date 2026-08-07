@@ -6,10 +6,12 @@
 // FolderNavigationController's busy property, with the delay before a spinner
 // is shown (REFACTOR_PLANS.md's R5-3).
 //
-// Owns a QTimer, so hold it as a value member of a GUI-thread-owned object.
-// Handing a shared_ptr to it into an SDK callback would let ~QTimer run on the
-// SDK thread -- the hazard GuiThread.h's makeGuiOwned answers for the
-// controllers.
+// Owns a QTimer, so it has to die on the GUI thread. Created through
+// GuiThread.h's makeGuiOwned and shared by the two controllers of one tab --
+// navigation and mutations (R5-1) -- which is why it is a shared_ptr rather
+// than a value member of either. Both holders are makeGuiOwned themselves, so
+// refcount zero already lands on the GUI thread; makeGuiOwned here keeps that a
+// local fact instead of one derived from the holders.
 //
 // Three invariants, previously spread over FolderNavigationController:
 //  - begin/end pair per SDK call, so a bulk fan-out of N calls is N pairs. The

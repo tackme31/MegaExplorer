@@ -266,8 +266,9 @@ TreeView {
             // Internal vs. external is decided on root.dragProxy.active, not on
             // drag.hasUrls: hasUrls is a claim about the *event*, while active
             // is a claim about the very object the internal branch then
-            // dereferences. DragProxy.begin() sets both active and sourceNav,
-            // and finish() calls Drag.drop() before clearing sourceNav, so it's
+            // dereferences. DragProxy.begin() sets both active and
+            // sourceMutations, and finish() calls Drag.drop() before clearing
+            // sourceMutations, so it's
             // still valid inside onDropped.
             //
             // Payload read off root.dragProxy rather than the event's own

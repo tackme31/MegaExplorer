@@ -27,6 +27,9 @@ import QtQuick
 //                         NewFolderDialog)
 //   navController         the tab's FolderNavigationController -- the only way
 //                         a singleton can reach per-tab state at all
+//   mutations             the same tab's FileMutationController, i.e. the half
+//                         that changes the remote tree (FolderBackground only,
+//                         the one site carrying a paste)
 //   canPaste              FolderBackground only: whether a paste would do
 //                         anything, sampled when the menu opens
 //
@@ -99,7 +102,7 @@ QtObject {
                                                                                        ctx.navController.currentHandle,
                                                                                        ctx.navController.atRoot)
                                         },
-                                        // ctx: canPaste, navController
+                                        // ctx: canPaste, mutations
                                         "paste": {
                                             "icon": ctx => Theme.glyph.menu.paste,
                                             "label": ctx => qsTr("Paste"),
@@ -107,7 +110,7 @@ QtObject {
                                             // a row that comes and goes with the clipboard reads
                                             // worse than one that is simply unavailable.
                                             "enabled": ctx => ctx.canPaste,
-                                            "trigger": ctx => ctx.navController.paste()
+                                            "trigger": ctx => ctx.mutations.paste()
                                         },
                                         // ctx: requestRename()
                                         "rename": {

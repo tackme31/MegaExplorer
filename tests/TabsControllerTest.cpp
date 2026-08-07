@@ -4,7 +4,9 @@
 #include "core/SearchService.h"
 #include "core/ThumbnailService.h"
 #include "MockMegaClient.h"
+#include "qml/BusyState.h"
 #include "qml/ClipboardController.h"
+#include "qml/FileMutationController.h"
 #include "qml/FolderNavigationController.h"
 #include "qml/GuiThread.h"
 #include "qml/NotificationController.h"
@@ -46,14 +48,24 @@ protected:
         // makeGuiOwned like main.cpp: these tests are single-threaded so it
         // always takes the plain-delete branch, but the wiring stays the same
         // shape as production.
-        auto navigation = makeGuiOwned<FolderNavigationController>(
-            navigationService, searchService, fileOperationService, &notifications, &clipboard);
+        auto busy = makeGuiOwned<BusyState>();
+        auto navigation = makeGuiOwned<FolderNavigationController>(navigationService,
+                                                                  searchService,
+                                                                  busy,
+                                                                  &notifications);
+        auto mutations = makeGuiOwned<FileMutationController>(navigation,
+                                                             navigationService,
+                                                             fileOperationService,
+                                                             busy,
+                                                             &notifications,
+                                                             &clipboard);
         auto thumbnailService = std::make_shared<ThumbnailService>(client);
         auto thumbnails = makeGuiOwned<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
         return TabContext{std::move(navigationService),
                           std::move(searchService),
                           std::move(navigation),
+                          std::move(mutations),
                           std::move(thumbnails)};
     }
 

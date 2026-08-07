@@ -8,8 +8,8 @@ import MegaExplorer
 // should not or stays dead when it should not.
 //
 // It reads only this object's own properties, so no scene, no singleton and no
-// C++ instance is involved. sourceNav is a `var`, so a plain JS object with the
-// two methods on it stands in for the FolderNavigationController.
+// C++ instance is involved. sourceMutations is a `var`, so a plain JS object
+// with the two methods on it stands in for the FileMutationController.
 //
 // Not covered: sampleCopyMode(), which reads live OS modifier keys through
 // KeyboardState and cannot be made deterministic from QML. begin(), moveTo()
@@ -25,7 +25,7 @@ TestCase {
 
     property var lastCall: null
 
-    function makeNav(answer) {
+    function makeMutations(answer) {
         return {
             "canCopyEntriesOn": function (entries, handle, isRoot) {
                 testCase.lastCall = {
@@ -72,10 +72,10 @@ TestCase {
     }
 
     // A drag that never recorded where it came from cannot be answered, and the
-    // guard has to come before sourceNav is dereferenced.
+    // guard has to come before sourceMutations is dereferenced.
     function test_canDropOn_withoutSourceNavIsFalse() {
         const proxy = makeProxy();
-        compare(proxy.sourceNav, null);
+        compare(proxy.sourceMutations, null);
         compare(proxy.canDropOn(99, false), false);
     }
 
@@ -84,7 +84,7 @@ TestCase {
     // handles. Swapping them would still run and still return a bool.
     function test_canDropOn_copyModeAsksCanCopyEntriesOn() {
         const proxy = makeProxy();
-        proxy.sourceNav = makeNav(true);
+        proxy.sourceMutations = makeMutations(true);
         proxy.copyMode = true;
         compare(proxy.canDropOn(99, false), true);
         compare(testCase.lastCall.method, "canCopyEntriesOn");
@@ -94,7 +94,7 @@ TestCase {
 
     function test_canDropOn_moveModeAsksCanDropHandlesOn() {
         const proxy = makeProxy();
-        proxy.sourceNav = makeNav(true);
+        proxy.sourceMutations = makeMutations(true);
         proxy.copyMode = false;
         compare(proxy.canDropOn(99, false), true);
         compare(testCase.lastCall.method, "canDropHandlesOn");
@@ -119,7 +119,7 @@ TestCase {
 
     function test_canDropOn_passesTargetThrough(data) {
         const proxy = makeProxy();
-        proxy.sourceNav = makeNav(true);
+        proxy.sourceMutations = makeMutations(true);
         proxy.canDropOn(data.handle, data.isRoot);
         compare(testCase.lastCall.handle, data.handle);
         compare(testCase.lastCall.isRoot, data.isRoot);
@@ -153,7 +153,7 @@ TestCase {
 
     function test_canDropOn_relaysVerdict(data) {
         const proxy = makeProxy();
-        proxy.sourceNav = makeNav(data.answer);
+        proxy.sourceMutations = makeMutations(data.answer);
         proxy.copyMode = data.copyMode;
         compare(proxy.canDropOn(99, false), data.answer);
     }

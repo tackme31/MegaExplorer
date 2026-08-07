@@ -9,7 +9,7 @@
 // The app-global copy/cut clipboard: which nodes are on it, whether they were
 // cut or copied, and which folder they came from. Deliberately holds nothing
 // else -- it has no services, no SDK, and performs no operation; pasting is
-// FolderNavigationController::paste(), because the destination is always a
+// FileMutationController::paste(), because the destination is always a
 // tab's current folder and the fan-out/refresh/busy machinery already lives
 // there.
 //

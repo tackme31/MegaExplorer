@@ -17,6 +17,9 @@ GridView {
     id: root
 
     required property var navController
+    // See FileTableView.qml's note: mutations here, listing/selection/location
+    // on navController above.
+    required property var mutController
     required property var thumbController
     // Main.qml's window-wide DragProxy -- see its own comment for why the drag
     // is carried by a separate overlay item instead of a delegate.
@@ -124,7 +127,7 @@ GridView {
 
     function commitRename(handle, oldName, newName) {
         if (newName !== oldName)
-            root.navController.renameEntry(handle, newName);
+            root.mutController.renameEntry(handle, newName);
         Qt.callLater(root.endRename);
     }
 
@@ -170,7 +173,7 @@ GridView {
         }
 
         if (event.matches(StandardKey.Paste)) {
-            root.navController.paste();
+            root.mutController.paste();
             event.accepted = true;
             return;
         }
@@ -310,7 +313,7 @@ GridView {
         if (entries.length === 0)
             return;
         const label = entries.length === 1 ? entries[0].name : qsTr("%1 items").arg(entries.length);
-        root.dragProxy.begin(root.navController, entries, label, scenePos);
+        root.dragProxy.begin(root.mutController, entries, label, scenePos);
     }
 
     function clearDropTarget() {
@@ -354,12 +357,13 @@ GridView {
         const row = root.indexAtViewportPos(Qt.point(drag.x, drag.y));
         const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 
-        // Internal (move) vs. external (upload). Decided on dragProxy.sourceNav
+        // Internal (move) vs. external (upload). Decided on
+        // dragProxy.sourceMutations
         // rather than dragProxy.active, unlike FolderTreePanel.qml's DropArea:
         // this view is where the gesture *starts*, so its own DragEnter is
         // delivered from inside DragProxy.begin()'s `Drag.active = true`
         // assignment -- before the binding behind DragProxy.active has
-        // re-evaluated, which leaves it reading false. begin() assigns sourceNav
+        // re-evaluated, which leaves it reading false. begin() assigns it
         // ahead of that, so it's the one payload signal already true here.
         // Reading active instead sent this event down the external branch, where
         // `drag.accepted = false` rejected the DragEnter outright and Qt then
@@ -368,7 +372,7 @@ GridView {
         // Everything downstream (dropRow/dropOnCurrentFolder and the highlight
         // Rectangles they drive) is payload-agnostic; only the question being
         // asked here differs.
-        if (!drag.hasUrls && root.dragProxy.sourceNav) {
+        if (!drag.hasUrls && root.dragProxy.sourceMutations) {
             root.updateNodeDropTarget();
             return;
         }
@@ -417,7 +421,7 @@ GridView {
         Connections {
             target: root.dragProxy
             function onCopyModeChanged() {
-                if (viewDropArea.containsDrag && root.dragProxy.sourceNav)
+                if (viewDropArea.containsDrag && root.dragProxy.sourceMutations)
                     root.updateNodeDropTarget();
             }
         }
@@ -481,6 +485,7 @@ GridView {
     ConfirmRubbishDialog {
         id: confirmRubbishDialog
         navController: root.navController
+        mutController: root.mutController
     }
 
     // Same rationale as FileTableView.qml's -- see the comment there for why
@@ -547,6 +552,7 @@ GridView {
     FolderBackgroundMenu {
         id: backgroundMenu
         navController: root.navController
+        mutController: root.mutController
         onNewFolderRequested: root.newFolderRequested()
     }
 

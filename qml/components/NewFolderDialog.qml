@@ -19,7 +19,7 @@ import QtQuick.Layouts
 Dialog {
     id: root
 
-    required property var navController
+    required property var mutController
 
     // True from Ok until the controller answers. The name check is the
     // server's (see IMegaClient::createFolder), so there is a real round trip
@@ -47,7 +47,7 @@ Dialog {
         // Untrimmed on purpose: FileOperationService::isValidName is the one
         // naming rule and it doesn't trim either, so what the user typed is
         // what the folder is called.
-        root.navController.createFolder(nameField.text);
+        root.mutController.createFolder(nameField.text);
     }
 
     parent: Overlay.overlay
@@ -95,7 +95,7 @@ Dialog {
     }
 
     Connections {
-        target: root.navController
+        target: root.mutController
 
         function onFolderCreated() {
             root.busy = false;

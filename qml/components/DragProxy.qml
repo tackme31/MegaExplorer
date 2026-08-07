@@ -32,11 +32,15 @@ Item {
     // Derived rather than passed alongside entries, so the two can't drift.
     readonly property var handles: root.entries.map(e => e.handle)
 
-    // The FolderNavigationController the drag started from. Drop targets call
+    // The FileMutationController the drag started from. Drop targets call
     // canDropHandlesOn()/moveHandlesTo() through it -- the move is performed by
     // the source tab (it's the one that has to refresh afterwards), not by
     // whatever happens to be under the cursor.
-    property var sourceNav: null
+    //
+    // Doubles as the "an internal node drag is in progress" sentinel the two
+    // source views test instead of `active` (see FileGridView.qml's DragEnter
+    // for why), so it must be nulled by both finish() and cancel().
+    property var sourceMutations: null
 
     property string label: ""
 
@@ -139,11 +143,11 @@ Item {
         root.y = local.y + 12;
     }
 
-    function begin(nav, draggedEntries, text, scenePos) {
-        root.sourceNav = nav;
+    function begin(mutations, draggedEntries, text, scenePos) {
+        root.sourceMutations = mutations;
         root.entries = draggedEntries;
         root.label = text;
-        // Before Drag.active, like sourceNav: the source view's own DragEnter is
+        // Before Drag.active, like sourceMutations: the source view's own DragEnter is
         // delivered from inside that assignment, and the Timer above -- bound to
         // the `active` alias, which hasn't re-evaluated yet -- has not started.
         root.sampleCopyMode();
@@ -177,19 +181,19 @@ Item {
     // here rather than branched in each of the six targets: they all want the
     // same answer, and the mode is this object's business.
     function canDropOn(handle, isRoot) {
-        if (!root.sourceNav)
+        if (!root.sourceMutations)
             return false;
-        return root.copyMode ? root.sourceNav.canCopyEntriesOn(root.entries, handle, isRoot) :
-                               root.sourceNav.canDropHandlesOn(root.handles, handle, isRoot);
+        return root.copyMode ? root.sourceMutations.canCopyEntriesOn(root.entries, handle, isRoot) :
+                               root.sourceMutations.canDropHandlesOn(root.handles, handle, isRoot);
     }
 
     function dropOn(handle, isRoot) {
-        if (!root.sourceNav)
+        if (!root.sourceMutations)
             return;
         if (root.copyMode)
-            root.sourceNav.copyEntriesTo(root.entries, handle, isRoot);
+            root.sourceMutations.copyEntriesTo(root.entries, handle, isRoot);
         else
-            root.sourceNav.moveHandlesTo(root.handles, handle, isRoot);
+            root.sourceMutations.moveHandlesTo(root.handles, handle, isRoot);
     }
 
     // Ends the gesture. Drag.drop() delivers the drop event to whichever
@@ -207,7 +211,7 @@ Item {
         root.Drag.drop();
         root.Drag.active = false;
         root.entries = [];
-        root.sourceNav = null;
+        root.sourceMutations = null;
         root.label = "";
         root.copyMode = false;
     }
@@ -218,7 +222,7 @@ Item {
             return;
         root.Drag.cancel();
         root.entries = [];
-        root.sourceNav = null;
+        root.sourceMutations = null;
         root.label = "";
         root.copyMode = false;
     }

@@ -9,11 +9,12 @@ ActionMenu {
     id: root
 
     required property var navController
+    required property var mutController
 
     // Delegated to the owning view, which relays it to the tab's single
     // NewFolderDialog -- one dialog per tab, not per view, since both views
-    // share the tab's FolderNavigationController and would otherwise both
-    // react to its result signals.
+    // share the tab's FileMutationController and would otherwise both react to
+    // its result signals.
     signal newFolderRequested
 
     actionIds: MenuActions.forSite(MenuActions.FolderBackground)
@@ -26,9 +27,10 @@ ActionMenu {
             "pinned": false,
             "entries": [],
             "navController": root.navController,
+            "mutations": root.mutController,
             // Sampled, not bound: a menu must not grey or un-grey a row while
             // it is open (see ActionMenu.qml).
-            "canPaste": root.navController.canPaste(),
+            "canPaste": root.mutController.canPaste(),
             "requestNewFolder": () => root.newFolderRequested()
         };
     }

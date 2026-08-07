@@ -21,7 +21,7 @@ enum class MenuAction
     // FolderBackground only, and unconditional there: whether the clipboard is
     // empty, or holds a cut going back into the folder it came from, is a
     // greying question, not an applicability one -- the resolver can't see the
-    // clipboard at all. FolderNavigationController::canPaste answers it, the
+    // clipboard at all. FileMutationController::canPaste answers it, the
     // same C++-applicability / QML-wording split TogglePin above relies on.
     Paste,
     Rename,

@@ -131,6 +131,8 @@ add_library(MegaExplorerQml STATIC
     src/qml/FileListModel.cpp
     src/qml/FolderNavigationController.h
     src/qml/FolderNavigationController.cpp
+    src/qml/FileMutationController.h
+    src/qml/FileMutationController.cpp
     src/qml/DownloadController.h
     src/qml/DownloadController.cpp
     src/qml/UploadController.h

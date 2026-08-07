@@ -37,6 +37,10 @@ ColumnLayout {
     spacing: 0
 
     required property var navController
+    // This tab's FileMutationController -- everything that changes the remote
+    // tree (rename, paste, drag-move/copy) goes through it, while the listing,
+    // selection and location stay on navController above.
+    required property var mutController
     // Main.qml's window-wide DragProxy -- see its own comment for why the drag
     // is carried by a separate overlay item instead of a delegate.
     required property var dragProxy
@@ -140,7 +144,7 @@ ColumnLayout {
         if (entries.length === 0)
             return;
         const label = entries.length === 1 ? entries[0].name : qsTr("%1 items").arg(entries.length);
-        root.dragProxy.begin(root.navController, entries, label, scenePos);
+        root.dragProxy.begin(root.mutController, entries, label, scenePos);
     }
 
     function clearDropTarget() {
@@ -178,9 +182,9 @@ ColumnLayout {
         const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 
         // Internal (move) vs. external (upload), same split as
-        // FileGridView.qml's -- see there for why the guard is sourceNav rather
-        // than dragProxy.active in the two views that a drag can start in.
-        if (!drag.hasUrls && root.dragProxy.sourceNav) {
+        // FileGridView.qml's -- see there for why the guard is sourceMutations
+        // rather than dragProxy.active in the two views a drag can start in.
+        if (!drag.hasUrls && root.dragProxy.sourceMutations) {
             root.updateNodeDropTarget();
             return;
         }
@@ -435,7 +439,7 @@ ColumnLayout {
     // deferred past the end of that signal's own handler.
     function commitRename(handle, oldName, newName) {
         if (newName !== oldName)
-            root.navController.renameEntry(handle, newName);
+            root.mutController.renameEntry(handle, newName);
         Qt.callLater(root.endRename);
     }
 
@@ -490,7 +494,7 @@ ColumnLayout {
         }
 
         if (event.matches(StandardKey.Paste)) {
-            root.navController.paste();
+            root.mutController.paste();
             event.accepted = true;
             return;
         }
@@ -720,7 +724,7 @@ ColumnLayout {
             Connections {
                 target: root.dragProxy
                 function onCopyModeChanged() {
-                    if (tableDropArea.containsDrag && root.dragProxy.sourceNav)
+                    if (tableDropArea.containsDrag && root.dragProxy.sourceMutations)
                         root.updateNodeDropTarget();
                 }
             }
@@ -1048,6 +1052,7 @@ ColumnLayout {
     FolderBackgroundMenu {
         id: backgroundMenu
         navController: root.navController
+        mutController: root.mutController
         onNewFolderRequested: root.newFolderRequested()
     }
 
@@ -1056,5 +1061,6 @@ ColumnLayout {
     ConfirmRubbishDialog {
         id: confirmRubbishDialog
         navController: root.navController
+        mutController: root.mutController
     }
 }

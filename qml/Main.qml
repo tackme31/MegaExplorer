@@ -887,16 +887,19 @@ ApplicationWindow {
                     id: paneRepeater
                     model: tabsController
 
-                    // navigation/thumbnails below come from
-                    // TabsController::roleNames() ("navigation"/"thumbnails",
-                    // see TabsController.h's Roles enum) -- required properties
-                    // on a Repeater delegate are populated straight from the
-                    // model's role data for a QAbstractItemModel-backed model.
+                    // navigation/mutations/thumbnails below come from
+                    // TabsController::roleNames() ("navigation"/"mutations"/
+                    // "thumbnails", see TabsController.h's Roles enum) --
+                    // required properties on a Repeater delegate are populated
+                    // straight from the model's role data for a
+                    // QAbstractItemModel-backed model.
                     TabContentPane {
                         id: pane
                         required property var navigation
+                        required property var mutations
                         required property var thumbnails
                         navController: navigation
+                        mutController: mutations
                         thumbController: thumbnails
                         dragProxy: moveDragProxy
 

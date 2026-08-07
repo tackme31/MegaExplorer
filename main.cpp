@@ -14,8 +14,10 @@
 #include "platform/WindowsSessionStore.h"
 #include "qml/AccountController.h"
 #include "qml/AuthController.h"
+#include "qml/BusyState.h"
 #include "qml/ClipboardController.h"
 #include "qml/DownloadController.h"
+#include "qml/FileMutationController.h"
 #include "qml/FolderNavigationController.h"
 #include "qml/FolderTreeModel.h"
 #include "qml/GuiThread.h"
@@ -133,10 +135,14 @@ int main(int argc, char* argv[])
     auto quickAccessService = std::make_shared<QuickAccessService>(client, pinnedFolderStore);
     QuickAccessModel quickAccessModel(quickAccessService, &notifications);
 
-    // Wires one tab's worth of navigation/search/thumbnail state: a fresh
-    // FolderNavigationService/SearchService/FolderNavigationController/
-    // ThumbnailController each, capturing the shared, app-lifetime
-    // client/thumbnailService/&notifications above. TabsController calls
+    // Wires one tab's worth of navigation/mutation/thumbnail state: a fresh
+    // FolderNavigationService/SearchService/BusyState/
+    // FolderNavigationController/FileMutationController/ThumbnailController
+    // each, capturing the shared, app-lifetime
+    // client/thumbnailService/fileOperationService/&notifications/&clipboard
+    // above. Splitting the mutations out (R5-1) cost no captures: the two the
+    // navigation half stopped needing are exactly the two the mutation half
+    // took over. TabsController calls
     // this whenever a new tab is needed (initial tab, "+", middle-click-open,
     // "Open in new tab") -- it has no wiring knowledge of its own, per
     // docs/ARCHITECTURE.md's composition-root convention.
@@ -145,15 +151,22 @@ int main(int argc, char* argv[])
         auto navigationService = std::make_shared<FolderNavigationService>(client);
         auto searchService = std::make_shared<SearchService>(client, navigationService);
         // makeGuiOwned, not make_shared: an in-flight callback can drop the
-        // last reference to either of these from the SDK thread once the tab
-        // is closed, and both are QObjects (GuiThread.h explains the rest).
+        // last reference to any of these from the SDK thread once the tab
+        // is closed, and they are QObjects (GuiThread.h explains the rest).
+        //
+        // Inside the lambda, not captured from outside: one spinner counter per
+        // tab. A shared one would make every tab busy whenever any tab is.
+        auto busy = makeGuiOwned<BusyState>();
         auto navigation = makeGuiOwned<FolderNavigationController>(
-            navigationService, searchService, fileOperationService, &notifications, &clipboard);
+            navigationService, searchService, busy, &notifications);
+        auto mutations = makeGuiOwned<FileMutationController>(
+            navigation, navigationService, fileOperationService, busy, &notifications, &clipboard);
         auto thumbnails = makeGuiOwned<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
         return TabContext{std::move(navigationService),
                           std::move(searchService),
                           std::move(navigation),
+                          std::move(mutations),
                           std::move(thumbnails)};
     };
     TabsController tabs(tabFactory, &uploadController);

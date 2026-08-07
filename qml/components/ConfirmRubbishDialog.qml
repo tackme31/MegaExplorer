@@ -19,11 +19,16 @@ Dialog {
     id: root
 
     required property var navController
+    required property var mutController
 
     // Sampled by confirm() below, not bound: the selection must not be able to
-    // change the wording out from under an already-open dialog.
+    // change the wording out from under an already-open dialog. handles is
+    // sampled with them for the same reason -- a background refresh (an upload
+    // landing, another tab's move) can prune the selection while this dialog is
+    // open, and what gets deleted has to be what the prompt named.
     property int itemCount: 0
     property string firstName: ""
+    property var handles: []
 
     // Single entry point for both the context menu and the Delete key.
     function confirm() {
@@ -32,6 +37,7 @@ Dialog {
             return;
         root.itemCount = entries.length;
         root.firstName = entries[0].name;
+        root.handles = entries.map(e => e.handle);
         root.open();
     }
 
@@ -46,5 +52,5 @@ Dialog {
                                          "Move %1 items to the Rubbish bin?").arg(root.itemCount)
     }
 
-    onAccepted: root.navController.moveSelectionToRubbish()
+    onAccepted: root.mutController.moveHandlesToRubbish(root.handles)
 }

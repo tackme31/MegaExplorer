@@ -2364,7 +2364,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `tests/UploadControllerTest.cpp` 冒頭の「`DownloadController` と違ってこちらは入っている」
   （削除）。R4-1 が意図的に残した箇所だが、`Qt6::Gui` が入った時点で事実として誤りになった。
 
-### R5 — 調査済み / R5-2・R5-3・R5-4・R5-5・R5-6 対応済み（調査 2026-08-07）
+### R5 — 調査済み / R5-1〜R5-6 対応済み（調査 2026-08-07、R5-1 で 2026-08-08）
 
 計画の「種」5 件 +「持ち越し」の [R5] 3 件 + R2/R3 が明示的に R5 送りにした 5 件を現物で検証した
 結果。**確認 10 件 / 種の誤り・判断が要るもの 4 件 / 問題なしと確認 3 件**。R1〜R4 と同じく、
@@ -2413,7 +2413,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
 
 #### 確認された問題
 
-**R5-1 [高] `Q_INVOKABLE` は 18 ではなく 19。次点の `FileListModel` の 13 を大きく引き離す**
+**R5-1 [高] ✅対応済み `Q_INVOKABLE` は 18 ではなく 19。次点の `FileListModel` の 13 を大きく引き離す**
 
 - `FolderNavigationController.h` の `Q_INVOKABLE` は grep で 23 ヒットするが、うち 4 件
   （:23, :39, :95, :119）はコメント本文。実宣言は **19 個**。
@@ -2422,6 +2422,76 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
 - 分割の切れ目は上表の「ミューテーション 398 行」。ここを別クラス（`FileMutationController` 等）に
   移すと 19 → 8（navigation 7 + refresh 2 のうち QML 呼び出しのあるもの）まで落ちる。
   QML 側の呼び出し箇所は移動対象 11 個で計 14 箇所しかないので、置換のコストは小さい。
+- **対応（2026-08-08）**: `src/qml/FileMutationController.{h,cpp}` を新設し、
+  `Q_INVOKABLE` 9 個 + private ヘルパ 3 + signal 4 + `mFileOps`/`mClipboard`/`mBulk` を移した。実数は
+  **18 → nav 9 + mutations 9**（決定表の「19 → 8 + 11」は R5-2 で 1 個減る前の数字）。行数は
+  `FolderNavigationController` 749+355 → **361+233**、新クラスが 447+217 でどちらも 500 行未満。
+  `TabContext` に `mutations` が 1 本増え、`TabsController` に `MutationsRole` が 1 個。QML 側は
+  `mutations` ロールを `TabContentPane` → 2 ビュー → ダイアログ/メニューへ通した。決めたこと:
+  - **継ぎ目は `shared_ptr<FolderNavigationController>` の逆参照。抽象インタフェースは作らなかった**。
+    既存の 3 インタフェース（`IMegaClient`/`ISessionStore`/`IPinnedFolderStore`）は全て `src/core` の
+    外界ポートで、同層コントローラ間の抽象はこの repo に前例がない。テスト面の利得も無かった:
+    移した 43 ケースのうち 9 件超が `rootFetches` カウンタで**実物の nav が SDK まで再読みしたこと**を
+    見ており、fake に置き換えると「何かの refresh フックが呼ばれた」しか言えなくなる。
+    nav 側に増えた public は `refreshVisibleListing()` の昇格 + `isLoaded()`/`cachedChildNames()` の
+    3 行だけ。
+  - **strong ref にしたのは寿命の要請**で、書き味の話ではない。分割前は両半分が同一オブジェクトなので
+    `invokeOnGuiThread(this, …)` の「target が死んだら queued 呼び出しを捨てる」が両方に効いていた。
+    分割後は、コピー batch が in-flight のままタブを閉じると mutation は自分の `shared_from_this()` で
+    生き残る一方、in-flight を持たない nav が先に解放され、`batch->settle()` → refresh クロージャが
+    **解放済みの nav に触る**。所有すれば「nav は mutation より長生き」が型の事実になる。代償
+    （閉じたタブの nav と `FileListModel` が batch 完了まで生きて誰も見ていないモデルを refresh する）は
+    **分割前と同じ挙動**。生ポインタと `this` キャプチャのクロージャはどちらも不可。
+  - **`BusyState` を `shared_ptr` + `makeGuiOwned` に昇格して両者へ注入**（R5-3 が昇格条件として
+    先に決めてあった形）。共有は保守側の選択で、現状も 1 カウンタなので `reset()` の `abandonAll()` は
+    既にミューテーション由来のカウントを落としている。分けるほうが変更で、`TabsController.cpp:59` が
+    2 系統を OR する必要が出て決定表に反する。`tabFactory` の**ラムダ本体内**で作るのが要点 —
+    外側で作ると全タブが 1 個のスピナを共有する。**この昇格だけを先に 1 手で入れた**（分割は
+    委譲スタブを残さない制約で途中がコンパイルできないため、隔離できるのはここだけ）。
+  - **paste の宛先読みを `refreshCurrent` → `listChildrenOf` に寄せた**。理由は「等価だから」ではなく
+    **読む folder と書く folder が構成上同一になるから**。分割前の `paste()` は target と 3 つの
+    事前チェックを breadcrumb 由来の `currentHandle()`/`atRoot()` で取り、宛先の**名前読みだけ**を
+    サービスの `mCurrent` で取っていた。breadcrumb 解決待ちの窓（`addTabAt` 経由の初回ロード、
+    `getPath` 失敗で `refreshBreadcrumb` が早期 return）では前者が 0/root、後者はフォルダ X を指すので、
+    **別フォルダの名前で衝突判定してファイルを version 上書きする**経路が開いていた。人間には到達
+    不能に近いが、閉じたのはこれ。`mHasLoadedOnce` は `refreshBreadcrumb` の結果より先に立つので
+    guard になっていない。`SortOrder` は固定値 — `entry.name` しか読まないので順序は無意味。
+  - **`moveSelectionToRubbish()` → `moveHandlesToRubbish(handles)`**。他の 4 つは既に対象を引数で
+    受けており（ヘッダが「"the selection" では曖昧だから」と書いている）、揃えると mutation 側が
+    `FileListModel` に一切依存しなくなる。`ConfirmRubbishDialog.confirm()` は件数と先頭名を「開いている
+    間に文言が変わってはいけない」としてサンプルしているのに `onAccepted` だけ選択を再読みしていた
+    ので、handles も同時にサンプルした（モーダル中も `refreshIfShowing` や他タブの `nodesMoved`
+    fan-out で `pruneSelection()` が走る）。**挙動変更 1 点**: 開いている間に消えたハンドルが SDK に
+    届いて `kENoEnt` で「失敗 1 件」に集計される（従来は黙って対象外）。見せた文言と一致する側を採った。
+  - **mutation 側に `reset()` は作らなかった**。`mFileOps` はステートレス、`mClipboard` はアプリ全体
+    （1 タブのログアウトで消すのは誤り）、`mBulk` は batch 間状態なし、`mBusy` は共有。この列挙を
+    ヘッダに置いて「対称性のため」に後から足されないようにした。
+  - **`tabFactory` のキャプチャは 5 個のまま**だった（R5 最後の再点検項目が悪化していない）。nav が
+    要らなくなった `fileOperationService`/`&clipboard` が、そのまま mutation の引数になるため。
+    `setContextProperty` も 9 個で変わらず。
+  - **`DragProxy.sourceNav` は併存させずリネームした**。4 メソッドの呼び先であると同時に
+    「内部ノードのドラッグ中／外部ファイルドロップではない」の sentinel でもあり（2 ビューで 4 箇所）、
+    併存させて片方の null 化を忘れると次の外部ドラッグが内部扱いになる。
+  - **「QML の置換コストは小さい」は実作業を半分ほど過小評価していた**。呼び出し箇所は種のとおり
+    ~14 だが、プロパティを通す作業が **QML 10 ファイル + QML テスト 2 ファイル**に広がり、全て
+    `property var` で qmllint も CI も無いので**型チェックが 1 つも効かない**。最も危険なのは
+    `NewFolderDialog.qml` の 3 箇所（`createFolder` + `Connections` の target 2 signal 分）で、
+    間違えても WIN32 実行なのでコンソールに何も出ず、作成成功後にダイアログが閉じないだけ。
+    ロール名と同名のプロパティは作らないこと（`TabContentPane` は `mutController`）— `Main.qml` の
+    delegate 内で外側ロールを shadow して `undefined` に自己束縛する、`dragProxy` で明記済みの罠。
+  - **テストは 49 → 7 / 43 に割れた**。nav 側に残るのは refresh の 6 件だけで、これが示すのは
+    **`openFolder`/`goBack`/`goUp`/`navigateTo`/`search`/`setSortOrder`/breadcrumb のテストが元から
+    1 件も無い**こと（`FolderNavigationServiceTest` の領分）。この項目では埋めていない。fixture は
+    共有ヘッダを作らず複製した（`BusyStateTest`/`BulkOperationRunnerTest` が `waitForVisible` を
+    複製している前例）。越境テスト `ResetClearsBusyWithOperationsStillInFlight` は**共有 `BusyState` が
+    正しく動く証拠そのもの**なので原形で mutation 側に置いた。busy 3 件は全てミューテーション駆動
+    だったので nav 側のカバレッジがゼロになり、`refresh()` の begin/end を見る 1 件を新設（478 → 479）。
+  - **触らないと決めた既存の瑕**: `mBulk` の既定 refresh は `refreshListingIfLoaded()` ではなく
+    `refreshVisibleListing()` なので、`reset()` 後に着地した放置 batch がサインアウト済みクライアントに
+    再フェッチを投げる。`ResetClearsBusyWithOperationsStillInFlight` は busy 側だけを固定している。
+  - 検証: `/W4` 警告なし、`ctest` 479 件全通過。QML は実機起動で背景メニュー（Paste がクリップボード
+    空で灰色）/ Ctrl+V の無音 no-op / 新規フォルダダイアログを確認。リネーム・削除・ドラッグは
+    実アカウントのデータを壊すので自動化せず、手動確認に回した。
 
 **R5-2 [低] ✅対応済み `loadRoot()` のコメントは「Not Q_INVOKABLE」と書いているのに `Q_INVOKABLE` が付いている**
 
@@ -2732,7 +2802,7 @@ R5-3  busy 機構を独立クラスへ                   … ✅済。BusyState 
   ↓
 R5-4  BulkOperationRunner を切り出し            … ✅済。begin を start() の N 回まとめ打ちに
   ↓
-R5-1  ミューテーション群を別コントローラへ      … 本丸。ここまでで 398 行の依存が整理済み
+R5-1  ミューテーション群を別コントローラへ      … ✅済。FileMutationController 新設、18 → 9 + 9
   ↓
 R5-9  観測者解除の競合                          ★製品挙動の変更を含む。R5-1 の直後（踏む直前）
   ↓
@@ -2751,8 +2821,10 @@ R5-7  MegaSdkClient のリスナ切り出し            … 行数のみの利�
 
 - **R5-7 をやるか**（匿名 namespace → 名前付き namespace）。internal linkage を捨てて得るのが
   行数だけなので、**推奨は見送り**。R5-1〜R5-6 を終えて時間が余ったときに再考する。
-- **`static create()` 化**（R2-14 の R5 送り分）。違反者ゼロなので利得は将来分だけ。R5-1 で
-  新コントローラを足すとき、そちらに同じ形を要求するかと合わせて判断する。
+- ~~**`static create()` 化**（R2-14 の R5 送り分）~~ → **R5-1 で決定: しない**（2026-08-08）。
+  `FileMutationController` も public ctor + `makeGuiOwned` のままにした。生成箇所は `main.cpp` の
+  `tabFactory` と C++ テスト 2 ファイルの計 3 つで、いずれも `makeGuiOwned` を通っている。新クラスを
+  1 つ足しても違反者はゼロなので、依然として利得は将来分だけ。
 - ~~**`AccountIdentity` を単位として検証するか**（R2-22）~~ → **R5-6 で決定: しない**。
   裂けても表示 1 フレーム分にしかならないため。反転条件は R5-6 の対応欄。
 

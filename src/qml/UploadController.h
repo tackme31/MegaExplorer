@@ -50,7 +50,7 @@ public:
     int pendingCount() const;
 
     // Whether a drop onto (target, targetIsRoot) would be accepted -- the
-    // upload counterpart of FolderNavigationController::canDropHandlesOn,
+    // upload counterpart of FileMutationController::canDropHandlesOn,
     // and what a hovered drop target paints its feedback from. Synchronous
     // all the way down to IMegaClient::checkUpload.
     Q_INVOKABLE bool canUploadTo(quint64 target, bool targetIsRoot) const;

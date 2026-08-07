@@ -39,7 +39,8 @@ TestCase {
                     "isFolder": false
                 }
             ],
-            "navController": null
+            "navController": null,
+            "mutations": null
         };
     }
 
@@ -316,10 +317,10 @@ TestCase {
         compare(calls, 1);
     }
 
-    function test_trigger_pasteCallsNavController() {
+    function test_trigger_pasteCallsMutations() {
         let calls = 0;
         const ctx = fullCtx();
-        ctx.navController = {
+        ctx.mutations = {
             "paste": function () {
                 ++calls;
             }

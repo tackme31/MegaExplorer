@@ -1,10 +1,7 @@
 #pragma once
-#include "core/FileOperationService.h"
 #include "core/FolderNavigationService.h"
-#include "core/NodeRef.h"
 #include "core/SearchService.h"
 #include "core/SortOrder.h"
-#include "BulkOperationRunner.h"
 #include "BusyState.h"
 #include "FileListModel.h"
 
@@ -15,7 +12,6 @@
 #include <set>
 #include <string>
 
-class ClipboardController;
 class NotificationController;
 
 // Q_INVOKABLE entry points below fire off SDK-thread callbacks that outlive
@@ -28,10 +24,11 @@ class NotificationController;
 //
 // Staying alive is only half of it: that shared_from_this() copy lives in a
 // closure the SDK's listener destroys on the SDK thread, so it can be the
-// last reference and would run ~QTimer (the one mBusy owns below) there.
-// Instances are therefore created through GuiThread.h's makeGuiOwned, which
-// sends the destruction back to the GUI thread -- see REFACTOR_PLANS.md's
-// R2-5.
+// last reference and would destroy this QObject -- and the FileListModel it
+// owns -- there. Instances are therefore created through GuiThread.h's
+// makeGuiOwned, which sends the destruction back to the GUI thread -- see
+// REFACTOR_PLANS.md's R2-5. The QTimer that made this acute now sits behind
+// the shared BusyState, which is makeGuiOwned for the same reason (R5-1).
 
 // QML-facing GUI glue wrapping FolderNavigationService + SearchService +
 // FileListModel. QML can't pass C++ callbacks, so the Q_INVOKABLE entry
@@ -81,9 +78,8 @@ class FolderNavigationController : public QObject,
 public:
     explicit FolderNavigationController(std::shared_ptr<FolderNavigationService> navigationService,
                                         std::shared_ptr<SearchService> searchService,
-                                        std::shared_ptr<FileOperationService> fileOperationService,
+                                        std::shared_ptr<BusyState> busy,
                                         NotificationController* notifications,
-                                        ClipboardController* clipboard,
                                         QObject* parent = nullptr);
 
     QObject* fileListModel();
@@ -153,87 +149,6 @@ public:
     // previous account's cached listing or retains its back-stack handles.
     Q_INVOKABLE void reset();
 
-    // Inline-rename commit (F2 / context menu, see InlineRenameField.qml).
-    // Callers must skip this when newName equals the current name -- this
-    // controller doesn't track per-row names. A rename never changes the
-    // handle, so the selection survives the refetch below.
-    Q_INVOKABLE void renameEntry(quint64 handle, const QString& newName);
-
-    // Moves every currently selected entry into the Rubbish bin, one SDK call
-    // per entry, and reports the tally once through
-    // NotificationController::notifyOperation. No undo: IMegaClient
-    // deliberately exposes no general move, so there'd be nothing to undo
-    // with (see docs/PROGRESS.md's Phase 12 log).
-    Q_INVOKABLE void moveSelectionToRubbish();
-
-    // Creates a folder inside the one this tab is showing (NewFolderDialog.qml
-    // -> the FolderBackground menu). The parent is read off currentHandle()/
-    // atRoot() rather than passed in: unlike a drag & drop destination, this
-    // action can only ever target the view it was opened from.
-    //
-    // Reports through folderCreated/folderCreationFailed *and* the usual
-    // NotificationController, split by whose problem it is: the two failures
-    // the user can fix by editing the name (kEExist, kEArgs) only get the
-    // signal, so the dialog can stay open and say so inline, while everything
-    // else gets a toast and lets the dialog close.
-    Q_INVOKABLE void createFolder(const QString& name);
-
-    // Drag & drop's move. handles is the selection snapshot taken when the drag
-    // gesture started, passed in explicitly rather than read back off
-    // mFileListModel like moveSelectionToRubbish does: a drop can land on the
-    // folder tree or a quick-access pin, both of which are shared by every tab,
-    // so "the selection" there would be ambiguous. target/targetIsRoot use the
-    // usual isRoot sentinel convention.
-    Q_INVOKABLE void moveHandlesTo(const QVariantList& handles, quint64 target, bool targetIsRoot);
-
-    // Pastes whatever is on the app-global clipboard into the folder this tab
-    // is showing. Like createFolder above, the destination is read off
-    // currentHandle()/atRoot() rather than passed in: paste only ever targets
-    // the view it was invoked from (background menu / Ctrl+V).
-    //
-    // A cut is Phase 14a's move, reported under the same "move" context but
-    // announcing the *clipboard's* source folder rather than this tab's, so the
-    // folder the nodes were cut from refreshes even when the paste happened in
-    // another tab. A copy is a two-stage fan-out: re-read the destination's
-    // names, then one copy per entry under a name nothing there is using (see
-    // IMegaClient::copyNode for why a colliding one is not merely untidy).
-    //
-    // Silent when there is nothing to do -- empty clipboard, or a cut going
-    // back into its own folder, both of which canPaste() already greys out.
-    Q_INVOKABLE void paste();
-
-    // What the background menu greys its Paste entry on, sampled when the menu
-    // opens. Synchronous all the way down (ClipboardController's own state plus
-    // FileOperationService::canAddChildren), so it's safe to call from there.
-    Q_INVOKABLE bool canPaste() const;
-
-    // Whether every handle could be moved onto target -- what a hovered drop
-    // target paints its accept/reject feedback from. Synchronous all the way
-    // down to IMegaClient::checkMove, so it's safe to call from a hover
-    // handler. False for an empty selection: nothing to drop.
-    Q_INVOKABLE bool
-    canDropHandlesOn(const QVariantList& handles, quint64 target, bool targetIsRoot) const;
-
-    // Ctrl+drag's copy. entries carries the same {handle, name, isFolder} maps
-    // the clipboard takes, not bare handles like the move above: a copy has to
-    // know the source names to pick non-colliding ones, and re-resolving every
-    // handle at drop time would buy nothing.
-    //
-    // Two-stage like paste()'s copy branch, and for the same reason -- but the
-    // destination is read with FolderNavigationService::listChildrenOf, since
-    // it is whatever folder the pointer was over rather than this tab's own.
-    // A destination read that fails aborts the whole drop: unlike paste(),
-    // there is no cached listing of *that* folder to fall back on, and copying
-    // under an unverified name is what silently versions over an existing file.
-    Q_INVOKABLE void copyEntriesTo(const QVariantList& entries, quint64 target, bool targetIsRoot);
-
-    // canDropHandlesOn's copy counterpart, and all-or-nothing in the same way.
-    // Differs in which refusals apply: a copy into the folder the nodes already
-    // live in is legitimate (it duplicates them), while a copy of a folder into
-    // its own subtree is not -- see FileOperationService::canCopy.
-    Q_INVOKABLE bool
-    canCopyEntriesOn(const QVariantList& entries, quint64 target, bool targetIsRoot) const;
-
     // Toolbar refresh button / F5. Asks the API for anything it hasn't told us
     // yet (FolderNavigationService::syncWithServer), then re-reads whatever
     // this tab is showing; no-op until the first successful load (see
@@ -252,37 +167,9 @@ public:
     // be that many pointless round-trips.
     Q_INVOKABLE void refreshIfShowing(quint64 handle, bool isRoot);
 
-signals:
-    void canGoBackChanged();
-    void breadcrumbChanged();
-    void busyChanged();
-
-    void folderCreated();
-    // reason is a structured selector, not a message: "exists" (a folder of
-    // that name is already there -- the server's answer, see
-    // IMegaClient::createFolder), "invalidName", or "other". Same
-    // C++-supplies-structure / QML-supplies-wording split as
-    // NotificationController's context strings.
-    void folderCreationFailed(QString reason);
-
-    // At least one node of a moveHandlesTo batch landed. source is where this
-    // tab was standing when the drag started. This controller has already
-    // refreshed itself; the signal exists so TabsController can fan
-    // refreshIfShowing out to the *other* tabs, which is what makes a
-    // cross-tab drop show up on the destination tab that is sitting right
-    // there in view. Both ends are reported because a move empties one folder
-    // and fills another.
-    void nodesMoved(quint64 destination, bool destinationIsRoot, quint64 source, bool sourceIsRoot);
-
-    // At least one node of a paste-copy landed. Same purpose as nodesMoved
-    // above, but only the destination is reported: a copy leaves the folder the
-    // nodes came from untouched.
-    void nodesCopied(quint64 destination, bool destinationIsRoot);
-
-private:
-    void applyResult(Result<std::vector<FileEntry>> result);
-    void applySearchResult(Result<std::vector<FileEntry>> result);
-    void refreshCurrentFolder();
+    // The three below are FileMutationController's view of this one, and it is
+    // their only consumer -- public rather than Q_INVOKABLE/Q_PROPERTY on
+    // purpose, so nothing in QML binds to them (R5-1).
 
     // "Re-fetch whatever the user is currently looking at" -- the folder
     // listing, or the active search's results (plus, in that case, the cached
@@ -290,6 +177,26 @@ private:
     // show a stale one). Shared by setSortOrder and by the Phase 12 mutations,
     // which must not silently drop the user out of a search.
     void refreshVisibleListing();
+
+    // Whether a listing has ever loaded. What the mutation half gates paste on:
+    // before the first load there is no folder for it to target.
+    bool isLoaded() const;
+
+    // The child names of the folder this tab is showing, from the cached
+    // listing rather than the server. The mutation half's fallback when a
+    // paste's destination re-read fails -- the destination *is* this folder, so
+    // this is the best answer available (see FileMutationController::paste).
+    std::set<std::string> cachedChildNames() const;
+
+signals:
+    void canGoBackChanged();
+    void breadcrumbChanged();
+    void busyChanged();
+
+private:
+    void applyResult(Result<std::vector<FileEntry>> result);
+    void applySearchResult(Result<std::vector<FileEntry>> result);
+    void refreshCurrentFolder();
 
     // refreshVisibleListing() behind the mHasLoadedOnce guard -- the old body
     // of refresh(), split out when refresh() grew its server sync so that
@@ -305,38 +212,9 @@ private:
     // needlessly rebuild the Breadcrumb.qml Repeater.
     void refreshBreadcrumb();
 
-    // Body of moveHandlesTo, with "where did these come from" passed in rather
-    // than read off this tab. A drag knows its source is this tab; a cut-paste
-    // knows it is wherever the clipboard was filled, which may be another tab
-    // or a folder this one has since navigated away from.
-    void moveHandlesFrom(const QVariantList& handles,
-                         quint64 target,
-                         bool targetIsRoot,
-                         quint64 source,
-                         bool sourceIsRoot);
-
-    // Whether every clipboard entry could be *copied* into the folder this tab
-    // is showing, carrying the first refusal so paste() can report it. Split
-    // from canPaste() because paste() needs the reason, not just the verdict.
-    Result<void> clipboardCopyAllowedHere() const;
-
-    // Second stage of a copy, on the GUI thread. taken is the set of names the
-    // destination already uses; how it was arrived at is the caller's problem,
-    // because the two callers answer a failed destination read differently
-    // (paste() falls back to its cached listing of the folder it is standing
-    // in, copyEntriesTo() has no such listing and refuses). Split out at all
-    // only because that read is asynchronous -- a stale set would let a copy
-    // land as a new *version* of an existing file rather than beside it.
-    void startCopyBatch(const std::vector<NodeRef>& entries,
-                        quint64 target,
-                        bool targetIsRoot,
-                        std::set<std::string> taken);
-
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<SearchService> mSearchService;
-    std::shared_ptr<FileOperationService> mFileOps;
     NotificationController* mNotifications;
-    ClipboardController* mClipboard;
     std::shared_ptr<FileListModel> mFileListModel;
     QVariantList mBreadcrumb;
     std::vector<FileEntry> mLastFolderEntries; // restored when search is cleared
@@ -348,8 +226,8 @@ private:
     // erroring out) before login/fetchNodes have ever run. Set true once
     // applyResult sees its first success; reset back to false by reset().
     bool mHasLoadedOnce = false;
-    // Publishes busy() above; owns the delay before a spinner appears.
-    BusyState mBusy;
-    // Declared after mBusy: it binds a reference to it (see R5-4).
-    BulkOperationRunner mBulk;
+    // Publishes busy() above; owns the delay before a spinner appears. Shared
+    // rather than owned: one counter per tab, written by this controller's
+    // refresh()/reset() and by the mutation side too (R5-1).
+    std::shared_ptr<BusyState> mBusy;
 };
