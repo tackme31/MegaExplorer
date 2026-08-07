@@ -232,96 +232,24 @@ TreeView {
 
         // Per delegate, unlike the file views' single view-level DropArea: a
         // tree row *is* the drop target, so there's no position-to-row
-        // hit-testing to centralize, and the existing handlers here are already
-        // per delegate. isRoot rows are valid targets too -- dropping on
-        // "Cloud Drive" moves to the account root.
-        DropArea {
+        // hit-testing to centralize. isRoot rows are valid targets too --
+        // dropping on "Cloud Drive" moves to the account root. Shared drop
+        // behaviour lives in NodeDropArea.qml; what's local is the edge
+        // scrolling below.
+        NodeDropArea {
             id: dropArea
             anchors.fill: parent
-            // "text/uri-list" is what an external OS drop matches on: an
-            // internal Qt drag is matched against Drag.keys, but a drop coming
-            // in from Explorer is matched against its QMimeData's format
-            // strings, and without this one those drops are silently ignored.
-            keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
+            dragProxy: root.dragProxy
+            uploads: uploadController
+            targetHandle: treeDelegate.handle
+            targetIsRoot: treeDelegate.isRoot
 
-            // Recomputed on enter, and again whenever Ctrl toggles the drag
-            // between move and copy (the two ask different questions and the
-            // answers genuinely differ -- see FolderNavigationController::
-            // canCopyEntriesOn). Not on positionChanged: the target can't change
-            // without leaving this row first.
-            property bool accepting: false
-
-            // Ctrl can go down while the pointer sits still, and an internal
-            // drag delivers no event at all for that. DragProxy's copyMode is
-            // the only thing that moves, so this is what re-asks.
-            Connections {
-                target: root.dragProxy
-                function onCopyModeChanged() {
-                    if (dropArea.containsDrag && root.dragProxy.active)
-                        dropArea.accepting = root.dragProxy.canDropOn(treeDelegate.handle,
-                                                                      treeDelegate.isRoot);
-                }
-            }
-
-            // Internal vs. external is decided on root.dragProxy.active, not on
-            // drag.hasUrls: hasUrls is a claim about the *event*, while active
-            // is a claim about the very object the internal branch then
-            // dereferences. DragProxy.begin() sets both active and
-            // sourceMutations, and finish() calls Drag.drop() before clearing
-            // sourceMutations, so it's
-            // still valid inside onDropped.
-            //
-            // Payload read off root.dragProxy rather than the event's own
-            // drag.source: same object (keys let nothing else in), but
-            // drag.source is typed QObject and every field access through it
-            // would be an unchecked dynamic lookup.
-            onEntered: drag => {
-                if (root.dragProxy.active) {
-                    dropArea.accepting = root.dragProxy.canDropOn(treeDelegate.handle,
-                                                                  treeDelegate.isRoot);
-                } else if (drag.hasUrls) {
-                    dropArea.accepting = uploadController.canUploadTo(treeDelegate.handle,
-                                                                      treeDelegate.isRoot);
-                    // Only the external branch touches drag.accepted; the move
-                    // path relies on implicit acceptance via key matching, and
-                    // assigning here would break it.
-                    drag.accepted = dropArea.accepting;
-                } else {
-                    dropArea.accepting = false;
-                }
-                // Outside the branch: edge scrolling should work for either.
-                autoScroller.track(root.mapFromItem(dropArea, drag.x, drag.y).y);
-            }
-            onPositionChanged: drag => {
-                if (!root.dragProxy.active && drag.hasUrls)
-                    drag.accepted = dropArea.accepting;
-                autoScroller.track(root.mapFromItem(dropArea, drag.x, drag.y).y);
-            }
-            onExited: {
-                dropArea.accepting = false;
-                autoScroller.release();
-            }
-            // Branches on drop.hasUrls, not on dragProxy.active like the hover
-            // handlers above: DragProxy.finish() calls Drag.drop() to deliver
-            // this very event, and Drag.active is cleared as a side effect of
-            // that same call, so its value here depends on Qt's internal
-            // ordering. The event's own payload doesn't.
-            //
-            // A row whose folder is gone is rejected by canDropHandlesOn's
-            // kENoEnt on the move path, and by canUploadTo's on the upload one.
-            onDropped: drop => {
-                if (dropArea.accepting) {
-                    if (drop.hasUrls) {
-                        drop.accept(Qt.CopyAction);
-                        uploadController.dropUrls(drop.urls, treeDelegate.handle,
-                                                  treeDelegate.isRoot);
-                    } else {
-                        root.dragProxy.dropOn(treeDelegate.handle, treeDelegate.isRoot);
-                    }
-                }
-                dropArea.accepting = false;
-                autoScroller.release();
-            }
+            // The drag* signals fire outside NodeDropArea's accept/refuse
+            // branches, so edge scrolling works for either verdict.
+            onDragEntered: drag => autoScroller.track(root.mapFromItem(dropArea, drag.x, drag.y).y)
+            onDragMoved: drag => autoScroller.track(root.mapFromItem(dropArea, drag.x, drag.y).y)
+            onDragExited: autoScroller.release()
+            onDragDropped: autoScroller.release()
         }
 
         TapHandler {

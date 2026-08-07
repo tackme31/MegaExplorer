@@ -286,85 +286,39 @@ RowLayout {
                     onCanceled: tabBar.endReorder()
                 }
 
-                // Spring-loaded tab + drop target in one (Phase 22b). The
-                // three-way branch is the same one all five Phase 14a/14b drop
-                // targets use; see QuickAccessSection.qml for why hover keys
-                // off dragProxy.active while the drop keys off the event's own
-                // payload.
-                DropArea {
+                // Spring-loaded tab + drop target in one (Phase 22b). The drop
+                // half is the shared NodeDropArea.qml; the spring-load clock is
+                // what's local, and it hangs off the drag* signals because they
+                // fire outside that component's accept/refuse branches.
+                NodeDropArea {
                     id: tabDropArea
                     anchors.fill: parent
-                    keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
+                    dragProxy: root.dragProxy
+                    uploads: uploadController
+                    targetHandle: tabButton.navigation.currentHandle
+                    targetIsRoot: tabButton.navigation.atRoot
 
-                    property bool accepting: false
-
-                    // Re-asks when Ctrl toggles the drag between move and copy;
-                    // see FolderTreePanel.qml. Deliberately does not touch
-                    // dwellTimer either -- the spring-load clock is "600ms after
-                    // entering", and a modifier press is not an entry.
-                    Connections {
-                        target: root.dragProxy
-                        function onCopyModeChanged() {
-                            if (tabDropArea.containsDrag && root.dragProxy.active)
-                                tabDropArea.accepting = root.dragProxy.canDropOn(
-                                            tabButton.navigation.currentHandle,
-                                            tabButton.navigation.atRoot);
-                        }
-                    }
-
-                    onEntered: drag => {
-                        if (root.dragProxy.active) {
-                            tabDropArea.accepting = root.dragProxy.canDropOn(
-                                        tabButton.navigation.currentHandle,
-                                        tabButton.navigation.atRoot);
-                        } else if (drag.hasUrls) {
-                            tabDropArea.accepting = uploadController.canUploadTo(
-                                        tabButton.navigation.currentHandle,
-                                        tabButton.navigation.atRoot);
-                            drag.accepted = tabDropArea.accepting;
-                        } else {
-                            tabDropArea.accepting = false;
-                        }
-
-                        // Armed regardless of `accepting`: this tab's own
-                        // current folder may be a bad destination (dragging
-                        // within one tab, say) while a subfolder of it is
-                        // exactly where the user is heading.
+                    // Armed regardless of `accepting`: this tab's own current
+                    // folder may be a bad destination (dragging within one tab,
+                    // say) while a subfolder of it is exactly where the user is
+                    // heading.
+                    onDragEntered: {
                         if (tabButton.index !== tabsController.currentIndex)
                             dwellTimer.restart();
                     }
 
-                    // Deliberately does *not* touch dwellTimer: an internal
-                    // drag only delivers events while the pointer moves (see
-                    // DragProxy.qml), so restarting here would either postpone
-                    // the switch for as long as the user keeps moving or never
-                    // fire at all once they stop. "600ms after entering" is
-                    // Explorer's rule too.
-                    onPositionChanged: drag => {
-                        if (!root.dragProxy.active && drag.hasUrls)
-                            drag.accepted = tabDropArea.accepting;
-                    }
-
-                    onExited: {
-                        tabDropArea.accepting = false;
-                        dwellTimer.stop();
-                    }
-
-                    onDropped: drop => {
-                        dwellTimer.stop();
-                        if (tabDropArea.accepting) {
-                            if (drop.hasUrls) {
-                                drop.accept(Qt.CopyAction);
-                                uploadController.dropUrls(drop.urls,
-                                                          tabButton.navigation.currentHandle,
-                                                          tabButton.navigation.atRoot);
-                            } else {
-                                root.dragProxy.dropOn(tabButton.navigation.currentHandle,
-                                                      tabButton.navigation.atRoot);
-                            }
-                        }
-                        tabDropArea.accepting = false;
-                    }
+                    // No onDragMoved on purpose: an internal drag only delivers
+                    // events while the pointer moves (see DragProxy.qml), so
+                    // restarting the clock there would either postpone the
+                    // switch for as long as the user keeps moving or never fire
+                    // at all once they stop. "600ms after entering" is
+                    // Explorer's rule too. A modifier press is not an entry
+                    // either, which is why NodeDropArea's copyMode re-ask does
+                    // not reach this timer.
+                    onDragExited: dwellTimer.stop()
+                    // Fires before the drop is performed, so the clock is
+                    // stopped first thing, as it was when this was inline.
+                    onDragDropped: dwellTimer.stop()
                 }
 
                 Timer {

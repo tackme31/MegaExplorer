@@ -189,80 +189,26 @@ Item {
                                                                 delegateRoot.modelData.isRoot)
                     }
 
-                    // Same shape as QuickAccessSection.qml's per-delegate drop
-                    // target, internal/external branching included -- see
-                    // FolderTreePanel.qml for why the hover handlers key off
-                    // dragProxy.active while onDropped keys off the event's own
-                    // payload. Segments hidden behind "«" are invisible and so
-                    // receive no drag events -- deliberately not reachable as
-                    // drop targets.
+                    // Shared drop behaviour lives in NodeDropArea.qml; this
+                    // segment only says which node it stands for. Segments
+                    // hidden behind "«" are invisible and so receive no drag
+                    // events -- deliberately not reachable as drop targets.
                     //
-                    // The last segment behaves differently between the two:
-                    // it's the current folder, which checkMove rejects as
+                    // The last segment behaves differently from the other drop
+                    // sites: it's the current folder, which checkMove rejects as
                     // "already in that folder", but which is a perfectly valid
                     // upload destination -- so it highlights for an external
                     // drop and not for a move. That asymmetry is correct.
                     // A Ctrl+drag *copy* also highlights it, on purpose: copying
                     // into the folder the nodes already live in duplicates them
                     // under "... - Copy", which is a real request.
-                    DropArea {
+                    NodeDropArea {
                         id: dropArea
                         anchors.fill: parent
-                        // "text/uri-list" is what an external OS drop matches
-                        // on -- without it those drops are silently ignored.
-                        keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
-
-                        // Recomputed on enter only: the target can't change
-                        // without leaving this segment first. Payload read off
-                        // root.dragProxy rather than the event's drag.source,
-                        // which is typed QObject.
-                        property bool accepting: false
-
-                        // Re-asks when Ctrl toggles the drag between move and
-                        // copy; see FolderTreePanel.qml for why positionChanged
-                        // can't serve that.
-                        Connections {
-                            target: root.dragProxy
-                            function onCopyModeChanged() {
-                                if (dropArea.containsDrag && root.dragProxy.active)
-                                    dropArea.accepting = root.dragProxy.canDropOn(
-                                                delegateRoot.modelData.handle,
-                                                delegateRoot.modelData.isRoot);
-                            }
-                        }
-
-                        onEntered: drag => {
-                            if (root.dragProxy.active) {
-                                dropArea.accepting = root.dragProxy.canDropOn(
-                                            delegateRoot.modelData.handle,
-                                            delegateRoot.modelData.isRoot);
-                            } else if (drag.hasUrls) {
-                                dropArea.accepting = uploadController.canUploadTo(
-                                            delegateRoot.modelData.handle,
-                                            delegateRoot.modelData.isRoot);
-                                // Only the external branch touches
-                                // drag.accepted: the move path relies on
-                                // implicit acceptance by key match.
-                                drag.accepted = dropArea.accepting;
-                            } else {
-                                dropArea.accepting = false;
-                            }
-                        }
-                        onExited: dropArea.accepting = false
-                        onDropped: drop => {
-                            if (dropArea.accepting) {
-                                if (drop.hasUrls) {
-                                    drop.accept(Qt.CopyAction);
-                                    uploadController.dropUrls(drop.urls,
-                                                              delegateRoot.modelData.handle,
-                                                              delegateRoot.modelData.isRoot);
-                                } else {
-                                    root.dragProxy.dropOn(delegateRoot.modelData.handle,
-                                                          delegateRoot.modelData.isRoot);
-                                }
-                            }
-                            dropArea.accepting = false;
-                        }
+                        dragProxy: root.dragProxy
+                        uploads: uploadController
+                        targetHandle: delegateRoot.modelData.handle
+                        targetIsRoot: delegateRoot.modelData.isRoot
                     }
                 }
 
