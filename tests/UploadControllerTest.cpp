@@ -14,10 +14,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-// Unlike DownloadController, this one *is* in the test target: it only touches
-// QtCore types (QUrl/QFileInfo/QDir/QStringList/QMetaObject), whereas
-// DownloadController's QDesktopServices would pull in QtGui.
-//
 // Signals are observed with plain QObject::connect lambdas rather than
 // QSignalSpy, which lives in Qt6::Test and would be a new dependency for this
 // target; same convention as TabsControllerTest/QuickAccessModelTest.

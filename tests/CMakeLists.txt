@@ -31,6 +31,7 @@ add_executable(MegaExplorerTests
     AccountControllerTest.cpp
     NotificationControllerTest.cpp
     AuthControllerTest.cpp
+    DownloadControllerTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
     MockMegaClient.h

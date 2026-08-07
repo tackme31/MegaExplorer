@@ -63,7 +63,8 @@ public:
     // is end-to-end encrypted, so nothing upstream validates them: a name of
     // "..\\..\\evil.exe" would otherwise escape the download directory once
     // concatenated. Static and here rather than in DownloadController because
-    // that class isn't in the test target (QDesktopServices pulls in QtGui).
+    // the rule is a Qt-free string transformation, and src/core is where those
+    // belong -- see docs/ARCHITECTURE.md's trust-boundary section.
     // No length cap on purpose -- truncating invents collisions, and an
     // over-long path is an OS-level error, not a trust-boundary break.
     static std::string safeLocalFileName(const std::string& nodeName);

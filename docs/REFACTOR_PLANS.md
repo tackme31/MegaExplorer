@@ -1621,7 +1621,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     assert の役割と Release での挙動、`std::expected` を採らなかった理由、`QuickAccessModel` が
     唯一の間接ガードであること）。**これで本節は完成**。
 
-### R4 — 調査済み / R4-1・R4-2・R4-4・R4-9 対応済み、次は R4-3（調査 2026-08-07）
+### R4 — 調査済み / R4-1〜R4-4・R4-9 対応済み、次は R4-7（調査 2026-08-07）
 
 計画の「種」4 件 +「持ち越し」の [R4] 2 件を現物で検証した結果。**確認 6 件 / 種の誤り 4 件 /
 問題なしと確認 4 件 / 新規 3 件**。R1〜R3 と同じく、以下はそのまま plan mode の作業単位として使える
@@ -1774,7 +1774,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     依存」の罠に正面から乗るが、`SetUp()` の `testApp()` がそれを閉じている。全体は
     **419/419**（従来 387 ＋ 新規 32）、`/W4` 新規警告ゼロ。
 
-**R4-3 [中] `DownloadController` にテストが無い（節 5 の持ち越しを回収）**
+**R4-3 [中] ✅対応済み `DownloadController` にテストが無い（節 5 の持ち越しを回収）**
 
 - 持ち越しの前提が **R1-1 で既に半分解消している**: 「`computeDestinationPath` にパス検証が
   入るならテスト可能な形に出すべき」という指摘に対し、R1-1 は
@@ -1800,6 +1800,49 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
   → **R4-4(b) の採用（2026-08-07）でこの論点自体が消えた**。`MegaExplorerQml` をリンクすれば
   `Qt6::Gui` は `Qt6::Quick` 経由で推移的に入る。`Qt6Gui.dll` は既に `PATH` に要る Qt の
   `bin` にあるので追加要求も無い。**R4-3 は R4-4 の後に回し、テストを書くだけの作業にする**。
+- **対応（2026-08-07）**: `tests/DownloadControllerTest.cpp` を新設。**18 ケース**、6 群
+  （重複抑止 / `downloadFinished` のフィールド構成 / アクティブジョブと `Q_PROPERTY` /
+  宛先パスの結線 / `openFile` / デストラクタ）。`tests/CMakeLists.txt` は 1 行追加のみ。
+  決めた点:
+  - **製品側の変更はゼロ**。R4-2 の stall timeout のような注入口は不要だった
+    （`DownloadService` を実物で組み、`MockMegaClient::download` のコールバックを
+    `Invoke` で捕まえて、テスト側が完了/進捗を発火するだけで全経路に届く）。
+  - **配送経路が最大の罠**。サービス→コントローラの 2 経路は `invokeOnGuiThread`
+    （`Qt::QueuedConnection`）を通るので、モックが同期に `onDone` を呼んでも
+    `downloadFinished` はその場では飛ばない。これ自体を 1 ケース
+    （`FinishedIsNotEmittedUntilTheQueuedInvokeIsDelivered`）で明示的に固定したうえで、
+    他ケースは `flushQueuedEvents()` 2 回のヘルパ経由にした。一方 `downloadFile()` 末尾の
+    `refreshActiveJob()` は直接呼びで、こちらも別ケースで同期であることを固定してある。
+  - **`onDone` はコピーしてから発火しないと自己代入になる**。`DownloadService` は
+    完了ハンドラの中から次のジョブの `download()` を呼ぶので、フィクスチャのメンバに
+    保持した `std::function` を直接 `onDone(...)` すると、実行中の関数オブジェクトが
+    自分の呼び出し中に上書きされる。ヘルパでローカルにコピーしてから呼ぶ形に統一した。
+  - **3 つの変異テストで裏を取った**（いずれも実施後に復元済み）:
+    (1) `hasJobForHandle` の early-return を潰す → 重複抑止 2 ケースが落ち、
+    逆側の `DifferentHandlesWithTheSameNameBothEnqueue` は緑のまま（過剰抑止でないことも
+    同時に担保）。(2) 完了時の `displayName` を `job.name` 固定にする →
+    `SuccessReportsTheSavedLeafNameNotTheRequestedName` のみ落ちる。
+    (3) `activeProgress` の `totalBytes == 0` ガードを外す →
+    `ActiveProgressIsZeroWhileTotalIsUnknown` が `-nan`/`inf` で落ちる。
+  - **`openFile` は `QDesktopServices::setUrlHandler("file", ...)` で横取りしてテストした**。
+    ハンドラを登録すると `openUrl` は外部アプリを起動せずハンドラを呼ぶだけになるので、
+    テストが実機のアプリを起動する事故が無い。**既知の限界**: 登録中は `openUrl` が
+    false を返せないため、失敗 → `qCWarning` + `notifyError("openFile")` の経路は
+    検証できていない。moc が要るので `FileUrlHandler` はファイルスコープに置き、
+    末尾で `#include "DownloadControllerTest.moc"` している。
+  - **宛先パスは「結線」だけを 1 ケースで固定**。`safeLocalFileName` の規則自体は
+    `DownloadServiceTest` の 19 アサーションが持っているので、ここでは
+    `..\..\evil.exe` が Downloads 直下の `evil.exe` になり `'/'` を含まないことだけを見る。
+  - **デストラクタは結果を固定するスモーク**。破棄後に捕まえておいた `onDone` を発火して
+    「何も届かず、サービス側のキューは正常に空になる」ことを見る。オブザーバ解除を消すと
+    破棄済み `this` への呼び出し（UB）になるが、**必ず落ちる保証は無い**旨をテスト内
+    コメントに書いた（R4-2 の `StaleStallTimerCannotFlipASignedInWindow` と同じ書き方）。
+  - 実行は **exe 一括（437/437）と `ctest` の 1 ケース 1 プロセス（437/437）の両方で緑**
+    （従来 419 ＋ 新規 18）。`/W4` 新規警告ゼロ。
+  - 副産物として陳腐化コメントを 2 箇所削除（成果物参照）。なお
+    `docs/ARCHITECTURE.md` の `qml/` の項にある「`qt_add_qml_module` は
+    `appMegaExplorer` にぶら下がるので URI をインポートできない」は R4-4 で前提が変わって
+    いるが、**インポート可否の結論自体は R4-5 の調査事項**なので今回は触っていない。
 
 **R4-4 [中] ✅対応済み ビルド定義が `src/qml` を 3 箇所で列挙している**
 
@@ -2107,7 +2150,7 @@ R4-1  慣例の書き直し（ARCHITECTURE.md + コメント 10 箇所）✅ …
 R4-4  MegaExplorerQml への分離（(b) 確定）                ✅ … ★R4 の背骨。R4-9 の /W4 維持を同梱
       + R4-9  /W4 を自前 4 target へ                     ✅ … 既存警告ゼロ。R7 送りは発生せず
 R4-2  AuthController のテスト                             ✅ … 32 ケース。stall timeout のみ注入
-R4-3  DownloadController のテスト                           … R4-4 済みなので Qt6::Gui は解決済み
+R4-3  DownloadController のテスト                         ✅ … 18 ケース。製品側の変更ゼロ
 R4-7  QSettingsPinnedFolderStore のテスト                   … 小。パス注入の口だけ製品側に開ける
 R4-8  QCoreApplication のプロセス毎 1 回化                  … 小。R4-6 段階 2 の前提
 R4-5  QML テスト（ToastStack / ActionCatalog / DragProxy）  … R4-4 完了後。R6 の安全網
@@ -2156,6 +2199,15 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   製品側は `src/qml/AuthController.h`/`.cpp` の stall timeout 注入のみ（挙動不変）。
 - ✅ `docs/ARCHITECTURE.md` の「規約は言うがテストがまだ無いクラス」一覧から `AuthController`
   を削除（残りは `DownloadController` / `MenuActions` の 2 つ、参照先も R4-3 のみ）。
+  → R4-3 で `DownloadController` も削除し、残りは `MenuActions` 1 つ。「82 行で
+  `MenuActionResolver`（47 ケース済み）に流すだけ」という R4 の評価もその場に書いた。
+- ✅ `tests/DownloadControllerTest.cpp`（R4-3、18 ケース）と `tests/CMakeLists.txt` の 1 行追加。
+  **製品側の変更はゼロ**。
+- ✅ R4-4 で前提が消えた陳腐化コメントを 2 箇所訂正（R4-3 と同一コミット）:
+  `src/core/DownloadService.h` の `safeLocalFileName` の配置理由（「`DownloadController` は
+  テストターゲットに入っていないから」→「Qt 非依存の文字列規則だから `src/core`」）と、
+  `tests/UploadControllerTest.cpp` 冒頭の「`DownloadController` と違ってこちらは入っている」
+  （削除）。R4-1 が意図的に残した箇所だが、`Qt6::Gui` が入った時点で事実として誤りになった。
 
 ### R5 — 未着手
 ### R6 — 未着手
@@ -2182,6 +2234,8 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   （`DownloadService::safeLocalFileName` として `src/core` に出され、19 アサーションで検証済み）。
   残る未テスト論理は `computeDestinationPath` ではなく重複抑止と `downloadFinished` の
   フィールド構成の側。`QtGui` の件は「テストターゲットに `Qt6::Gui` を足す」で閉じる方針。
+  → **R4-3 で解消（2026-08-07）**。`tests/DownloadControllerTest.cpp` の 18 ケース。
+  `QtGui` は R4-4 が `MegaExplorerQml` 経由で解決済みだったので、製品側の変更はゼロ。
 - **[スコープ未割当] 配布パイプラインが存在しない** — `windeployqt` /
   `qt_generate_deploy_qml_app_script` / CPack のいずれも `CMakeLists.txt` に無い。`install()` しても
   実行可能なツリーにならない。R1-2 はライセンスファイルの同梱だけを閉じ、デプロイ整備はここに残す。
