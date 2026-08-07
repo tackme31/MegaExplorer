@@ -12,17 +12,6 @@
 
 #include <set>
 
-namespace
-{
-
-// How long an operation has to stay in flight before the tab shows a spinner.
-// Every operation the busy count covers is a server round-trip, so most land
-// well inside this and never flash one; the ones that don't are the ones
-// worth reporting.
-constexpr int kBusyIndicatorDelayMs = 250;
-
-} // namespace
-
 FolderNavigationController::FolderNavigationController(
     std::shared_ptr<FolderNavigationService> navigationService,
     std::shared_ptr<SearchService> searchService,
@@ -35,17 +24,7 @@ FolderNavigationController::FolderNavigationController(
       mNotifications(notifications), mClipboard(clipboard),
       mFileListModel(std::make_shared<FileListModel>())
 {
-    mBusyDelayTimer.setSingleShot(true);
-    mBusyDelayTimer.setInterval(kBusyIndicatorDelayMs);
-    connect(&mBusyDelayTimer, &QTimer::timeout, this, [this]() {
-        // The timer is stopped by endBusyOperation, so this normally can't
-        // fire with nothing left in flight -- guarded anyway rather than
-        // relying on that ordering.
-        if (mBusyCount == 0 || mBusyVisible)
-            return;
-        mBusyVisible = true;
-        emit busyChanged();
-    });
+    connect(&mBusy, &BusyState::changed, this, &FolderNavigationController::busyChanged);
 }
 
 QObject* FolderNavigationController::fileListModel()
@@ -65,32 +44,7 @@ bool FolderNavigationController::canGoBack() const
 
 bool FolderNavigationController::busy() const
 {
-    return mBusyVisible;
-}
-
-void FolderNavigationController::beginBusyOperation()
-{
-    if (++mBusyCount == 1)
-        mBusyDelayTimer.start();
-}
-
-void FolderNavigationController::endBusyOperation()
-{
-    // reset() zeroes the count with operations still in flight, so their
-    // callbacks arrive here with nothing left to subtract. Clamping rather
-    // than letting the count go negative, which would stop a later
-    // beginBusyOperation from ever reaching 1 again.
-    if (mBusyCount == 0)
-        return;
-
-    if (--mBusyCount > 0)
-        return;
-
-    mBusyDelayTimer.stop();
-    if (!mBusyVisible)
-        return;
-    mBusyVisible = false;
-    emit busyChanged();
+    return mBusy.visible();
 }
 
 QVariantList FolderNavigationController::breadcrumb() const
@@ -344,13 +298,13 @@ void FolderNavigationController::refreshVisibleListing()
 
 void FolderNavigationController::renameEntry(quint64 handle, const QString& newName)
 {
-    beginBusyOperation();
+    mBusy.begin();
     mFileOps->rename(
         static_cast<std::uint64_t>(handle),
         newName.toStdString(),
         [this, self = shared_from_this()](Result<void> result) {
             invokeOnGuiThread(this, [this, result = std::move(result)]() {
-                endBusyOperation();
+                mBusy.end();
                 if (!result.success)
                 {
                     // A name the user can retype isn't an operation failure --
@@ -376,7 +330,7 @@ void FolderNavigationController::renameEntry(quint64 handle, const QString& newN
 
 void FolderNavigationController::createFolder(const QString& name)
 {
-    beginBusyOperation();
+    mBusy.begin();
     mFileOps->createFolder(
         static_cast<std::uint64_t>(currentHandle()),
         atRoot(),
@@ -386,7 +340,7 @@ void FolderNavigationController::createFolder(const QString& name)
                 // Above the four-way branching below on purpose: each of those
                 // outcomes returns, so anything lower would be four chances to
                 // leak the count.
-                endBusyOperation();
+                mBusy.end();
                 if (result.success)
                 {
                     refreshVisibleListing();
@@ -431,12 +385,12 @@ void FolderNavigationController::moveSelectionToRubbish()
     for (const QVariant& entry : entries)
     {
         const quint64 handle = entry.toMap().value(QStringLiteral("handle")).toULongLong();
-        beginBusyOperation();
+        mBusy.begin();
         mFileOps->moveToRubbish(static_cast<std::uint64_t>(handle),
                                 [this, self = shared_from_this(), batch](Result<void> result) {
                                     invokeOnGuiThread(
                                         this, [this, batch, result = std::move(result)]() {
-                                            endBusyOperation();
+                                            mBusy.end();
                                             accountForBulkOutcome(batch, result, "moveToRubbish");
                                         });
                                 });
@@ -471,13 +425,13 @@ void FolderNavigationController::moveHandlesFrom(const QVariantList& handles,
 
     for (const QVariant& handle : handles)
     {
-        beginBusyOperation();
+        mBusy.begin();
         mFileOps->move(static_cast<std::uint64_t>(handle.toULongLong()),
                        static_cast<std::uint64_t>(target),
                        targetIsRoot,
                        [this, self = shared_from_this(), batch](Result<void> result) {
                            invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
-                               endBusyOperation();
+                               mBusy.end();
                                accountForBulkOutcome(batch, result, "move");
                            });
                        });
@@ -574,14 +528,14 @@ void FolderNavigationController::paste()
     // so this is also correct while a search is showing.
     const quint64 target = currentHandle();
     const bool targetIsRoot = atRoot();
-    beginBusyOperation();
+    mBusy.begin();
     mService->refreshCurrent(
         mSortOrder,
         [this, self = shared_from_this(), target, targetIsRoot](
             Result<std::vector<FileEntry>> result) {
             invokeOnGuiThread(
                 this, [this, target, targetIsRoot, result = std::move(result)]() mutable {
-                    endBusyOperation();
+                    mBusy.end();
                     const std::vector<NodeRef>& entries = mClipboard->entries();
                     if (entries.empty())
                         return; // cleared while the destination read was in flight
@@ -619,7 +573,7 @@ void FolderNavigationController::copyEntriesTo(const QVariantList& entries,
         return;
     }
 
-    beginBusyOperation();
+    mBusy.begin();
     mService->listChildrenOf(
         static_cast<std::uint64_t>(target),
         targetIsRoot,
@@ -628,7 +582,7 @@ void FolderNavigationController::copyEntriesTo(const QVariantList& entries,
             Result<std::vector<FileEntry>> result) {
             invokeOnGuiThread(
                 this, [this, copied, target, targetIsRoot, result = std::move(result)]() mutable {
-                    endBusyOperation();
+                    mBusy.end();
                     // No fallback here, unlike paste(): the destination is
                     // whatever folder the pointer was over, and this tab holds
                     // no listing of it. Copying under names picked against the
@@ -684,14 +638,14 @@ void FolderNavigationController::startCopyBatch(
         // entries can share a name and must not be handed the same new one.
         taken.insert(chosen);
 
-        beginBusyOperation();
+        mBusy.begin();
         mFileOps->copy(entry.handle,
                        static_cast<std::uint64_t>(target),
                        targetIsRoot,
                        chosen == sourceName ? std::string() : chosen,
                        [this, self = shared_from_this(), batch](Result<void> result) {
                            invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
-                               endBusyOperation();
+                               mBusy.end();
                                accountForBulkOutcome(batch, result, "copy");
                            });
                        });
@@ -752,10 +706,10 @@ void FolderNavigationController::refresh()
     if (!mHasLoadedOnce)
         return;
 
-    beginBusyOperation();
+    mBusy.begin();
     mService->syncWithServer([this, self = shared_from_this()](Result<void> result) {
         invokeOnGuiThread(this, [this, result = std::move(result)]() {
-            endBusyOperation();
+            mBusy.end();
             if (!result.success)
             {
                 qCWarning(lcNavigation)
@@ -818,15 +772,7 @@ void FolderNavigationController::reset()
     mLastSearchQuery.clear();
     mHasLoadedOnce = false;
     mBreadcrumb.clear();
-    // Abandons the count rather than waiting the in-flight operations out:
-    // this is a logout, their callbacks will find nothing left to refresh, and
-    // without this a spinner would keep turning on a signed-out window.
-    mBusyCount = 0;
-    mBusyDelayTimer.stop();
-    const bool wasBusy = mBusyVisible;
-    mBusyVisible = false;
+    mBusy.abandonAll();
     emit canGoBackChanged();
     emit breadcrumbChanged();
-    if (wasBusy)
-        emit busyChanged();
 }

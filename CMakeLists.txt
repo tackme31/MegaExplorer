@@ -123,6 +123,8 @@ target_link_libraries(MegaExplorerCore PRIVATE MegaExplorerWarnings)
 # registration; the QML_ELEMENT types are in qt_add_qml_module's SOURCES.
 add_library(MegaExplorerQml STATIC
     src/qml/GuiThread.h
+    src/qml/BusyState.h
+    src/qml/BusyState.cpp
     src/qml/FileListModel.h
     src/qml/FileListModel.cpp
     src/qml/FolderNavigationController.h

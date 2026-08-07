@@ -20,6 +20,7 @@ add_executable(MegaExplorerTests
     FolderTreeServiceTest.cpp
     FileOperationServiceTest.cpp
     FolderNavigationControllerTest.cpp
+    BusyStateTest.cpp
     WindowsSessionStoreTest.cpp
     QSettingsPinnedFolderStoreTest.cpp
     FileListModelTest.cpp

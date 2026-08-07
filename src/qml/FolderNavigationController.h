@@ -4,10 +4,10 @@
 #include "core/NodeRef.h"
 #include "core/SearchService.h"
 #include "core/SortOrder.h"
+#include "BusyState.h"
 #include "FileListModel.h"
 
 #include <QObject>
-#include <QTimer>
 #include <QVariantList>
 
 #include <functional>
@@ -28,7 +28,7 @@ class NotificationController;
 //
 // Staying alive is only half of it: that shared_from_this() copy lives in a
 // closure the SDK's listener destroys on the SDK thread, so it can be the
-// last reference and would run ~QTimer (mBusyDelayTimer below) there.
+// last reference and would run ~QTimer (the one mBusy owns below) there.
 // Instances are therefore created through GuiThread.h's makeGuiOwned, which
 // sends the destruction back to the GUI thread -- see REFACTOR_PLANS.md's
 // R2-5.
@@ -296,14 +296,6 @@ private:
     // refreshIfShowing could keep the plain re-read.
     void refreshListingIfLoaded();
 
-    // The only two places mBusyCount is allowed to change. Every mutating
-    // entry point pairs exactly one begin with one end per SDK call it makes
-    // (so a bulk fan-out of N calls is N pairs), the end going at the very top
-    // of the callback, before any of its own branching -- createFolder's four
-    // outcomes would otherwise be four chances to leak the count.
-    void beginBusyOperation();
-    void endBusyOperation();
-
     // Resolves the current location's ancestor chain and updates
     // mBreadcrumb. Called at the end of applyResult's success path (loadRoot
     // / openFolder / goBack / navigateTo / refreshCurrent all funnel through
@@ -384,11 +376,6 @@ private:
     // erroring out) before login/fetchNodes have ever run. Set true once
     // applyResult sees its first success; reset back to false by reset().
     bool mHasLoadedOnce = false;
-    // In-flight mutating operations / server syncs. Separate from the
-    // published busy() below, which only turns true once mBusyDelayTimer has
-    // fired: an operation that finishes inside the delay never shows a
-    // spinner at all, which is the point.
-    int mBusyCount = 0;
-    bool mBusyVisible = false;
-    QTimer mBusyDelayTimer;
+    // Publishes busy() above; owns the delay before a spinner appears.
+    BusyState mBusy;
 };

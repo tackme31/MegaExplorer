@@ -2364,7 +2364,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `tests/UploadControllerTest.cpp` 冒頭の「`DownloadController` と違ってこちらは入っている」
   （削除）。R4-1 が意図的に残した箇所だが、`Qt6::Gui` が入った時点で事実として誤りになった。
 
-### R5 — 調査済み / R5-2・R5-5・R5-6 対応済み（調査 2026-08-07）
+### R5 — 調査済み / R5-2・R5-3・R5-5・R5-6 対応済み（調査 2026-08-07）
 
 計画の「種」5 件 +「持ち越し」の [R5] 3 件 + R2/R3 が明示的に R5 送りにした 5 件を現物で検証した
 結果。**確認 10 件 / 種の誤り・判断が要るもの 4 件 / 問題なしと確認 3 件**。R1〜R4 と同じく、
@@ -2446,7 +2446,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   - ビルド警告なし、`ctest` 467 件全通過。テストは `loadRoot()` を C++ から直接呼んでいるだけ
     （`FolderNavigationControllerTest` の 43 箇所）なので、`Q_INVOKABLE` の有無に依存しない。
 
-**R5-3 [高] busy 機構は「begin/end の 2 箇所だけ」と書いてあるが、`reset()` が 3 番目の書き手**
+**R5-3 [高] ✅対応済み busy 機構は「begin/end の 2 箇所だけ」と書いてあるが、`reset()` が 3 番目の書き手**
 
 - ヘッダ :258-262 が「`mBusyCount` が変わってよいのはこの 2 つだけ」と明言。実際には
   `reset()`（`.cpp:824-827`）が `mBusyCount = 0` を直接代入し、タイマを止め、`busyChanged` を
@@ -2457,6 +2457,41 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   内部の呼び出しは begin/end の **8 対**（:347/353, :379/389, :434/439, :474/480, :577/584,
   :622/631, :687/694, :755/758）。
 - **R5-4 の前に切ること**。逆順だと bulk runner が busy を触るために親への逆参照を持つ。
+- **対応（2026-08-07）**: `src/qml/BusyState.{h,cpp}` を新設（`QObject` + `QTimer`、`QML_ELEMENT`
+  なし → `add_library(MegaExplorerQml)` 側）。`visible()` / `begin()` / `end()` / `abandonAll()` +
+  `changed()` の 5 面のみ。`FolderNavigationController` は値メンバ `BusyState mBusy` を持ち、
+  ctor で `changed` → `busyChanged` を signal-to-signal で中継するだけになった。`Q_PROPERTY` /
+  `busy()` / `busyChanged` は無変更、`TabsController` と `qml/` は 1 行も触っていない。
+  併せて決めたこと・分かったこと:
+  - **3 番目の書き手は「消す」のではなく `abandonAll()` として正式化した**。ログアウト時に
+    カウントを 0 に落とすのは意図的な不変条件違反であって、バグではない。`end()` の 0 クランプは
+    **`abandonAll()` が存在するからこそ要る**（放置された in-flight のコールバックがそのまま
+    `end()` に届く）ので、両者は 1 クラスに閉じて初めて対で読める。**規約違反を潰す方向に倒すと
+    クランプの理由が説明できなくなる**のが、そうしなかった理由。
+  - **所有は値メンバ。`shared_ptr` にはしなかった**。`BusyState` は `QTimer` を持つので、
+    `shared_ptr` を SDK コールバックに捕獲させると `~QTimer` が SDK スレッドで走る R2-5 の
+    ハザードを新クラスにも背負わせることになり、`makeGuiOwned` 相当の生成規約が今から要る。
+    値メンバなら「コントローラと一緒に GUI スレッドで死ぬ」という現行の寿命規約がそのまま効く。
+    **昇格条件**: R5-1 で navigation / mutation の 2 コントローラが同じ busy を共有する形に
+    なったら、その時点で `shared_ptr` + `makeGuiOwned` にして `tabFactory` から注入する。
+    R5-4 の `BulkOperationRunner` は同じコントローラが所有するので、参照 1 本で足りるはず。
+  - **薄いラッパ (`beginBusyOperation`/`endBusyOperation`) は残さなかった**。8 対 16 箇所を
+    `mBusy.begin()` / `mBusy.end()` に直したのは、R5-4 が**オブジェクトそのもの**を受け取れる
+    ことが切り出しの目的だから。委譲で隠すのは QML 面（`navigation.busy`）だけで、C++ 内部まで
+    隠すと R5-4 が結局 `this` 経由に戻る。
+  - **`reset()` の emit 順が変わったが無害**。以前は `canGoBackChanged` → `breadcrumbChanged` →
+    `busyChanged` の順だったのが、`abandonAll()` が先に `busyChanged` を出すようになった。
+    `mBusy.abandonAll()` を呼ぶ時点で他の状態は全て更新済みなので、どの受け手も一貫した状態を
+    見る。**重要なのは順序ではなく「emit 前に全フィールドが確定していること」**で、それは元の
+    実装が `wasBusy` を先に控えていた理由でもある。
+  - `FolderNavigationController.cpp` の匿名 namespace は `kBusyIndicatorDelayMs` 1 個だけだった
+    ので、定数の移動と同時に**ブロックごと消えた**（R5-7 が触ろうとしている匿名 namespace の
+    1 つが先に消えた形）。
+  - **テストは「出ない側」を初めて固定した**。既存の 3 件（`BusyClearsOnlyAfterTheLastCallback…`
+    ほか）は全て「スピナが出た後どう消えるか」しか見ておらず、**遅延内に終わった操作が
+    スピナを出さない**という遅延の存在理由そのものは無検証だった。`tests/BusyStateTest.cpp` の
+    `EndBeforeTheDelayNeverShows` がそれ。既存 3 件は無変更で通っており、それが委譲で挙動が
+    変わっていないことの証拠になっている。`ctest` 472 件（467 + 新規 5）全通過、警告なし。
 
 **R5-4 [高] `BulkOperationBatch` の切り出しは成立するが、busy と絡んでいるぶん単独では出せない**
 
@@ -2654,7 +2689,7 @@ R5-6  IMegaClient の同期例外を位置非依存に      … ✅済。doc コ
   ↓
 R5-5  ClipboardController::Entry を src/core へ … ✅済。NodeRef.h 新設、実インクルードが消えた
   ↓
-R5-3  busy 機構を独立クラスへ                   … reset() の 3 番目の書き手も同時に畳む
+R5-3  busy 機構を独立クラスへ                   … ✅済。BusyState 新設。3 番目の書き手は abandonAll() に
   ↓
 R5-4  BulkOperationRunner を切り出し            … R5-3 の後でないと親への逆参照が要る
   ↓
