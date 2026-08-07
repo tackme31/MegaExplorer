@@ -32,6 +32,37 @@ session lives in companion docs, linked from the relevant section below rather t
 
 Check current file contents before assuming a feature exists — don't trust the roadmap alone.
 
+## Tooling: use Serena on code, not `Read`/`Grep`/`Edit`
+
+The Serena MCP server is running for this repo and is the **primary** way to read and edit
+`src/`, `main.cpp`, and `tests/`. It indexes the tree symbolically, so it can hand back one
+function body instead of the 900-line file around it — the same budget argument as `ast-outline`
+below, applied to code. Call `initial_instructions` once per session before the first code task.
+
+| Task | Tool |
+| --- | --- |
+| See a file's structure | `get_symbols_overview` |
+| Read one symbol's body | `find_symbol` (`include_body=true`) |
+| Find a symbol anywhere | `find_symbol` |
+| Find callers / references | `find_referencing_symbols` |
+| Declaration / implementations | `find_declaration` / `find_implementations` |
+| Edit a symbol | `replace_symbol_body` |
+| Add near a symbol | `insert_before_symbol` / `insert_after_symbol` |
+| Pattern replace in a file | `replace_content` |
+| Rename / delete a symbol | `rename_symbol` / `safe_delete_symbol` |
+
+Normal edit flow: `get_symbols_overview` on the file → `find_symbol` with bodies for just the
+symbols you'll touch → a symbolic edit. Don't read the whole file first "for context".
+
+Built-in `Read`/`Grep`/`Glob`/`Edit` stay right for: non-code files (Markdown, JSON, YAML, CMake,
+`.qml` is only partially indexed), a regex sweep across many files as a *discovery* step (follow up
+with Serena on the hits), a few lines where a symbolic read is overkill, and any case where Serena
+was tried on the target and failed. "The file is small" and "I already know the path" are not
+reasons to skip it.
+
+Serena's connection occasionally times out on session start; `/mcp` reconnects it. If it stays
+down, say so rather than silently falling back to whole-file reads.
+
 ## Tooling: use `ast-outline` on the docs, not `Read`
 
 The companion docs above are long — `docs/DESIGN_IMPROVEMENT.md` alone is ~15k tokens, and
