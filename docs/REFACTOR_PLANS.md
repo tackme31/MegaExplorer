@@ -2364,7 +2364,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `tests/UploadControllerTest.cpp` 冒頭の「`DownloadController` と違ってこちらは入っている」
   （削除）。R4-1 が意図的に残した箇所だが、`Qt6::Gui` が入った時点で事実として誤りになった。
 
-### R5 — 調査済み / R5-2・R5-6 対応済み（調査 2026-08-07）
+### R5 — 調査済み / R5-2・R5-5・R5-6 対応済み（調査 2026-08-07）
 
 計画の「種」5 件 +「持ち越し」の [R5] 3 件 + R2/R3 が明示的に R5 送りにした 5 件を現物で検証した
 結果。**確認 10 件 / 種の誤り・判断が要るもの 4 件 / 問題なしと確認 3 件**。R1〜R4 と同じく、
@@ -2470,7 +2470,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   インタフェースはほぼ現状の `BulkOperationBatch` そのままでよい。**`QuickAccessModel::Sweep` と
   同型**（ヘッダが自分でそう書いている）なので、統合できるかは切り出し後に判断する。
 
-**R5-5 [中] `ClipboardController.h` の実インクルードは種のとおり。`Entry` を `src/core` に降ろせば消える**
+**R5-5 [中] ✅対応済み `ClipboardController.h` の実インクルードは種のとおり。`Entry` を `src/core` に降ろせば消える**
 
 - `FolderNavigationController.h:6-9` が自ら理由を書いている。使用箇所は `.cpp` 6 + `.h` 2。
 - `Entry` は `{quint64 handle, QString name, bool isFolder}` の純値型で `QObject` 非依存。
@@ -2481,6 +2481,35 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `FileEntry`/`PathSegment` が前例……を確認したが、実際は `FileEntry` は `std::string` なので
   **`NodeRef` も `std::string` にするなら QML 境界での変換が 1 段増える**。
   → **決定: `std::string` + 変換は `toEntries()` に残す**（上の決定表）。
+- **対応（2026-08-07）**: `src/core/NodeRef.h`（`{std::string name, std::uint64_t handle,
+  bool isFolder}`）を新設し、`ClipboardController::Entry` を廃止。`FolderNavigationController.h` の
+  実インクルードは前方宣言 + `core/NodeRef.h` になった。変換は `ClipboardController` に静的関数の
+  まま残したが、指す型が消えたので **`toEntries` → `toNodeRefs`** に改名（呼び出しは 2 箇所）。
+  併せて分かったこと:
+  - **`NodeInfo` が `{name, handle, isFolder, inCloud}` で `NodeRef` の上位互換に見えるが、統合
+    しなかった**。`NodeInfo` は `IMegaClient::getNodeInfo` が**ハンドルから今解決した実体**で、
+    `inCloud`（ゴミ箱/Vault の判別）を持つのがその存在理由。`NodeRef` は**選択された時点の
+    スナップショット**で、解決も検証もしない — ペースト時に古い名前を使うのは既知かつ許容、と
+    `ClipboardController.h` が元から書いている性質。同じフィールドでも保証が違うので、
+    その区別を `NodeRef.h` のコメントに明記した。**フィールドが一致しているという理由だけで
+    後から寄せると、`inCloud` の意味が「未検証だから常に false」に化ける**。
+  - **`quint64` への明示キャストが 2 箇所必要になった** — `ClipboardController::cutHandles()` と
+    `FolderNavigationController::paste()` の cut 分岐、どちらも `QVariant::fromValue(handle)` で
+    QML に返す経路。MSVC では `std::uint64_t` == `quint64` なので今は無害だが、`std::uint64_t` が
+    `unsigned long` になる環境では metatype が `ULongLong` → `ULong` に変わる。QML 側は
+    `cutHandles.indexOf(cell.handle)`（`FileGridView.qml:573` / `FileTableView.qml:860`）で
+    JS の厳密比較に晒しているので、**ゴーストが黙って効かなくなる**類の壊れ方をする。
+    `CROSS_PLATFORM_INVESTIGATION.md` の射程に入る話なので、キャストの理由をコード側に書いた。
+  - **決定表の「変換は実質 1 箇所」は当たっていた**が、消えたのは
+    `FolderNavigationController.cpp:680` の `entry.name.toStdString()` **1 行だけ**で、代わりに
+    上のキャスト 2 箇所が増えている。正味の行数はほぼ横ばいで、得たのはヘッダ依存 1 本と
+    `src/qml` から `src/core` への値型の移動そのもの。**行数を期待して読むと成果が無いように
+    見える項目**（R5-1 の分割面を単純にするのが目的）。
+  - ついでに冗長化した `static_cast<std::uint64_t>(entry.handle)` を 2 箇所（`canCopy` / `copy`）
+    外した。`currentHandle()`/`target` 側は `quint64` のままなのでキャストは残る。
+  - ビルド警告なし、`ctest` 467 件全通過。テスト修正は `ClipboardControllerTest.cpp:60` の
+    `QStringLiteral("b")` → `"b"` の 1 行のみ。`FolderNavigationControllerTest` /
+    `TabsControllerTest` は `QVariantList` 越しにしか触っていないので無変更。
 
 **R5-6 [中] ✅対応済み `IMegaClient` の同期例外は確かに 7 個。位置依存の規約も現存するが、解消はファイル分割ではない**
 
@@ -2619,11 +2648,11 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
 #### 推奨実施順（各項目 1 セッション）
 
 ```
-R5-2  loadRoot の Q_INVOKABLE 除去              … 1 行。R5-1 の前に数字を合わせる
+R5-2  loadRoot の Q_INVOKABLE 除去              … ✅済。1 行。R5-1 の前に数字を合わせた
   ↓
-R5-6  IMegaClient の同期例外を位置非依存に      … doc コメントのみ。R2-22 の判断もここで
+R5-6  IMegaClient の同期例外を位置非依存に      … ✅済。doc コメントのみ。R2-22 もここで決着
   ↓
-R5-5  ClipboardController::Entry を src/core へ … 実インクルードが消え、R5-1 の分割面が単純になる
+R5-5  ClipboardController::Entry を src/core へ … ✅済。NodeRef.h 新設、実インクルードが消えた
   ↓
 R5-3  busy 機構を独立クラスへ                   … reset() の 3 番目の書き手も同時に畳む
   ↓

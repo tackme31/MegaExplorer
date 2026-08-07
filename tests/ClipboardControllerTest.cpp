@@ -57,7 +57,7 @@ TEST_F(ClipboardControllerTest, CopyStoresTheEntriesAndReportsNotCut)
     EXPECT_EQ(clipboard.count(), 2);
     ASSERT_EQ(clipboard.entries().size(), 2u);
     EXPECT_EQ(clipboard.entries()[0].handle, 1u);
-    EXPECT_EQ(clipboard.entries()[1].name, QStringLiteral("b"));
+    EXPECT_EQ(clipboard.entries()[1].name, "b");
     EXPECT_EQ(clipboard.sourceHandle(), 7u);
     EXPECT_FALSE(clipboard.sourceIsRoot());
     EXPECT_EQ(changes, 1);

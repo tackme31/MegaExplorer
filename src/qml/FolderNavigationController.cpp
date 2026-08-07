@@ -497,9 +497,9 @@ bool FolderNavigationController::canPaste() const
 
 Result<void> FolderNavigationController::clipboardCopyAllowedHere() const
 {
-    for (const ClipboardController::Entry& entry : mClipboard->entries())
+    for (const NodeRef& entry : mClipboard->entries())
     {
-        Result<void> allowed = mFileOps->canCopy(static_cast<std::uint64_t>(entry.handle),
+        Result<void> allowed = mFileOps->canCopy(entry.handle,
                                                  static_cast<std::uint64_t>(currentHandle()),
                                                  atRoot());
         if (!allowed.success)
@@ -537,8 +537,8 @@ void FolderNavigationController::paste()
     {
         QVariantList handles;
         handles.reserve(static_cast<qsizetype>(mClipboard->entries().size()));
-        for (const ClipboardController::Entry& entry : mClipboard->entries())
-            handles.append(QVariant::fromValue(entry.handle));
+        for (const NodeRef& entry : mClipboard->entries())
+            handles.append(QVariant::fromValue(static_cast<quint64>(entry.handle)));
         const quint64 source = mClipboard->sourceHandle();
         const bool sourceIsRoot = mClipboard->sourceIsRoot();
         // Emptied as the paste is *issued*, like Explorer: the ghosting has to
@@ -582,7 +582,7 @@ void FolderNavigationController::paste()
             invokeOnGuiThread(
                 this, [this, target, targetIsRoot, result = std::move(result)]() mutable {
                     endBusyOperation();
-                    const std::vector<ClipboardController::Entry>& entries = mClipboard->entries();
+                    const std::vector<NodeRef>& entries = mClipboard->entries();
                     if (entries.empty())
                         return; // cleared while the destination read was in flight
 
@@ -602,7 +602,7 @@ void FolderNavigationController::copyEntriesTo(const QVariantList& entries,
                                                quint64 target,
                                                bool targetIsRoot)
 {
-    const std::vector<ClipboardController::Entry> copied = ClipboardController::toEntries(entries);
+    const std::vector<NodeRef> copied = ClipboardController::toNodeRefs(entries);
     if (copied.empty())
         return;
 
@@ -654,7 +654,7 @@ void FolderNavigationController::copyEntriesTo(const QVariantList& entries,
 }
 
 void FolderNavigationController::startCopyBatch(
-    const std::vector<ClipboardController::Entry>& entries,
+    const std::vector<NodeRef>& entries,
     quint64 target,
     bool targetIsRoot,
     std::set<std::string> taken)
@@ -675,9 +675,9 @@ void FolderNavigationController::startCopyBatch(
             emit nodesCopied(target, targetIsRoot);
     };
 
-    for (const ClipboardController::Entry& entry : entries)
+    for (const NodeRef& entry : entries)
     {
-        const std::string sourceName = entry.name.toStdString();
+        const std::string& sourceName = entry.name;
         const std::string chosen =
             FileOperationService::uniqueCopyName(sourceName, entry.isFolder, taken);
         // Claimed right away: MEGA allows duplicate siblings, so two clipboard
@@ -685,7 +685,7 @@ void FolderNavigationController::startCopyBatch(
         taken.insert(chosen);
 
         beginBusyOperation();
-        mFileOps->copy(static_cast<std::uint64_t>(entry.handle),
+        mFileOps->copy(entry.handle,
                        static_cast<std::uint64_t>(target),
                        targetIsRoot,
                        chosen == sourceName ? std::string() : chosen,

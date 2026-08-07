@@ -1,6 +1,7 @@
 #pragma once
+#include "core/NodeRef.h"
+
 #include <QObject>
-#include <QString>
 #include <QVariantList>
 
 #include <vector>
@@ -38,13 +39,6 @@ class ClipboardController : public QObject
     Q_PROPERTY(QVariantList cutHandles READ cutHandles NOTIFY contentChanged)
 
 public:
-    struct Entry
-    {
-        quint64 handle = 0;
-        QString name;
-        bool isFolder = false;
-    };
-
     explicit ClipboardController(QObject* parent = nullptr);
 
     // entries are FileListModel::selectedEntries()' maps, passed straight
@@ -68,14 +62,15 @@ public:
     int count() const;
     QVariantList cutHandles() const;
 
-    // The QVariantMap -> Entry conversion, static because the clipboard is not
-    // the only source of these maps any more: a drag carries the same
+    // The QVariantMap -> NodeRef conversion, static because the clipboard is
+    // not the only source of these maps any more: a drag carries the same
     // FileListModel::selectedEntries() payload, and a Ctrl+drop copies from it
-    // without ever touching the clipboard.
-    static std::vector<Entry> toEntries(const QVariantList& entries);
+    // without ever touching the clipboard. Lives here rather than beside
+    // NodeRef because it is the QVariant boundary, which src/core stays free of.
+    static std::vector<NodeRef> toNodeRefs(const QVariantList& entries);
 
     // Typed accessors for FolderNavigationController; not QML-facing.
-    const std::vector<Entry>& entries() const;
+    const std::vector<NodeRef>& entries() const;
     quint64 sourceHandle() const;
     bool sourceIsRoot() const;
 
@@ -85,7 +80,7 @@ signals:
 private:
     void take(const QVariantList& entries, bool cut, quint64 sourceHandle, bool sourceIsRoot);
 
-    std::vector<Entry> mEntries;
+    std::vector<NodeRef> mEntries;
     bool mIsCut = false;
     quint64 mSourceHandle = 0;
     bool mSourceIsRoot = true;

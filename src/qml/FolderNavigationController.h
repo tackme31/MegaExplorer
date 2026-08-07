@@ -1,12 +1,9 @@
 #pragma once
 #include "core/FileOperationService.h"
 #include "core/FolderNavigationService.h"
+#include "core/NodeRef.h"
 #include "core/SearchService.h"
 #include "core/SortOrder.h"
-// Not just forward-declared like NotificationController below: startCopyBatch
-// takes ClipboardController::Entry, which a drag-copy fills in without the
-// clipboard being involved at all.
-#include "ClipboardController.h"
 #include "FileListModel.h"
 
 #include <QObject>
@@ -18,6 +15,7 @@
 #include <set>
 #include <string>
 
+class ClipboardController;
 class NotificationController;
 
 // Q_INVOKABLE entry points below fire off SDK-thread callbacks that outlive
@@ -358,7 +356,7 @@ private:
     // in, copyEntriesTo() has no such listing and refuses). Split out at all
     // only because that read is asynchronous -- a stale set would let a copy
     // land as a new *version* of an existing file rather than beside it.
-    void startCopyBatch(const std::vector<ClipboardController::Entry>& entries,
+    void startCopyBatch(const std::vector<NodeRef>& entries,
                         quint64 target,
                         bool targetIsRoot,
                         std::set<std::string> taken);

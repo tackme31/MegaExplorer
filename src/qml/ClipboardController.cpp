@@ -14,16 +14,16 @@ void ClipboardController::cut(const QVariantList& entries, quint64 sourceHandle,
     take(entries, true, sourceHandle, sourceIsRoot);
 }
 
-std::vector<ClipboardController::Entry> ClipboardController::toEntries(const QVariantList& entries)
+std::vector<NodeRef> ClipboardController::toNodeRefs(const QVariantList& entries)
 {
-    std::vector<Entry> converted;
+    std::vector<NodeRef> converted;
     converted.reserve(static_cast<std::size_t>(entries.size()));
     for (const QVariant& entry : entries)
     {
         const QVariantMap map = entry.toMap();
-        converted.push_back(Entry{map.value(QStringLiteral("handle")).toULongLong(),
-                                  map.value(QStringLiteral("name")).toString(),
-                                  map.value(QStringLiteral("isFolder")).toBool()});
+        converted.push_back(NodeRef{map.value(QStringLiteral("name")).toString().toStdString(),
+                                    map.value(QStringLiteral("handle")).toULongLong(),
+                                    map.value(QStringLiteral("isFolder")).toBool()});
     }
     return converted;
 }
@@ -33,7 +33,7 @@ void ClipboardController::take(const QVariantList& entries,
                                quint64 sourceHandle,
                                bool sourceIsRoot)
 {
-    mEntries = toEntries(entries);
+    mEntries = toNodeRefs(entries);
     mIsCut = cut;
     mSourceHandle = sourceHandle;
     mSourceIsRoot = sourceIsRoot;
@@ -87,12 +87,16 @@ QVariantList ClipboardController::cutHandles() const
         return handles;
 
     handles.reserve(static_cast<qsizetype>(mEntries.size()));
-    for (const Entry& entry : mEntries)
-        handles.append(QVariant::fromValue(entry.handle));
+    // Cast rather than fromValue(entry.handle) directly: QML compares these
+    // against a delegate's own handle with JS ===, and std::uint64_t is not
+    // quint64 on every platform -- where it maps to unsigned long the metatype
+    // would come out ULong and the comparison would silently stop matching.
+    for (const NodeRef& entry : mEntries)
+        handles.append(QVariant::fromValue(static_cast<quint64>(entry.handle)));
     return handles;
 }
 
-const std::vector<ClipboardController::Entry>& ClipboardController::entries() const
+const std::vector<NodeRef>& ClipboardController::entries() const
 {
     return mEntries;
 }

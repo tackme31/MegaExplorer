@@ -75,6 +75,7 @@ add_library(MegaExplorerCore STATIC
     src/core/FileEntry.h
     src/core/MegaErrorCodes.h
     src/core/NodeInfo.h
+    src/core/NodeRef.h
     src/core/PinnedFolder.h
     src/core/UploadOutcome.h
     src/core/Result.h
