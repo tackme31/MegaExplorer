@@ -46,9 +46,9 @@ src/app/       Cross-cutting Qt-dependent app infrastructure, not QML-facing: Lo
 src/core/      IMegaClient.h, ISessionStore.h, FileEntry.h, Result.h,
                AuthService.{h,cpp}, and other SDK-free domain services
                (FolderNavigationService, SearchService, DownloadService, ThumbnailService, ...)
-src/mega/      MegaSdkClient adapter and MegaSdkLogger (bridges mega::MegaLogger into
-               src/app/Logging.h's lcSdk category) — the only files allowed to include
-               megaapi.h
+src/mega/      MegaSdkClient adapter, its MegaSdkListeners.h callback adapters, and
+               MegaSdkLogger (bridges mega::MegaLogger into src/app/Logging.h's lcSdk
+               category) — the only files allowed to include megaapi.h
 src/platform/  Local-storage adapters, not part of MegaExplorerCore (parallels src/mega):
                WindowsSessionStore (session token persistence via Windows DPAPI) and
                QSettingsPinnedFolderStore (quick-access pin list as JSON under QSettings'
@@ -104,8 +104,12 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
 - **Adapters**: `MegaSdkClient` (`src/mega/MegaSdkClient.h`/`.cpp`) implements `IMegaClient` over
   `mega::MegaApi` using a per-call, self-deleting `MegaRequestListener` subclass (`new
   Listener(...)` passed to `login()`/`fetchNodes()`/etc., `delete this` at the end of
-  `onRequestFinish`) — same idiom reused for `DownloadListener`/`ThumbnailListener`.
-  `MegaSdkClient.cpp`/`.h` and `MegaSdkLogger.cpp`/`.h` (a small `mega::MegaLogger` bridge into
+  `onRequestFinish`) — same idiom reused for `DownloadListener`/`ThumbnailListener`. Those seven
+  listener classes live in `src/mega/MegaSdkListeners.h` (`namespace megasdk`, header-only so that
+  `megaapi.h` still compiles in exactly one TU; moved out of `MegaSdkClient.cpp`'s anonymous
+  namespace in R5-7).
+  `MegaSdkClient.cpp`/`.h`, `MegaSdkListeners.h` and `MegaSdkLogger.cpp`/`.h` (a small
+  `mega::MegaLogger` bridge into
   `src/app/Logging.h`'s categorized logging, registered/unregistered in `MegaSdkClient`'s
   constructor/destructor via `MegaApi::addLoggerObject`) are the only files allowed to include
   `megaapi.h`.

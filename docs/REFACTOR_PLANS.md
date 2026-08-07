@@ -2364,7 +2364,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `tests/UploadControllerTest.cpp` 冒頭の「`DownloadController` と違ってこちらは入っている」
   （削除）。R4-1 が意図的に残した箇所だが、`Qt6::Gui` が入った時点で事実として誤りになった。
 
-### R5 — 調査済み / R5-1〜R5-6・R5-8〜R5-10 対応済み（調査 2026-08-07、R5-10 で 2026-08-08）
+### R5 — 調査済み / R5-1〜R5-10 全件対応済み（調査 2026-08-07、R5-7 で 2026-08-08）
 
 計画の「種」5 件 +「持ち越し」の [R5] 3 件 + R2/R3 が明示的に R5 送りにした 5 件を現物で検証した
 結果。**確認 10 件 / 種の誤り・判断が要るもの 4 件 / 問題なしと確認 3 件**。R1〜R4 と同じく、
@@ -2700,7 +2700,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
 - 変更は `src/core/IMegaClient.h` のコメントのみ（製品コード変更ゼロ）。`appMegaExplorer` ビルド
   警告なし。コメント専用の変更なので `ctest` は回していない。
 
-**R5-7 [低] `MegaSdkClient.cpp` の匿名 namespace は 355 行だが、切り出しには internal linkage の放棄が要る**
+**R5-7 [低] ✅対応済み `MegaSdkClient.cpp` の匿名 namespace は 355 行だが、切り出しには internal linkage の放棄が要る**
 
 - `:65-419` が匿名 namespace（1,106 行の **32%**）。内訳はリスナ 7 クラス（`SimpleResultListener`
   `:96` / `FetchNodesListener` `:128` / `AttributeFileListener` `:172` / `TextResultListener` `:200` /
@@ -2709,6 +2709,26 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
 - リスナを別ファイルに出すと本体は約 750 行になる。ただし**匿名 namespace のままでは出せない** —
   名前付き namespace（`megaexplorer::sdk::detail` 等）に変えることになり、internal linkage を
   失う。得られるのは行数だけで、境界が増えるわけではない。**R5-1〜R5-4 より優先度は下**。
+- **対応（2026-08-08）**: 調査の推奨は「見送り」だったが、R5 の他 9 件が片付いたので実施した。
+  リスナ 7 クラスを `src/mega/MegaSdkListeners.h`（`namespace megasdk`）へ移動、`MegaSdkClient.cpp`
+  は 1,106 → 830 行、残った匿名 namespace は 67 行（定数 2 + 変換ヘルパ 4）。決めたこと:
+  - **`.h` 単独にした（`.h`/`.cpp` 対にしない）**。メンバ関数を .cpp に出せば「本当の分離
+    コンパイル」にはなるが、**`<megaapi.h>` を include する TU が 1 個から 2 個に増える**。
+    このヘッダは巨大で、ビルド時間の実費はリスナのインライン化より確実に大きい。クラス内定義は
+    暗黙 inline なので ODR 上も問題がなく、失うものがない側を選んだ。
+  - **変換ヘルパ 4 個は動かさなかった**。R5-7 の主題はリスナで、ヘルパは `nodeToEntry` を含めて
+    `listChildren`/`search` 等この TU の実装専用。**匿名 namespace を消すのではなく、そこに
+    残すべきものだけを残す**のが正しい形（残り 67 行は全て internal linkage のまま）。
+  - **呼び出し側 18 箇所は `megasdk::` で明示修飾した**（`using namespace` を .cpp 先頭に置けば
+    diff はゼロにできたが、`src/` に `using namespace` は 1 つも無い）。internal linkage を
+    失った代わりに得たものが「行数だけ」で終わらないのはこの点で、`new megasdk::…` が
+    **SDK コールバック層への呼び出しだと呼び出し側で読める**ようになった。
+  - **名前は `megasdk`、`megaexplorer::sdk::detail` ではない**。プロジェクトは自前の型を全て
+    グローバル namespace に置いており（`src/` に名前付き namespace は `AccountPlan` /
+    `MegaErrorCode` の 2 つだけ）、ここだけ 3 段の階層を導入すると規約が 2 つになる。SDK 側の
+    `mega::` と 1 文字違いに見えるが、`megasdk::` は必ず `new` の直後に出るので紛れない。
+  - テストへの影響なし（`tests/` は `src/mega` をコンパイルしない）。`appMegaExplorer` ビルド
+    警告なし。`clang-format` の差分は、修飾で 100 桁を超えた行の折り返しのみ。
 
 **R5-8 [中] ✅対応済み 完了/進捗コールバックがジョブ id を照合していない（持ち越し + R2-8 の合流先）**
 
@@ -2887,7 +2907,7 @@ R5-8  ジョブ id 照合 + optional<Job> mActive    … ✅済。R2 の最後�
   ↓
 R5-10 生 errorMessage の 2 経路                 … ErrorReason を DownloadJob へ。R4-2 のテストも直す
   ↓
-R5-7  MegaSdkClient のリスナ切り出し            … 行数のみの利得。時間が余ったら
+R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り推奨だったが最後に実施。1,106 → 830 行
 ```
 
 **★ の 2 件は 2026-08-07 に方針決定済み**（上の決定表）。R5-9 は製品コード変更ゼロの契約明文化に
@@ -2896,8 +2916,10 @@ R5-7  MegaSdkClient のリスナ切り出し            … 行数のみの利�
 
 未決のまま残しているのは、いずれも「実施中に判断すればよく、前もって決めても情報が増えない」もの:
 
-- **R5-7 をやるか**（匿名 namespace → 名前付き namespace）。internal linkage を捨てて得るのが
-  行数だけなので、**推奨は見送り**。R5-1〜R5-6 を終えて時間が余ったときに再考する。
+- ~~**R5-7 をやるか**（匿名 namespace → 名前付き namespace）。internal linkage を捨てて得るのが
+  行数だけなので、**推奨は見送り**~~ → **やった**（2026-08-08）。判断が変わったのは、呼び出し側を
+  `megasdk::` で修飾すれば得るものが行数だけではなくなる、と実施時に分かったため。詳細は R5-7 の
+  対応欄。
 - ~~**`static create()` 化**（R2-14 の R5 送り分）~~ → **R5-1 で決定: しない**（2026-08-08）。
   `FileMutationController` も public ctor + `makeGuiOwned` のままにした。生成箇所は `main.cpp` の
   `tabFactory` と C++ テスト 2 ファイルの計 3 つで、いずれも `makeGuiOwned` を通っている。新クラスを

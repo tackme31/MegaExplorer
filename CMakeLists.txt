@@ -155,6 +155,7 @@ qt_add_executable(appMegaExplorer
     src/app/Logging.cpp
     src/mega/MegaSdkClient.h
     src/mega/MegaSdkClient.cpp
+    src/mega/MegaSdkListeners.h
     src/mega/MegaSdkLogger.h
     src/mega/MegaSdkLogger.cpp
     src/platform/WindowsSessionStore.h
