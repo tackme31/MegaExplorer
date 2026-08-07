@@ -70,7 +70,7 @@ public:
     // What the login screen is waiting on right now. AuthState alone can't
     // say: LoggingIn covers both the authentication round-trip and the node
     // fetch that follows it, and on a large account that fetch was measured
-    // at 6m25s of blank screen (docs/FETCHNODES_PROGRESS_INVESTIGATION.md).
+    // at 6m25s of blank screen (docs/investigations/FETCHNODES_PROGRESS_INVESTIGATION.md).
     //
     // Only DownloadingNodes has a real percentage, and it accounts for just
     // ~42% of the wait -- the decrypt/tree-build phase after it has no

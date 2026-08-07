@@ -11,6 +11,10 @@ Phase 15/16 に入る前の一斉整理。**一気にレビューしない**た�
 - 何を・どの順で見るかの**計画**。個々の指摘と修正結果は各スコープ実施時にこのファイルの
   「実施ログ」節へ追記する（`docs/DESIGN_IMPROVEMENT.md` が S* 段階でやっているのと同じ形）。
 - C++/構造の話。見た目・余白・配色は `docs/DESIGN_IMPROVEMENT.md` の担当で、ここには書かない。
+- **1 項目の実施ログは 100 行程度まで。** 書く価値があるのは後からコードを読んでも再現できない
+  判断（外れた前提、試して捨てた案、形を決めた制約）で、diff を見れば分かることの言い換えは
+  要らない。それ以上の分量が要る調査は `docs/investigations/` に独立した文書として置き、ここから
+  リンクする。
 
 ---
 
@@ -2012,7 +2016,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
   3. **サニタイザ構成** — MSVC は `/fsanitize=address` を持つが、**ThreadSanitizer は無い**
      （clang-cl でも Windows 版 TSan は未サポート）。つまり本命のデータ競合検出器は
      この toolchain では使えない。ASan で取れるのは UAF（R2-5 の系列）まで。
-     `CROSS_PLATFORM_INVESTIGATION.md` の結論（Linux 化の障害は `WindowsSessionStore` だけ）と
+     `docs/investigations/CROSS_PLATFORM_INVESTIGATION.md` の結論（Linux 化の障害は `WindowsSessionStore` だけ）と
      合わせると、「TSan のためだけに Linux ビルドを起こす」は R4 の範囲を超える。**3 は見送りを
      推奨**し、ASan 付きプリセットの追加だけを Release プリセット整備（節 5 の持ち越し）と
      一緒に扱う。

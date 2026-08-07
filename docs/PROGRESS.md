@@ -4,6 +4,19 @@ Roadmap (what's next, why in this order) + phase-by-phase implementation log (wh
 decisions/gotchas). Single source of truth for the roadmap; `docs/MEMO.md` keeps only non-roadmap
 notes; `CLAUDE.md` has a condensed current-status summary pointing here.
 
+Two conventions, both there to keep this file from growing faster than it has to:
+
+- The Roadmap below is the status table plus the phases **not yet done**. When a phase ships, the
+  plan it was written from moves to the top of its own log entry as a `> **Planned as.**` block, so
+  plan and outcome are read together and neither drifts from the other. (Adopted 2026-08-07; before
+  that, every done phase was described once in the Roadmap and again in its log entry.)
+- A log entry is **about 100 lines**. What earns the space is reasoning a later reader can't
+  re-derive from the code — the premise that turned out wrong, the approach tried and abandoned, the
+  constraint that forced the shape. Restating what the diff already shows doesn't. Anything that
+  genuinely needs more room (measurements, an API survey, a decision with several rejected paths)
+  goes in its own `docs/investigations/` study, with the entry linking to it — as Phases 17, 18 and
+  22b did.
+
 ## Roadmap
 
 Bottom-up: each phase independently verifiable before the next starts. MVP = phases 0–6; phases 7+
@@ -46,165 +59,6 @@ are post-MVP, sequenced by priority/dependency.
 | 16 | Real-time remote-change reflection | future, post-MVP |
 | 24+ | Undecided | undo and full bidirectional local sync both stay out of scope |
 
-### Phase 6 — local cache + open-folder background refresh
-
-Persist the node tree locally (SQLite) and run a one-shot background refresh on folder open — not
-continuous watching. See the Phase 6 implementation-log entry below for what was built.
-
-### Phase 7a — session storage foundation
-
-Standalone slice, built and tested ahead of the rest of Phase 7 so it could be validated in
-isolation before anything depends on it. See the Phase 7a implementation-log entry below for what
-was built.
-
-### Phase 7 — login screen + session persistence
-
-`main.cpp` currently requires `MEGA_EMAIL`/`MEGA_PWD` env vars, no login UI. `ISessionStore`/
-`WindowsSessionStore` (Phase 7a) are ready; remaining scope: `IMegaClient::loginWithSession` (or
-equivalent) wiring `dumpSession()`/`fastLogin()` through `MegaSdkClient`, `main.cpp`
-composition-root changes (constructing `WindowsSessionStore` with a real `session.dat` path), the
-login screen itself (QML) and removing the env-var requirement, and logout/"forget session" UI.
-
-### Phase 7b — remove local node cache
-
-`INodeCache`/`SqliteNodeCache` (Phase 6) proved buggy in practice and not worth the debugging cost,
-so it was removed entirely: `FolderNavigationService`/`AuthService` go back to network-only
-behavior, and `FolderNavigationService::openRoot`/`openFolder`/`goBack` collapse from a two-callback
-cache-then-refresh shape back to the same single-callback shape `refreshCurrent` already had. A
-loading/busy indicator to cover the resulting per-navigation network latency is deliberately out of
-scope here — tracked as a separate follow-up task. See the Phase 7b implementation-log entry below
-for what was built.
-
-### Phase 8 — breadcrumb trail
-
-Known gap since Phase 2. Note: `mBackStack` is a *history* stack, not an ancestor chain (opening a
-deep folder from search results, which `FolderNavigationController` explicitly allows, makes them
-diverge), so the breadcrumb can't be read off it directly -- it's resolved from the SDK's node tree
-instead. See the Phase 8 implementation-log entry below for what was built.
-
-### Phase 9 — Windows-Explorer-style tabs (multiple folder views)
-
-Tab strip above the breadcrumb (phase 8), each tab its own independent navigation context
-(back-stack, current folder, search state, sort order, view mode) rather than one shared
-`FolderNavigationService` instance. Placed right after breadcrumb and before the folder-tree side
-panel (phase 10) and quick access (phase 11) deliberately: those two become shared chrome sitting
-beside N tabbed content panes, cheaper to design that way from the start than retrofitting
-tab-awareness onto a side panel that was built assuming a single pane. Persisting the open tab set
-across restarts remains a stretch goal, not required for the phase to be done (a fresh launch always
-starts with one tab at the root). See the Phase 9 implementation-log entry below for what was built.
-
-### Phase 10 — folder tree navigation (side panel)
-
-New left side panel; grouped with breadcrumb as "where am I / where can I go" nav, and becomes the
-home for quick access (phase 11). Expected to reuse `IMegaClient::getChildren` for lazy expansion;
-check performance on large folders. Shared across tabs (phase 9), not duplicated per tab.
-
-### Phase 11 — quick access (pinned folders, side panel)
-
-Adds a pinned-folders section to phase 10's panel. Persist via `Settings` (QtCore). Dangling-pin
-handling (target deleted/moved) should be designed together with phase 12, not bolted on after. See
-the Phase 11 implementation-log entry below for what was built — in particular, "moved" turned out
-not to need any handling at all (a MEGA handle is stable across moves *and* renames), so only
-deletion breaks a pin.
-
-### Phase 11a — per-account quick-access scoping
-
-Unplanned correction of Phase 11's "Known limitations" entry: pins were persisted under one
-machine-wide QSettings key, so logging into a different MEGA account didn't just hide the previous
-account's pins, it silently dropped them via the login-time validation sweep (every handle fails to
-resolve against the new account, so the sweep treats them all as dangling and overwrites the shared
-key with the survivor list). See the Phase 11a implementation-log entry below.
-
-### Phase 12 — rename / delete (move to rubbish)
-
-Done — see its implementation-log entry. Move (`moveNode` to an arbitrary parent) was cut from the
-phase and deferred: with no destination picker in the UI, the only sane trigger for it is
-drag & drop, which belongs with phase 14's `DropArea` work rather than here. **Phase 14a has since
-delivered it.** The Rubbish-bin snackbar still has no Undo button, though: a general move now exists
-to undo *with*, but nothing records each item's pre-move parent to undo *to*.
-
-### Phase 13 — multi-select + bulk operations
-
-Sequenced after phase 12 (bulk ops need single-item versions first). Needs a selection model for
-both `TableView` and `GridView` — built ahead of schedule as phase 13a (see below and its
-implementation-log entry). The selection-driven context menu plus a declarative
-target/arity action-resolution table were also pulled forward as phase 13b (see its
-implementation-log entry) since bulk download doesn't actually depend on phase 12 — it reuses
-`DownloadService`'s existing queue directly. Remaining scope: rename/delete/move as multi-item
-context-menu actions. Phase 12 has since delivered rename (single-only by construction) and
-multi-item move-to-rubbish, both purely as new `FileActionSpec` rows exactly as predicted here — so
-what was actually left for 13 was bulk *move* — **delivered by phase 14a**, which makes multi-select
-drag & drop the trigger. Nothing remains in phase 13.
-
-### Phase 14a — move via drag & drop (done)
-
-Phase 12's deferred `moveNode`, triggered by dropping onto a folder row, a view's empty space, a
-folder-tree row, a quick-access pin, or a breadcrumb segment. See its implementation-log entry.
-Split out of phase 14 so the `DropArea` groundwork could land without waiting on upload's transfer
-listener.
-
-### Phase 14b — upload (drag & drop) (done)
-
-Drop files from Explorer onto any of 14a's five drop targets. See its implementation-log entry.
-
-### Phase 17 — title-bar-integrated tabs (done, pulled forward)
-
-Run ahead of 15/16 — same "self-contained, doesn't need the phases before it" reasoning that pulled
-13a/13b/14a forward. It touches only window chrome (QML plus one CMake dependency), shares nothing
-with preview or remote-change reflection, and the investigation memo it implements
-(`docs/TITLEBAR_TABS_INVESTIGATION.md`) was already written and decided. Split into 17a (frameless
-window + own caption row, tabs left where they were) and 17b (tab strip moved onto that caption
-row), so the shared cost landed and stabilised before the risky part. See both implementation-log
-entries.
-
-### Phase 18 — login loading screen + SDK cache location (done)
-
-Ahead of 15/16: the login screen showed **nothing** between submitting the form and the
-Cloud Drive appearing (`LoginView.qml` gated its indicator on `authState === Restoring` only), and
-on a large account that gap was **measured at 6 minutes 25 seconds**. Self-contained — auth path
-plus one composition-root line, shares nothing with preview or remote-change reflection.
-
-Design, measurements and the reasoning behind every decision below live in
-`docs/FETCHNODES_PROGRESS_INVESTIGATION.md` (read 追記2 first — it supersedes the earlier
-predictions). Do not re-derive them here; this is only the checklist.
-
-- [x] **`basePath` を `AppLocalDataLocation` に固定** (`main.cpp` / `MegaSdkClient.h`, was
-      `"."` = the launch CWD). Independent of everything below and the single biggest win: with the
-      SDK state-cache DB found, the same account's fetchNodes was **619 ms instead of 384.8 s**.
-      A changing CWD silently costs a full re-fetch.
-- [x] **`IMegaClient::fetchNodes` に `onProgress(transferred, total)` を追加** — same two-callback
-      shape `download`/`upload` already use. Fakes/mocks under `tests/` follow.
-- [x] **`AuthService` の 3 メソッド**（`restoreSession`/`login`/`loginWithTwoFactor`）が進捗を
-      素通しする。
-- [x] **`AuthController` に読み込み段階の状態を持たせる** — stage enum、進捗率、
-      整形済みバイト文字列。SDK スレッドからの値は
-      `DownloadController.cpp` と同じ `QMetaObject::invokeMethod(qApp, …, Qt::QueuedConnection)`
-      で GUI スレッドへ。**「準備」段階は実装時に落とした** — 下記ログ参照。
-- [x] **「ダウンロード完了」判定に無更新タイムアウトのフォールバック**を入れる（実測でログに
-      残った最後の値は 99.44%。100% ちょうどが観測できる保証がない）。
-- [x] **`LoginView.qml` をローディング対応にする** — `Restoring` に加えて
-      `LoggingIn`/`VerifyingTwoFactor`/`LoggingOut` でも出す。ダウンロード中のみ確定バー、
-      復号中は不定 + 補足文言（**経過時間は実機確認後にユーザー判断で削除**、下記ログ参照）。
-- [x] ついでに **S11 の「フォームとインジケータが同じ `ColumnLayout` にあって高さが跳ねる」**
-      （`docs/DESIGN_IMPROVEMENT.md` 8 節）を `StackLayout` にして解消。同節 1 番目
-      （`"crimson"` ハードコード）も同時に消化した。
-
-やらないと決めたもの: 全体を 1 本の % で見せること（ダウンロードは全体の 42% でしかなく、残り
-57% は進捗を出す手段が SDK に無い）、ノード件数の表示（`getNumNodes()` はルート確定まで 0）、
-`EVENT_REQSTAT_PROGRESS`（`reqstat` リクエスト自体が失敗しており実質使えない）。
-
-別件として拾ったもの（このフェーズの範囲外）: `MegaApi::logout` は状態キャッシュ DB を破棄する
-ので、**サインアウト 1 回のコストが 6 分半**になる。導線に警告を出すかどうかは未決。
-
-### Phase 19 — menu-action redesign + new folder (done)
-
-Ahead of 15/16, same "self-contained" reasoning as 13a/13b/14a/17/18. The trigger was a small
-feature request — right-click empty space → "New folder" → name dialog → create — that the existing
-menu machinery could not express at all: `fileActionApplies()` returned false for an empty
-selection unconditionally, and empty space *is* an empty selection. Rather than bolt a second
-mechanism on beside it, the resolver gained the missing dimension (which menu) and all three menus
-were moved onto it. See the implementation-log entry below.
-
 ### Phases 20a–23 — the detail pass (all pulled forward, ahead of 15)
 
 Same "self-contained" reasoning as 13a/13b/14a/17/18/19, but this time as a block: with the feature
@@ -221,105 +75,6 @@ copy/cut/paste/undo) and dropped: MEGA has no native undo, so every operation wo
 hand-built inverse (rename↔rename, rubbish→move back, copy→delete, create→delete), a record hook in
 every mutating path, and a policy for when the history has to be thrown away. That is a phase in its
 own right, and with 23 in place the practical need for it is small. Not deferred — out of scope.
-
-### Phase 20a — per-tab busy indicator + refresh that really refreshes (done)
-
-Swap the tab's folder icon for a spinner while that tab has work in flight, with a short delay
-before it appears so a fast operation doesn't flash it.
-
-Planned as "…while that tab's *listing* is being fetched", to close out Phase 7b's stated follow-up
-(removing the node cache was said to have put a network round-trip in front of every navigation).
-**That premise turned out to be false** and the phase was re-scoped before implementation — see the
-log below.
-
-### Phase 20b — About / License dialogs (done)
-
-Two entries in `Main.qml`'s existing "More" menu (currently Sign out only). About: version (from
-`PROJECT_VERSION`, passed down as a compile definition) plus a link to the GitHub repo. License:
-this app's own license plus third-party notices — Qt, MEGA SDK (BSD-2), QWindowKit (Apache-2.0),
-FreeImage, FFmpeg, pdfium and the rest of the vcpkg set. The dialogs are small; the real work is the
-notice inventory, and with Qt + FFmpeg in the link line this is a shipping prerequisite rather than
-a nicety.
-
-The inventory turned out to be generated rather than written, and came to 36 components — see the
-log below.
-
-### Phase 20c — account section in the "More" menu (done)
-
-Unplanned, and numbered after 20b because it lands in the same menu that phase built. Nothing in the
-app said *which account is signed in* — a real gap once you keep more than one. Chrome's profile
-menu, transplanted: avatar, display name, email, storage bar and plan name, above 20b's two entries
-and the existing Sign out.
-
-Everything is fetched lazily on the first open, so the login path gains no request at all; storage
-alone is re-read on every open. See the log below for why the menu's own open animation had to go.
-
-### Phase 21 — rubber-band (rectangle) selection (done)
-
-Drag on empty space to select the items the rectangle covers, in both the grid and the list view.
-Continues Phase 13a's selection model, which needs a range-by-rows entry point (`selectRow` is
-per-row and modifier-driven). The load-bearing decision is where the gesture starts: on empty space
-it's a rubber band, on an item it's Phase 14a's move drag. Edge auto-scroll can reuse
-`DragAutoScroller`.
-
-Both halves of that decision moved, in the end: the grid's inter-tile gap became empty space (it
-wasn't, for drags) and the list's strip right of the last column became empty space too — see the
-log below.
-
-### Phase 22a — quick-access reordering (done)
-
-Drag a pin up/down to reorder it. Persistence is already ordered-list-shaped and
-`QuickAccessService::replaceAll` already exists, so this is a `QuickAccessModel` move operation plus
-the QML gesture. `QuickAccessSection` is also a *drop target* for node moves (14a), so the two drags
-have to be told apart — `DragProxy`'s `Drag.keys` is the existing mechanism for exactly that.
-
-Landed differently on that last point: the gesture never starts a Qt drag at all, so there was
-nothing to tell apart. See its implementation-log entry.
-
-### Phase 22b — tab reordering + drop-onto-tab move (done)
-
-Two features, one phase, deliberately: both take over pointer input on a `TabButton`, and building
-one without the other means rewriting its gesture handling when the second arrives.
-
-- **Reorder**: drag a tab along the strip. `TabsController` is a `QAbstractListModel` and gains a
-  move operation; the QML side computes the insertion point itself, since `TabStrip.qml`'s buttons
-  carry explicit widths (see its comment on why).
-- **Drop onto a tab**: drag nodes over a tab, dwell, and that tab activates — then drop into the
-  view as usual. A `DropArea` plus a dwell timer per tab; the move itself is 14a's
-  `canDropHandlesOn`/`moveHandlesTo`, and the destination tab's refresh is 14b's `refreshIfShowing`.
-
-Phase 17b listed reordering as not-done because it fights caption dragging. That's the problem to
-solve here, and the ground is better than it looks: `tabBar` is already registered hit-test-visible
-with QWindowKit, so a drag starting on a tab shouldn't reach the window-move path — to be confirmed
-first. Tearing a tab off into a new window stays out of scope.
-
-Confirmed, and so was the bigger unknown: `CROSS_TAB_DND_INVESTIGATION.md`'s one open risk (a tab
-switch cancelling the source `DragHandler`'s grab) did not happen, so the `StackLayout` rework it
-had lined up as the fix was never needed. See the implementation-log entry.
-
-### Phase 23 — copy / cut / paste (done)
-
-The first *non-move* duplication: `IMegaClient::copyNode` (fifth mutating method), an app-global
-clipboard holding node handles plus a copy/cut mode, and paste into the current folder. Cut is
-14a's `moveNode` reused, so it costs almost nothing beside copy. Phase 19's `MenuActionResolver` +
-`ActionCatalog` split is what makes the three menu entries cheap, and Phase 19's own leftover —
-Refresh / Select all / paste on the background menu — is picked up here. Same-name collisions on
-paste follow 14b's precedent (server's `API_EEXIST`, plus the replace/skip dialog if warranted).
-Ctrl+C/X/V accelerators included.
-
-Done, except that the collision sentence above turned out to be **wrong about the mechanism** —
-`copyNode` has no `API_EEXIST`, and a colliding name is worse than untidy. See the
-implementation-log entry.
-
-### Phase 23a — Ctrl+drag copies (done)
-
-Unplanned follow-on: 14a/22b's drag & drop could only move, and Phase 23 had just built everything a
-copy needs. Ctrl (without Shift) turns the drag into a copy on all six existing drop targets;
-Shift is the explicit "move". No new drop target, no new SDK method.
-
-The awkward half is that Qt hands the app nothing to read the modifier from — see the
-implementation-log entry, which also records the one Phase 23 behaviour this changed
-(copying a folder into its own subtree is now refused on paste too).
 
 ### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
 
@@ -461,6 +216,9 @@ localization infrastructure yet.
 kept here as a historical record of what Phase 6 built and why, not as a description of current
 behavior.
 
+> **Planned as.** Persist the node tree locally (SQLite) and run a one-shot background refresh on
+> folder open — not continuous watching.
+
 Closes out the MVP. Persists the MEGA node tree locally in SQLite (`node_cache.sqlite3` under
 `QStandardPaths::AppLocalDataLocation`, same non-roaming rationale as Phase 6a's log file) and shows
 a cached listing immediately on folder open, replacing it with a one-shot authoritative SDK fetch
@@ -534,6 +292,9 @@ otherwise Qt-free test target, since `lcCache`'s actual `Q_LOGGING_CATEGORY` def
 
 ## Phase 7a — session storage foundation (done)
 
+> **Planned as.** Standalone slice, built and tested ahead of the rest of Phase 7 so it could be
+> validated in isolation before anything depends on it.
+
 First slice of Phase 7, deliberately decoupled from any actual login/MEGA-SDK wiring (deferred to
 the next task list): `IMegaClient::loginWithSession` or equivalent wiring `dumpSession()`/
 `fastLogin()` through `MegaSdkClient`, `main.cpp` composition-root changes, the login screen
@@ -585,6 +346,13 @@ those two lines — a bare blank line isn't enough to stop this formatter from m
 re-sorting the block.
 
 ## Phase 7 — login screen + session persistence (done)
+
+> **Planned as.** `main.cpp` currently requires `MEGA_EMAIL`/`MEGA_PWD` env vars, no login UI.
+> `ISessionStore`/ `WindowsSessionStore` (Phase 7a) are ready; remaining scope:
+> `IMegaClient::loginWithSession` (or equivalent) wiring `dumpSession()`/`fastLogin()` through
+> `MegaSdkClient`, `main.cpp` composition-root changes (constructing `WindowsSessionStore` with a
+> real `session.dat` path), the login screen itself (QML) and removing the env-var requirement, and
+> logout/"forget session" UI.
 
 Split into two slices, landed as separate commits: a backend slice (`AuthService`, `MegaErrorCodes.h`,
 `IMegaClient`/`INodeCache` extensions, the `MegaSdkClient` adapter work) and this QML/UI wiring
@@ -666,6 +434,13 @@ account pending manual smoke testing.
 
 ## Phase 7b — remove local node cache (done)
 
+> **Planned as.** `INodeCache`/`SqliteNodeCache` (Phase 6) proved buggy in practice and not worth
+> the debugging cost, so it was removed entirely: `FolderNavigationService`/`AuthService` go back to
+> network-only behavior, and `FolderNavigationService::openRoot`/`openFolder`/`goBack` collapse from
+> a two-callback cache-then-refresh shape back to the same single-callback shape `refreshCurrent`
+> already had. A loading/busy indicator to cover the resulting per-navigation network latency is
+> deliberately out of scope here — tracked as a separate follow-up task.
+
 The Phase 6 SQLite node-tree cache (`INodeCache`/`SqliteNodeCache`) proved buggy in practice and not
 worth the debugging cost, so it was removed entirely rather than fixed. A loading/busy indicator to
 cover the resulting per-navigation network latency is a deliberate follow-up, out of scope here.
@@ -694,7 +469,7 @@ to call the new single-callback `FolderNavigationService` API.
 
 ## Phase 13a — selection model: row/cell, keyboard, right-click (done)
 
-Pulled forward out of order: phase 13's roadmap entry already called out needing "a selection model
+Pulled forward out of order: phase 13's plan already called out needing "a selection model
 for both `TableView` and `GridView`" as a prerequisite for its bulk operations, and that slice is
 self-contained (no dependency on phases 8–12), so it was built now rather than waited on. Bulk
 operations themselves (multi-item context-menu actions, etc.) are still deferred to phase 13.
@@ -758,6 +533,11 @@ never provided, so the warning kept firing. Fixed by pointing `textRole` at an a
 satisfy the check. Phase 6b's own gotcha note has been corrected in place to match.
 
 ## Phase 8 — breadcrumb trail (done)
+
+> **Planned as.** Known gap since Phase 2. Note: `mBackStack` is a *history* stack, not an ancestor
+> chain (opening a deep folder from search results, which `FolderNavigationController` explicitly
+> allows, makes them diverge), so the breadcrumb can't be read off it directly -- it's resolved from
+> the SDK's node tree instead.
 
 Added a Windows-Explorer-style breadcrumb between the `← Back` button and the search field, 7:3
 width ratio, left-side (root-first) truncation when it doesn't fit.
@@ -917,6 +697,15 @@ aggregate/count progress display is left for a later phase.
 
 ## Phase 9 — Windows-Explorer-style tabs (done)
 
+> **Planned as.** Tab strip above the breadcrumb (phase 8), each tab its own independent navigation
+> context (back-stack, current folder, search state, sort order, view mode) rather than one shared
+> `FolderNavigationService` instance. Placed right after breadcrumb and before the folder-tree side
+> panel (phase 10) and quick access (phase 11) deliberately: those two become shared chrome sitting
+> beside N tabbed content panes, cheaper to design that way from the start than retrofitting
+> tab-awareness onto a side panel that was built assuming a single pane. Persisting the open tab set
+> across restarts remains a stretch goal, not required for the phase to be done (a fresh launch
+> always starts with one tab at the root).
+
 Replaced the single app-lifetime `FolderNavigationController`/`ThumbnailController` composition-root
 instances with N per-tab instances managed by a new `src/qml/TabsController` (`QAbstractListModel`).
 `TabsController` doubles as both `TabStrip.qml`'s model and the app's tab-management command surface
@@ -1043,6 +832,11 @@ Re-running the configure step first fixed it. Worth remembering for any future p
 `.qml` files: reconfigure, don't just rebuild.
 
 ## Phase 10 — folder tree navigation (side panel) (done)
+
+> **Planned as.** New left side panel; grouped with breadcrumb as "where am I / where can I go" nav,
+> and becomes the home for quick access (phase 11). Expected to reuse `IMegaClient::getChildren` for
+> lazy expansion; check performance on large folders. Shared across tabs (phase 9), not duplicated
+> per tab.
 
 New left `SplitView` panel next to the tab content, shared across every tab (an app-lifetime
 singleton, not duplicated per tab like `FolderNavigationService`/`FolderNavigationController`) —
@@ -1185,6 +979,11 @@ now always shown, same as the tab strip/breadcrumb bar. `window.treePanelWidth` 
 persistence) is unaffected. No test exercised the toggle directly, so no test changes were needed.
 
 ## Phase 11 — quick access (pinned folders, side panel) (done)
+
+> **Planned as.** Adds a pinned-folders section to phase 10's panel. Persist via `Settings`
+> (QtCore). Dangling-pin handling (target deleted/moved) should be designed together with phase 12,
+> not bolted on after. In the event, "moved" turned out not to need any handling at all (a MEGA
+> handle is stable across moves *and* renames), so only deletion breaks a pin.
 
 Pinned folders in a section above phase 10's folder tree, matching Explorer's placement. Pins are
 stored by MEGA node handle, which turned out to settle most of the phase's design questions at once:
@@ -1337,6 +1136,12 @@ explicitly scoped out).
 
 ## Phase 11a — per-account quick-access scoping (done)
 
+> **Planned as.** Unplanned correction of Phase 11's "Known limitations" entry: pins were persisted
+> under one machine-wide QSettings key, so logging into a different MEGA account didn't just hide
+> the previous account's pins, it silently dropped them via the login-time validation sweep (every
+> handle fails to resolve against the new account, so the sweep treats them all as dangling and
+> overwrites the shared key with the survivor list).
+
 Phase 11's own "Known limitations" note above called the machine-wide pin key "accepted rather than
 designed around, given this is a single-account app in practice" — revisited because the actual
 behavior isn't "shows the previous account's pins, then self-cleans": logging out only clears
@@ -1378,6 +1183,12 @@ same fixture stub — it has no account awareness of its own, so its existing co
 unaffected.
 
 ## Phase 12 — rename / delete (move to rubbish) (done)
+
+> **Planned as.** Move (`moveNode` to an arbitrary parent) was cut from the phase and deferred: with
+> no destination picker in the UI, the only sane trigger for it is drag & drop, which belongs with
+> phase 14's `DropArea` work rather than here. **Phase 14a has since delivered it.** The Rubbish-bin
+> snackbar still has no Undo button, though: a general move now exists to undo *with*, but nothing
+> records each item's pre-move parent to undo *to*.
 
 The codebase's **first mutating SDK calls**: everything `IMegaClient` exposed before this
 (`login`/`fetchNodes`/`getChildren`/`search`/`getPath`/`getNodeInfo`/`download`/`getThumbnail`) only
@@ -1504,11 +1315,15 @@ rename or deletion until the next login; a deleted pin is still caught at click 
 `activate()` re-check, so the damage is limited. The refetch goes through `beginResetModel()`, so
 scroll position jumps to the top after an operation (selection and cursor survive, being
 handle-keyed). Other tabs showing the same folder are not invalidated — this app has never had any
-cross-tab invalidation mechanism. And move is not implemented; see the roadmap note.
+cross-tab invalidation mechanism. And move is not implemented; see phase 12's entry.
 
 ## Phase 14a — move via drag & drop (done)
 
-Collects phase 12's deferred `moveNode` (see its log entry and the roadmap note). **Upload was
+> **Planned as.** Phase 12's deferred `moveNode`, triggered by dropping onto a folder row, a view's
+> empty space, a folder-tree row, a quick-access pin, or a breadcrumb segment. Split out of phase 14
+> so the `DropArea` groundwork could land without waiting on upload's transfer listener.
+
+Collects phase 12's deferred `moveNode` (see its log entry). **Upload was
 explicitly left out** and stays as phase 14b: this phase is only about moving nodes that already
 exist in the account. Scope: drag starts in the grid/list views only; drops land on a folder row, a
 view's empty space (= the folder being shown), a folder-tree row (including the root), a
@@ -1637,7 +1452,25 @@ folders at once, and the tree panel reaches those anyway).
 Also deliberately not done: hover-to-navigate (spring loading) on a segment, matching the other four
 targets, which likewise don't navigate.
 
+## Phase 13 — multi-select + bulk operations (done)
+
+Nothing shipped under this number of its own: 13a, 13b, 12 and 14a delivered all of it between
+them, and the entry exists so the plan it was sequenced from has somewhere to live.
+
+> **Planned as.** Sequenced after phase 12 (bulk ops need single-item versions first). Needs a
+> selection model for both `TableView` and `GridView` — built ahead of schedule as phase 13a (see
+> its log entry). The selection-driven context menu plus a declarative target/arity
+> action-resolution table were also pulled forward as phase 13b (see its log entry) since bulk
+> download doesn't actually depend on phase 12 — it reuses `DownloadService`'s existing queue
+> directly. Remaining scope: rename/delete/move as multi-item context-menu actions. Phase 12 has
+> since delivered rename (single-only by construction) and multi-item move-to-rubbish, both purely
+> as new `FileActionSpec` rows exactly as predicted here — so what was actually left for 13 was bulk
+> *move* — **delivered by phase 14a**, which makes multi-select drag & drop the trigger. Nothing
+> remains in phase 13.
+
 ## Phase 14b — upload via drag & drop (done)
+
+> **Planned as.** Drop files from Explorer onto any of 14a's five drop targets.
 
 Files dragged in from Explorer land on the *same five* drop targets 14a built (folder row, a view's
 empty space, folder-tree row including the root, quick-access pin, breadcrumb segment). No new drop
@@ -1873,12 +1706,20 @@ hazard seen from the other end of the gesture.
 
 ## Phase 17a — frameless window + own caption row (done)
 
+> **Planned as.** Run ahead of 15/16 — same "self-contained, doesn't need the phases before it"
+> reasoning that pulled 13a/13b/14a forward. It touches only window chrome (QML plus one CMake
+> dependency), shares nothing with preview or remote-change reflection, and the investigation memo
+> it implements (`docs/investigations/TITLEBAR_TABS_INVESTIGATION.md`) was already written and
+> decided. Split into 17a (frameless window + own caption row, tabs left where they were) and 17b
+> (tab strip moved onto that caption row), so the shared cost landed and stabilised before the risky
+> part. See also Phase 17b's entry below.
+
 Windows' native title bar is gone; the row where it used to be is `qml/components/CaptionBar.qml`.
 Nothing else moved — the tab strip stayed below in `Main.qml`'s header, which was the point of the
 split: 17a is a like-for-like replacement whose success looks like *no visible change*, so the
 frameless plumbing could be shaken out before 17b started rearranging things on top of it.
 
-Path 3 of `docs/TITLEBAR_TABS_INVESTIGATION.md` (vendor QWindowKit) rather than a DIY
+Path 3 of `docs/investigations/TITLEBAR_TABS_INVESTIGATION.md` (vendor QWindowKit) rather than a DIY
 `FramelessWindowHint`, because everything a hand-rolled version silently loses — the Snap Layout
 flyout, DWM minimise/restore animation, drop shadow, Win11 rounded corners, 8-direction resize — is
 exactly what QWindowKit's `WM_NCCALCSIZE`/`WM_NCHITTEST` handling keeps. No `#ifdef Q_OS_WIN`
@@ -2082,10 +1923,47 @@ nothing new: `selectedHandles` was already a `Q_PROPERTY` with `NOTIFY selection
 
 ## Phase 18 — login loading screen + SDK cache location (done)
 
+> **Planned as.** Ahead of 15/16: the login screen showed **nothing** between submitting the form
+> and the Cloud Drive appearing (`LoginView.qml` gated its indicator on `authState === Restoring`
+> only), and on a large account that gap was **measured at 6 minutes 25 seconds**. Self-contained —
+> auth path plus one composition-root line, shares nothing with preview or remote-change reflection.
+>
+> Design, measurements and the reasoning behind every decision below live in
+> `docs/investigations/FETCHNODES_PROGRESS_INVESTIGATION.md` (read 追記2 first — it supersedes the
+> earlier predictions). Do not re-derive them here.
+>
+> - [x] **`basePath` を `AppLocalDataLocation` に固定** (`main.cpp` / `MegaSdkClient.h`, was
+>       `"."` = the launch CWD). Independent of everything below and the single biggest win: with the
+>       SDK state-cache DB found, the same account's fetchNodes was **619 ms instead of 384.8 s**.
+>       A changing CWD silently costs a full re-fetch.
+> - [x] **`IMegaClient::fetchNodes` に `onProgress(transferred, total)` を追加** — same two-callback
+>       shape `download`/`upload` already use. Fakes/mocks under `tests/` follow.
+> - [x] **`AuthService` の 3 メソッド**（`restoreSession`/`login`/`loginWithTwoFactor`）が進捗を
+>       素通しする。
+> - [x] **`AuthController` に読み込み段階の状態を持たせる** — stage enum、進捗率、
+>       整形済みバイト文字列。SDK スレッドからの値は
+>       `DownloadController.cpp` と同じ `QMetaObject::invokeMethod(qApp, …, Qt::QueuedConnection)`
+>       で GUI スレッドへ。**「準備」段階は実装時に落とした** — 下記参照。
+> - [x] **「ダウンロード完了」判定に無更新タイムアウトのフォールバック**を入れる（実測でログに
+>       残った最後の値は 99.44%。100% ちょうどが観測できる保証がない）。
+> - [x] **`LoginView.qml` をローディング対応にする** — `Restoring` に加えて
+>       `LoggingIn`/`VerifyingTwoFactor`/`LoggingOut` でも出す。ダウンロード中のみ確定バー、
+>       復号中は不定 + 補足文言（**経過時間は実機確認後にユーザー判断で削除**、下記参照）。
+> - [x] ついでに **S11 の「フォームとインジケータが同じ `ColumnLayout` にあって高さが跳ねる」**
+>       （`docs/DESIGN_IMPROVEMENT.md` 8 節）を `StackLayout` にして解消。同節 1 番目
+>       （`"crimson"` ハードコード）も同時に消化した。
+>
+> やらないと決めたもの: 全体を 1 本の % で見せること（ダウンロードは全体の 42% でしかなく、残り 57% は進捗を出す手段が SDK
+> に無い）、ノード件数の表示（`getNumNodes()` はルート確定まで 0）、 `EVENT_REQSTAT_PROGRESS`（`reqstat`
+> リクエスト自体が失敗しており実質使えない）。
+>
+> 別件として拾ったもの（このフェーズの範囲外）: `MegaApi::logout` は状態キャッシュ DB を破棄する ので、**サインアウト 1 回のコストが 6
+> 分半**になる。導線に警告を出すかどうかは未決。
+
 Two independent changes that happen to share a screen: the SDK state-cache DB now lives at a fixed
 path (which removes most of the wait), and the wait that remains is explained instead of shown as a
 blank panel. The measurements behind every decision are in
-`docs/FETCHNODES_PROGRESS_INVESTIGATION.md`; only what was actually built is here.
+`docs/investigations/FETCHNODES_PROGRESS_INVESTIGATION.md`; only what was actually built is here.
 
 ### `basePath` — the change that matters most
 
@@ -2198,6 +2076,13 @@ section 9's responsive work) is untouched.
 > ratio, but the "a few minutes" wording should be re-checked once there is a Release measurement.
 
 ## Phase 19 — menu-action redesign + new folder (done)
+
+> **Planned as.** Ahead of 15/16, same "self-contained" reasoning as 13a/13b/14a/17/18. The trigger
+> was a small feature request — right-click empty space → "New folder" → name dialog → create — that
+> the existing menu machinery could not express at all: `fileActionApplies()` returned false for an
+> empty selection unconditionally, and empty space *is* an empty selection. Rather than bolt a
+> second mechanism on beside it, the resolver gained the missing dimension (which menu) and all
+> three menus were moved onto it.
 
 Two things in one phase, because the second couldn't be built on the first as it stood.
 "Right-click empty space → New folder" needs a menu whose target is *not* the selection, and
@@ -2334,9 +2219,17 @@ never sees taps below the last row.
 
 ## Phase 20a — per-tab busy indicator + refresh that really refreshes (done)
 
+> **Planned as.** Swap the tab's folder icon for a spinner while that tab has work in flight, with a
+> short delay before it appears so a fast operation doesn't flash it.
+>
+> Scoped at first as "…while that tab's *listing* is being fetched", to close out Phase 7b's stated
+> follow-up (removing the node cache was said to have put a network round-trip in front of every
+> navigation). **That premise turned out to be false** and the phase was re-scoped before
+> implementation — see below.
+
 ### The premise this phase was planned on was wrong
 
-Phase 7b's log (and the roadmap entry it fed) says removing the node cache "put a network latency in
+Phase 7b's log (and the plan above, which it fed) says removing the node cache "put a network latency in
 front of every navigation" that a busy indicator should cover. It doesn't. `IMegaClient.h` states it
 outright for the four listing getters — "Synchronous under the hood, but kept callback-shaped for
 interface consistency" — and `MegaSdkClient.cpp` bears it out: `search()` calls `mApi->search(...)`
@@ -2481,6 +2374,16 @@ leaves those tests testing row bookkeeping exactly as before.
   the wrong granularity.
 
 ## Phase 20b — About / License dialogs (done)
+
+> **Planned as.** Two entries in `Main.qml`'s existing "More" menu (currently Sign out only). About:
+> version (from `PROJECT_VERSION`, passed down as a compile definition) plus a link to the GitHub
+> repo. License: this app's own license plus third-party notices — Qt, MEGA SDK (BSD-2), QWindowKit
+> (Apache-2.0), FreeImage, FFmpeg, pdfium and the rest of the vcpkg set. The dialogs are small; the
+> real work is the notice inventory, and with Qt + FFmpeg in the link line this is a shipping
+> prerequisite rather than a nicety.
+>
+> The inventory turned out to be generated rather than written, and came to 36 components — see
+> below.
 
 Two entries in the "More" menu, backed by an inventory of every third-party component the binary
 carries, with each component's full license text embedded in the executable.
@@ -2665,6 +2568,16 @@ What that took, beyond swapping `LICENSE` for the MIT text:
 
 ## Phase 21 — rubber-band (rectangle) selection (done)
 
+> **Planned as.** Drag on empty space to select the items the rectangle covers, in both the grid and
+> the list view. Continues Phase 13a's selection model, which needs a range-by-rows entry point
+> (`selectRow` is per-row and modifier-driven). The load-bearing decision is where the gesture
+> starts: on empty space it's a rubber band, on an item it's Phase 14a's move drag. Edge auto-scroll
+> can reuse `DragAutoScroller`.
+>
+> Both halves of that decision moved, in the end: the grid's inter-tile gap became empty space (it
+> wasn't, for drags) and the list's strip right of the last column became empty space too — see
+> below.
+
 Press on empty space in either file view and drag: a rectangle follows the pointer and selects
 everything it covers. Ctrl adds to the selection that was already there; without it the band
 replaces it. Dragging to the top/bottom edge auto-scrolls, and the rectangle keeps growing over the
@@ -2792,6 +2705,15 @@ folder used for the check fit on one screen.
 
 ## Phase 22a — quick-access pin reordering (done)
 
+> **Planned as.** Drag a pin up/down to reorder it. Persistence is already ordered-list-shaped and
+> `QuickAccessService::replaceAll` already exists, so this is a `QuickAccessModel` move operation
+> plus the QML gesture. `QuickAccessSection` is also a *drop target* for node moves (14a), so the
+> two drags have to be told apart — `DragProxy`'s `Drag.keys` is the existing mechanism for exactly
+> that.
+>
+> Landed differently on that last point: the gesture never starts a Qt drag at all, so there was
+> nothing to tell apart.
+
 Drag a pinned folder up or down in the side panel to change its order. The dragged pin's name
 follows the cursor as a ghost, a 2px accent line shows where it will land, and the row itself stays
 put until the drop.
@@ -2898,13 +2820,33 @@ press/release primitive, so there's no way to hold a drag open across a screensh
 
 ## Phase 22b — tab reordering + drop-onto-tab move (done)
 
+> **Planned as.** Two features, one phase, deliberately: both take over pointer input on a
+> `TabButton`, and building one without the other means rewriting its gesture handling when the
+> second arrives.
+>
+> - **Reorder**: drag a tab along the strip. `TabsController` is a `QAbstractListModel` and gains a
+>   move operation; the QML side computes the insertion point itself, since `TabStrip.qml`'s buttons
+>   carry explicit widths (see its comment on why).
+> - **Drop onto a tab**: drag nodes over a tab, dwell, and that tab activates — then drop into the
+>   view as usual. A `DropArea` plus a dwell timer per tab; the move itself is 14a's
+>   `canDropHandlesOn`/`moveHandlesTo`, and the destination tab's refresh is 14b's `refreshIfShowing`.
+>
+> Phase 17b listed reordering as not-done because it fights caption dragging. That's the problem to
+> solve here, and the ground is better than it looks: `tabBar` is already registered
+> hit-test-visible with QWindowKit, so a drag starting on a tab shouldn't reach the window-move path
+> — to be confirmed first. Tearing a tab off into a new window stays out of scope.
+>
+> Confirmed, and so was the bigger unknown: `docs/investigations/CROSS_TAB_DND_INVESTIGATION.md`'s
+> one open risk (a tab switch cancelling the source `DragHandler`'s grab) did not happen, so the
+> `StackLayout` rework it had lined up as the fix was never needed.
+
 Drag a tab along the strip to change its order, and drag nodes (or files from Explorer) onto a tab
 to switch to it or drop straight into what it is showing. Both take over pointer input on the same
 `TabButton`, which is why they are one phase.
 
 ### The investigation's one open risk didn't fire
 
-`docs/CROSS_TAB_DND_INVESTIGATION.md` called exactly one thing unproven: switching tabs mid-drag
+`docs/investigations/CROSS_TAB_DND_INVESTIGATION.md` called exactly one thing unproven: switching tabs mid-drag
 makes the source pane `visible: false`, and Qt takes the pointer grab away from items that go
 invisible — which would cancel the `DragHandler` holding the drag and make the whole gesture
 evaporate the instant a spring-loaded tab fires. It lined up a fix (replace `Main.qml`'s
@@ -3025,6 +2967,17 @@ the real mouse.
   still Phase 16's.
 
 ## Phase 23 — copy / cut / paste (done)
+
+> **Planned as.** The first *non-move* duplication: `IMegaClient::copyNode` (fifth mutating method),
+> an app-global clipboard holding node handles plus a copy/cut mode, and paste into the current
+> folder. Cut is 14a's `moveNode` reused, so it costs almost nothing beside copy. Phase 19's
+> `MenuActionResolver` + `ActionCatalog` split is what makes the three menu entries cheap, and Phase
+> 19's own leftover — Refresh / Select all / paste on the background menu — is picked up here.
+> Same-name collisions on paste follow 14b's precedent (server's `API_EEXIST`, plus the replace/skip
+> dialog if warranted). Ctrl+C/X/V accelerators included.
+>
+> Done, except that the collision sentence above turned out to be **wrong about the mechanism** —
+> `copyNode` has no `API_EEXIST`, and a colliding name is worse than untidy.
 
 An app-global clipboard (`src/qml/ClipboardController`), `IMegaClient::copyNode` as the fifth
 mutating method, and one new per-tab entry point, `FolderNavigationController::paste()`. Cut really
@@ -3191,6 +3144,14 @@ fixtures for the new constructor parameter. 318 tests pass; `appMegaExplorer` bu
 
 ## Phase 23a — Ctrl+drag copies (done)
 
+> **Planned as.** Unplanned follow-on: 14a/22b's drag & drop could only move, and Phase 23 had just
+> built everything a copy needs. Ctrl (without Shift) turns the drag into a copy on all six existing
+> drop targets; Shift is the explicit "move". No new drop target, no new SDK method.
+>
+> The awkward half is that Qt hands the app nothing to read the modifier from — see below, which
+> also records the one Phase 23 behaviour this changed (copying a folder into its own subtree is now
+> refused on paste too).
+
 Ctrl (without Shift) makes a drag a copy instead of a move, on all six of Phase 14a/22b's drop
 targets. Shift is the explicit "move" and wins over Ctrl, matching Explorer. Almost all of the
 machinery already existed — `IMegaClient::copyNode`, `FileOperationService::uniqueCopyName`, the
@@ -3337,6 +3298,14 @@ refetch this tab's listing when it isn't the destination. 335 tests pass; `appMe
   modifier cannot be held across a drag; the gesture is verified by hand.
 
 ## Phase 20c — account section in the "More" menu (done)
+
+> **Planned as.** Unplanned, and numbered after 20b because it lands in the same menu that phase
+> built. Nothing in the app said *which account is signed in* — a real gap once you keep more than
+> one. Chrome's profile menu, transplanted: avatar, display name, email, storage bar and plan name,
+> above 20b's two entries and the existing Sign out.
+>
+> Everything is fetched lazily on the first open, so the login path gains no request at all; storage
+> alone is re-read on every open. See the log below for why the menu's own open animation had to go.
 
 Avatar / display name / email / storage bar / plan name, as a header above 20b's two entries and
 Sign out. Unplanned and absent from the roadmap when it started; filed as 20c because it lands in

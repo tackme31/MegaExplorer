@@ -94,7 +94,7 @@ public:
     //     no progress event is ever emitted (measured: 0 events, 619ms).
     //   - The final event is not guaranteed to be exactly 100%; the last one
     //     observed in practice was 99.44%.
-    // Full measurements: docs/FETCHNODES_PROGRESS_INVESTIGATION.md.
+    // Full measurements: docs/investigations/FETCHNODES_PROGRESS_INVESTIGATION.md.
     virtual void fetchNodes(
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<void>)> onDone) = 0;

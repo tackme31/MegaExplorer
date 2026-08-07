@@ -8,7 +8,8 @@ session lives in companion docs, linked from the relevant section below rather t
 - `docs/PROGRESS.md` — the roadmap (what's next and why-in-this-order) plus the full phase-by-phase
   implementation log (what was built, why, gotchas). Single source of truth for both, now that
   `docs/MEMO.md`'s former roadmap section moved here (2026-07-28, to end dual-tracking drift between
-  the two files).
+  the two files). The roadmap covers only phases **not yet done**; a shipped phase's original plan
+  sits at the top of its own log entry as a `> **Planned as.**` block (2026-08-07, same reason).
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
   and the per-stage log for S0–S11 (S0–S10 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
   the four C++ changes it caused are cross-linked from both.
@@ -18,7 +19,7 @@ session lives in companion docs, linked from the relevant section below rather t
 - `docs/ARCHITECTURE.md` — directory layout detail + the ports-and-adapters/DI design.
 - `docs/BUILD.md` — rationale behind each build gotcha below (why VS generator, why
   `CMakePresets.json`, the FFmpeg link fix, etc.).
-- `docs/*_INVESTIGATION.md` — standing feasibility studies, written before the phase they feed and
+- `docs/investigations/` — standing feasibility studies, written before the phase they feed and
   kept afterwards (Japanese). Read the relevant one *before* planning that phase; each states its
   own conclusion up front, so the outline + first section is usually enough:
   - `TITLEBAR_TABS_INVESTIGATION.md` — fed Phase 17 (frameless window + caption-row tabs).
@@ -29,6 +30,18 @@ session lives in companion docs, linked from the relevant section below rather t
   - `CROSS_PLATFORM_INVESTIGATION.md` — whether the MSVC/vcpkg-only build could go
     Linux/macOS. No phase attached; conclusion is that `WindowsSessionStore` (DPAPI) is the real
     work, not the build files.
+  - `RECENTLY_UPDATED_FILE_API.md` — which SDK call backs a "recently updated files" listing.
+    No phase attached; relevant to Phase 16.
+
+  New studies go in this folder, not in `docs/` directly.
+
+**Writing into those logs.** `docs/PROGRESS.md`, `docs/DESIGN_IMPROVEMENT.md` and
+`docs/REFACTOR_PLANS.md` are append-only and already large, so a new entry gets **about one screen —
+100 lines**. What earns the space is reasoning a later reader can't re-derive from the code: the
+premise that turned out wrong, the approach tried and abandoned, the constraint that forced the
+shape. Restating what the diff shows, or narrating a design that survived unchanged, doesn't. When
+an item genuinely needs more room, it becomes its own `docs/investigations/` study and the entry
+links to it. Each file states its own version of this at the top; follow that.
 
 Check current file contents before assuming a feature exists — don't trust the roadmap alone.
 

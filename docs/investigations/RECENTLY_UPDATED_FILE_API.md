@@ -106,6 +106,6 @@ v10.17.0 で入っているフラット・カーソルページング前提の�
 - 1 と 2 は取れる情報の粒度が違う。「誰が」「追加か更新か」が UI に要るなら 1、単に更新日時降順の
   ファイル一覧でいいなら 2。両方を `IMegaClient` に生やす必要は今のところ無さそう。
 - どの系統を採っても `fetchnodes` 完了が前提なので、Phase 18 の fetchnodes 進捗まわりの制約が
-  そのまま効く（`docs/FETCHNODES_PROGRESS_INVESTIGATION.md`）。
+  そのまま効く（`docs/investigations/FETCHNODES_PROGRESS_INVESTIGATION.md`）。
 - Phase 16（リモート変更のリアルタイム反映）とは目的が別。あちらは `onNodesUpdate` 起点で、
   ここで挙げた API はスナップショット取得用。
