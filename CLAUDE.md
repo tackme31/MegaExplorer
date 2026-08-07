@@ -245,6 +245,28 @@ through that interface, never call `MegaApi`/`std::filesystem` directly. Manual 
 injection against abstract interfaces (ports-and-adapters), no DI framework. Full directory
 breakdown and the DI/testability design rationale: `docs/ARCHITECTURE.md`.
 
+## Code comments: only what the code can't say
+
+A comment earns its place only if it carries something a later reader **cannot** recover from the
+code around it. Three kinds qualify, and each gets **one or two lines**, not a paragraph:
+
+- **External-spec traps** — behaviour of Qt/MSVC/Win32/the SDK that forced the code's shape (MSVC's
+  `_IOLBF` is an alias for full buffering; `AppDataLocation` is the *roaming* path on Windows).
+- **Guards against a plausible "fix"** — the edit someone would reasonably make that would break it
+  (don't gate the ANSI codes on `_isatty`: the target consumer is a pipe, not a tty).
+- **Off-screen forces** — why a thread/lifetime/ownership choice exists, when the cause lives in
+  another file (this mutex exists because SDK callbacks arrive on an SDK-internal thread).
+
+Everything else goes. Specifically: restating what the code does, verification narrative ("confirmed
+against Qt's docs"), scope justifications ("no size cap — this is a one-user desktop app"), long
+trade-off footnotes about paths not taken, change history (that's the commit's job), and the same
+fact said three ways. One fact, one line. Prose that needs more room belongs in `docs/`, and the
+comment can link there.
+
+This is also a **cleanup rule**, not just a writing rule: when you touch a file whose comments
+predate this section, prune them by the same test in the same edit (R7 in `docs/REFACTOR_PLANS.md`
+is the deliberate sweep; `src/app/Logging.cpp` is the worked example — 45 comment lines to 20).
+
 ## Git: every write goes through `scripts/git_unlock.sh`
 
 This repo intermittently leaves a stale `.git/index.lock` behind, so a later `git add`/`commit`/
