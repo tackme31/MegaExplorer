@@ -2364,7 +2364,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `tests/UploadControllerTest.cpp` 冒頭の「`DownloadController` と違ってこちらは入っている」
   （削除）。R4-1 が意図的に残した箇所だが、`Qt6::Gui` が入った時点で事実として誤りになった。
 
-### R5 — 調査済み / R5-2・R5-3・R5-5・R5-6 対応済み（調査 2026-08-07）
+### R5 — 調査済み / R5-2・R5-3・R5-4・R5-5・R5-6 対応済み（調査 2026-08-07）
 
 計画の「種」5 件 +「持ち越し」の [R5] 3 件 + R2/R3 が明示的に R5 送りにした 5 件を現物で検証した
 結果。**確認 10 件 / 種の誤り・判断が要るもの 4 件 / 問題なしと確認 3 件**。R1〜R4 と同じく、
@@ -2493,7 +2493,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
     `EndBeforeTheDelayNeverShows` がそれ。既存 3 件は無変更で通っており、それが委譲で挙動が
     変わっていないことの証拠になっている。`ctest` 472 件（467 + 新規 5）全通過、警告なし。
 
-**R5-4 [高] `BulkOperationBatch` の切り出しは成立するが、busy と絡んでいるぶん単独では出せない**
+**R5-4 [高] ✅対応済み `BulkOperationBatch` の切り出しは成立するが、busy と絡んでいるぶん単独では出せない**
 
 - `BulkOperationBatch` を作るのは 3 箇所（`:428` moveToRubbish / `:464` moveHandlesFrom /
   `:665` startCopyBatch）で、`accountForBulkOutcome` の呼び出しも同じ 3 経路。種の
@@ -2504,6 +2504,45 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
 - `refresh` / `onComplete` の 2 つの `std::function` フックは既にあるので、Runner の
   インタフェースはほぼ現状の `BulkOperationBatch` そのままでよい。**`QuickAccessModel::Sweep` と
   同型**（ヘッダが自分でそう書いている）なので、統合できるかは切り出し後に判断する。
+- **対応（2026-08-07）**: `src/qml/BulkOperationRunner.{h,cpp}` を新設。`BusyState&` +
+  `NotificationController&` + 既定 refresh クロージャを持つ素のクラス（`QTimer` を持たないので
+  `QObject` にしていない）で、`FolderNavigationController` は値メンバ `mBulk` を 1 本持つだけ。
+  `start()` が `shared_ptr<Batch>` を返し、コールバック側は `batch->settle(result)` の 1 行になる。
+  `struct BulkOperationBatch` と `accountForBulkOutcome` はヘッダ・実装とも消滅。決めたこと:
+  - **`busy.begin()` を `start()` で N 回まとめて打つ形に変えた**（従来は fan-out ループ内で
+    1 件ずつ）。N 件の発行は GUI スレッドの 1 ループで同期に走り、完了は全て
+    `invokeOnGuiThread`（`Qt::QueuedConnection`）越しなので `end()` が間に割り込む余地はなく、
+    遅延タイマの起点（最初の `begin()`）も変わらない。**見返りは行数ではなく、begin/end の
+    N:N ペアが `Batch` の不変条件として 1 ファイルで証明できること** — 「start で N 回 begin /
+    settle 1 回につき end 1 回 / settle はちょうど N 回」。R5-3 が `abandonAll()` を正式化して
+    `end()` にクランプを残したのは、この N:N が**壊れる唯一の経路**を名前で示すためだったので、
+    2 つの不変条件が別ファイルに分かれずに揃った。
+  - **fan-out ループごと Runner に移す案は採らなかった**。呼び出し 3 箇所の
+    `[this, self = shared_from_this(), batch]` + `invokeOnGuiThread(this, …)` という定型 7 行が
+    消える代わりに、Runner が owner の `QObject*` とキープアライブを受け取ることになる。
+    **R2-5 の寿命規約（誰が `self` を握り、どのスレッドで死ぬか）が呼び出し側から見えなくなる**のが
+    見送りの理由で、行数と可読性のトレードではない。結果、消えたのは各サイト 3〜4 行だけ。
+  - **`onComplete` は `void(int succeeded, int failed)` に変えた**。旧 `void(const Batch&)` は
+    `Batch` のフィールドを公開面に押し出すが、実際の 2 利用箇所はどちらも `succeeded > 0` しか
+    見ていない。`Batch` の中身は全て private にできた。
+  - **`mBulk` の初期化は ctor 引数 `notifications` から取る**（メンバ `mNotifications` ではなく）。
+    メンバ初期化順への依存を作らないため。`mBusy` は宣言順で `mBulk` の前なので参照束縛は安全で、
+    ヘッダ側にもその 1 行コメントを置いた。
+  - **`QuickAccessModel::Sweep` との統合はしない**。ヘッダの「同型」というコメントは
+    `remaining` のデクリメントだけを見た評で、`Sweep` は per-item の `resolved`/`status` ベクタと
+    generation ガードを持ち、busy も通知も持たない。**`UploadController::Batch` も対象外** —
+    あちらは固定 N の fan-out ではなくキューが空になるまでの転がる集計で、`remaining` に相当する
+    概念が無い。共有できるのは「カウンタを減らして 0 で何かする」だけなので、寄せると 3 つの
+    別々の完了条件が 1 クラスの分岐になる。
+  - `tests/BulkOperationRunnerTest.cpp` 6 ケース新設（実物の `BusyState` と
+    `NotificationController` を組み、`operationFinished` を拾う）。固定したのは、既存の
+    コントローラテストが**間接的にしか見ていなかった**契約: 最後の 1 件まで refresh も通知も
+    出ないこと、refresh → 通知 → `onComplete` の順、custom refresh が既定を置き換えること、
+    busy が N 件全部 settle するまで下がらないこと。既存の `FolderNavigationControllerTest`
+    49 件（bulk 関連 20 件超）と `BusyStateTest` 5 件は**1 行も変更していない**のが、委譲で挙動が
+    変わっていない証拠。`ctest` 478 件（472 + 新規 6）全通過、`/W4` 警告なし。
+  - ついでに `FolderNavigationController.h` の `#include <functional>` が不要になったので削除
+    （フック 2 本が Runner 側に移ったため）。
 
 **R5-5 [中] ✅対応済み `ClipboardController.h` の実インクルードは種のとおり。`Entry` を `src/core` に降ろせば消える**
 
@@ -2691,7 +2730,7 @@ R5-5  ClipboardController::Entry を src/core へ … ✅済。NodeRef.h 新設�
   ↓
 R5-3  busy 機構を独立クラスへ                   … ✅済。BusyState 新設。3 番目の書き手は abandonAll() に
   ↓
-R5-4  BulkOperationRunner を切り出し            … R5-3 の後でないと親への逆参照が要る
+R5-4  BulkOperationRunner を切り出し            … ✅済。begin を start() の N 回まとめ打ちに
   ↓
 R5-1  ミューテーション群を別コントローラへ      … 本丸。ここまでで 398 行の依存が整理済み
   ↓

@@ -125,6 +125,8 @@ add_library(MegaExplorerQml STATIC
     src/qml/GuiThread.h
     src/qml/BusyState.h
     src/qml/BusyState.cpp
+    src/qml/BulkOperationRunner.h
+    src/qml/BulkOperationRunner.cpp
     src/qml/FileListModel.h
     src/qml/FileListModel.cpp
     src/qml/FolderNavigationController.h

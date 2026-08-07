@@ -22,7 +22,11 @@ FolderNavigationController::FolderNavigationController(
     : QObject(parent), mService(std::move(navigationService)),
       mSearchService(std::move(searchService)), mFileOps(std::move(fileOperationService)),
       mNotifications(notifications), mClipboard(clipboard),
-      mFileListModel(std::make_shared<FileListModel>())
+      mFileListModel(std::make_shared<FileListModel>()),
+      // From the parameter, not mNotifications: this must not depend on where
+      // that member sits in the declaration order. mBusy is declared before
+      // mBulk, so binding a reference to it here is safe.
+      mBulk(mBusy, *notifications, [this]() { refreshVisibleListing(); })
 {
     connect(&mBusy, &BusyState::changed, this, &FolderNavigationController::busyChanged);
 }
@@ -379,20 +383,17 @@ void FolderNavigationController::moveSelectionToRubbish()
     if (entries.isEmpty())
         return;
 
-    auto batch = std::make_shared<BulkOperationBatch>();
-    batch->remaining = static_cast<int>(entries.size());
+    auto batch = mBulk.start("moveToRubbish", static_cast<int>(entries.size()));
 
     for (const QVariant& entry : entries)
     {
         const quint64 handle = entry.toMap().value(QStringLiteral("handle")).toULongLong();
-        mBusy.begin();
         mFileOps->moveToRubbish(static_cast<std::uint64_t>(handle),
                                 [this, self = shared_from_this(), batch](Result<void> result) {
-                                    invokeOnGuiThread(
-                                        this, [this, batch, result = std::move(result)]() {
-                                            mBusy.end();
-                                            accountForBulkOutcome(batch, result, "moveToRubbish");
-                                        });
+                                    invokeOnGuiThread(this,
+                                                      [batch, result = std::move(result)]() {
+                                                          batch->settle(result);
+                                                      });
                                 });
     }
 }
@@ -415,24 +416,23 @@ void FolderNavigationController::moveHandlesFrom(const QVariantList& handles,
     if (handles.isEmpty())
         return;
 
-    auto batch = std::make_shared<BulkOperationBatch>();
-    batch->remaining = static_cast<int>(handles.size());
-    batch->onComplete =
-        [this, target, targetIsRoot, source, sourceIsRoot](const BulkOperationBatch& done) {
-            if (done.succeeded > 0)
-                emit nodesMoved(target, targetIsRoot, source, sourceIsRoot);
-        };
+    auto batch =
+        mBulk.start("move",
+                    static_cast<int>(handles.size()),
+                    {},
+                    [this, target, targetIsRoot, source, sourceIsRoot](int succeeded, int) {
+                        if (succeeded > 0)
+                            emit nodesMoved(target, targetIsRoot, source, sourceIsRoot);
+                    });
 
     for (const QVariant& handle : handles)
     {
-        mBusy.begin();
         mFileOps->move(static_cast<std::uint64_t>(handle.toULongLong()),
                        static_cast<std::uint64_t>(target),
                        targetIsRoot,
                        [this, self = shared_from_this(), batch](Result<void> result) {
-                           invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
-                               mBusy.end();
-                               accountForBulkOutcome(batch, result, "move");
+                           invokeOnGuiThread(this, [batch, result = std::move(result)]() {
+                               batch->settle(result);
                            });
                        });
     }
@@ -616,18 +616,19 @@ void FolderNavigationController::startCopyBatch(
     if (entries.empty())
         return;
 
-    auto batch = std::make_shared<BulkOperationBatch>();
-    batch->remaining = static_cast<int>(entries.size());
     // Only the destination gained anything, so re-read this tab only when it is
     // the destination -- which is always true for a paste and usually false for
     // a Ctrl+drop. Every other tab showing it is reached through nodesCopied.
-    batch->refresh = [this, target, targetIsRoot] {
-        refreshIfShowing(target, targetIsRoot);
-    };
-    batch->onComplete = [this, target, targetIsRoot](const BulkOperationBatch& done) {
-        if (done.succeeded > 0)
-            emit nodesCopied(target, targetIsRoot);
-    };
+    auto batch = mBulk.start(
+        "copy",
+        static_cast<int>(entries.size()),
+        [this, target, targetIsRoot]() {
+            refreshIfShowing(target, targetIsRoot);
+        },
+        [this, target, targetIsRoot](int succeeded, int) {
+            if (succeeded > 0)
+                emit nodesCopied(target, targetIsRoot);
+        });
 
     for (const NodeRef& entry : entries)
     {
@@ -638,15 +639,13 @@ void FolderNavigationController::startCopyBatch(
         // entries can share a name and must not be handed the same new one.
         taken.insert(chosen);
 
-        mBusy.begin();
         mFileOps->copy(entry.handle,
                        static_cast<std::uint64_t>(target),
                        targetIsRoot,
                        chosen == sourceName ? std::string() : chosen,
                        [this, self = shared_from_this(), batch](Result<void> result) {
-                           invokeOnGuiThread(this, [this, batch, result = std::move(result)]() {
-                               mBusy.end();
-                               accountForBulkOutcome(batch, result, "copy");
+                           invokeOnGuiThread(this, [batch, result = std::move(result)]() {
+                               batch->settle(result);
                            });
                        });
     }
@@ -734,34 +733,6 @@ void FolderNavigationController::refreshIfShowing(quint64 handle, bool isRoot)
     if (!isRoot && currentHandle() != handle)
         return;
     refreshListingIfLoaded();
-}
-
-void FolderNavigationController::accountForBulkOutcome(
-    const std::shared_ptr<BulkOperationBatch>& batch,
-    const Result<void>& result,
-    const char* context)
-{
-    if (result.success)
-    {
-        ++batch->succeeded;
-    }
-    else
-    {
-        ++batch->failed;
-        qCWarning(lcFileOps) << context << "failed:" << QString::fromStdString(result.errorMessage)
-                             << "code=" << result.errorCode;
-    }
-
-    if (--batch->remaining > 0)
-        return;
-
-    if (batch->refresh)
-        batch->refresh();
-    else
-        refreshVisibleListing();
-    mNotifications->notifyOperation(QString::fromLatin1(context), batch->succeeded, batch->failed);
-    if (batch->onComplete)
-        batch->onComplete(*batch);
 }
 
 void FolderNavigationController::reset()

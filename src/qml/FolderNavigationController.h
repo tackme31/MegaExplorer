@@ -4,13 +4,13 @@
 #include "core/NodeRef.h"
 #include "core/SearchService.h"
 #include "core/SortOrder.h"
+#include "BulkOperationRunner.h"
 #include "BusyState.h"
 #include "FileListModel.h"
 
 #include <QObject>
 #include <QVariantList>
 
-#include <functional>
 #include <memory>
 #include <set>
 #include <string>
@@ -305,27 +305,6 @@ private:
     // needlessly rebuild the Breadcrumb.qml Repeater.
     void refreshBreadcrumb();
 
-    // Shared bookkeeping for one bulk fan-out (moveSelectionToRubbish,
-    // moveHandlesTo): only the last callback to land refreshes the listing and
-    // reports the tally, so N operations produce one refetch and one
-    // notification. Same shape as QuickAccessModel's Sweep.
-    struct BulkOperationBatch
-    {
-        int remaining = 0;
-        int succeeded = 0;
-        int failed = 0;
-        // Run once the batch empties, after the refresh and the notification.
-        // moveHandlesTo uses it to announce where the nodes went; empty for
-        // moveSelectionToRubbish, which has nowhere to announce.
-        std::function<void(const BulkOperationBatch&)> onComplete;
-        // Overrides the default "re-read what this tab is showing". A copy
-        // leaves the source folder alone, so a Ctrl+drop onto some other folder
-        // has nothing to re-read here -- and refreshVisibleListing() is a full
-        // model reset (plus a recursive search re-run, if one is showing).
-        // Empty means the default.
-        std::function<void()> refresh;
-    };
-
     // Body of moveHandlesTo, with "where did these come from" passed in rather
     // than read off this tab. A drag knows its source is this tab; a cut-paste
     // knows it is wherever the clipboard was filled, which may be another tab
@@ -353,13 +332,6 @@ private:
                         bool targetIsRoot,
                         std::set<std::string> taken);
 
-    // Common tail of both bulk fan-outs above: counts one outcome and, once the
-    // batch is empty, refreshes and reports it under context. Must run on the
-    // GUI thread (callers wrap it in invokeOnGuiThread).
-    void accountForBulkOutcome(const std::shared_ptr<BulkOperationBatch>& batch,
-                               const Result<void>& result,
-                               const char* context);
-
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<SearchService> mSearchService;
     std::shared_ptr<FileOperationService> mFileOps;
@@ -378,4 +350,6 @@ private:
     bool mHasLoadedOnce = false;
     // Publishes busy() above; owns the delay before a spinner appears.
     BusyState mBusy;
+    // Declared after mBusy: it binds a reference to it (see R5-4).
+    BulkOperationRunner mBulk;
 };
