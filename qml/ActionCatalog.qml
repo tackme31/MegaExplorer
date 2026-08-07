@@ -157,11 +157,17 @@ QtObject {
 
     // Entries without an `enabled` are always enabled -- greying is the
     // exception, so it isn't worth a no-op function in every entry.
+    //
+    // `=== true` rather than the raw result: ActionMenu.qml's delegates are
+    // built when the menu object is, while ctx is still the empty default, so
+    // a predicate reading a ctx field it hasn't been given yet (paste's
+    // ctx.canPaste) hands back undefined -- which QML then refuses to assign
+    // to the bool `enabled`.
     function isEnabled(actionId, ctx) {
         const entry = root.entries[actionId];
         if (entry === undefined)
             return false;
-        return entry.enabled === undefined ? true : entry.enabled(ctx);
+        return entry.enabled === undefined ? true : entry.enabled(ctx) === true;
     }
 
     function trigger(actionId, ctx) {
