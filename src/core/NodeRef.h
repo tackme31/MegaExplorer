@@ -2,18 +2,14 @@
 #include <cstdint>
 #include <string>
 
-// The minimum needed to point at a node a copy/move is about to act on.
-// Produced by the clipboard and by a Ctrl+drag alike -- both start from
-// FileListModel::selectedEntries()' {handle, name, isFolder} maps, and the
-// drag never touches the clipboard.
+// The minimum needed to point at a node a copy/move is about to act on. Produced by
+// the clipboard and by a Ctrl+drag alike, both from FileListModel::selectedEntries().
 //
-// name is carried because a copy has to pick one nothing in the destination
-// is using (FileOperationService::uniqueCopyName); re-resolving every handle
-// at paste time would buy nothing.
+// name is carried because a copy has to pick one nothing in the destination uses;
+// re-resolving every handle at paste time would buy nothing.
 //
-// Not NodeInfo: that is what IMegaClient::getNodeInfo resolves a handle to
-// right now, hence its inCloud flag. This is a snapshot taken when the user
-// selected the node, and nothing here is resolved or revalidated.
+// Not NodeInfo: that is what a handle resolves to *right now*, hence its inCloud
+// flag. This is a snapshot from when the user selected the node, never revalidated.
 struct NodeRef
 {
     std::string name;

@@ -11,11 +11,8 @@ struct FileEntry
     std::int64_t modificationTime = 0;
     bool hasThumbnail = false;
 
-    // Value-type equality, field-by-field. Not defaulted via <=> -- this
-    // project builds at C++17, not C++20. Added for
-    // Phase 6 test assertions (e.g. gmock's EXPECT_CALL(..., someVector)
-    // implicitly builds an Eq() matcher over std::vector<FileEntry>, which
-    // needs this).
+    // Field-by-field, not <=>-defaulted: this project builds at C++17, and gmock
+    // builds an Eq() matcher over vectors of these.
     bool operator==(const FileEntry& other) const
     {
         return name == other.name && handle == other.handle && sizeBytes == other.sizeBytes &&

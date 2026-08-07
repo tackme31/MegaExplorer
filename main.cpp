@@ -38,35 +38,29 @@
 #include <memory>
 #include <QtQml/qqmlextensionplugin.h>
 
-// The MegaExplorer QML module is backed by a static library (MegaExplorerQml),
-// whose type registration sits in a generated translation unit nothing here
-// references by name -- so without this forcing reference the linker drops it
-// and every QML_ELEMENT type goes unregistered. qt_import_qml_plugins() is not
-// an alternative: it is documented as a no-op against a non-static Qt.
+// The QML module's type registration sits in a generated translation unit nothing
+// references by name, so without this forcing reference the linker drops it and
+// every QML_ELEMENT type goes unregistered. qt_import_qml_plugins() is no
+// alternative -- it is documented as a no-op against a non-static Qt.
 Q_IMPORT_QML_PLUGIN(MegaExplorerPlugin)
 
 int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
-    // QML Settings (view mode persistence) needs these to resolve a
-    // per-app registry/config location; without them QSettings fails to
-    // initialize (Status code 1) and every read/write silently no-ops.
+    // QSettings resolves its registry location from these; without them it fails to
+    // initialize and every read/write silently no-ops.
     QCoreApplication::setOrganizationName("MegaExplorer");
     QCoreApplication::setApplicationName("MegaExplorer");
-    // Reaches the About dialog as QML's Qt.application.version, so no separate
-    // type has to exist just to carry one string.
+    // Reaches the About dialog as QML's Qt.application.version.
     QCoreApplication::setApplicationVersion(QStringLiteral(MEGAEXPLORER_VERSION));
 
-    // Must run before any other logging call: appMegaExplorer is
-    // WIN32_EXECUTABLE, so qWarning()/qCWarning() output reaches no visible
-    // destination at all on a normal launch until this installs a file sink.
+    // Must run before any other logging call: this is a WIN32_EXECUTABLE, so log
+    // output reaches no visible destination at all until the file sink exists.
     installLogging();
 
-    // Style-tuning aid: check the light theme without flipping the Windows
-    // setting. One call covers both halves of the UI -- FluentWinUI3 and
-    // Theme.qml's isLight both read styleHints.colorScheme, which this
-    // overrides application-wide. Unset (or any other value) keeps the
-    // default behaviour of following the OS.
+    // Style-tuning aid: check a theme without flipping the Windows setting. Both
+    // FluentWinUI3 and Theme.qml read styleHints.colorScheme, so one call covers the
+    // whole UI. Unset keeps the default of following the OS.
     const QByteArray colorScheme = qgetenv("MEGAEXPLORER_COLOR_SCHEME").toLower();
     if (colorScheme == "light")
     {
@@ -82,80 +76,59 @@ int main(int argc, char* argv[])
     const QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(cacheDir);
 
-    // Computed before the client because MegaSdkClient's basePath decides
-    // where the SDK's state-cache DB lives, and that DB is what makes a
-    // session restore take 0.6s instead of re-fetching the whole node tree
-    // (measured: 385s on a 640k-node account -- docs/PROGRESS.md Phase 18).
-    // toNativeSeparators because the SDK appends its own path components with
-    // backslashes, and a mixed-separator path breaks as soon as anything
-    // prefixes it with \\?\ for long-path support.
+    // basePath decides where the SDK's state-cache DB lives, which is what makes a
+    // session restore take 0.6s instead of re-fetching the whole node tree (measured
+    // 385s on a 640k-node account). toNativeSeparators because the SDK appends its
+    // own components with backslashes, and a mixed-separator path breaks as soon as
+    // anything prefixes it with \\?\ for long-path support.
     auto client = std::make_shared<MegaSdkClient>(QDir::toNativeSeparators(cacheDir).toStdString());
     auto sessionStore =
         std::make_shared<WindowsSessionStore>((cacheDir + "/session.dat").toStdString());
 
     auto downloadService = std::make_shared<DownloadService>(client);
     auto uploadService = std::make_shared<UploadService>(client);
-    // Shared across every tab (handle-keyed cache, no per-tab state) --
-    // unlike FolderNavigationService/SearchService/FolderNavigationController
-    // below, which are inherently per-tab and so live in tabFactory instead.
+    // Shared across every tab: handle-keyed cache, no per-tab state. What is
+    // inherently per-tab lives in tabFactory below instead.
     auto thumbnailService = std::make_shared<ThumbnailService>(client);
-    // Stateless validate-and-pass-through, so one instance is shared by every
-    // tab's FolderNavigationController (same rationale as thumbnailService).
+    // Stateless validate-and-pass-through, so one instance serves every tab.
     auto fileOperationService = std::make_shared<FileOperationService>(client);
     auto authService = std::make_shared<AuthService>(client, sessionStore);
-    // Stateless like fileOperationService; one instance behind the account
-    // section of the "More" menu.
     auto accountService = std::make_shared<AccountService>(client);
-    // Declared before the controllers below: they hold a non-owning pointer
-    // to it, and stack locals are destroyed in reverse construction order.
-    // That covers the stack-allocated holders only -- a per-tab controller kept
-    // alive past tab close by an in-flight callback (see makeGuiOwned in
-    // tabFactory) can outlive both of these, so neither may be touched from a
-    // controller's destructor.
+    // Declared before the controllers that hold non-owning pointers to it, since
+    // stack locals are destroyed in reverse order. That covers the stack-allocated
+    // holders only: a per-tab controller kept alive past tab close by an in-flight
+    // callback outlives both of these, so neither may be touched from a destructor.
     NotificationController notifications;
-    // Same reason as notifications above for being declared here: every tab's
-    // FolderNavigationController holds a non-owning pointer to it.
+    // Same reason as notifications for being declared here.
     ClipboardController clipboard;
     DownloadController downloadController(downloadService, &notifications);
     UploadController uploadController(uploadService, fileOperationService, &notifications);
     AuthController authController(authService);
     AccountController accountController(accountService);
 
-    // Shared across every tab (Phase 10's side panel is chrome beside the
-    // tab content, not per-tab state), same app-lifetime-singleton shape as
-    // thumbnailService/notifications above rather than tabFactory below.
+    // Shared: the side panel is chrome beside the tab content, not per-tab state.
     auto folderTreeService = std::make_shared<FolderTreeService>(client);
     FolderTreeModel folderTreeModel(folderTreeService);
 
-    // Same shared side-panel scope as folderTreeService/folderTreeModel above.
-    // The store needs no resolved path, unlike sessionStore: it persists
-    // through QSettings, which resolves its own location from the
-    // organization/application name set at the top of this function.
+    // Same shared side-panel scope. The store needs no resolved path, unlike
+    // sessionStore: QSettings resolves its own location from the names set above.
     auto pinnedFolderStore = std::make_shared<QSettingsPinnedFolderStore>();
     auto quickAccessService = std::make_shared<QuickAccessService>(client, pinnedFolderStore);
     QuickAccessModel quickAccessModel(quickAccessService, &notifications);
 
-    // Wires one tab's worth of navigation/mutation/thumbnail state: a fresh
-    // FolderNavigationService/SearchService/BusyState/
-    // FolderNavigationController/FileMutationController/ThumbnailController
-    // each, capturing the shared, app-lifetime
-    // client/thumbnailService/fileOperationService/&notifications/&clipboard
-    // above. Splitting the mutations out (R5-1) cost no captures: the two the
-    // navigation half stopped needing are exactly the two the mutation half
-    // took over. TabsController calls
-    // this whenever a new tab is needed (initial tab, "+", middle-click-open,
-    // "Open in new tab") -- it has no wiring knowledge of its own, per
-    // docs/ARCHITECTURE.md's composition-root convention.
+    // Wires one tab's worth of navigation/mutation/thumbnail state, capturing the
+    // app-lifetime pieces above. TabsController calls this whenever a new tab is
+    // needed; it has no wiring knowledge of its own.
     auto tabFactory = [client, thumbnailService, fileOperationService, &notifications, &clipboard]()
         -> TabContext {
         auto navigationService = std::make_shared<FolderNavigationService>(client);
         auto searchService = std::make_shared<SearchService>(client, navigationService);
-        // makeGuiOwned, not make_shared: an in-flight callback can drop the
-        // last reference to any of these from the SDK thread once the tab
-        // is closed, and they are QObjects (GuiThread.h explains the rest).
+        // makeGuiOwned, not make_shared: these are QObjects, and an in-flight
+        // callback can drop the last reference from the SDK thread once the tab is
+        // closed (GuiThread.h explains the rest).
         //
-        // Inside the lambda, not captured from outside: one spinner counter per
-        // tab. A shared one would make every tab busy whenever any tab is.
+        // Created here rather than captured: one spinner counter per tab, or every
+        // tab would look busy whenever any tab is.
         auto busy = makeGuiOwned<BusyState>();
         auto navigation = makeGuiOwned<FolderNavigationController>(
             navigationService, searchService, busy, &notifications);
@@ -195,13 +168,10 @@ int main(int argc, char* argv[])
 
     const int exitCode = app.exec();
 
-    // Explicit stop point, not left to ~MegaSdkClient. Destroying MegaApi makes
-    // the SDK thread fail every pending request/transfer before it joins, and
-    // client is declared first here, so it is destroyed *last* -- those
-    // callbacks would land on services and controllers that are already gone.
-    // Stopping it here, while everything above is still alive, is the whole
-    // fix; swapping declaration order cannot achieve it, since a dozen
-    // shared_ptrs keep client alive. See REFACTOR_PLANS.md's R2-3.
+    // Explicit stop point, not left to ~MegaSdkClient: destroying MegaApi makes the
+    // SDK thread fail every pending request before it joins, and client is destroyed
+    // last, so those callbacks would land on services and controllers already gone.
+    // Declaration order can't fix it -- a dozen shared_ptrs keep client alive.
     client->shutdown();
     return exitCode;
 }

@@ -7,118 +7,88 @@
 #include <set>
 #include <string>
 
-// Mutating counterpart to FolderNavigationService: renames a node, or moves it
-// into the Rubbish bin. Qt-free (MegaExplorerCore) like the other *Service
-// classes, so it's testable against MockMegaClient without a GUI.
-//
-// Deliberately a thin validate-then-pass-through layer with no state of its
-// own. Fanning one user action out over N selected nodes and reconciling the N
-// results belongs to src/qml (FolderNavigationController::
-// moveSelectionToRubbish), same split QuickAccessService.h spells out: services
-// pass through, src/qml marshals results back onto the GUI thread.
+// Mutating counterpart to FolderNavigationService, and deliberately a thin
+// validate-then-pass-through layer with no state of its own: fanning one user
+// action out over N selected nodes and reconciling the N results belongs to
+// src/qml, which is also where results are marshalled back onto the GUI thread.
 class FileOperationService
 {
 public:
     explicit FileOperationService(std::shared_ptr<IMegaClient> client);
 
-    // Calls onDone with a failure immediately -- without touching the SDK --
-    // when newName doesn't pass isValidName(). Callers are expected to skip
-    // the call entirely when the name is unchanged; this class can't tell,
-    // since it doesn't know the node's current name.
+    // Fails in-stack, without touching the SDK, when newName fails isValidName().
+    // Callers must skip an unchanged name themselves -- this class can't tell.
     void rename(std::uint64_t handle,
                 const std::string& newName,
                 std::function<void(Result<void>)> onDone);
 
     void moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone);
 
-    // Reparents handle under newParentHandle (newParentIsRoot mirrors the
-    // isRoot sentinel convention used throughout). Calls onDone with a failure
-    // immediately -- without touching the SDK -- when canMove() rejects the
-    // pair, so a caller that skipped the pre-check still can't issue a move the
-    // SDK would only refuse later.
+    // Gated on canMove(), so a caller that skipped the hover-time pre-check still
+    // can't issue a move the SDK would only refuse later.
     void move(std::uint64_t handle,
               std::uint64_t newParentHandle,
               bool newParentIsRoot,
               std::function<void(Result<void>)> onDone);
 
-    // Copies handle into (newParentHandle, newParentIsRoot). An empty newName
-    // keeps the source's name; a non-empty one is validated exactly like
-    // rename()'s and rejected with kEArgs without touching the SDK.
-    //
-    // Gated on canCopy() below, exactly as move() is gated on canMove(): a
-    // caller that skipped the hover-time pre-check must not be able to smuggle
-    // a copy of a folder into its own subtree through.
+    // An empty newName keeps the source's name; a non-empty one is validated like
+    // rename()'s. Gated on canCopy() for the same reason move() is gated on
+    // canMove() -- notably a copy of a folder into its own subtree.
     void copy(std::uint64_t handle,
               std::uint64_t newParentHandle,
               bool newParentIsRoot,
               const std::string& newName,
               std::function<void(Result<void>)> onDone);
 
-    // Creates an empty folder under parentHandle. Rejects an invalid name the
-    // same way rename() does -- without touching the SDK -- but tags that
-    // failure with MegaErrorCode::kEArgs so a caller can tell it apart from a
-    // server-side rejection (notably kEExist for a same-named folder, which
-    // is the only duplicate check there is; see IMegaClient::createFolder).
+    // Rejects an invalid name like rename() does, but tags it kEArgs so a caller can
+    // tell it from the server's kEExist -- the only duplicate check there is.
     void createFolder(std::uint64_t parentHandle,
                       bool parentIsRoot,
                       const std::string& name,
                       std::function<void(Result<void>)> onDone);
 
-    // Synchronous pre-check, the move counterpart to isValidName() above:
-    // "would move() be accepted?", answered without an API round-trip so a drag
+    // "Would move() be accepted?", answered without an API round-trip so a drag
     // hovering over a drop target can query it continuously. Failures carry a
     // MegaErrorCodes.h code (kENoEnt / kECircular / kEAccess), not just text.
     Result<void>
     canMove(std::uint64_t handle, std::uint64_t newParentHandle, bool newParentIsRoot) const;
 
-    // "Would copy() be accepted?", synchronous for the same reason as
-    // canMove(). There is no checkCopy to call: the SDK has none, so this
-    // reuses checkMove and reinterprets one of its codes -- kEArgs ("already in
-    // that folder") is a refusal for a move and a legitimate request for a
-    // copy, which lands a "... - Copy" sibling. kENoEnt / kECircular / kEAccess
-    // pass through unchanged; kECircular is the one that matters, since copying
-    // a folder into its own subtree is a mistake in every case (Explorer
-    // refuses it too) and MEGA would happily snapshot-duplicate the whole tree.
+    // "Would copy() be accepted?", synchronous for the same reason. The SDK has no
+    // checkCopy, so this reuses checkMove and reinterprets one code: kEArgs
+    // ("already in that folder") refuses a move but is a legitimate copy, landing a
+    // "... - Copy" sibling. kECircular is the one that matters -- MEGA would happily
+    // duplicate a folder into its own subtree.
     //
     // kEAccess is borrowed slightly too eagerly: checkMove also refuses when the
-    // *source* can't be removed, which a copy doesn't need. Unreachable while
-    // the app only browses the Cloud Drive; revisit if incoming shares become
-    // browsable.
+    // *source* can't be removed, which a copy doesn't need. Unreachable while only
+    // the Cloud Drive is browsable; revisit if incoming shares become so.
     //
-    // Says nothing about whether the destination accepts children at all --
-    // that is canAddChildren() below, and callers ask both.
+    // Says nothing about whether the destination accepts children -- that is
+    // canAddChildren(), and callers ask both.
     Result<void>
     canCopy(std::uint64_t handle, std::uint64_t newParentHandle, bool newParentIsRoot) const;
 
-    // "Would this folder accept a new child?", the paste counterpart of
-    // canMove() above and synchronous for the same reason. Straight through to
-    // IMegaClient::checkUpload, whose conditions (gone / not a folder /
-    // read-only share) are exactly the ones a paste has to answer before it
-    // fans out.
+    // "Would this folder accept a new child?" -- straight through to
+    // IMegaClient::checkUpload, whose conditions (gone / not a folder / read-only
+    // share) are exactly what a paste must answer before it fans out.
     Result<void> canAddChildren(std::uint64_t parentHandle, bool parentIsRoot) const;
 
-    // Single definition of the naming rule, static so QML-side pre-validation
-    // could share it later. Deliberately minimal: MEGA permits duplicate names
-    // within one folder, so there's no uniqueness check to make here.
+    // Deliberately minimal: MEGA permits duplicate names within one folder, so there
+    // is no uniqueness check to make here.
     static bool isValidName(const std::string& name);
 
-    // Explorer's answer to a copy that would collide: "report.pdf" ->
-    // "report - Copy.pdf" -> "report - Copy (2).pdf". Returns name unchanged
-    // when taken doesn't hold it, so a copy into a different folder keeps its
-    // name. Callers must add the result to their own taken set, since a paste
-    // of several same-named nodes has to keep them apart before any of them
-    // reaches the server.
+    // Explorer's answer to a colliding copy: "report.pdf" -> "report - Copy.pdf" ->
+    // "report - Copy (2).pdf". Returns name unchanged when taken doesn't hold it.
+    // Callers must add the result to their own taken set, since a paste of several
+    // same-named nodes has to keep them apart before any reaches the server.
     //
-    // Not merely cosmetic: IMegaClient::copyNode explains why a colliding name
-    // silently versions over the existing file instead of landing beside it.
+    // Not cosmetic: IMegaClient::copyNode explains why a colliding name silently
+    // versions over the existing file instead of landing beside it.
     //
-    // The extension is split at the *last* dot and for files only
-    // ("archive.tar.gz" -> "archive.tar - Copy.gz", but "My.Folder" ->
-    // "My.Folder - Copy"); a leading dot is part of the name, not an extension
-    // (".gitignore" -> ".gitignore - Copy"). The suffix is English rather than
-    // translated because src/core is Qt-free and so out of reach of the .ts
-    // files -- passing a format string down from QML would be more machinery
-    // than the wart is worth.
+    // The extension splits at the *last* dot and for files only ("archive.tar.gz" ->
+    // "archive.tar - Copy.gz", "My.Folder" -> "My.Folder - Copy"); a leading dot is
+    // part of the name. The suffix is English because src/core is Qt-free and so out
+    // of reach of the .ts files.
     static std::string
     uniqueCopyName(const std::string& name, bool isFolder, const std::set<std::string>& taken);
 

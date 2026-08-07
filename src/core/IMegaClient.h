@@ -14,55 +14,27 @@
 #include <string>
 #include <vector>
 
-// This interface has two shapes, and "synchronous" means a different thing in
-// each. MegaSdkClient is the implementation both halves describe.
+// Two conventions run through this whole interface.
 //
-// Shape A -- returns Result<T> directly, no callback at all, so it answers
-// in-stack always. Seven methods, enumerated here and nowhere else; each one's
-// own comment gives its reason but does not count it, so adding an eighth is a
-// one-line edit to this list:
+// 1. An `isRoot`/`parentIsRoot` flag set to true makes the handle beside it
+//    meaningless -- the sentinel for "the Cloud Drive root".
+// 2. Callback delivery is not uniform, and a caller that assumes "asynchronous"
+//    is wrong in two of the three cases:
+//      - Methods returning Result<T> with no callback answer in-stack always:
+//        local reads of session/account state, or in-memory queries against the
+//        node tree fetchNodes built. Their callers (drag-hover feedback,
+//        QAbstractItemModel::hasChildren) have nowhere to put a callback.
+//      - Of the methods taking onDone, getRootChildren/getChildren/search/
+//        getPath/getNodeInfo run it synchronously on the calling thread, always
+//        -- they too are in-memory reads. FolderNavigationService's lock-free
+//        design rests on this.
+//      - The rest run onDone on an SDK-internal thread, *except* that any
+//        method resolving a handle fails in-stack when that handle is already
+//        gone. That case is easy to miss: the happy path looks purely async.
 //
-//   currentSessionToken, currentUserHandle, currentAccountIdentity
-//       local reads of session/account state the SDK already holds
-//   checkMove, checkUpload, findChildFiles, hasSubfolders
-//       in-memory queries against the node tree fetchNodes built
-//
-// For the first group it is merely that there is no round-trip to be
-// asynchronous about; for the second the caller genuinely has nowhere to put a
-// callback -- drag-hover feedback repaints per mouse move, and
-// QAbstractItemModel::hasChildren() answers the view on the spot.
-//
-// Shape B -- takes a std::function onDone. How that onDone actually reaches
-// you is three ways, not one; a caller that only handles the first mode is
-// wrong on the other two.
-//
-//   1. Truly asynchronous, on an SDK-internal thread. The listener-backed
-//      methods: login/fetchNodes/download/upload/getThumbnail and every
-//      mutating call. This is the mode the rest of this file's comments mean
-//      by "background thread".
-//   2. Always synchronous, on the calling thread -- onDone has already run by
-//      the time the method returns. getRootChildren, getChildren, search,
-//      getPath and getNodeInfo, all of which are in-memory reads of the node
-//      tree the SDK holds after fetchNodes. FolderNavigationService's
-//      lock-free design rests on this; see its own header comment.
-//   3. Synchronous *on failure only*, on the calling thread. Every method that
-//      resolves a handle first fails in-stack when that handle resolves to
-//      nothing -- logged out, fetchNodes not run yet, or the node deleted from
-//      another client -- and only reaches mode 1 once the handle is good. This
-//      is the mode that is easy to miss, because the happy path looks purely
-//      asynchronous.
-//
-// Mode 2 is not shape A. Those five are synchronous as well, but they still
-// hand you a callback, so they are shape B; folding the two groups into one
-// count of "the synchronous ones" gets twelve and is the mistake this split
-// exists to prevent.
-//
-// Consequence for callers, and the reason mode 3 is spelled out here: onDone
-// may run inside your own call, before the method returns. Do not hold a lock
-// across the call, and if onDone re-enters the code that issued the call --
-// a queue that auto-starts its next job, say -- guard against recursing once
-// per pending item. DownloadService/UploadService/ThumbnailService each carry
-// an explicit trampoline for exactly this.
+// So onDone may run inside your own call, before it returns: don't hold a lock
+// across the call, and guard against re-entering the code that issued it
+// (DownloadService/UploadService/ThumbnailService each carry a trampoline).
 class IMegaClient
 {
 public:
@@ -72,15 +44,13 @@ public:
                        const std::string& password,
                        std::function<void(Result<void>)> onDone) = 0;
 
-    // MegaApi::fastLogin equivalent: re-authenticates using a session token
-    // previously obtained from currentSessionToken(), skipping password
-    // verification. Used on startup to restore a persisted session.
+    // MegaApi::fastLogin equivalent: re-authenticates from a token previously
+    // obtained via currentSessionToken(), skipping password verification.
     virtual void loginWithSession(const std::string& sessionToken,
                                   std::function<void(Result<void>)> onDone) = 0;
 
-    // For accounts with two-factor auth enabled: called after login() has
-    // already failed with MegaErrorCode::kEMfaRequired, resubmitting the same
-    // email/password alongside the 6-digit pin.
+    // Called only after login() failed with MegaErrorCode::kEMfaRequired,
+    // resubmitting the same email/password alongside the 6-digit pin.
     virtual void multiFactorAuthLogin(const std::string& email,
                                       const std::string& password,
                                       const std::string& pin,
@@ -88,118 +58,71 @@ public:
 
     virtual void logout(std::function<void(Result<void>)> onDone) = 0;
 
-    // MegaApi::dumpSession equivalent. Shape A (see the top of this file) --
-    // a local read of already-held session state, no network round-trip.
-    // Fails if not currently logged in.
+    // MegaApi::dumpSession equivalent. Fails if not currently logged in.
     virtual Result<std::string> currentSessionToken() const = 0;
 
-    // MegaApi::getMyUserHandleBinary equivalent. Shape A, same rationale as
-    // currentSessionToken(). Fails if not currently logged in. Used to scope
-    // per-account persisted state (quick-access pins) without account identity
-    // leaking into ISessionStore.
+    // MegaApi::getMyUserHandleBinary equivalent. Fails if not logged in. Scopes
+    // per-account state (quick-access pins) so identity stays out of ISessionStore.
     virtual Result<std::uint64_t> currentUserHandle() const = 0;
 
     // Must be called after a successful login(), before getRootChildren().
     //
-    // Takes the same two-callback shape as download()/upload() below, for the
-    // same reason in reverse: MegaRequestListener::onRequestUpdate exists for
-    // exactly one request type, TYPE_FETCH_NODES (megaapi.h:9261).
-    //
-    // What onProgress reports is narrower than it looks, and callers must
-    // treat it as such:
-    //   - It is the HTTP download progress of the `f` API response body, not
-    //     "nodes processed". The decrypt/tree-build/DB-write work that
-    //     follows the download has no progress signal of any kind, and on a
-    //     640k-node account it was 57% of the total wall time (162s download
-    //     vs. 218s afterwards). Do not present the bytes as overall progress.
-    //   - It may fire zero times. When the SDK's local state-cache DB is
-    //     valid, fetchNodes reads from it instead of hitting the network and
-    //     no progress event is ever emitted (measured: 0 events, 619ms).
-    //   - The final event is not guaranteed to be exactly 100%; the last one
-    //     observed in practice was 99.44%.
-    // Full measurements: docs/investigations/FETCHNODES_PROGRESS_INVESTIGATION.md.
+    // onProgress is narrower than it looks: it is HTTP progress of the `f` API
+    // response body, not "nodes processed" -- the decrypt/tree-build that follows
+    // has no progress signal at all and was 57% of wall time on a 640k-node
+    // account. It also may fire zero times (a valid local state-cache DB skips
+    // the network entirely), and its last event need not reach 100%.
+    // Measurements: docs/investigations/FETCHNODES_PROGRESS_INVESTIGATION.md.
     virtual void fetchNodes(
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<void>)> onDone) = 0;
 
-    // Asks the API for action packets not yet applied, so the node tree the
-    // getters below read is current as of this call. Unlike those getters this
-    // is a genuine server round-trip (MegaApi::catchup) -- it is what makes a
-    // user-initiated refresh mean anything, since the getters alone only ever
-    // re-read what the SDK happens to have been told already.
+    // MegaApi::catchup: applies action packets not yet received, so the getters
+    // below read a current tree. The only genuine round-trip among the reads --
+    // the getters alone re-read whatever the SDK happens to have been told.
     virtual void syncPendingChanges(std::function<void(Result<void>)> onDone) = 0;
 
-    // Must be called after a successful fetchNodes(). Synchronous under the
-    // hood, but kept callback-shaped for interface consistency. order is
-    // forwarded to MegaApi::getChildren's own order argument (server-side
-    // sort, see SortOrder.h).
+    // Must be called after a successful fetchNodes(). order is forwarded to
+    // MegaApi::getChildren's own order argument (server-side sort, SortOrder.h).
     virtual void getRootChildren(SortOrder order,
                                  std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
-    // Must be called after a successful fetchNodes(). Synchronous under the
-    // hood, but kept callback-shaped for interface consistency. order is
-    // forwarded to MegaApi::getChildren's own order argument (server-side
-    // sort, see SortOrder.h).
+    // Same contract as getRootChildren(), for a specific folder.
     virtual void getChildren(std::uint64_t handle,
                              SortOrder order,
                              std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
-    // Recursive name search rooted at ancestorHandle (ignored when isRoot is
-    // true, same isRoot-sentinel convention as FolderNavigationService's
-    // Location). Must be called after a successful fetchNodes(). Synchronous
-    // under the hood (MegaApi::search()), but kept callback-shaped for
-    // interface consistency. order is forwarded to MegaApi::search's own
-    // order argument (server-side sort, see SortOrder.h).
+    // Recursive name search rooted at ancestorHandle. Must be called after a
+    // successful fetchNodes(); order is forwarded to MegaApi::search's own order.
     virtual void search(std::uint64_t ancestorHandle,
                         bool isRoot,
                         const std::string& query,
                         SortOrder order,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
-    // Downloads the file identified by handle to the exact local file path
-    // destinationPath. destinationPath is already fully resolved by the
-    // caller (e.g. DownloadController) -- IMegaClient has no filesystem
-    // access of its own, same division of responsibility expected from
-    // IFileSystem later.
+    // Downloads to the exact local path destinationPath -- the caller resolves it,
+    // since IMegaClient has no filesystem access of its own.
     //
-    // Diverges from the Result<T>-in-one-callback shape used by every
-    // method above: MegaApi::startDownload is MegaTransferListener-based,
-    // not MegaRequestListener-based, reporting progress and completion via
-    // two separate callbacks. onProgress may fire zero or more times with
-    // (transferredBytes, totalBytes) before the transfer finishes; onDone
-    // fires exactly once, terminally, carrying a DownloadOutcome whose
-    // localPath is the *actual* final local path (MegaTransfer::getPath()),
-    // which can differ from destinationPath if a name collision caused the
-    // SDK to rename the saved file -- and whose alreadyPresent flag
-    // distinguishes that rename case from the other collision outcome (an
-    // identical file already at destinationPath, which the SDK detects via
-    // fingerprint and skips re-downloading entirely). Same background-thread
-    // caveat as the rest of this file applies to both callbacks -- except that
-    // an unresolvable handle fails in delivery mode 3, running onDone on the
-    // calling thread before this call returns.
+    // MegaApi::startDownload is MegaTransferListener-based, hence the second
+    // callback: onProgress may fire zero or more times, onDone exactly once.
+    // DownloadOutcome::localPath is the path the SDK *actually* wrote
+    // (MegaTransfer::getPath()), which differs from destinationPath when a name
+    // collision made the SDK rename the file; alreadyPresent instead means the
+    // SDK fingerprinted an identical file there and skipped the download.
     virtual void download(
         std::uint64_t handle,
         const std::string& destinationPath,
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<DownloadOutcome>)> onDone) = 0;
 
-    // Uploads the local *file* at localPath into the folder identified by
-    // parentHandle (parentIsRoot makes parentHandle meaningless, same
-    // sentinel convention as getChildren/getPath above). localPath is
-    // already fully resolved by the caller -- absolute, with native
-    // separators -- exactly like download()'s destinationPath, since
-    // IMegaClient has no filesystem access of its own.
+    // Uploads the local *file* at localPath (caller-resolved, absolute, native
+    // separators) into the folder parentHandle.
     //
-    // Files only: MegaApi::startUpload also accepts a directory (uploading
-    // it recursively), but this app never exposes that, so callers must
-    // filter directories out beforehand.
+    // Files only: MegaApi::startUpload also accepts a directory and would upload
+    // it recursively, which this app never exposes -- callers must filter
+    // directories out beforehand.
     //
-    // Same two-callback shape as download() and for the same reason
-    // (MegaTransferListener, not MegaRequestListener): onProgress may fire
-    // zero or more times with (transferredBytes, totalBytes), onDone fires
-    // exactly once, terminally. Also like download(), a parentHandle that no
-    // longer resolves fails in delivery mode 3 -- onDone on the calling
-    // thread, before this call returns.
+    // Two-callback shape for the same reason as download().
     virtual void
     upload(const std::string& localPath,
            std::uint64_t parentHandle,
@@ -207,138 +130,83 @@ public:
            std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
            std::function<void(Result<UploadOutcome>)> onDone) = 0;
 
-    // Fetches the server-side thumbnail of the node identified by handle into
-    // the exact local file path destinationPath, same caller-resolves-the-path
-    // division of responsibility as download() above. Must not end with a path
-    // separator: the SDK would then treat it as a directory and derive the leaf
-    // name itself (megaapi_impl.cpp's getNodeAttribute).
+    // Fetches the server-side thumbnail into the exact local path destinationPath,
+    // which must not end with a path separator: the SDK would then treat it as a
+    // directory and derive the leaf name itself (megaapi_impl.cpp's
+    // getNodeAttribute). Result value is the path actually written.
     //
-    // Unlike download() this is MegaRequestListener-based, so it keeps the
-    // single-Result<T>-callback shape of everything above it. Result value is
-    // the path actually written (MegaRequest::getFile()).
-    //
-    // Fails with the SDK's API_ENOENT when the node has no server-side
-    // thumbnail; callers are expected to gate on FileEntry::hasThumbnail
-    // instead of relying on that, so it is not modeled as a distinct outcome.
-    // A handle that no longer resolves is the separate delivery-mode-3 case:
-    // onDone on the calling thread, before this call returns.
+    // Fails with API_ENOENT when the node has no server-side thumbnail; callers
+    // gate on FileEntry::hasThumbnail rather than branching on that.
     virtual void getThumbnail(std::uint64_t handle,
                               const std::string& destinationPath,
                               std::function<void(Result<std::string>)> onDone) = 0;
 
-    // Ancestor chain of the node identified by handle, root-first, always
-    // including the node itself as the last element and the root as the
-    // first (isRoot == true, handle meaningless -- same sentinel convention
-    // as getChildren/search above). Must be called after a successful
-    // fetchNodes(). Synchronous under the hood (in-memory parent walk), but
-    // kept callback-shaped for interface consistency.
+    // Ancestor chain root-first, always including the root as the first element
+    // and the node itself as the last. Must follow a successful fetchNodes().
     virtual void getPath(std::uint64_t handle,
                          bool isRoot,
                          std::function<void(Result<std::vector<PathSegment>>)> onDone) = 0;
 
-    // Current identity of the node identified by handle, without walking its
-    // ancestors. Fails when the handle resolves to nothing (permanently
-    // deleted, or fetchNodes() hasn't run). Succeeding does *not* mean the
-    // node is still in the Cloud Drive -- check NodeInfo::inCloud for that,
-    // since a deleted node lives on in the Rubbish bin. Must be called after
-    // a successful fetchNodes(). Synchronous under the hood (in-memory
-    // lookup), but kept callback-shaped for interface consistency.
+    // Current identity of the node, without walking its ancestors. Succeeding does
+    // *not* mean the node is still in the Cloud Drive -- a deleted node lives on
+    // in the Rubbish bin, so check NodeInfo::inCloud for that.
     virtual void getNodeInfo(std::uint64_t handle,
                              std::function<void(Result<NodeInfo>)> onDone) = 0;
 
-    // First of the mutating calls in this interface -- everything above only
-    // reads. All are MegaRequestListener-based, so they keep the
-    // single-Result<T>-callback shape; Result<void> because none of them
-    // reports anything beyond success/failure. Must be called after a successful
-    // fetchNodes(). Unlike the read methods above these do a real API
-    // round-trip, so the background-thread caveat at the top of this file is
-    // not merely theoretical here -- but only once their handles resolve.
-    // Handle resolution itself is delivery mode 3: onDone fires on the calling
-    // thread, before the call returns, whenever a handle is already gone.
+    // First of the mutating calls -- everything above only reads. All are real API
+    // round-trips and must follow a successful fetchNodes().
     virtual void renameNode(std::uint64_t handle,
                             const std::string& newName,
                             std::function<void(Result<void>)> onDone) = 0;
 
-    // "Delete" in MEGA terms: moves the node into the account's Rubbish bin
-    // rather than destroying it (MegaApi::remove() would be the permanent
-    // one, deliberately not exposed here). A node already in the Rubbish bin
-    // is moved to its top level again, which is harmless.
+    // "Delete" in MEGA terms: moves the node to the Rubbish bin rather than
+    // destroying it. The permanent MegaApi::remove() is deliberately not exposed.
     virtual void moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone) = 0;
 
-    // Reparents the node identified by handle under newParentHandle
-    // (newParentIsRoot makes newParentHandle meaningless, same sentinel
-    // convention as getChildren/getPath above). moveToRubbish is really this
-    // with the Rubbish bin hardcoded as the destination.
     virtual void moveNode(std::uint64_t handle,
                           std::uint64_t newParentHandle,
                           bool newParentIsRoot,
                           std::function<void(Result<void>)> onDone) = 0;
 
-    // Duplicates the node identified by handle under newParentHandle (same
-    // sentinel convention as moveNode). A folder is copied with its whole
-    // subtree in this one request -- the SDK walks it server-side, so callers
-    // never recurse.
+    // Duplicates the node under newParentHandle. A folder is copied with its whole
+    // subtree in this one request -- the SDK walks it server-side.
     //
-    // newName empty keeps the source's name. Passing one is not cosmetic: when
-    // the destination already holds a *file* of that name, the SDK attaches
-    // the copy as a new version *over* it instead of creating a sibling, and a
-    // byte-identical file is dropped outright while still reporting success.
-    // A caller that means "add a second item" must therefore pass a name
-    // nothing in the destination uses (FileOperationService::uniqueCopyName).
-    // Folders are unaffected -- two same-named folders simply coexist.
-    //
-    // Unlike createFolder below there is no kEExist to branch on: MEGA permits
-    // duplicate sibling names, so the collision is silent either way.
+    // newName empty keeps the source's name, and passing one is not cosmetic: if
+    // the destination already holds a *file* of that name, the SDK attaches the
+    // copy as a new version *over* it instead of creating a sibling, and drops a
+    // byte-identical file outright while still reporting success. "Add a second
+    // item" therefore requires an unused name (FileOperationService::uniqueCopyName).
+    // Folders are unaffected -- two same-named folders coexist, with no kEExist.
     virtual void copyNode(std::uint64_t handle,
                           std::uint64_t newParentHandle,
                           bool newParentIsRoot,
                           const std::string& newName,
                           std::function<void(Result<void>)> onDone) = 0;
 
-    // Creates an empty folder under parentHandle (parentIsRoot is the same
-    // sentinel convention as above).
-    //
-    // The duplicate-name check is the *server's*: if the parent already
-    // contains a folder of that name, the API rejects the request and onDone
-    // reports MegaErrorCode::kEExist. That is deliberately the only such
-    // check -- an in-memory pre-check against the fetched node tree could go
-    // stale between the check and the call, and would be redundant with this
-    // one. Note MEGA lets a file and a folder share a name, so an existing
-    // *file* called the same thing is not a conflict.
-    //
-    // The new folder's handle is not reported: the SDK does return it, but no
-    // caller needs it (creation is followed by a listing refresh, not by
-    // addressing the new node), and Result<void> keeps this on the shared
-    // SimpleResultListener path in MegaSdkClient.
+    // Creates an empty folder under parentHandle. The duplicate-name check is the
+    // *server's* -- onDone reports MegaErrorCode::kEExist -- and deliberately the
+    // only one: an in-memory pre-check could go stale between check and call. Note
+    // MEGA lets a file and a folder share a name, so an existing *file* of that
+    // name is not a conflict.
     virtual void createFolder(std::uint64_t parentHandle,
                               bool parentIsRoot,
                               const std::string& name,
                               std::function<void(Result<void>)> onDone) = 0;
 
-    // Whether moveNode() with the same arguments would be accepted. Shape A:
-    // a pure in-memory check against the already-fetched node tree, no API
-    // round-trip. It has to be, since a drag hovering over a drop target
-    // queries it continuously to paint the "can I drop here" feedback.
-    //
-    // Failure codes are the interesting part of the result, so they're set
-    // precisely (MegaErrorCodes.h): kENoEnt when either end no longer exists,
-    // kECircular when a folder would become its own descendant, kEAccess on
-    // insufficient permissions, and kEArgs when the node already sits in that
-    // folder. Callers branch on errorCode, never on errorMessage.
-    //
-    // That last case is stricter than the SDK, which accepts a move to the
-    // node's current parent as a no-op. It belongs here because an
-    // implementation is the only thing that can see a node's actual parent
-    // handle; a caller pointing at the root has only the isRoot sentinel.
+    // Whether moveNode() with the same arguments would be accepted, as a pure
+    // in-memory check -- a drag hovering over a drop target queries it per mouse
+    // move. Callers branch on errorCode, never errorMessage (MegaErrorCodes.h):
+    // kENoEnt either end is gone, kECircular a folder would become its own
+    // descendant, kEAccess insufficient permission, kEArgs the node already sits
+    // in that folder. That last case is stricter than the SDK, which treats it as
+    // a no-op; it lives here because only an implementation can see a node's
+    // actual parent handle.
     virtual Result<void>
     checkMove(std::uint64_t handle, std::uint64_t newParentHandle, bool newParentIsRoot) const = 0;
 
-    // Whether upload() into this folder would be accepted. Shape A for the
-    // same reason as checkMove -- a drag hovering over a drop target
-    // queries it continuously -- but unlike checkMove the SDK has no
-    // checkUploadErrorExtended equivalent, so the conditions are spelled out
-    // by the implementation. Same error-code discipline as checkMove
-    // (callers branch on errorCode, never on errorMessage):
+    // Whether upload() into this folder would be accepted. The SDK has no
+    // checkUploadErrorExtended equivalent, so the implementation spells the
+    // conditions out itself; same error-code discipline as checkMove:
     //
     //   kENoEnt  the handle no longer resolves, or resolves to a node that
     //            is no longer in the Cloud Drive (Rubbish bin / Vault)
@@ -346,98 +214,57 @@ public:
     //   kEAccess insufficient permission to add children (read-only share)
     virtual Result<void> checkUpload(std::uint64_t parentHandle, bool parentIsRoot) const = 0;
 
-    // Of names, returns those that already name an existing *file* directly
-    // under (parentHandle, parentIsRoot). Neither the order nor the size of
-    // the result matches names -- only the hits come back.
+    // Of names, returns those that already name an existing *file* directly under
+    // the given parent -- only the hits come back, in no particular order.
     //
-    // Same-named *folders* are ignored: uploads are files-only, and MEGA
-    // lets a file and a folder share a name, so replacing a folder with a
-    // file would be both destructive and unasked-for.
-    //
-    // Shape A for the same reason as checkUpload: an in-memory walk of the
-    // already-fetched node tree, and drop handling has to decide right there
-    // whether to raise a confirmation dialog.
+    // Same-named *folders* are ignored: uploads are files-only and MEGA lets a
+    // file and a folder share a name, so replacing a folder would be destructive
+    // and unasked-for.
     virtual Result<std::vector<FileEntry>>
     findChildFiles(std::uint64_t parentHandle,
                    bool parentIsRoot,
                    const std::vector<std::string>& names) const = 0;
 
-    // Whether (handle, isRoot) has at least one *folder* child -- the folder
-    // tree's own question, since files never appear in the side panel. False
-    // for a node that is itself a file.
-    //
-    // Shape A, same reason as checkMove/checkUpload/findChildFiles: an
-    // in-memory count over the already-fetched node tree, no API round-trip.
-    // It has to be, because QAbstractItemModel::hasChildren() answers the view
-    // on the spot and has nowhere to put a callback.
+    // Whether the node has at least one *folder* child -- the folder tree's own
+    // question, since files never appear in the side panel. False for a file.
     virtual Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const = 0;
 
     // --- Account-level reads -------------------------------------------------
-    //
-    // Everything above is auth/session or node tree; these four describe the
-    // signed-in *account* itself. currentAccountIdentity() sits down here with
-    // its group rather than beside currentUserHandle(); either position is now
-    // free, since the shape-A list at the top of this file replaced the
-    // positional tally these comments used to carry.
 
-    // Email, the SDK's fallback avatar colour, and the user handle, in one
-    // read. MegaApi::getMyEmail + getMyUserHandle + getUserAvatarColor.
-    //
-    // Shape A, same rationale as currentSessionToken/currentUserHandle: local
-    // reads of account state the SDK already holds, no API round-trip.
-    // avatarColor in particular is a pure derivation from the user handle, so
-    // it is available the instant login completes and never needs the network.
-    //
-    // Not an atomic snapshot: each field is a separate SDK read under a
-    // separately taken lock, so a logout landing mid-call can pair one
-    // account's email with an empty handle. Left as is deliberately -- the sole
-    // consumer paints the account panel, which the same logout tears down, so
-    // the worst case is one frame of a stale avatar initial. A caller that ever
-    // *decides* something on the pair needs a snapshotting variant instead of
-    // relying on this one.
-    //
+    // MegaApi::getMyEmail + getMyUserHandle + getUserAvatarColor in one read.
     // Fails if not currently logged in.
+    //
+    // Not an atomic snapshot: each field is a separate SDK read under its own
+    // lock, so a logout landing mid-call can pair one account's email with an
+    // empty handle. Acceptable only because the sole consumer paints the account
+    // panel that the same logout tears down; anything that *decides* on the pair
+    // needs a snapshotting variant.
     virtual Result<AccountIdentity> currentAccountIdentity() const = 0;
 
-    // Fetches the signed-in account's avatar into the exact local file path
-    // destinationPath -- same caller-resolves-the-path division as
-    // getThumbnail/download, and the same rule that it must not end with a
-    // path separator (the SDK would treat it as a directory and synthesize
-    // email + "0.jpg" inside it). Result value is the path actually written.
+    // Fetches the signed-in account's avatar into the exact local path
+    // destinationPath, which must not end with a path separator (the SDK would
+    // treat it as a directory and synthesize email + "0.jpg" inside it). Result
+    // value is the path actually written.
     //
-    // MegaApi::getUserAvatar's active-account overload.
-    //
-    // Unlike getThumbnail, failure here is *not* exceptional: most accounts
-    // have no avatar set, and there is no FileEntry::hasThumbnail-style flag
-    // to gate on beforehand, so the outcome is the only signal available.
-    // Measured against a real avatar-less account, the code is kENoEnt (-9)
-    // with "Not found" -- but megaapi.h does not document that, so callers
-    // must treat *any* failure as "no avatar" rather than matching on it.
-    // Callers must not surface it as an error -- AccountService converts it to
-    // AvatarOutcome::hasAvatar rather than leaving that judgement to each
-    // caller.
+    // Unlike getThumbnail, failure is *not* exceptional: most accounts have no
+    // avatar and there is no flag to gate on beforehand. The observed code is
+    // kENoEnt, but megaapi.h does not document that, so callers must read *any*
+    // failure as "no avatar" -- AccountService converts it to
+    // AvatarOutcome::hasAvatar rather than leaving that to each caller.
     virtual void getMyAvatar(const std::string& destinationPath,
                              std::function<void(Result<std::string>)> onDone) = 0;
 
-    // Reads one public attribute of the signed-in account.
-    // MegaApi::getUserAttribute's active-account overload; the value arrives
-    // in MegaRequest::getText().
-    //
-    // Parameterised by attribute instead of exposing getMyDisplayName, so that
-    // the first-name/last-name join policy lives in AccountService where a
-    // mock can test it. Fails when the attribute has never been set, which is
-    // ordinary rather than exceptional for names.
+    // Reads one public attribute of the signed-in account; the value arrives in
+    // MegaRequest::getText(). Parameterised by attribute rather than exposing
+    // getMyDisplayName, so the first-name/last-name join policy stays in
+    // AccountService where a mock can test it. Fails when the attribute has never
+    // been set, which is ordinary for names.
     virtual void getMyUserAttribute(UserAttribute attribute,
                                     std::function<void(Result<std::string>)> onDone) = 0;
 
-    // Storage quota and plan level.
-    // MegaApi::getSpecificAccountDetails(storage=true, transfer=false,
-    // pro=true) -- only two flags because megaapi.h asks callers to request
-    // just what they need to minimise server load, and transfer quota is out
-    // of scope for this app.
-    //
-    // Unlike the node-tree getters above, this is a real server round-trip, so
-    // the background-thread caveat at the top of this file is not theoretical
-    // here. Must not be issued per-frame or from a property getter.
+    // Storage quota and plan level. MegaApi::getSpecificAccountDetails with only
+    // storage+pro: megaapi.h asks callers to request just what they need, and
+    // transfer quota is out of scope. A real server round-trip -- never per-frame
+    // or from a property getter.
     virtual void getAccountInfo(std::function<void(Result<AccountInfo>)> onDone) = 0;
 };

@@ -145,9 +145,8 @@ Result<void> WindowsSessionStore::clearSession()
 {
     std::error_code ec;
     std::filesystem::remove(mFilePath, ec);
-    // Idempotent by contract: always ok(), even if nothing existed or the OS
-    // remove() call itself reported an error -- same degrade-rather-than-fail
-    // ethos as SqliteNodeCache.
+    // Idempotent by contract: always ok(), whether or not anything existed and even
+    // if remove() itself reported an error.
     if (ec)
         qCWarning(lcSession) << "clearSession: remove reported" << ec.message().c_str();
     return Result<void>::ok();

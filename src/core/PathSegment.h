@@ -10,10 +10,8 @@ struct PathSegment
     std::uint64_t handle = 0;
     bool isRoot = false;
 
-    // Value-type equality, field-by-field -- same rationale as FileEntry's
-    // own operator== (gmock's Eq() matcher over std::vector<PathSegment>,
-    // and FolderNavigationController's own change-detection before it
-    // re-emits breadcrumbChanged).
+    // Field-by-field, as elsewhere. Also what the breadcrumb's change detection
+    // compares before re-emitting.
     bool operator==(const PathSegment& other) const
     {
         return name == other.name && handle == other.handle && isRoot == other.isRoot;

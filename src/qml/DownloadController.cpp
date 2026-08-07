@@ -23,25 +23,19 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
     });
     mService->setOnJobFinished([this](DownloadJob job) {
         invokeOnGuiThread(this, [this, job = std::move(job)]() mutable {
-            // On success, report the *actual* saved leaf name (from
-            // resolvedLocalPath), not the originally-requested job.name --
-            // they differ when a name collision caused the SDK to rename the
-            // saved file (see IMegaClient::download), and showing the
-            // pre-rename name in the snackbar reads as if the existing file
-            // got overwritten even though a distinct "(1)"-suffixed file was
-            // actually written. Failure has no resolvedLocalPath, so job.name
-            // (what the user asked to download) is still the right thing to
-            // show there.
+            // On success report the *actual* saved leaf name: it differs from
+            // job.name when a collision made the SDK rename the file, and showing
+            // the pre-rename name reads as if the existing file was overwritten.
+            // A failure has no resolvedLocalPath, so job.name is right there.
             QString displayName =
                 job.state == DownloadState::Completed
                     ? QFileInfo(QString::fromStdString(job.resolvedLocalPath)).fileName()
                     : QString::fromStdString(job.name);
             if (job.state == DownloadState::Failed)
             {
-                // Log only -- DownloadSnackbar already surfaces the failure to
-                // the user via downloadFinished below, so no notifyError()
-                // here. This is also the last stop for the SDK's English text
-                // and its code: neither is on the signal (R5-10).
+                // Log only: downloadFinished already surfaces the failure. This is
+                // also the last stop for the SDK's English text -- it never reaches
+                // the signal.
                 qCWarning(lcDownload)
                     << "download failed for" << displayName << ":"
                     << QString::fromStdString(job.errorMessage) << "code=" << job.errorCode;
@@ -57,21 +51,16 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
 
 DownloadController::~DownloadController()
 {
-    // The two observers above capture a raw this and stay registered for the
-    // service's whole life, and the service outlives this object (main.cpp
-    // declares it earlier, so it is destroyed later). Clearing them here only
-    // covers deliveries that *start* after this line: DownloadService copies
-    // the observer under its lock and calls the copy after unlocking, so a
-    // copy taken just before this runs would still reach a freed this.
+    // The observers capture a raw this and stay registered for the service's whole
+    // life, which outlives this object. Clearing them here only covers deliveries
+    // that *start* after this line -- the service copies the observer under its lock
+    // and calls the copy after unlocking, so a copy taken just before would still
+    // reach a freed this.
     //
-    // What closes that window is main.cpp's client->shutdown() before the
-    // stack unwinds -- it joins the SDK thread, so no delivery can be in
-    // flight by the time this destructor runs. That is a contract of the
-    // current shape, not of this class: it holds only while this and
-    // UploadController are app-lifetime singletons. Making either per-tab
-    // means it can die with the SDK thread still running, and then the
-    // observers have to hold a weak_ptr instead of a raw this
-    // (REFACTOR_PLANS.md's R5-9).
+    // What closes that window is the composition root's client->shutdown() before the
+    // stack unwinds: it joins the SDK thread, so no delivery can be in flight here.
+    // That holds only while this and UploadController are app-lifetime singletons --
+    // making either per-tab means the observers must hold a weak_ptr instead.
     mService->setOnProgress(nullptr);
     mService->setOnJobFinished(nullptr);
 }
@@ -111,9 +100,8 @@ void DownloadController::openFile(QString localPath)
 {
     if (!QDesktopServices::openUrl(QUrl::fromLocalFile(localPath)))
     {
-        // The path goes to the log, not the toast: openUrl gives no reason to
-        // report, and the file is the one the user just double-clicked or
-        // pressed "Open" on, so naming it back at them adds nothing.
+        // Log, not toast: openUrl gives no reason to report, and naming the file the
+        // user just opened back at them adds nothing.
         qCWarning(lcDownload) << "failed to open downloaded file:" << localPath;
         mNotifications->notifyError(QStringLiteral("openFile"));
     }
@@ -121,27 +109,20 @@ void DownloadController::openFile(QString localPath)
 
 QString DownloadController::computeDestinationPath(const QString& fileName) const
 {
-    // QStandardPaths::DownloadLocation resolves to the platform's real
-    // user-facing Downloads folder (SHGetKnownFolderPath(FOLDERID_Downloads)
-    // on Windows, XDG_DOWNLOAD_DIR on Linux, etc.) -- saving straight into it,
-    // no app-specific subfolder, matches ordinary browser download behavior.
-    // Name collisions across repeated downloads are handled by MegaSdkClient's
-    // COLLISION_RESOLUTION_NEW_WITH_N (numbered suffix, never overwrites).
+    // Straight into the user's real Downloads folder, no app-specific subfolder, as
+    // browsers do. Repeated downloads collide under MegaSdkClient's
+    // COLLISION_RESOLUTION_NEW_WITH_N, which suffixes rather than overwrites.
     QString dir = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
     QDir().mkpath(dir); // defensive: create it if this platform doesn't already have one
-    // MegaApi::startDownload hands this straight to the SDK's own LocalPath/
-    // Path (see third_party/sdk/src/localpath.cpp), which on Windows expects
-    // native '\' separators -- its leafName() splits on '\' specifically, so
-    // a '/'-separated path is treated as having no separator at all, making
-    // the whole string (including the "C:" drive letter) look like a bare
-    // leaf name and tripping an internal invariant assert. Qt's own APIs are
-    // fine with '/', but this string crosses into non-Qt code.
+    // Native '\' separators: the SDK's LocalPath splits leafName() on '\'
+    // specifically, so a '/'-separated path looks like one bare leaf name (drive
+    // letter included) and trips an internal invariant assert. Qt's own APIs don't
+    // care, but this string crosses into non-Qt code.
     //
-    // fileName is a MEGA node name, i.e. server-side data nothing upstream
-    // validates (E2E encryption rules out server-side checks, and the SDK only
-    // escapes startUpload/startDownload's customName, which MegaSdkClient
-    // passes as nullptr). This concatenation is therefore the trust boundary:
-    // safeLocalFileName is what keeps the result a leaf inside dir.
+    // fileName is a MEGA node name -- server-side data nothing upstream validates,
+    // since E2E encryption rules out server-side checks and the SDK only escapes
+    // customName, which MegaSdkClient passes as nullptr. This concatenation is the
+    // trust boundary, and safeLocalFileName keeps the result a leaf inside dir.
     const QString leaf =
         QString::fromStdString(DownloadService::safeLocalFileName(fileName.toStdString()));
     return QDir::toNativeSeparators(dir + "/" + leaf);

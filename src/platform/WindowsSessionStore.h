@@ -4,15 +4,13 @@
 #include <string>
 
 // The only file allowed to include <wincrypt.h> or call
-// CryptProtectData/CryptUnprotectData/LocalFree directly, mirroring SqliteNodeCache's
-// exclusivity over <sqlite3.h>. Windows-only for now (docs/MEMO.md). Not part of
-// MegaExplorerCore (parallels SqliteNodeCache/src/mega); gets its own adapter-level
-// test (tests/WindowsSessionStoreTest.cpp) since DPAPI needs no live account/network.
+// CryptProtectData/CryptUnprotectData directly. Outside MegaExplorerCore, since that
+// layer stays platform-free; unlike the SDK adapter it has its own test, DPAPI
+// needing no live account.
 class WindowsSessionStore : public ISessionStore
 {
 public:
-    // filePath: a fully resolved file path -- resolving it (QStandardPaths, mkpath
-    // the parent dir) is the caller's job, same contract as SqliteNodeCache's dbPath.
+    // filePath is fully resolved: creating the parent directory is the caller's job.
     explicit WindowsSessionStore(const std::string& filePath);
     ~WindowsSessionStore() override;
 

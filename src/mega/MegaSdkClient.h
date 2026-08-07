@@ -20,23 +20,19 @@ class MegaSdkClient : public IMegaClient
 {
 public:
     // basePath is where the SDK unconditionally creates its state-cache DB.
-    // Deliberately has no default: it used to be "." (the launch CWD), which
-    // silently moved the DB whenever the app was started from a different
-    // directory, and a missed DB means re-downloading the entire node tree
-    // (measured: 385s vs 0.6s on a 640k-node account).
+    // Deliberately has no default: a relative one moves the DB whenever the app
+    // starts from a different directory, and a missed DB means re-downloading the
+    // whole node tree (385s vs 0.6s on a 640k-node account).
     explicit MegaSdkClient(std::string basePath, std::string userAgent = "MegaExplorer");
     ~MegaSdkClient() override;
 
-    // Explicit stop point for the SDK thread. Destroying MegaApi makes the SDK
-    // thread fire every pending request/transfer as a failure before joining,
-    // and this object is destroyed *after* every service and controller that
-    // those callbacks touch (main.cpp declares it first), so waiting for the
-    // destructor delivers them to freed memory. Call this while all of them are
-    // still alive -- main.cpp does, right after app.exec() returns.
+    // Explicit stop point for the SDK thread. Destroying MegaApi fires every pending
+    // request as a failure before joining, and this object outlives every service
+    // and controller those callbacks touch, so leaving it to the destructor delivers
+    // them to freed memory. Call it while everything is still alive.
     //
-    // Afterwards this object is inert: every method fails immediately instead of
-    // touching the destroyed MegaApi. Idempotent, and the destructor calls it
-    // too, so forgetting the explicit call only loses the ordering guarantee.
+    // Afterwards this object is inert: every method fails immediately. Idempotent,
+    // and the destructor calls it too, so forgetting only loses the ordering.
     void shutdown();
 
     void login(const std::string& email,
@@ -145,11 +141,8 @@ public:
     void getAccountInfo(std::function<void(Result<AccountInfo>)> onDone) override;
 
 private:
-    // Shared by getRootChildren/getChildren/search: isRoot selects
-    // getRootNode(), otherwise looks handle up via getNodeByHandle().
-    // const so the const checkMove() can use it -- unique_ptr::operator->()
-    // is const-qualified but hands back a non-const MegaApi*, so nothing else
-    // has to change (same trick currentSessionToken() already relies on).
+    // const so the const checkMove() can use it: unique_ptr::operator->() is
+    // const-qualified but hands back a non-const MegaApi*.
     std::unique_ptr<mega::MegaNode> resolveNode(std::uint64_t handle, bool isRoot) const;
 
     void listChildren(std::unique_ptr<mega::MegaNode> node,
@@ -157,20 +150,15 @@ private:
                       SortOrder order,
                       std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
-    // Declared before mApi so it is destroyed last: the logger stays valid
-    // while ~MegaApi runs, which is what makes the SDK's own teardown lines
-    // reach the log at all. (It does *not* mean the logger is registered
-    // before mApi can log -- registration happens in the constructor body,
-    // by which point MegaApiImpl::init has already run and started the SDK
-    // thread. Startup lines emitted in there are lost.)
+    // Declared before mApi so it is destroyed last, which is what lets the SDK's own
+    // teardown lines reach the log. It does not help at startup: registration happens
+    // in the constructor body, after MegaApiImpl::init has already logged.
     std::unique_ptr<MegaSdkLogger> mLogger;
     std::unique_ptr<mega::MegaApi> mApi;
 
-    // Set before mApi is destroyed, so callbacks arriving on the SDK thread
-    // during teardown see it and bail out instead of dereferencing a null
-    // mApi. A mutex would be the obvious tool and is *not usable*: the SDK
-    // delivers callbacks while holding its own sdkMutex, and our synchronous
-    // methods take that same sdkMutex from the GUI thread, so any lock of ours
-    // wrapping both sides inverts the order and deadlocks.
+    // Set before mApi is destroyed, so teardown callbacks on the SDK thread bail out
+    // instead of dereferencing null. A mutex is *not usable* here: the SDK delivers
+    // callbacks holding its own sdkMutex, which our synchronous methods take from the
+    // GUI thread, so any lock wrapping both sides inverts the order and deadlocks.
     std::atomic<bool> mShuttingDown{false};
 };

@@ -3,26 +3,18 @@
 #include <QTimer>
 
 // The "this tab has something in flight" counter behind
-// FolderNavigationController's busy property, with the delay before a spinner
-// is shown (REFACTOR_PLANS.md's R5-3).
+// FolderNavigationController's busy property, plus the delay before a spinner shows.
 //
-// Owns a QTimer, so it has to die on the GUI thread. Created through
-// GuiThread.h's makeGuiOwned and shared by the two controllers of one tab --
-// navigation and mutations (R5-1) -- which is why it is a shared_ptr rather
-// than a value member of either. Both holders are makeGuiOwned themselves, so
-// refcount zero already lands on the GUI thread; makeGuiOwned here keeps that a
-// local fact instead of one derived from the holders.
+// Owns a QTimer, so it has to die on the GUI thread: created through makeGuiOwned,
+// and a shared_ptr rather than a member because both of a tab's controllers write it.
 //
-// Three invariants, previously spread over FolderNavigationController:
-//  - begin/end pair per SDK call, so a bulk fan-out of N calls is N pairs. The
-//    end goes at the very top of the callback, before any of its own
-//    branching -- createFolder's four outcomes would otherwise be four chances
-//    to leak the count.
-//  - visible() is not "count > 0". It only turns true once the delay timer has
-//    fired, so an operation that finishes inside the delay never shows a
-//    spinner at all, which is the point.
-//  - abandonAll() breaks the pairing on purpose, which is why end() clamps at
-//    zero.
+// Three invariants:
+//  - one begin/end pair per SDK call, so a fan-out of N calls is N pairs. The end
+//    goes at the very top of the callback, before any branching -- four outcomes
+//    would otherwise be four chances to leak the count.
+//  - visible() is not "count > 0": it turns true only once the delay timer fires, so
+//    an operation finishing inside the delay shows no spinner at all.
+//  - abandonAll() breaks the pairing on purpose, which is why end() clamps at zero.
 class BusyState : public QObject
 {
     Q_OBJECT
@@ -35,16 +27,14 @@ public:
     void begin();
     void end();
 
-    // Abandons the count with operations still in flight, rather than waiting
-    // them out: for logout, where their callbacks will find nothing left to
-    // refresh and a spinner would otherwise keep turning on a signed-out
-    // window. Those callbacks still reach end(), which is what its clamp is
-    // for.
+    // For logout: abandons the count instead of waiting operations out, since their
+    // callbacks will find nothing to refresh and the spinner would keep turning on a
+    // signed-out window. They still reach end(), which is what its clamp is for.
     void abandonAll();
 
 signals:
-    // visible() flipped. Relayed rather than exposed directly: QML sees this
-    // as one bool on the controller that owns it.
+    // visible() flipped. Relayed, not exposed: QML sees one bool on the owning
+    // controller.
     void changed();
 
 private:

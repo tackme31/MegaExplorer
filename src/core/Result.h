@@ -3,14 +3,11 @@
 #include <string>
 #include <utility>
 
-// `code` is a MegaErrorCode.h value and is mandatory: callers branch on
-// errorCode, never on errorMessage (which is a fixed English SDK string).
-// See "Error representation" in docs/ARCHITECTURE.md.
+// `code` is a MegaErrorCodes.h value and is mandatory: callers branch on errorCode,
+// never on errorMessage, which is a fixed English SDK string.
 //
-// [[nodiscard]] on the class, so discarding *any* Result-returning call is a
-// compile warning. Ignoring a failure on purpose is written as
-// `(void)foo();` plus a comment saying why (AuthService.cpp does this for
-// best-effort session clears).
+// [[nodiscard]] sits on the class, so discarding *any* Result-returning call warns.
+// Ignoring a failure on purpose is written `(void)foo();` with a reason.
 template<typename T>
 struct [[nodiscard]] Result
 {
@@ -18,9 +15,8 @@ struct [[nodiscard]] Result
     std::string errorMessage;
     int errorCode = 0;
 
-    // Reading the value of a failed Result yields a default-constructed T, i.e.
-    // an empty string / 0 / empty vector that looks like real data. The assert
-    // turns that silent misread into a Debug crash at the offending line.
+    // A failed Result's value is a default-constructed T -- an empty string or 0 that
+    // looks like real data. The assert turns that silent misread into a Debug crash.
     T& value()
     {
         assert(success && "read value() of a failed Result");

@@ -18,13 +18,9 @@ ThumbnailController::ThumbnailController(std::shared_ptr<ThumbnailService> servi
 
 void ThumbnailController::requestThumbnail(quint64 handle)
 {
-    // No hasThumbnail/isFolder re-check here: this method only has a handle,
-    // not a row/FileEntry to check flags against, and a stale/unknown handle
-    // already fails cleanly through IMegaClient::getThumbnail's own
-    // resolveNode() lookup (MegaSdkClient), landing in the qWarning() below
-    // like any other fetch failure. The QML caller (not yet wired) is
-    // expected to only invoke this for hasThumbnail == true && isFolder ==
-    // false rows.
+    // No hasThumbnail/isFolder re-check: this method has a handle, not a row to check
+    // flags against, and a stale handle already fails cleanly through getThumbnail's
+    // own node lookup, landing in the warning below like any other fetch failure.
     QString destinationPath = computeDestinationPath(handle);
     mService->request(
         static_cast<std::uint64_t>(handle),
@@ -48,17 +44,11 @@ void ThumbnailController::requestThumbnail(quint64 handle)
 
 QString ThumbnailController::computeDestinationPath(quint64 handle) const
 {
-    // TempLocation + an app-specific subfolder, mirroring
-    // DownloadController::computeDestinationPath's DownloadLocation pattern.
-    // One file per handle, so repeated requestThumbnail() calls for the same
-    // handle overwrite the same cache slot instead of accumulating files --
-    // harmless either way since ThumbnailService dedupes concurrent/cached
-    // requests before ever reaching IMegaClient::getThumbnail.
+    // One file per handle, so repeated requests overwrite the same cache slot rather
+    // than accumulating files.
     QString dir =
         QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/MegaExplorerThumbnails";
     QDir().mkpath(dir);
-    // Same native-separator requirement as DownloadController -- MEGA SDK's
-    // localpath.cpp splits on '\' on Windows; see
-    // DownloadController::computeDestinationPath for the full explanation.
+    // Same native-separator requirement as DownloadController's destination path.
     return QDir::toNativeSeparators(dir + "/" + QString::number(handle) + ".jpg");
 }

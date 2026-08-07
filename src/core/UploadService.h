@@ -23,13 +23,9 @@ struct UploadJob
     std::uint64_t parentHandle = 0;
     bool parentIsRoot = false;
 
-    // Handle of an existing same-named file the user chose to replace, or 0
-    // for none. UploadService never interprets this -- it rides along in the
-    // job and comes back untouched in the finished-job notification. Moving
-    // that old node to the Rubbish bin is UploadController's job (via
-    // FileOperationService), so the queue stays the single source of order
-    // without this service having to own a two-step upload-then-delete
-    // transaction.
+    // An existing same-named file the user chose to replace, or 0. Opaque here: it
+    // rides along and comes back untouched in the finished-job notification, so
+    // this service never owns a two-step upload-then-delete transaction.
     std::uint64_t replaceHandle = 0;
 
     std::uint64_t nodeHandle = 0; // handle of the created node, once Completed
@@ -42,35 +38,25 @@ struct UploadJob
 };
 
 // Serializes uploads one at a time over IMegaClient::upload, mirroring
-// DownloadService: enqueue() starts immediately if nothing else is active,
-// otherwise the job waits and is auto-started once every job ahead of it
-// finishes (succeeds or fails). Same mutex discipline, same mActive/mPending
-// split and job-id matching on callbacks (see DownloadService for why both
-// invariants are structural), same "finished jobs are dropped right after
-// their notification" -- this is a live queue, not an upload history log.
+// DownloadService down to the mutex discipline, the mActive/mPending split and the
+// job-id matching on callbacks -- see there for why those invariants are
+// structural.
 //
 // Deliberately absent, unlike DownloadService:
 //
-//  - No duplicate suppression. DownloadController needs hasJobForHandle
-//    because a double-click or a menu item can be fired repeatedly; a drop
-//    is a single explicit gesture. MEGA also allows same-named siblings, and
-//    an uploaded node has no handle until the transfer completes, so there
-//    would be nothing to key on anyway.
-//  - No local-file existence check. src/core has no filesystem access by
-//    design. If the file is gone by the time its turn comes, startUpload
-//    fails and the job takes the ordinary failure path.
+//  - No duplicate suppression. A drop is a single explicit gesture, MEGA allows
+//    same-named siblings, and an uploaded node has no handle until the transfer
+//    completes, so there would be nothing to key on.
+//  - No local-file existence check: src/core has no filesystem access by design. A
+//    file gone by its turn just fails startUpload and takes the failure path.
 class UploadService
 {
 public:
     explicit UploadService(std::shared_ptr<IMegaClient> client);
 
-    // Enqueues an upload of localPath (an exact, already-resolved local file
-    // path) into (parentHandle, parentIsRoot). name is the leaf name shown in
-    // the UI; expectedTotalBytes seeds totalBytes from already-known metadata
-    // so a consumer reading currentJob() right away still has a denominator.
-    // replaceHandle is opaque pass-through data, see UploadJob. Returns a job
-    // id usable to correlate later notifications; the same id is what the
-    // service matches its own SDK callbacks against.
+    // localPath is exact and already resolved. expectedTotalBytes seeds totalBytes so
+    // a consumer reading currentJob() right away has a denominator. The returned id
+    // is what the service matches its own SDK callbacks against.
     std::uint64_t enqueue(const std::string& localPath,
                           const std::string& name,
                           std::uint64_t parentHandle,
@@ -78,37 +64,30 @@ public:
                           std::uint64_t expectedTotalBytes,
                           std::uint64_t replaceHandle = 0);
 
-    // Snapshot of the active job, or nullopt if nothing is running. Copies
-    // under the lock for the same reason as DownloadService::currentJob().
+    // A copy under the lock, for the same reason as DownloadService::currentJob().
     std::optional<UploadJob> currentJob() const;
     std::vector<UploadJob> jobs() const;
 
-    // O(1), unlike jobs(). Dropping thousands of files makes this the hot
-    // path behind the footer's "n remaining" label.
+    // O(1), unlike jobs(): dropping thousands of files makes the footer's "n
+    // remaining" label a hot path.
     std::size_t queueLength() const;
 
-    // Synchronous pre-checks, passed straight through to IMegaClient. Same
-    // "async execution plus a synchronous can-I" split as
-    // FileOperationService::canMove, for the same reason: a hovering drag
-    // needs an answer immediately.
+    // Synchronous pre-checks straight through to IMegaClient: a hovering drag needs
+    // its answer immediately.
     Result<void> canUploadTo(std::uint64_t parentHandle, bool parentIsRoot) const;
     Result<std::vector<FileEntry>> findNameCollisions(std::uint64_t parentHandle,
                                                       bool parentIsRoot,
                                                       const std::vector<std::string>& names) const;
 
-    // Single-subscriber observers, same contract as DownloadService's:
-    // registering a new callback replaces the previous one.
+    // Single-subscriber: registering again replaces the previous callback.
     void setOnProgress(std::function<void(UploadJob)> onProgress);
     void setOnJobFinished(std::function<void(UploadJob)> onJobFinished);
 
 private:
-    // Promotes mPending.front() into mActive if nothing else is running, then
-    // keeps going for as long as jobs keep finishing inside this call.
-    //
-    // Locks/unlocks mMutex internally rather than requiring the caller to hold
-    // it: checkUpload() answers on the spot and IMegaClient::upload() may run
-    // onProgress/onDone before it returns (IMegaClient.h's delivery mode 3),
-    // so holding mMutex across either would self-deadlock.
+    // Promotes mPending.front() into mActive, then keeps going while jobs keep
+    // finishing inside this call. Takes mMutex itself: checkUpload() answers on the
+    // spot and upload() can run onDone before returning, so holding the lock across
+    // either would self-deadlock.
     void startNextIfIdle();
 
     std::shared_ptr<IMegaClient> mClient;
@@ -119,10 +98,8 @@ private:
     std::function<void(UploadJob)> mOnProgress;
     std::function<void(UploadJob)> mOnJobFinished;
 
-    // Re-entrancy trampoline for startNextIfIdle(), identical to
-    // DownloadService's -- see its comment for why the recursion it replaces
-    // was a real risk rather than a mock-only one. Both flags live under
-    // mMutex.
+    // Re-entrancy trampoline for startNextIfIdle(), identical to DownloadService's
+    // -- see there for why the recursion it replaces was a real risk.
     bool mAdvancing = false;
     bool mAdvanceRequested = false;
 };

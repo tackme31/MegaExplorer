@@ -75,14 +75,11 @@ void UploadService::setOnJobFinished(std::function<void(UploadJob)> onJobFinishe
 
 void UploadService::startNextIfIdle()
 {
-    // Two synchronous failure paths feed this loop, both reachable in
-    // production (drop 200 files onto a folder that has just been deleted
-    // elsewhere): the destination re-validation below, and IMegaClient::upload
-    // itself when the parent handle no longer resolves. The first returns here
-    // directly; the second comes back through onDone's startNextIfIdle(),
-    // which the mAdvancing trampoline turns into another turn of this loop
-    // rather than a nested frame. Same shape in DownloadService and
-    // ThumbnailService.
+    // Two synchronous failure paths feed this loop, both reachable in production
+    // (200 files dropped onto a folder just deleted elsewhere): the destination
+    // re-validation below, and upload() itself when the parent no longer resolves.
+    // The second returns through onDone's startNextIfIdle(), which the mAdvancing
+    // trampoline turns into another turn here rather than a nested frame.
     {
         std::lock_guard<std::mutex> lock(mMutex);
         if (mAdvancing)
@@ -125,9 +122,9 @@ void UploadService::startNextIfIdle()
             UploadJob snapshot;
             {
                 std::lock_guard<std::mutex> lock(mMutex);
-                // Nothing can steal mActive here: no transfer has started, so
-                // no SDK thread knows this job yet. Spelled out anyway so that
-                // no path writes mActive without naming which job it means.
+                // Nothing can steal mActive here -- no transfer has started, so no
+                // SDK thread knows this job yet -- but checked anyway, so no path
+                // writes mActive without naming which job it means.
                 if (!mActive || mActive->id != id)
                 {
                     mAdvancing = false; // every exit past the flag must clear it

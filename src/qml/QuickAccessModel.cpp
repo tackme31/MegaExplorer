@@ -250,14 +250,11 @@ void QuickAccessModel::validateAll()
                     if (--sweep->remaining > 0)
                         return;
 
-                    // Committed against the *current* list rather than the
-                    // snapshot's order: a reorder (Phase 22a) or a pin() may
-                    // have landed while the sweep was in flight, and replaying
-                    // the snapshot would undo it. The sweep contributes only
-                    // names and drops, both keyed by handle; a handle it never
-                    // saw passes through unchecked. Only Gone drops a pin --
-                    // Unknown means the sweep learned nothing about it, so it
-                    // is passed through the same way an unseen handle is.
+                    // Committed against the *current* list, not the snapshot's order:
+                    // a reorder or a pin() may have landed mid-sweep, and replaying
+                    // the snapshot would undo it. The sweep contributes only names
+                    // and drops, keyed by handle, and only Gone drops -- Unknown
+                    // passes through like a handle the sweep never saw.
                     const std::vector<PinnedFolder>& current = mService->pins();
                     std::vector<PinnedFolder> survivors;
                     survivors.reserve(current.size());
@@ -277,10 +274,8 @@ void QuickAccessModel::validateAll()
                             survivors.push_back(*found);
                     }
 
-                    // Skip the model reset when the sweep changed nothing,
-                    // which is the common case -- same "don't emit an
-                    // identical value" guard as
-                    // FolderNavigationController::refreshBreadcrumb.
+                    // Skip the model reset when the sweep changed nothing, which is
+                    // the common case.
                     if (survivors == mService->pins())
                         return;
 

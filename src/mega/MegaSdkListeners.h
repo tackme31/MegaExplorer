@@ -12,14 +12,10 @@
 #include <string>
 #include <utility>
 
-// The callback adapters MegaSdkClient hands to MegaApi: each one turns one
-// shape of SDK completion into the std::function the port declares. Only
-// MegaSdkClient.cpp includes this -- it lives in a header rather than a .cpp
-// of its own so that <megaapi.h> still gets compiled exactly once.
-//
-// These were an anonymous namespace inside MegaSdkClient.cpp until R5-7, so
-// they no longer have internal linkage; the namespace name is what keeps them
-// out of the global one.
+// The callback adapters MegaSdkClient hands to MegaApi: each turns one shape of SDK
+// completion into the std::function the port declares. Only MegaSdkClient.cpp
+// includes this -- a header rather than a .cpp of its own so <megaapi.h> still gets
+// compiled exactly once.
 namespace megasdk
 {
 
@@ -35,12 +31,10 @@ namespace megasdk
 // callback never arrives, `delete this` is never reached, and the listener
 // leaks -- the exact opposite of what the call looks like it does.
 
-// Shared by every SDK call whose completion is a bare success/failure with
-// no extra payload (login, loginWithSession, multiFactorAuthLogin, logout)
-// -- LoginListener and FetchNodesListener used to duplicate this verbatim
-// before being merged here. fetchNodes has since moved back out to its own
-// FetchNodesListener below, because it is the one request type that also
-// reports progress and the other four must not pay for that.
+// Shared by every SDK call whose completion is a bare success/failure with no extra
+// payload (login, loginWithSession, multiFactorAuthLogin, logout). fetchNodes has
+// its own listener below because it is the one request type that also reports
+// progress, which these four must not pay for.
 class SimpleResultListener : public mega::MegaRequestListener
 {
 public:
@@ -68,11 +62,10 @@ private:
     std::function<void(Result<void>)> mOnDone;
 };
 
-// SimpleResultListener plus onRequestUpdate, which the SDK documents as
-// firing for TYPE_FETCH_NODES only (megaapi.h:9261) and which reports the
-// `f` response's HTTP download progress. See IMegaClient::fetchNodes for the
-// three ways that progress is narrower than it looks; nothing here tries to
-// smooth over them, they are the caller's to handle.
+// SimpleResultListener plus onRequestUpdate, which the SDK documents as firing for
+// TYPE_FETCH_NODES only (megaapi.h:9261) and which reports the `f` response's HTTP
+// download progress. Nothing here smooths over the caveats in
+// IMegaClient::fetchNodes -- they are the caller's to handle.
 class FetchNodesListener : public mega::MegaRequestListener
 {
 public:
@@ -83,11 +76,10 @@ public:
 
     void onRequestUpdate(mega::MegaApi* /*api*/, mega::MegaRequest* request) override
     {
-        // Both getters return long long and both can still be at their -1
-        // default here: the SDK only calls setTotalBytes once the response
-        // length is known (megaapi_impl.cpp:16150), so early updates can
-        // carry an unknown total. Casting -1 straight to uint64_t would hand
-        // the UI 1.8e19 and pin its bar at zero forever.
+        // Both getters return long long and can still be at their -1 default: the SDK
+        // only calls setTotalBytes once the response length is known, so early
+        // updates carry an unknown total. Casting -1 to uint64_t would hand the UI
+        // 1.8e19 and pin its bar at zero forever.
         const long long transferred = request->getTransferredBytes();
         const long long total = request->getTotalBytes();
         mOnProgress(transferred > 0 ? static_cast<std::uint64_t>(transferred) : 0,
@@ -239,13 +231,11 @@ public:
             const char* path = transfer->getPath();
             DownloadOutcome outcome;
             outcome.localPath = path ? path : std::string();
-            // The SDK has no public getter for "was this collision-skipped" --
-            // inferred instead from MegaApiImpl::CompleteFileDownloadBySkip
-            // (third_party/sdk/src/megaapi_impl.cpp), which explicitly zeroes
+            // The SDK has no public getter for "was this collision-skipped". Inferred
+            // from MegaApiImpl::CompleteFileDownloadBySkip, which zeroes
             // transferredBytes when it completes a transfer by skipping an
-            // identical-fingerprint file already on disk, rather than writing
-            // any bytes. A genuine (possibly renamed-on-collision) download
-            // always has transferredBytes == totalBytes > 0 at this point.
+            // identical-fingerprint file: a genuine download always has
+            // transferredBytes == totalBytes > 0 here.
             outcome.alreadyPresent =
                 transfer->getTransferredBytes() == 0 && transfer->getTotalBytes() > 0;
             mOnDone(Result<DownloadOutcome>::ok(std::move(outcome)));
@@ -260,10 +250,9 @@ public:
 private:
     std::function<void(std::uint64_t, std::uint64_t)> mOnProgress;
     std::function<void(Result<DownloadOutcome>)> mOnDone;
-    // Not required by the SDK: startDownload copies the token by value and
-    // CancelToken is itself a shared handle (mega/types.h), so destroying this
-    // mid-transfer would be harmless. It is held only as the hook a future
-    // cancel(jobId) would call -- nothing in src/ calls cancel() today.
+    // Not required by the SDK: startDownload copies the token and CancelToken is
+    // itself a shared handle, so destroying this mid-transfer is harmless. Held only
+    // as the hook a future cancel(jobId) would call.
     std::unique_ptr<mega::MegaCancelToken> mCancelToken;
 };
 

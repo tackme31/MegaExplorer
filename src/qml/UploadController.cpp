@@ -82,15 +82,11 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
 
 UploadController::~UploadController()
 {
-    // Same contract as DownloadController's destructor: the two observers hold
-    // a raw this and the service outlives this object, and clearing them stops
-    // only the deliveries that start after this line -- UploadService copies
-    // the observer under its lock and calls the copy after unlocking. What
-    // makes the rest safe is main.cpp calling client->shutdown(), which joins
-    // the SDK thread, while both controllers are still alive; a per-tab
-    // controller would break that and need weak_ptr observers (R5-9). The
-    // one-shot fileOperations->moveToRubbish callback below cannot be
-    // unregistered at all and rests on that same stop point (R2-3).
+    // Same contract as DownloadController's destructor: clearing the observers stops
+    // only deliveries that start after this line, and what makes the rest safe is
+    // client->shutdown() joining the SDK thread while both controllers are still
+    // alive. The one-shot moveToRubbish callback below can't be unregistered at all
+    // and rests on that same stop point.
     mService->setOnProgress(nullptr);
     mService->setOnJobFinished(nullptr);
 }

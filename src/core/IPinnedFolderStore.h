@@ -5,23 +5,16 @@
 #include <string>
 #include <vector>
 
-// Persists the quick-access pin list across app restarts, in order.
-// Synchronous by design, same rationale as ISessionStore: no genuinely-async
-// sibling to stay consistent with, and local settings I/O is inherently
-// synchronous.
+// Persists the quick-access pin list across app restarts, in order. Synchronous by
+// design, like ISessionStore.
 //
-// Implementations must never throw; every failure mode (I/O error, corrupt
-// stored data) surfaces as Result::fail. Unlike ISessionStore::loadSession
-// there's no sentinel-vs-failure subtlety to resolve: an empty vector is the
-// legitimate "nothing pinned yet" value, and callers already treat a load
-// failure the same way (start with no pins), so QuickAccessService doesn't
-// distinguish them.
+// Implementations must never throw -- every failure surfaces as Result::fail. Unlike
+// ISessionStore there is no sentinel-vs-failure subtlety: an empty vector is the
+// legitimate "nothing pinned yet" value, and a load failure is treated the same way.
 //
-// accountKey (Phase 11a) scopes the pin list to one MEGA account: the current
-// account's user handle rendered as a decimal string (see
-// IMegaClient::currentUserHandle), not an email -- stable and needs no
-// escaping. Without this, switching accounts would read/overwrite the
-// previous account's pins (Phase 11's original, machine-wide design).
+// accountKey scopes the list to one MEGA account -- the user handle as a decimal
+// string, not an email, so it is stable and needs no escaping. Without it, switching
+// accounts would read and overwrite the previous account's pins.
 class IPinnedFolderStore
 {
 public:

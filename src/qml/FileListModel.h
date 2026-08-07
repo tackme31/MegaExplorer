@@ -11,23 +11,17 @@
 #include <vector>
 
 // One per tab, owned jointly by that tab's FolderNavigationController and
-// ThumbnailController (both hold a shared_ptr), and reaching QML only through
-// FolderNavigationController's fileListModel property -- not instantiated
-// from QML, so no QML_ELEMENT needed.
+// ThumbnailController, and reaching QML only through the former's fileListModel
+// property -- never instantiated from QML, so no QML_ELEMENT.
 //
-// QAbstractTableModel (not QAbstractListModel) since Phase 6b: columnCount()
-// reports 3 (Name/Modified/Size) so TableView+HorizontalHeaderView can
-// render an Explorer-style detail view. data(index, role) still dispatches
-// purely on role and ignores index.column() -- ListView/GridView (used by
-// the grid/thumbnail view) only ever query column 0 of a multi-column
-// model, so that view keeps working unmodified off this same instance.
+// A table model rather than a list model so TableView+HorizontalHeaderView can
+// render the Explorer-style detail view. data() still dispatches purely on role
+// and ignores index.column(): ListView/GridView only ever query column 0, so the
+// grid view keeps working off this same instance.
 //
-// No headerData() override: column header text is Japanese, and this
-// codebase's convention is "C++ passes structured fields, QML composes
-// user-facing text" (see NotificationController/ToastStack.qml) -- also
-// sidesteps an MSVC codepage gotcha with non-ASCII literals in .cpp/.h files
-// (see FileKind.h). FileTableView.qml's header delegate hardcodes the
-// labels instead.
+// No headerData() override: header text is Japanese, and the convention here is
+// that C++ passes structured fields while QML composes user-facing text -- which
+// also sidesteps the MSVC codepage gotcha with non-ASCII literals (FileKind.h).
 class FileListModel : public QAbstractTableModel
 {
     Q_OBJECT
@@ -60,86 +54,59 @@ public:
 
     void setEntries(std::vector<FileEntry> entries);
 
-    // Updates just the thumbnail-path role for handle's row (no full model
-    // reset, unlike setEntries) so a grid view doesn't flicker/relayout when
-    // a thumbnail arrives asynchronously. No-op if handle's row is no longer
-    // present (e.g. the user navigated away before the fetch completed).
+    // Updates one role for one row, rather than resetting the model, so the grid
+    // doesn't relayout when a thumbnail arrives. No-op if the row is gone.
     void setThumbnailPath(quint64 handle, QString path);
 
-    // Click-driven selection, called from the grid/list delegates' TapHandler
-    // (row is the model row tapped; modifiers is a Qt::KeyboardModifiers
-    // value, passed through as int from QML's TapHandler.point.modifiers).
-    // Plain click: replace selection with just this row, move the anchor
-    // here. Ctrl: toggle this row in/out of the selection, move the anchor
-    // here. Shift: replace selection with the contiguous range between the
-    // anchor and this row (falls back to just this row if the anchor's
-    // handle is no longer present).
+    // modifiers is a Qt::KeyboardModifiers value, passed as int from QML. Plain
+    // click replaces the selection and moves the anchor; Ctrl toggles this row and
+    // moves the anchor; Shift takes the range from the anchor, falling back to this
+    // row alone when the anchor's handle is gone.
     Q_INVOKABLE void selectRow(int row, int modifiers);
     Q_INVOKABLE void clearSelection();
 
-    // Selects every row. Anchor/cursor are kept if currently valid, else
-    // seeded to row 0 -- mirrors Explorer's Ctrl+A not moving the focus
-    // rectangle.
+    // Keeps a valid anchor/cursor, else seeds row 0 -- Explorer's Ctrl+A doesn't
+    // move the focus rectangle either.
     Q_INVOKABLE void selectAll();
 
-    // Keyboard-driven cursor movement. delta is a view-computed signed row
-    // offset (list: +-1 for Up/Down; grid: +-1 for Left/Right, +-columns for
-    // Up/Down -- grid geometry is QML-only, so the view does that math).
-    // modifiers is a Qt::KeyboardModifiers value, passed through as int like
-    // selectRow()'s. No-op if nothing is selected. Target is clamped (not
-    // wrapped) to [0, rowCount()-1]. Shift extends the selection from the
-    // anchor to the target without moving the anchor; otherwise (Ctrl or no
-    // modifier -- Ctrl is treated the same as a plain arrow) the selection
-    // collapses to just the target and the anchor moves there too.
+    // delta is a view-computed row offset -- grid geometry is QML-only, so the view
+    // does that math. The target is clamped, not wrapped. Shift extends from the
+    // anchor without moving it; anything else (Ctrl included) collapses the
+    // selection to the target and moves the anchor there.
     Q_INVOKABLE void moveCursor(int delta, int modifiers);
 
-    // Row of the last-touched item (selectRow/moveCursor/selectAll), or -1
-    // if unset. Not a Q_PROPERTY: it changes on every server-side re-sort
-    // (setEntries) and nothing binds to it -- QML reads it once, right after
-    // calling moveCursor().
+    // Row of the last-touched item, or -1. Not a Q_PROPERTY: it changes on every
+    // re-sort and QML only reads it right after moveCursor().
     Q_INVOKABLE int cursorRow() const;
 
     QVariantList selectedHandlesVariant() const;
 
-    // Typed accessor for future non-QML consumers (e.g. a delete/move
-    // controller), mirroring the fileListModelForThumbnails() typed-accessor
-    // precedent in FolderNavigationController.
     const std::unordered_set<quint64>& selectedHandleSet() const
     {
         return mSelectedHandles;
     }
 
-    // Typed accessor feeding MenuActionResolver -- counts, doesn't collect,
-    // since the resolver only needs file/folder tallies.
+    // Counts rather than collects -- MenuActionResolver only needs the tallies.
     SelectionSummary selectionSummary() const;
 
-    // Stable action IDs (see MenuActionResolver::menuActionId) for the
-    // MenuSite::FileSelection site, in menu display order. Backs the
-    // availableActions Q_PROPERTY that FileContextMenu.qml drives its
-    // Instantiator off. The other sites have no model and no change signal,
-    // so they go through the MenuActions singleton (src/qml/MenuActions.h)
-    // instead.
+    // Stable action IDs for the MenuSite::FileSelection site, in display order. The
+    // other sites have no model and no change signal, so they go through the
+    // MenuActions singleton instead.
     QStringList availableActions() const;
 
-    // Row-ordered {handle, name, sizeBytes, isFolder} maps for every selected
-    // row -- unlike mSelectedHandles (an unordered_set), callers that act on
-    // the selection (e.g. bulk download, or a drag's start-of-gesture
-    // snapshot) need a stable, predictable order. Walks mEntries rather than
-    // mSelectedHandles for that reason.
+    // Row-ordered {handle, name, sizeBytes, isFolder} maps. Walks mEntries, not the
+    // unordered mSelectedHandles: callers acting on the selection (bulk download, a
+    // drag snapshot) need a stable order.
     Q_INVOKABLE QVariantList selectedEntries() const;
 
-    // One row's {handle, name, isFolder}, or an empty map when row is out of
-    // range. Lets a view-level drag/drop handler ask "what is under the cursor"
-    // after resolving a position to a row, which it can't do through data()
-    // from QML -- the Role enum above isn't exposed there.
+    // One row's {handle, name, isFolder}, empty when out of range. Drag/drop
+    // handlers can't reach data() from QML -- the Role enum isn't exposed there.
     Q_INVOKABLE QVariantMap entryAt(int row) const;
 
-    // Rubber-band (rectangle) selection, Phase 21. A gesture is a session:
-    // begin once on press, update on every move, end (or cancel) on release.
-    // The band's covered rows are recomputed from scratch each update, so
-    // shrinking the rectangle deselects again -- what the band adds is layered
-    // on top of mBandBase, the selection as it was when the drag started
-    // (empty unless additive, i.e. Ctrl held).
+    // Rubber-band selection is a session: begin on press, update per move, end or
+    // cancel on release. Covered rows are recomputed from scratch each update, so
+    // shrinking the rectangle deselects again; what the band adds is layered over
+    // mBandBase, the selection as it was at press (empty unless additive).
     Q_INVOKABLE void beginBandSelection(bool additive);
 
     // List view: the band covers the contiguous rows [firstRow, lastRow].
@@ -151,13 +118,11 @@ public:
     Q_INVOKABLE void updateBandSelectionGrid(
         int firstGridRow, int lastGridRow, int columns, int firstColumn, int lastColumn);
 
-    // Ends the session, leaving the selection as it stands and putting the
-    // anchor/cursor on the band's first/last covered row -- so a Shift+click
-    // right after a band extends from where the band started.
+    // Leaves the selection as it stands and puts the anchor/cursor on the band's
+    // first/last row, so a Shift+click afterwards extends from where the band began.
     Q_INVOKABLE void endBandSelection();
 
-    // Ends the session by restoring the selection the drag started from
-    // (the DragHandler's onCanceled path).
+    // Restores the selection the drag started from (DragHandler's onCanceled).
     Q_INVOKABLE void cancelBandSelection();
 
 signals:
@@ -165,41 +130,36 @@ signals:
     void countChanged();
 
 private:
-    // Drops selected/anchor handles no longer present in mEntries. Handles
-    // are globally unique per MEGA node, so this alone is enough to clear
-    // the selection on navigation/search (new entries share no handles with
-    // the old ones) while preserving it across a same-folder re-sort (same
-    // handles, different order) -- no caller-side special-casing needed.
+    // Drops selected/anchor handles no longer in mEntries. Handles are globally
+    // unique per node, so this alone clears the selection on navigation while
+    // preserving it across a same-folder re-sort -- no caller-side special-casing.
     void pruneSelection();
 
     // Row index for handle within mEntries, or -1 if not present.
     int rowForHandle(quint64 handle) const;
 
-    // Common tail of every selection mutator: emit selectionChanged() plus
-    // a full-table dataChanged(SelectedRole) so both views repaint.
+    // Common tail of every selection mutator: selectionChanged() plus a full-table
+    // dataChanged(SelectedRole) so both views repaint.
     void notifySelectionChanged();
 
-    // Same, restricted to rows [firstRow, lastRow]. Band updates run once per
-    // mouse move, and repainting every row of a 600k-row folder per frame is
-    // exactly what the rectangle's own bookkeeping already avoids.
+    // Same, restricted to [firstRow, lastRow]: band updates run once per mouse move,
+    // and repainting every row of a 600k-row folder per frame would be pointless.
     void notifySelectionChanged(int firstRow, int lastRow);
 
-    // Shared body of both updateBandSelection* overloads: rebuilds the
-    // selection as mBandBase plus the covered block, then emits only over the
-    // rows whose selected state actually flipped.
+    // Shared body of both updateBandSelection* overloads; emits only over the rows
+    // whose selected state actually flipped.
     void applyBandSelection(
         int firstGridRow, int lastGridRow, int columns, int firstColumn, int lastColumn);
 
     std::vector<FileEntry> mEntries;
-    // Parallel to mEntries (same index, resized alongside it in setEntries).
-    // Kept out of FileEntry itself since it's a session-local, GUI-populated
-    // cache result, not SDK domain data -- FileEntry stays Qt-free.
+    // Parallel to mEntries. Kept out of FileEntry so that stays Qt-free SDK domain
+    // data, not a session-local GUI cache.
     std::vector<QString> mThumbnailPaths;
     std::unordered_set<quint64> mSelectedHandles;
     std::optional<quint64> mAnchorHandle; // last click anchor, for Shift-range
     std::optional<quint64> mCursorHandle; // last-touched row, for keyboard nav
 
-    // Rubber-band session state (Phase 21), all meaningless while inactive.
+    // Rubber-band session state, all meaningless while inactive.
     bool mBandActive = false;
     std::unordered_set<quint64> mBandBase;   // selection at press, for Ctrl+band
     std::optional<quint64> mBandFirstHandle; // first/last row the band covers,

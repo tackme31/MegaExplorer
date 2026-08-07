@@ -2,10 +2,8 @@
 #include <cstdint>
 #include <string>
 
-// The three payloads behind the account section in the "More" menu. Grouped
-// into one header rather than split one-per-file like FileEntry/NodeInfo,
-// because they are one concept ("what the account section shows") and are
-// always used together.
+// The three payloads behind the account section of the "More" menu, in one header
+// because they are one concept and always used together.
 
 // Everything about the signed-in account that is a local read -- no network.
 // Returned synchronously by IMegaClient::currentAccountIdentity().
@@ -41,19 +39,15 @@ struct AccountInfo
     }
 };
 
-// Success payload for AccountService::loadAvatar, shaped like
-// DownloadOutcome::alreadyPresent: a struct whose whole job is to say "this
-// special case is not a failure". Most MEGA accounts have no avatar set, so
+// Success payload for loadAvatar. Most MEGA accounts have no avatar, so
 // hasAvatar == false is the common path and must never travel as Result::fail.
 struct AvatarOutcome
 {
     std::string localPath;
     bool hasAvatar = false;
 
-    // Why there is no avatar, when hasAvatar is false. Diagnostic only -- it
-    // must never reach the UI. It rides here because src/core is Qt-free and
-    // so cannot log; AccountController can, and that is the only consumer.
-    // Zero when an avatar was actually fetched.
+    // Diagnostic only, and must never reach the UI: it rides here because src/core
+    // is Qt-free and cannot log. Zero when an avatar was actually fetched.
     int errorCode = 0;
     std::string errorMessage;
 

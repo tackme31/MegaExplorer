@@ -17,12 +17,8 @@ Q_DECLARE_LOGGING_CATEGORY(lcQuickAccess)
 Q_DECLARE_LOGGING_CATEGORY(lcFileOps)
 Q_DECLARE_LOGGING_CATEGORY(lcAccount)
 
-// Installs a message handler that writes every qCWarning/qCInfo/etc. call to
-// both stderr (so Qt Creator's Application Output still works) and a log
-// file under AppDataLocation. Must run before any other logging call in the
-// process -- in particular before main.cpp's env-var check -- since
-// appMegaExplorer is WIN32_EXECUTABLE, so qWarning() otherwise reaches no
-// visible destination at all on a normal launch. Depends on
-// QCoreApplication::setOrganizationName/setApplicationName having already
-// run (AppDataLocation resolves through them).
+// Installs a message handler writing every log call to both the console streams and
+// a file under AppLocalDataLocation. Must run before any other logging call: this is
+// a WIN32_EXECUTABLE, so output otherwise reaches no visible destination at all.
+// Depends on QCoreApplication::setOrganizationName/setApplicationName having run.
 void installLogging();

@@ -10,9 +10,9 @@
 #include <megaapi.h>
 #include <utility>
 
-// Keeps MegaErrorCodes.h's mirror in sync with the real SDK values -- this
-// is the only file that can see both headers, since src/core/src/qml can't
-// include megaapi.h.
+// Keeps MegaErrorCodes.h's mirror in sync with the SDK's real values. This is the
+// only file that can see both headers -- src/core and src/qml can't include
+// megaapi.h.
 static_assert(MegaErrorCode::kEInternal == mega::MegaError::API_EINTERNAL,
               "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kEArgs == mega::MegaError::API_EARGS, "MegaErrorCodes.h out of sync");
@@ -66,9 +66,9 @@ static_assert(AccountPlan::kFeature == mega::MegaAccountDetails::ACCOUNT_TYPE_FE
 namespace
 {
 
-// What every method reports once shutdown() has run. Nothing surfaces it: the
-// only caller left at that point is a teardown callback re-entering from the
-// SDK thread, and the GUI event loop it would post to has already stopped.
+// What every method reports once shutdown() has run. Nothing surfaces it: the only
+// caller left is a teardown callback re-entering from the SDK thread, whose GUI
+// event loop has already stopped.
 constexpr char kShutDownMessage[] = "the MEGA client has been shut down";
 
 // Its errorCode. Positive so it can never collide with an SDK value, and so it
@@ -145,8 +145,7 @@ MegaSdkClient::MegaSdkClient(std::string basePath, std::string userAgent)
 
 MegaSdkClient::~MegaSdkClient()
 {
-    // Before removeLoggerObject, so the SDK's own teardown lines still reach
-    // the log -- they used to be dropped, the logger being unregistered first.
+    // Before removeLoggerObject, so the SDK's own teardown lines still reach the log.
     shutdown();
     mega::MegaApi::removeLoggerObject(mLogger.get());
 }
@@ -156,16 +155,12 @@ void MegaSdkClient::shutdown()
     if (mShuttingDown.exchange(true))
         return; // main.cpp already called it; the destructor is the second call
 
-    // ~MegaApi pushes a TYPE_DELETE request, then joins the SDK thread, which
-    // runs abortPendingActions() on the way out: every pending request and
-    // transfer is completed with API_EACCESS, so all our listeners fire (and
-    // self-delete) right here, on the SDK thread, while this call blocks.
-    // Those callbacks can re-enter this object -- DownloadService and
-    // ThumbnailService start the next queued job from inside onDone, and
-    // AccountService re-issues getMyUserAttribute from inside its own callback
-    // -- which is why every method above checks mShuttingDown: it is already
-    // true, and unique_ptr::reset() nulls the pointer before deleting, so an
-    // unguarded method would dereference null here.
+    // ~MegaApi joins the SDK thread, which runs abortPendingActions() on the way
+    // out: every pending request and transfer completes with API_EACCESS, so all our
+    // listeners fire here, on the SDK thread, while this call blocks. Those
+    // callbacks re-enter this object (services start their next queued job from
+    // inside onDone), and reset() nulls the pointer before deleting -- which is why
+    // every method checks mShuttingDown.
     mApi.reset();
 }
 
@@ -173,12 +168,9 @@ void MegaSdkClient::login(const std::string& email,
                           const std::string& password,
                           std::function<void(Result<void>)> onDone)
 {
-    // Every public method below opens with this same guard, and every new one
-    // must too: shutdown() nulls mApi from the GUI thread while the SDK thread
-    // is still delivering teardown callbacks, and those callbacks re-enter here
-    // (see shutdown()). One method missing the guard is one null dereference.
-    // Answering synchronously is safe -- IMegaClient documents delivery mode 3
-    // and the services trampoline their queue advance because of it.
+    // Every public method below must open with this same guard: shutdown() nulls
+    // mApi from the GUI thread while the SDK thread is still delivering teardown
+    // callbacks that re-enter here. One method missing it is one null dereference.
     if (mShuttingDown)
     {
         onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
@@ -217,10 +209,9 @@ void MegaSdkClient::multiFactorAuthLogin(const std::string& email,
 
 void MegaSdkClient::logout(std::function<void(Result<void>)> onDone)
 {
-    // ENABLE_SYNC is a PUBLIC define from the SDK's own CMake (sdklib_target.cmake),
-    // always on for this project -- the 2-argument overload is the only one
-    // that exists here, so no #ifdef branch is needed.
-    // keepSyncConfigsFile=false -- this app never uses sync.
+    // ENABLE_SYNC is a PUBLIC define from the SDK's own CMake and always on here, so
+    // the 2-argument overload is the only one that exists -- no #ifdef branch
+    // needed. keepSyncConfigsFile=false: this app never syncs.
     if (mShuttingDown)
     {
         onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
@@ -237,9 +228,8 @@ Result<std::string> MegaSdkClient::currentSessionToken() const
                                          // unique_ptr's operator->
     if (!session)
     {
-        // Only caller is AuthService's best-effort token save, which skips
-        // saving silently -- without this the user just gets an unexplained
-        // password prompt next launch.
+        // The only caller saves the token best-effort and silently skips on failure,
+        // so without this line the user just gets an unexplained password prompt.
         qCWarning(lcSession) << "dumpSession returned null -- session token not persisted";
         return Result<std::string>::fail("not logged in", MegaErrorCode::kEInternal);
     }
@@ -399,9 +389,8 @@ void MegaSdkClient::upload(const std::string& localPath,
     auto* listener = new megasdk::UploadListener(
         std::move(onProgress), std::move(onDone), std::move(cancelToken));
 
-    // options == nullptr means all defaults (name taken from localPath, local
-    // mtime preserved, not a temporary source) -- megaapi.cpp only copies the
-    // struct when it's non-null, so there's nothing to construct here.
+    // options == nullptr means all defaults; megaapi.cpp only copies the struct when
+    // it is non-null, so there is nothing to construct here.
     mApi->startUpload(localPath, parent.get(), cancelTokenRaw, /*options*/ nullptr, listener);
 }
 
@@ -487,8 +476,8 @@ void MegaSdkClient::getNodeInfo(std::uint64_t handle, std::function<void(Result<
     info.name = node->getName() ? node->getName() : "";
     info.handle = static_cast<std::uint64_t>(node->getHandle());
     info.isFolder = node->isFolder();
-    // A deleted node still resolves -- it just lives under the Rubbish bin
-    // now -- so this is the only reliable "still usable" test.
+    // A deleted node still resolves -- it lives under the Rubbish bin now -- so this
+    // is the only reliable "still usable" test.
     info.inCloud = mApi->isInCloud(node.get());
 
     onDone(Result<NodeInfo>::ok(std::move(info)));
@@ -532,8 +521,7 @@ void MegaSdkClient::moveToRubbish(std::uint64_t handle, std::function<void(Resul
         return;
     }
 
-    // Deleting in MEGA is a move into the Rubbish bin, not MegaApi::remove()
-    // (which destroys the node outright) -- see IMegaClient::moveToRubbish.
+    // Deleting in MEGA is a move to the Rubbish bin, not MegaApi::remove().
     std::unique_ptr<mega::MegaNode> rubbish(mApi->getRubbishNode());
     if (!rubbish)
     {
@@ -654,11 +642,9 @@ Result<void> MegaSdkClient::checkMove(std::uint64_t handle,
     if (!node || !parent)
         return Result<void>::fail("Source or destination no longer exists", MegaErrorCode::kENoEnt);
 
-    // Stricter than the SDK, which happily accepts a move to where the node
-    // already is. Detected here rather than by comparing handles in a caller
-    // because this is the only layer holding real nodes -- a caller looking at
-    // the root would have only the isRoot sentinel, never the root's actual
-    // handle, so it couldn't make the comparison at all.
+    // Stricter than the SDK, which accepts a move to where the node already is.
+    // Detected here because this is the only layer holding real nodes: a caller
+    // pointing at the root has the isRoot sentinel, never the root's actual handle.
     if (node->getParentHandle() == parent->getHandle())
         return Result<void>::fail("Already in that folder", MegaErrorCode::kEArgs);
 
@@ -683,9 +669,8 @@ Result<void> MegaSdkClient::checkUpload(std::uint64_t parentHandle, bool parentI
     if (!parent->isFolder())
         return Result<void>::fail("Destination is not a folder", MegaErrorCode::kEArgs);
 
-    // A deleted folder still resolves -- it just lives under the Rubbish bin
-    // now -- so this is the only reliable "still usable destination" test
-    // (same rationale as NodeInfo::inCloud).
+    // A deleted folder still resolves -- it lives under the Rubbish bin now -- so
+    // this is the only reliable "still usable destination" test.
     if (!mApi->isInCloud(parent.get()))
         return Result<void>::fail("Destination folder is no longer in the Cloud Drive",
                                   MegaErrorCode::kENoEnt);
@@ -742,10 +727,9 @@ Result<AccountIdentity> MegaSdkClient::currentAccountIdentity() const
     if (!email)
         return Result<AccountIdentity>::fail("Not logged in", MegaErrorCode::kEInternal);
 
-    // Base64, not the binary handle currentUserHandle() returns:
-    // getUserAvatarColor is documented to take the Base64 form, and handing it
-    // a stringified integer still yields a plausible-looking colour, so the
-    // mistake would never show up by eye.
+    // Base64, not the binary handle currentUserHandle() returns: getUserAvatarColor
+    // is documented to take that form, and a stringified integer still yields a
+    // plausible-looking colour, so the mistake would never show up by eye.
     const std::unique_ptr<char[]> userHandleBase64(mApi->getMyUserHandle());
 
     AccountIdentity identity;

@@ -9,18 +9,12 @@
 
 class NotificationController;
 
-// QML-facing model behind QuickAccessSection.qml's pin list. Flat, unlike
-// FolderTreeModel: a pin is a shortcut, never expandable.
+// The pin list's model. Flat, unlike FolderTreeModel: a pin is a shortcut, never
+// expandable. App-lifetime and shared across tabs like that class, so a bare `this`
+// capture in async callbacks is safe.
 //
-// App-lifetime singleton owned by main.cpp (a stack local, exposed via
-// setContextProperty), shared across every tab like FolderTreeModel -- so,
-// same as that class and unlike FolderNavigationController/ThumbnailController,
-// it does NOT use enable_shared_from_this and a bare `this` capture in async
-// callbacks is safe.
-//
-// Everything is keyed by handle rather than row index, following
-// FileListModel's Phase 13a convention: the login-time validation sweep drops
-// dangling pins, which shifts every row after them.
+// Everything is keyed by handle rather than row: the login-time validation sweep
+// drops dangling pins, which shifts every row after them.
 class QuickAccessModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -44,12 +38,9 @@ public:
 
     int count() const;
 
-    // Login: reads the persisted pins, shows them immediately, then starts an
-    // async validation sweep (see validateAll) that follows renames and drops
-    // pins whose target is gone. Showing the stored names first means no blank
-    // panel while the sweep runs. A pin the sweep couldn't get an answer about
-    // is kept as-is (QuickAccessService::PinStatus::Unknown) -- only a
-    // definitive "gone" removes anything.
+    // Login: show the persisted pins immediately -- no blank panel -- then sweep
+    // asynchronously to follow renames and drop dead ones. Only a definitive "gone"
+    // removes anything; an unanswerable pin is kept as-is.
     Q_INVOKABLE void reload();
 
     // Sign-out: empties the list without touching the store.
@@ -59,16 +50,13 @@ public:
     Q_INVOKABLE void pin(quint64 handle, const QString& name);
     Q_INVOKABLE void unpin(quint64 handle);
 
-    // Drag reordering (Phase 22a). handle-keyed like everything else here;
-    // toRow is the row the pin should end up on, clamped into range. A no-op
-    // move emits nothing, so a drag that ends where it started is free.
+    // toRow is the row the pin should end up on, clamped into range. A no-op move
+    // emits nothing, so a drag that ends where it started is free.
     Q_INVOKABLE void move(quint64 handle, int toRow);
 
-    // Checks the target still exists before navigating, then reports back via
-    // activated() or missing(). Covers the pin going stale *during* a session
-    // (deleted on another device), which the login-time sweep can't catch.
-    // Navigation itself stays QML's job -- this model has no idea which tab is
-    // active.
+    // Checks the target still exists, then reports through activated()/missing(),
+    // covering a pin that goes stale *during* a session. Navigation itself stays
+    // QML's job -- this model has no idea which tab is active.
     Q_INVOKABLE void activate(quint64 handle, bool inNewTab);
 
 signals:
@@ -84,10 +72,7 @@ private:
     std::shared_ptr<QuickAccessService> mService;
     NotificationController* mNotifications;
 
-    // Bumped by reload()/reset(); every async callback captures its value and
-    // drops its result if it no longer matches. Same guard as
-    // FolderTreeModel's, and needed for the same reason: a sign-out or
-    // re-login part-way through a sweep must not let stale results overwrite
-    // the new account's list.
+    // Same generation guard as FolderTreeModel's: a sign-out or re-login part-way
+    // through a sweep must not let stale results overwrite the new account's list.
     std::uint64_t mGeneration = 0;
 };

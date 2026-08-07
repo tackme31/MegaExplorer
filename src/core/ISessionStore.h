@@ -3,16 +3,12 @@
 
 #include <string>
 
-// Persists a single MEGA session token (as returned by MegaApi::dumpSession) across
-// app restarts, encrypted at rest. Synchronous by design, same rationale as
-// INodeCache: no genuinely-async sibling to stay consistent with, and local
-// encrypted-file I/O is inherently synchronous.
+// Persists one MEGA session token across app restarts, encrypted at rest.
+// Synchronous by design: local encrypted-file I/O is inherently so.
 //
-// Implementations must never throw; every failure mode (I/O error, decrypt failure)
-// surfaces as Result::fail. A real session token is never legitimately an empty
-// string, so loadSession uses "" as an unambiguous "nothing stored" sentinel, kept
-// distinguishable from a genuine read/decrypt failure (Result::fail) -- callers
-// decide whether to treat both the same way.
+// Implementations must never throw -- every failure surfaces as Result::fail. A real
+// token is never legitimately empty, so loadSession uses "" as an unambiguous
+// "nothing stored" sentinel, distinct from a read/decrypt failure.
 class ISessionStore
 {
 public:

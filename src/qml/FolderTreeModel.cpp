@@ -85,9 +85,8 @@ bool FolderTreeModel::hasChildren(const QModelIndex& parent) const
         return false;
     if (node->state == LoadState::Loaded)
         return !node->children.empty();
-    // Not loaded yet, so ask the SDK's in-memory node tree directly rather
-    // than assuming yes: assuming put an expand arrow on every childless
-    // folder, and there was no later correction for it -- TreeView's internal
+    // Ask the SDK's in-memory tree rather than assuming yes: assuming puts an expand
+    // arrow on every childless folder with no later correction, since TreeView's
     // proxy isn't guaranteed to re-query hasChildren() after a dataChanged().
     return mService->hasSubfolders(node->handle, node->isRoot);
 }
@@ -152,11 +151,9 @@ void FolderTreeModel::ensureLoaded(const QModelIndex& index)
                 }
                 else
                 {
-                    // beginInsertRows with an empty range is invalid, so just
-                    // flip the state and notify. Nothing depends on the view
-                    // acting on that dataChanged(): hasChildren() consults the
-                    // SDK for unloaded nodes, so a childless folder never grew
-                    // an expand arrow that would now need retracting.
+                    // beginInsertRows with an empty range is invalid, so just flip
+                    // the state and notify. Nothing depends on the view acting on
+                    // that: a childless folder never grew an expand arrow to retract.
                     node->state = LoadState::Loaded;
                     const QModelIndex idx = indexForNode(node);
                     emit dataChanged(idx, idx);
@@ -203,15 +200,12 @@ void FolderTreeModel::resetTree()
 
     ++mGeneration;
     mInvisibleRoot = std::make_unique<TreeNode>();
-    // Fixed single child, set once here and never re-fetched -- only the
-    // "Cloud Drive" node itself (and whatever gets lazily loaded under it)
-    // ever needs canFetchMore()/ensureLoaded() to do anything.
+    // Fixed single child, set once and never re-fetched.
     mInvisibleRoot->state = LoadState::Loaded;
 
     auto cloudDrive = std::make_unique<TreeNode>();
-    // Hardcoded rather than composed in QML (unlike Breadcrumb.qml/
-    // TabStrip.qml's own "Cloud Drive" labels): FolderTreePanel.qml uses
-    // TreeViewDelegate's default contentItem unmodified, which reads
+    // Hardcoded rather than composed in QML, unlike the other "Cloud Drive" labels:
+    // the panel uses TreeViewDelegate's default contentItem, which reads
     // Qt::DisplayRole directly with no isRoot-aware composition step.
     cloudDrive->name = "Cloud Drive";
     cloudDrive->isRoot = true;

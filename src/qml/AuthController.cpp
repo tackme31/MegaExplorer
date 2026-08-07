@@ -161,11 +161,8 @@ void AuthController::submitTwoFactorCode(const QString& pin)
                 qCWarning(lcAuth) << "2FA verification failed:"
                                   << QString::fromStdString(result.errorMessage)
                                   << "code=" << result.errorCode;
-                // megaapi.h doesn't document a distinct error code for "wrong
-                // PIN" -- fold the plausible candidates into
-                // InvalidCredentials here. Confirm/refine against a real 2FA
-                // account during manual smoke testing (see the plan's
-                // verification steps / docs/PROGRESS.md's Phase 7 entry).
+                // megaapi.h documents no distinct code for "wrong PIN", so the
+                // plausible candidates all fold into InvalidCredentials.
                 switch (result.errorCode)
                 {
                     case MegaErrorCode::kENoEnt:

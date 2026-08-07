@@ -9,26 +9,15 @@
 
 class NotificationController;
 
-// QML-facing GUI glue wrapping ThumbnailService, registered per-tab as its
-// own "thumbnailController" context property since Phase 9 (previously a
-// single app-lifetime instance) -- separate from
-// FolderNavigationController/DownloadController -- see
-// FolderNavigationController::fileListModelForThumbnails() for why this
-// class (unlike DownloadController) is allowed to write directly into the
-// tab's FileListModel: thumbnails have to update visible rows in place.
-// That model is *shared* with FolderNavigationController rather than
-// borrowed from it, because enable_shared_from_this only keeps this object
-// alive -- not the one whose interior a raw pointer would name
-// (REFACTOR_PLANS.md's R2-4).
+// QML-facing GUI glue wrapping ThumbnailService, one per tab. Unlike
+// DownloadController it writes directly into the tab's FileListModel, because
+// thumbnails have to update visible rows in place. That model is *shared* rather
+// than borrowed: enable_shared_from_this keeps this object alive, not the one whose
+// interior a raw pointer would name.
 //
-// enable_shared_from_this for the same reason as
-// FolderNavigationController: since a tab (and this controller with it) can
-// now be closed while a requestThumbnail() fetch is still in flight, the
-// async callback below captures a shared_from_this() copy to stay alive
-// until it runs; the queued invoke that follows is what covers the rest of
-// the window (see GuiThread.h). And because that copy is destroyed on the
-// SDK thread, instances are created through GuiThread.h's makeGuiOwned so
-// the destructor still runs on the GUI thread (REFACTOR_PLANS.md's R2-5).
+// A tab can close while a fetch is in flight, so the callback captures
+// shared_from_this(); since that copy is destroyed on the SDK thread, instances are
+// created through GuiThread.h's makeGuiOwned.
 class ThumbnailController : public QObject, public std::enable_shared_from_this<ThumbnailController>
 {
     Q_OBJECT
@@ -39,15 +28,9 @@ public:
                                  NotificationController* notifications,
                                  QObject* parent = nullptr);
 
-    // Resolves a per-handle destination path under a session-cache temp
-    // subfolder and asks ThumbnailService to fetch handle's thumbnail there,
-    // then writes the result back into the row via
-    // FileListModel::setThumbnailPath. Caller (QML) is expected to only
-    // invoke this for rows with hasThumbnail == true && isFolder == false;
-    // this method doesn't re-check those flags itself -- see .cpp for why.
-    // Failures are logged (lcThumbnail) and relayed through
-    // NotificationController's generic error toast, same as
-    // FolderNavigationController's navigation/search failures.
+    // Fetches into a per-handle path under the session cache, then writes the result
+    // back into the row. Callers must only invoke this for rows with hasThumbnail &&
+    // !isFolder -- this method does not re-check (see the .cpp for why).
     Q_INVOKABLE void requestThumbnail(quint64 handle);
 
 private:

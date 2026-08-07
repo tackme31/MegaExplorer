@@ -45,10 +45,9 @@ void AccountController::reset()
     mDisplayName.clear();
     mAvatarColor.clear();
     mAvatarInitial.clear();
-    // The cached JPEG on disk is deliberately left alone -- thumbnails are
-    // never cleaned up either, and it is keyed by user handle so it cannot be
-    // served to the wrong account. Clearing the URL is what matters: it stops
-    // a fast account switch showing the previous user's face.
+    // The cached JPEG on disk is deliberately left alone: it is keyed by user handle,
+    // so it cannot reach the wrong account. Clearing the URL is what stops a fast
+    // account switch showing the previous user's face.
     mAvatarUrl.clear();
     mProfileLoaded = false;
 
@@ -233,15 +232,12 @@ QString AccountController::storageText() const
     if (mStorageState != Loaded)
         return QString();
 
-    // Formatted here rather than in QML for the same reason as
-    // AuthController::fetchProgressText and FileListModel's size column: QML
-    // has no formattedDataSize equivalent. Both halves share one base so the
-    // two numbers are always comparable.
+    // Formatted here because QML has no formattedDataSize equivalent; both halves
+    // share one base so the numbers stay comparable.
     //
-    // Traditional (1024-based, "GB"-labelled) rather than SI, because that is
-    // what MEGA itself quotes: an account whose maximum the SDK reports as
-    // 16106127360 bytes is called "15 GB" on MEGA's own site, which is this
-    // format's answer and not SI's 16.1 GB.
+    // Traditional (1024-based, "GB"-labelled) rather than SI, because that is what
+    // MEGA itself quotes: 16106127360 bytes is "15 GB" on MEGA's own site, not SI's
+    // 16.1 GB.
     const QLocale locale = QLocale::system();
     const QString used = locale.formattedDataSize(
         static_cast<qint64>(mStorageUsedBytes), 1, QLocale::DataSizeTraditionalFormat);

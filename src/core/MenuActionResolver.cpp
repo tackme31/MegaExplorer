@@ -73,16 +73,14 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
         // Cut before Copy, Windows' own order.
         {MenuAction::Cut, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
         {MenuAction::Copy, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
-        // FoldersOnly/SingleOnly like NewFolder above, and satisfied the same
-        // way: folderTargetContext() synthesizes exactly that selection for the
-        // two fixed-target sites. See MenuAction::Paste for why the clipboard's
-        // own state isn't expressed here.
+        // FoldersOnly/SingleOnly like NewFolder, satisfied the same way:
+        // folderTargetContext() synthesizes exactly that selection.
         {MenuAction::Paste,
          {MenuSite::FolderBackground},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
-        // SingleOnly is the whole implementation of "no rename while multiple
-        // items are selected" -- the resolver itself needed no change.
+        // SingleOnly is the whole implementation of "no rename while multiple items
+        // are selected".
         {MenuAction::Rename, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::SingleOnly},
         {MenuAction::MoveToRubbish, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
         {MenuAction::SelectAll,

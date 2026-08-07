@@ -14,10 +14,9 @@
 
 namespace
 {
-// Both destination reads below only ever pull child *names* out of the listing,
-// to pick a copy name nothing there is using. The order is therefore inert, and
-// fixed here rather than threaded through from whatever the navigation half is
-// currently sorted by.
+// Both destination reads below pull only child *names* out of the listing, so the
+// order is inert and fixed here rather than threaded through from the navigation
+// half's current sort.
 constexpr SortOrder kNameOrder{SortKey::Name, true};
 } // namespace
 
@@ -50,9 +49,7 @@ void FileMutationController::renameEntry(quint64 handle, const QString& newName)
                 mBusy->end();
                 if (!result.success)
                 {
-                    // A name the user can retype isn't an operation failure --
-                    // same split as createFolder's kEArgs branch below, and not
-                    // worth a warning either.
+                    // A name the user can retype isn't an operation failure.
                     if (result.errorCode == MegaErrorCode::kEArgs)
                     {
                         mNotifications->notifyError(QStringLiteral("renameInvalidName"));
@@ -204,9 +201,8 @@ Result<void> FileMutationController::clipboardCopyAllowedHere() const
 
 void FileMutationController::paste()
 {
-    // Ctrl+V is reachable before the first listing has ever loaded, and the two
-    // clipboard cases are exactly the ones canPaste() greys out -- nothing to
-    // report in any of them.
+    // Ctrl+V is reachable before the first listing has loaded, and canPaste() greys
+    // out both clipboard cases -- nothing to report in any of them.
     if (!mNavigation->isLoaded() || !mClipboard->hasContent())
         return;
 
@@ -247,11 +243,8 @@ void FileMutationController::paste()
         return;
     }
 
-    // Copying a folder into its own subtree is refused here as it is on a
-    // Ctrl+drop -- MEGA would snapshot-duplicate the whole tree, and no user
-    // asks for that on purpose. Toasted rather than silent: canPaste() greys
-    // the menu entry, so reaching this means Ctrl+V, where nothing else would
-    // explain the silence.
+    // Toasted rather than silent: canPaste() greys the menu entry, so reaching this
+    // means Ctrl+V, where nothing else would explain the silence.
     const Result<void> copyAllowed = clipboardCopyAllowedHere();
     if (!copyAllowed.success)
     {
@@ -264,15 +257,11 @@ void FileMutationController::paste()
         return;
     }
 
-    // Re-read the destination's names before choosing any: the cached listing
-    // could be stale, and a name that collides silently versions over the
-    // existing file instead of landing beside it (IMegaClient::copyNode).
-    // listChildrenOf rather than refreshCurrent, which is what this used before
-    // the split: it reads the same folder the paste writes to, by construction,
-    // instead of the one the service happens to consider current. Those agree
-    // in practice but not while the breadcrumb is still resolving, and it
-    // touches no navigation state either way, so it is also correct while a
-    // search is showing.
+    // Re-read the destination's names first: the cached listing could be stale, and a
+    // colliding name silently versions over the existing file instead of landing
+    // beside it (IMegaClient::copyNode). listChildrenOf rather than refreshCurrent
+    // because it reads the folder the paste writes to by construction, not whichever
+    // the service considers current -- which also keeps it right during a search.
     mBusy->begin();
     mService->listChildrenOf(
         static_cast<std::uint64_t>(target),
@@ -287,10 +276,8 @@ void FileMutationController::paste()
                                   if (entries.empty())
                                       return; // cleared while the destination read was in flight
 
-                                  // A failed read is no reason to refuse the paste: the
-                                  // destination *is* the folder this tab is showing, so the
-                                  // navigation half's cached listing of it is the best answer
-                                  // available.
+                                  // A failed read is no reason to refuse: the destination *is*
+                                  // this tab's folder, so its cached listing is the best answer.
                                   std::set<std::string> taken;
                                   if (result.success)
                                   {

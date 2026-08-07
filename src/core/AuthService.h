@@ -8,69 +8,50 @@
 #include <memory>
 #include <string>
 
-// Sentinel errorCode for restoreSession's onDone when ISessionStore reports
-// "nothing stored" (loadSession() returned "" successfully). Distinct from
-// every mega::MegaError value mirrored in MegaErrorCodes.h, all of which are
-// <= 0, so it can never collide with a real SDK error code.
+// restoreSession's "nothing stored" code. Positive, so it can never collide with a
+// real SDK error -- those are all <= 0 (MegaErrorCodes.h).
 constexpr int kNoStoredSession = 1;
 
-// Whether errorCode means a stored session is definitively unusable -- i.e.
-// safe to clearSession() without risking discarding a session that would
-// have worked once a merely-transient condition (offline, server hiccup)
-// passes. Unknown codes are treated as transient (false): the cost of
-// keeping a session that turns out to be genuinely dead is one spurious
-// restoreSession failure at next launch, versus wrongly discarding a good
-// session forces the user to re-enter their password. Shared between
-// AuthService (restoreSession) and the QML-facing AuthController (Part 2 of
-// this feature) so both layers agree on the same classification.
+// Whether errorCode means a stored session is definitively unusable, and so safe
+// to clearSession(). Unknown codes count as transient: keeping a dead session costs
+// one spurious restore failure at next launch, while discarding a good one forces
+// the user to re-enter their password. Shared with AuthController so both layers
+// classify the same way.
 bool isSessionDefinitivelyInvalid(int errorCode);
 
-// Coordinates login/logout and session-token persistence. Sits above
-// IMegaClient/ISessionStore, both injected -- SDK-free like the rest of
-// src/core, unit-testable with mocks of both.
+// Coordinates login/logout and session-token persistence.
 //
-// Deliberately does not depend on FolderNavigationService: resetting
-// navigation state on logout/re-login is the caller's responsibility (Part
-// 2: FolderNavigationController::reset), not this class's -- keeps auth and
-// navigation independently testable and avoids two callers racing to reset
-// the same state.
+// Deliberately does not depend on FolderNavigationService: resetting navigation
+// state on logout is the caller's job, which keeps the two independently testable
+// and avoids two callers racing to reset the same state.
 class AuthService
 {
 public:
-    // Progress of the node fetch that every successful auth ends with, passed
-    // straight through from IMegaClient::fetchNodes with nothing added --
-    // read its caveats there. In particular it covers a download that is only
-    // part of the wait, it can fire zero times, and an event may carry
-    // totalBytes == 0 when the response length isn't known yet.
+    // Passed straight through from IMegaClient::fetchNodes -- read its caveats
+    // there; notably an event may carry totalBytes == 0.
     //
-    // Required, not optional: it is handed to the SDK adapter, which calls it
-    // unconditionally. An empty std::function here crashes six minutes into a
-    // login, so callers pass an explicit no-op instead of leaving it default.
+    // Required, not optional: the SDK adapter calls it unconditionally, so an empty
+    // std::function crashes six minutes into a login. Callers pass an explicit no-op.
     using FetchProgressCallback =
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)>;
 
     AuthService(std::shared_ptr<IMegaClient> client, std::shared_ptr<ISessionStore> sessionStore);
 
-    // Attempts to resume a previously persisted session. onDone's Result:
-    //   - success -> already logged in and nodes fetched, ready to use.
-    //   - fail, errorCode == kNoStoredSession -> nothing was ever saved; not
-    //     an error, just "show the login screen" silently.
-    //   - fail, isSessionDefinitivelyInvalid(errorCode) -> the stored
-    //     session was actively rejected; already cleared by the time onDone
-    //     fires.
-    //   - fail, any other errorCode -> transient failure (e.g. offline); the
-    //     stored session was left untouched, caller should surface a
-    //     "couldn't connect" message rather than a login error.
+    // onDone's Result:
+    //   - ok                              logged in and nodes fetched
+    //   - kNoStoredSession                nothing was ever saved; show the login
+    //                                     screen silently, this is not an error
+    //   - isSessionDefinitivelyInvalid    actively rejected, and already cleared
+    //   - anything else                   transient (offline); the stored session
+    //                                     was left alone, so report "couldn't
+    //                                     connect" rather than a login error
     void restoreSession(FetchProgressCallback onFetchProgress,
                         std::function<void(Result<void>)> onDone);
 
-    // Fresh email/password login. On success, persists the resulting
-    // session token (best-effort -- failure to persist doesn't fail the
-    // login itself). On failure with errorCode ==
-    // MegaErrorCode::kEMfaRequired, the account has 2FA enabled; the caller
-    // is expected to hold onto email/password and retry via
-    // loginWithTwoFactor. AuthService itself does not special-case that
-    // code -- interpreting it is the caller's (AuthController's) job.
+    // Persists the session token on success, best-effort: failing to persist doesn't
+    // fail the login. kEMfaRequired means 2FA, and the caller must hold the
+    // credentials and retry via loginWithTwoFactor -- this class doesn't special-case
+    // that code.
     void login(const std::string& email,
                const std::string& password,
                FetchProgressCallback onFetchProgress,
@@ -84,20 +65,15 @@ public:
                             FetchProgressCallback onFetchProgress,
                             std::function<void(Result<void>)> onDone);
 
-    // Always succeeds from the caller's perspective (onDone's Result is
-    // always ok()) -- MegaApi::logout's own documentation says API_ESID
-    // should not be treated as an error here, and a local-only failure to
-    // reach the server shouldn't block the user from getting back to the
-    // login screen. Clears the persisted session token regardless of
-    // whether the server round-trip succeeded.
+    // onDone's Result is always ok(): MegaApi::logout's docs say API_ESID is not an
+    // error here, and failing to reach the server shouldn't strand the user. The
+    // persisted token is cleared either way.
     void logout(std::function<void(Result<void>)> onDone);
 
 private:
-    // Shared tail of restoreSession/login/loginWithTwoFactor once the SDK
-    // reports a successful auth: fetches the node tree, then best-effort
-    // persists the new session token. A fetchNodes failure that is itself
-    // definitively-invalid (e.g. the account got blocked between auth and
-    // fetch) also clears any previously stored session.
+    // Shared tail of every successful auth: fetch the node tree, then persist the
+    // token. A fetchNodes failure that is itself definitively-invalid (the account
+    // got blocked between auth and fetch) also clears the stored session.
     void finishLoginSuccess(FetchProgressCallback onFetchProgress,
                             std::function<void(Result<void>)> onDone);
 
