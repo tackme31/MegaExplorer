@@ -14,9 +14,27 @@
 #include <string>
 #include <vector>
 
-// How the callback-shaped methods below actually deliver, which is three ways,
-// not one. MegaSdkClient is the implementation this describes; a caller that
-// only handles the first mode is wrong on the other two.
+// This interface has two shapes, and "synchronous" means a different thing in
+// each. MegaSdkClient is the implementation both halves describe.
+//
+// Shape A -- returns Result<T> directly, no callback at all, so it answers
+// in-stack always. Seven methods, enumerated here and nowhere else; each one's
+// own comment gives its reason but does not count it, so adding an eighth is a
+// one-line edit to this list:
+//
+//   currentSessionToken, currentUserHandle, currentAccountIdentity
+//       local reads of session/account state the SDK already holds
+//   checkMove, checkUpload, findChildFiles, hasSubfolders
+//       in-memory queries against the node tree fetchNodes built
+//
+// For the first group it is merely that there is no round-trip to be
+// asynchronous about; for the second the caller genuinely has nowhere to put a
+// callback -- drag-hover feedback repaints per mouse move, and
+// QAbstractItemModel::hasChildren() answers the view on the spot.
+//
+// Shape B -- takes a std::function onDone. How that onDone actually reaches
+// you is three ways, not one; a caller that only handles the first mode is
+// wrong on the other two.
 //
 //   1. Truly asynchronous, on an SDK-internal thread. The listener-backed
 //      methods: login/fetchNodes/download/upload/getThumbnail and every
@@ -33,6 +51,11 @@
 //      another client -- and only reaches mode 1 once the handle is good. This
 //      is the mode that is easy to miss, because the happy path looks purely
 //      asynchronous.
+//
+// Mode 2 is not shape A. Those five are synchronous as well, but they still
+// hand you a callback, so they are shape B; folding the two groups into one
+// count of "the synchronous ones" gets twelve and is the mistake this split
+// exists to prevent.
 //
 // Consequence for callers, and the reason mode 3 is spelled out here: onDone
 // may run inside your own call, before the method returns. Do not hold a lock
@@ -65,12 +88,12 @@ public:
 
     virtual void logout(std::function<void(Result<void>)> onDone) = 0;
 
-    // MegaApi::dumpSession equivalent. Synchronous, unlike every other method
-    // here -- it's a local read of already-held session state, no network
-    // round-trip. Fails if not currently logged in.
+    // MegaApi::dumpSession equivalent. Shape A (see the top of this file) --
+    // a local read of already-held session state, no network round-trip.
+    // Fails if not currently logged in.
     virtual Result<std::string> currentSessionToken() const = 0;
 
-    // MegaApi::getMyUserHandleBinary equivalent. Synchronous, same rationale as
+    // MegaApi::getMyUserHandleBinary equivalent. Shape A, same rationale as
     // currentSessionToken(). Fails if not currently logged in. Used to scope
     // per-account persisted state (quick-access pins) without account identity
     // leaking into ISessionStore.
@@ -292,12 +315,10 @@ public:
                               const std::string& name,
                               std::function<void(Result<void>)> onDone) = 0;
 
-    // Whether moveNode() with the same arguments would be accepted. Synchronous
-    // -- third exception in this interface after currentSessionToken/
-    // currentUserHandle, and for the same reason: it's a pure in-memory check
-    // against the already-fetched node tree, no API round-trip. It has to be,
-    // since a drag hovering over a drop target queries it continuously to paint
-    // the "can I drop here" feedback.
+    // Whether moveNode() with the same arguments would be accepted. Shape A:
+    // a pure in-memory check against the already-fetched node tree, no API
+    // round-trip. It has to be, since a drag hovering over a drop target
+    // queries it continuously to paint the "can I drop here" feedback.
     //
     // Failure codes are the interesting part of the result, so they're set
     // precisely (MegaErrorCodes.h): kENoEnt when either end no longer exists,
@@ -312,8 +333,8 @@ public:
     virtual Result<void>
     checkMove(std::uint64_t handle, std::uint64_t newParentHandle, bool newParentIsRoot) const = 0;
 
-    // Whether upload() into this folder would be accepted. Synchronous for
-    // the same reason as checkMove -- a drag hovering over a drop target
+    // Whether upload() into this folder would be accepted. Shape A for the
+    // same reason as checkMove -- a drag hovering over a drop target
     // queries it continuously -- but unlike checkMove the SDK has no
     // checkUploadErrorExtended equivalent, so the conditions are spelled out
     // by the implementation. Same error-code discipline as checkMove
@@ -333,9 +354,9 @@ public:
     // lets a file and a folder share a name, so replacing a folder with a
     // file would be both destructive and unasked-for.
     //
-    // Synchronous for the same reason as checkUpload: an in-memory walk of
-    // the already-fetched node tree, and drop handling has to decide right
-    // there whether to raise a confirmation dialog.
+    // Shape A for the same reason as checkUpload: an in-memory walk of the
+    // already-fetched node tree, and drop handling has to decide right there
+    // whether to raise a confirmation dialog.
     virtual Result<std::vector<FileEntry>>
     findChildFiles(std::uint64_t parentHandle,
                    bool parentIsRoot,
@@ -345,29 +366,35 @@ public:
     // tree's own question, since files never appear in the side panel. False
     // for a node that is itself a file.
     //
-    // Synchronous, the sixth exception here after checkMove/checkUpload/
-    // findChildFiles and for the same reason: an in-memory count over the
-    // already-fetched node tree, no API round-trip. It has to be, because
-    // QAbstractItemModel::hasChildren() answers the view on the spot and has
-    // nowhere to put a callback.
+    // Shape A, same reason as checkMove/checkUpload/findChildFiles: an
+    // in-memory count over the already-fetched node tree, no API round-trip.
+    // It has to be, because QAbstractItemModel::hasChildren() answers the view
+    // on the spot and has nowhere to put a callback.
     virtual Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const = 0;
 
     // --- Account-level reads -------------------------------------------------
     //
     // Everything above is auth/session or node tree; these four describe the
-    // signed-in *account* itself. Appended rather than grouped next to
-    // currentUserHandle() on purpose: the synchronous-exception tally below is
-    // positional (checkMove is "the third", hasSubfolders "the sixth"), so
-    // inserting higher up would renumber four existing doc comments.
+    // signed-in *account* itself. currentAccountIdentity() sits down here with
+    // its group rather than beside currentUserHandle(); either position is now
+    // free, since the shape-A list at the top of this file replaced the
+    // positional tally these comments used to carry.
 
     // Email, the SDK's fallback avatar colour, and the user handle, in one
     // read. MegaApi::getMyEmail + getMyUserHandle + getUserAvatarColor.
     //
-    // Synchronous, the seventh exception here, same rationale as
-    // currentSessionToken/currentUserHandle: local reads of account state the
-    // SDK already holds, no API round-trip. avatarColor in particular is a
-    // pure derivation from the user handle, so it is available the instant
-    // login completes and never needs the network.
+    // Shape A, same rationale as currentSessionToken/currentUserHandle: local
+    // reads of account state the SDK already holds, no API round-trip.
+    // avatarColor in particular is a pure derivation from the user handle, so
+    // it is available the instant login completes and never needs the network.
+    //
+    // Not an atomic snapshot: each field is a separate SDK read under a
+    // separately taken lock, so a logout landing mid-call can pair one
+    // account's email with an empty handle. Left as is deliberately -- the sole
+    // consumer paints the account panel, which the same logout tears down, so
+    // the worst case is one frame of a stale avatar initial. A caller that ever
+    // *decides* something on the pair needs a snapshotting variant instead of
+    // relying on this one.
     //
     // Fails if not currently logged in.
     virtual Result<AccountIdentity> currentAccountIdentity() const = 0;
