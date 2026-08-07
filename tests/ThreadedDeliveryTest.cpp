@@ -206,6 +206,54 @@ TEST(ThreadedDeliveryTest, DownloadControllerEmitsOnTheGuiThreadWhenCompletionAr
     EXPECT_EQ(emittedOn.load(), QThread::currentThread());
 }
 
+TEST(ThreadedDeliveryTest, ClearingAnObserverStopsOnlyTheDeliveriesThatStartAfterIt)
+{
+    // Pins exactly how much ~DownloadController / ~UploadController buy by
+    // clearing their observers, because the destructors' old comment claimed
+    // more: DownloadService copies the observer under its lock and calls the
+    // copy after unlocking, so clearing stops the next delivery but not one
+    // already past the copy. That remaining window is closed by main.cpp's
+    // client->shutdown() joining the SDK thread before either controller is
+    // destroyed -- not by the clearing, and not by the null check on the copy.
+    // The observer here is the test's own, since the uncovered half runs
+    // against freed memory and so cannot be asserted on at all.
+    auto client = std::make_shared<MockMegaClient>();
+    std::function<void(std::uint64_t, std::uint64_t)> onProgress;
+    EXPECT_CALL(*client, download(_, _, _, _))
+        .Times(AnyNumber())
+        .WillRepeatedly(
+            Invoke([&onProgress](std::uint64_t,
+                                 const std::string&,
+                                 std::function<void(std::uint64_t, std::uint64_t)> progress,
+                                 DownloadDoneCallback) {
+                onProgress = std::move(progress);
+            }));
+
+    auto service = std::make_shared<DownloadService>(client);
+    std::atomic<int> observed{0};
+    service->setOnProgress([&observed](DownloadJob) {
+        observed.fetch_add(1);
+    });
+    service->enqueue(5, "a.txt", "C:\\tmp\\a.txt", 100);
+    ASSERT_TRUE(static_cast<bool>(onProgress));
+
+    WorkerDelivery delivery;
+    delivery.deliver([onProgress]() {
+        onProgress(50, 100);
+    });
+    delivery.joinAll();
+    ASSERT_EQ(observed.load(), 1);
+
+    service->setOnProgress(nullptr); // what the two destructors do
+
+    delivery.deliver([onProgress]() {
+        onProgress(75, 100);
+    });
+    delivery.joinAll();
+
+    EXPECT_EQ(observed.load(), 1);
+}
+
 TEST(ThreadedDeliveryTest, ThumbnailControllerTouchesTheModelOnTheGuiThreadOnly)
 {
     // The highest-consequence hop in src/qml: setThumbnailPath emits

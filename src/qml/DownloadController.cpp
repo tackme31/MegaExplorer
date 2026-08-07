@@ -58,10 +58,19 @@ DownloadController::~DownloadController()
 {
     // The two observers above capture a raw this and stay registered for the
     // service's whole life, and the service outlives this object (main.cpp
-    // declares it earlier, so it is destroyed later). Unregistering is what
-    // keeps that from being a dangling call. Assigning null is safe mid-flight:
-    // the service copies the observer under its lock and null-checks the copy
-    // before calling it.
+    // declares it earlier, so it is destroyed later). Clearing them here only
+    // covers deliveries that *start* after this line: DownloadService copies
+    // the observer under its lock and calls the copy after unlocking, so a
+    // copy taken just before this runs would still reach a freed this.
+    //
+    // What closes that window is main.cpp's client->shutdown() before the
+    // stack unwinds -- it joins the SDK thread, so no delivery can be in
+    // flight by the time this destructor runs. That is a contract of the
+    // current shape, not of this class: it holds only while this and
+    // UploadController are app-lifetime singletons. Making either per-tab
+    // means it can die with the SDK thread still running, and then the
+    // observers have to hold a weak_ptr instead of a raw this
+    // (REFACTOR_PLANS.md's R5-9).
     mService->setOnProgress(nullptr);
     mService->setOnJobFinished(nullptr);
 }
