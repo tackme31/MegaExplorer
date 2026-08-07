@@ -2364,7 +2364,248 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `tests/UploadControllerTest.cpp` 冒頭の「`DownloadController` と違ってこちらは入っている」
   （削除）。R4-1 が意図的に残した箇所だが、`Qt6::Gui` が入った時点で事実として誤りになった。
 
-### R5 — 未着手
+### R5 — 調査済み / 未着手（調査 2026-08-07）
+
+計画の「種」5 件 +「持ち越し」の [R5] 3 件 + R2/R3 が明示的に R5 送りにした 5 件を現物で検証した
+結果。**確認 10 件 / 種の誤り・判断が要るもの 4 件 / 問題なしと確認 3 件**。R1〜R4 と同じく、
+以下はそのまま plan mode の作業単位として使える粒度で書いてある。**調査セッションではコードを
+一切変更していない**。
+
+#### 着手前に決めた事項（2026-08-07）
+
+各項目の前提を動かすので、項目を単独で読まないこと。
+
+| 決定 | 内容 | 影響する項目 |
+| --- | --- | --- |
+| **分割は QML API 面まで通す** | `TabContext`/`TabsController` が新コントローラを別プロパティで公開し、QML を `tab.mutations.renameEntry(...)` 等に書き換える。`Q_INVOKABLE` を実数で 19 → 8 + 11 にする。C++ 内部だけ割って薄い委譲を残す案は**採らない** — 行数は減っても「1 クラスが QML API 面の 3 割」という当の負債が残るため | R5-1（+ R5-2 の数合わせ） |
+| **busy は委譲で隠す** | 独立クラスに切り出すが QML への露出は `navigation.busy` 1 プロパティのまま。`TabsController.cpp:59` は無変更 | R5-3, R5-4 |
+| **ミューテーションは 1 クラスに留める** | 単発（rename/createFolder）と bulk fan-out を別クラスに割る 3 分割案は採らない。クラス 4 つは `tabFactory` のキャプチャを 7 前後まで押し上げ、R5 の最後の再点検項目を自分で悪化させる | R5-1, R5-4 |
+| **`NodeRef` は `std::string`** | `src/core` の既存慣例（`FileEntry`/`NodeInfo`/`PathSegment`）に揃え、`src/core` の Qt 非依存を保つ。`QString`→`std::string` 変換は `toEntries()` の中に閉じるので実質 1 箇所 | R5-5 |
+| **R5-9 は契約の明文化で閉じる（製品コード変更ゼロ）** | `DownloadController`/`UploadController` は**アプリ寿命 1 個**が設計であって、R5-1 の分割対象は `FolderNavigationController` のみ。誤った安全論証（null チェック）を実際の根拠（`main.cpp:192` の `shutdown()` が SDK スレッドを join してからスタック破棄が走る）に置き換え、`ThreadedDeliveryTest` に 1 ケース足して固定する。**「この 2 つをタブ単位化するなら `weak_ptr` 化が要る」を契約本文に書く**のが要点 | R5-9 |
+| **R5-10 は固定文に倒す** | R3-4 が `openFile` でやったのと同じ処理。`ToastStack.qml:82` を `Couldn't download %1` に、`AuthController.cpp:135/182` の `UnknownError` 時の生文字列を `QString()` に。生の英文と `errorCode` は `qCWarning` に残す。`ErrorReason` を `DownloadJob` に通す案は R5-8 と同一セッションを強要して分量が R3-4 相当になるため見送り | R5-10 |
+
+#### 前提: 「最大の負債」の実体は行数ではなく、1 クラスに同居した 3 つの状態機械
+
+節 0 の表は 2026-08-06 のもので、R3/R4 の修正後は下記が正しい。R5 の判断はこちらに乗る。
+
+| ファイル | 節 0 | 現在 | 差の理由 |
+| --- | --- | --- | --- |
+| `src/mega/MegaSdkClient.cpp` | 905 | **1,106** | R3-1 の `errorCode` 付与が全メソッドに入った |
+| `src/qml/FolderNavigationController.{cpp,h}` | 822 + 384 | **832 + 396** | ほぼ横ばい |
+| `src/qml/FileListModel.cpp` | 472 | 472 | 変化なし |
+| `main.cpp` | — | 194 | — |
+
+`FolderNavigationController.cpp` 832 行を責務で切ると、**ミューテーション群だけで 398 行（48%）**:
+
+| 責務 | 行範囲 | 行数 |
+| --- | --- | --- |
+| ナビゲーション（back スタック / breadcrumb / reset） | 51-65, 96-236, 271-280, 813-832 | 191 |
+| busy カウンタ + 遅延タイマ | 38-48, 66-95 | 41 |
+| 検索 | 237-270 | 34 |
+| ソート | 281-344 | 64 |
+| **ミューテーション（rename / rubbish / createFolder / move / paste / copy）** | **345-742** | **398** |
+| refresh | 743-784 | 42 |
+| bulk 会計 | 785-812 | 28 |
+
+この 3 つ（ナビゲーション状態 / ミューテーション実行 / busy 表示）が**別々の状態機械**で、
+互いに触るのは「ミューテーションが終わったら refresh する」「ミューテーション中は busy」の
+2 本だけ。種の「少なくとも 3 つに割れる」は行数の上でも裏付けが取れた。
+
+#### 確認された問題
+
+**R5-1 [高] `Q_INVOKABLE` は 18 ではなく 19。次点の `FileListModel` の 13 を大きく引き離す**
+
+- `FolderNavigationController.h` の `Q_INVOKABLE` は grep で 23 ヒットするが、うち 4 件
+  （:23, :39, :95, :119）はコメント本文。実宣言は **19 個**。
+- 全 `src/qml` の分布: 19 / 13（`FileListModel`）/ 7（`QuickAccessModel`）/ 6 / 6 / 5 / …。
+  **1 クラスが QML API 面の 3 割を持っている**。
+- 分割の切れ目は上表の「ミューテーション 398 行」。ここを別クラス（`FileMutationController` 等）に
+  移すと 19 → 8（navigation 7 + refresh 2 のうち QML 呼び出しのあるもの）まで落ちる。
+  QML 側の呼び出し箇所は移動対象 11 個で計 14 箇所しかないので、置換のコストは小さい。
+
+**R5-2 [低] `loadRoot()` のコメントは「Not Q_INVOKABLE」と書いているのに `Q_INVOKABLE` が付いている**
+
+- `FolderNavigationController.h:119-121`。「main.cpp の合成ルートから 1 回呼ばれるだけで QML からは
+  呼ばれない」という説明自体は正しく、**`qml/` 全体で `loadRoot` の呼び出しは 0 件**（19 個の
+  `Q_INVOKABLE` でこれだけ）。宣言のほうが事実に追いついていない。
+- R5-1 の分割前に外しておくと、QML API 面の実数が 18 になり種の数字と一致する。単独では 1 行。
+
+**R5-3 [高] busy 機構は「begin/end の 2 箇所だけ」と書いてあるが、`reset()` が 3 番目の書き手**
+
+- ヘッダ :258-262 が「`mBusyCount` が変わってよいのはこの 2 つだけ」と明言。実際には
+  `reset()`（`.cpp:824-827`）が `mBusyCount = 0` を直接代入し、タイマを止め、`busyChanged` を
+  自前で出している。**begin/end のペア規約の外側にある唯一の経路**で、しかもここだけ
+  「カウントを 0 に落とす」という不変条件違反を意図的にやっている。
+- 独立クラス化のコストは低い: 外に出ている API は `busy` プロパティ 1 個 + `busyChanged` だけで、
+  `TabsController.cpp:59` が `navigation->busy()` をアップロード分と OR しているのが唯一の読者。
+  内部の呼び出しは begin/end の **8 対**（:347/353, :379/389, :434/439, :474/480, :577/584,
+  :622/631, :687/694, :755/758）。
+- **R5-4 の前に切ること**。逆順だと bulk runner が busy を触るために親への逆参照を持つ。
+
+**R5-4 [高] `BulkOperationBatch` の切り出しは成立するが、busy と絡んでいるぶん単独では出せない**
+
+- `BulkOperationBatch` を作るのは 3 箇所（`:428` moveToRubbish / `:464` moveHandlesFrom /
+  `:665` startCopyBatch）で、`accountForBulkOutcome` の呼び出しも同じ 3 経路。種の
+  「移動/コピー/ゴミ箱の 3 経路が共有している」は正しい。
+- ただし 3 経路とも fan-out ループの中で `beginBusyOperation()`／コールバック先頭で
+  `endBusyOperation()` を挟む。`BulkOperationRunner` に出すなら busy をコールバックとして
+  注入する形になり、それが自然にできるのは R5-3 で busy が独立オブジェクトになった後。
+- `refresh` / `onComplete` の 2 つの `std::function` フックは既にあるので、Runner の
+  インタフェースはほぼ現状の `BulkOperationBatch` そのままでよい。**`QuickAccessModel::Sweep` と
+  同型**（ヘッダが自分でそう書いている）なので、統合できるかは切り出し後に判断する。
+
+**R5-5 [中] `ClipboardController.h` の実インクルードは種のとおり。`Entry` を `src/core` に降ろせば消える**
+
+- `FolderNavigationController.h:6-9` が自ら理由を書いている。使用箇所は `.cpp` 6 + `.h` 2。
+- `Entry` は `{quint64 handle, QString name, bool isFolder}` の純値型で `QObject` 非依存。
+  `src/core/NodeRef.h` 相当へ降ろせば `ClipboardController` は前方宣言に戻せる。
+- **唯一の判断点**: `static std::vector<Entry> toEntries(const QVariantList&)` は `QVariant` 依存
+  なので `src/core` には置けない。(a) 変換だけ `ClipboardController` に残す、(b) `src/qml` の
+  自由関数にする、のどちらか。`QString` を `src/core` に持ち込むこと自体は既に
+  `FileEntry`/`PathSegment` が前例……を確認したが、実際は `FileEntry` は `std::string` なので
+  **`NodeRef` も `std::string` にするなら QML 境界での変換が 1 段増える**。
+  → **決定: `std::string` + 変換は `toEntries()` に残す**（上の決定表）。
+
+**R5-6 [中] `IMegaClient` の同期例外は確かに 7 個。位置依存の規約も現存するが、解消はファイル分割ではない**
+
+- `Result<T>` を直接返す（＝同期シグネチャ）のは 7 個: `currentSessionToken` / `currentUserHandle` /
+  `checkMove` / `checkUpload` / `findChildFiles` / `hasSubfolders` / `currentAccountIdentity`。
+- 序数がコメントに埋まっている（`:348`「the sixth exception here」、`:366`「the seventh」）うえ、
+  `:355-361` が「上に挿すと既存 4 つの doc コメントを振り直すことになるので末尾に足した」と
+  **規約が並び順を人質に取っていることを自白している**。
+- ただし解消は簡単で、**R2-2 が冒頭に入れた 3 モードの表（`:17-42`）が既に「どれが同期か」を
+  1 箇所で列挙している**。序数を消して「同期例外は冒頭の表を見よ」に寄せるだけでよく、型や
+  ファイルを割る必要はない。種の「型か命名で分離」は過大。
+- **混同注意**: 「モード 2（コールバック形だが常に同期）」の 5 メソッド（`getRootChildren` /
+  `getChildren` / `search` / `getPath` / `getNodeInfo`）は別軸。これを足して数えると 7 でなくなる。
+  `FolderNavigationService` のロックフリー設計が寄りかかっているのは**モード 2 のほう**。
+
+**R5-7 [低] `MegaSdkClient.cpp` の匿名 namespace は 355 行だが、切り出しには internal linkage の放棄が要る**
+
+- `:65-419` が匿名 namespace（1,106 行の **32%**）。内訳はリスナ 7 クラス（`SimpleResultListener`
+  `:96` / `FetchNodesListener` `:128` / `AttributeFileListener` `:172` / `TextResultListener` `:200` /
+  `AccountDetailsListener` `:227` / `DownloadListener` `:323` / `UploadListener` `:379`）と
+  変換ヘルパ 4 個（`toMegaUserAttribute` / `toMegaOrder` / `nodeToEntry` / `nodeListToEntries`）。
+- リスナを別ファイルに出すと本体は約 750 行になる。ただし**匿名 namespace のままでは出せない** —
+  名前付き namespace（`megaexplorer::sdk::detail` 等）に変えることになり、internal linkage を
+  失う。得られるのは行数だけで、境界が増えるわけではない。**R5-1〜R5-4 より優先度は下**。
+
+**R5-8 [中] 完了/進捗コールバックがジョブ id を照合していない（持ち越し + R2-8 の合流先）**
+
+- 現物確認: 進捗・完了とも `if (mQueue.empty()) return;` の後に無条件で `mQueue.front()` へ書く。
+  `DownloadService.cpp:185-198`（progress）/ `:199-222`（finish）、`UploadService.cpp:147-151` /
+  `:162-176`。**`UploadService` には `checkUpload` 失敗を書く 3 つ目の front() 経路もある**
+  （`:121-129`）。
+- `enqueue()` は既に id を返す（`DownloadService.h:82` / `UploadService.h:71`）が、コールバックには
+  渡っていない。R2-8 が挙げた「今日成立している 3 つの偶然」は現在も全て成立（`cancel(jobId)` 未実装）。
+- 方針は R2-8 の結論をそのまま採る: `std::optional<Job> mActive` ＋待ち行列の分離、加えて
+  コールバックへの id 引き渡し。`ThumbnailService` がハンドル keyed で構造的に免疫という良い前例あり。
+- **R4-6 があえてテストで固定しなかった箇所**なので、先にテストを書くと書き直しになる。修正と
+  同時にテストを入れる。
+
+**R5-9 [中] `~DownloadController` / `~UploadController` の安全論証が事実と違う（持ち越し）**
+
+- `DownloadController.cpp:58-64` は「サービスがロック下でコピーし null チェックしてから呼ぶので
+  mid-flight でも安全」と書くが、`DownloadService.cpp:185-197` は**ロック下でコピー → ロック解放
+  → null チェック → 呼び出し**。null チェックが見ているのはコピー**後**の値なので、コピーと
+  デストラクタの間の窓は塞げていない。`UploadController.cpp:85-91` も同文で同じ穴。
+- 現状到達不能なのは `main.cpp:192` の `client->shutdown()`（SDK スレッド join 済み）が両
+  コントローラのスタック破棄より前にあるため。**R5-1 の分割でコントローラをタブ単位化した瞬間に踏む**。
+- 選択肢は (a) コピーも呼び出しもロック下（サービス→コントローラ→サービスの再入で
+  デッドロックしうる）、(b) observer を `weak_ptr` 化、(c)「`shutdown()` より前に破棄されない」を
+  明示的な契約として書き、`ThreadedDeliveryTest` で固定する。
+  → **決定: (c)**（2026-08-07）。この 2 つはアプリ寿命 1 個が設計で、R5-1 の分割対象は
+  `FolderNavigationController` のみ。誤った論証（null チェック）を実際の根拠（`shutdown()` の
+  停止点）に差し替え、**「タブ単位化するなら (b) が要る」を契約本文に書く**。製品コード変更ゼロ。
+
+**R5-10 [低] 生 `errorMessage` の UI 露出が 2 経路残っている（持ち越し 2 件の統合）**
+
+- (a) `qml/components/ToastStack.qml:82` `describeDownload` の `%2`。`DownloadJob`（R3-11 の
+  「3 つ目のエラー表現」）経由なので、R3-4 が作った `NotificationController::ErrorReason` に
+  乗っていない。
+- (b) `AuthController.cpp:135` / `:182` の `kind == UnknownError ? errorMessage : QString()`。
+  R3-1 で `kEInternal(-1)` が「分類できない失敗」の既定になった結果、`src/platform` と
+  `MegaSdkClient` の**該当 8 箇所が全部この経路に落ちる**。
+- 同じ族だが入口が違う（前者は `DownloadJob`、後者は `AuthErrorKind`）。`ErrorReason` を
+  `DownloadJob` 側にも通すのが自然な畳み方。
+- 変更すると `tests/AuthControllerTest.cpp` の `LoginErrorsMapToErrorKinds` の `kEInternal` 行
+  （R4-2 が現状挙動をそのまま固定した）も一緒に直す必要がある。
+
+#### 種が不正確だった / 判断が要るもの
+
+- **`main.cpp` の `tabFactory` は現時点で問題ではない** — キャプチャは種のとおり 5 個
+  （`client` / `thumbnailService` / `fileOperationService` / `&notifications` / `&clipboard`）だが、
+  本体は 16 行（`:143-158`）、合成ルート全体でも 194 行。R5-1 でコントローラを割れば
+  ここのキャプチャは**増える**（新コントローラの分）ので、**R5 の最後に再点検する項目**であって
+  着手対象ではない。なお `engine.rootContext()->setContextProperty` が 9 個並んでおり、
+  分割後に 10 個を超えるようならそちらのほうが先に問題になる。
+- **`FolderNavigationController` のコンストラクタが public のまま（R2-14 が R5 送りにした件）** —
+  正しい生成経路は `makeGuiOwned` だけだが、実際の生成箇所は `main.cpp:150` と
+  `tests/FolderNavigationControllerTest.cpp:73` / `tests/TabsControllerTest.cpp:49` の 3 つで
+  **全て `makeGuiOwned` を通っている**。`static create()` 化は不変条件を型で強制するが、
+  違反者はゼロなので**利得は将来分だけ**。R5-1 で新クラスを足すときに同じ形を要求するかを
+  含めて判断する。
+- **`AccountIdentity` の裂けた値（R2-22）** — `MegaSdkClient::currentAccountIdentity`
+  （`:1013-1040`）が 2 つの別ロック下の読みを合成する件。実害のある呼び出し側は R2 調査でも
+  今回も見つからず、`AccountIdentity` を単位として検証するかは未決。**R5-6 で同じメソッドの
+  doc コメントを触るので、そのついでに結論を出す**のが安い。
+- **SDK の `sdkMutex` によるハング（R2-9）** — `docs/ARCHITECTURE.md:209-229` に恒久記録済み。
+  「その場で答える」がインタフェースの定義なので R5-6 の同期例外整理でも解消しない。R5 では
+  **触らないことを明示的に決める**項目。
+
+#### 問題なしと確認できた種
+
+- **`FolderNavigationService` / `QuickAccessService` の mutex 無しの根拠は既に自ファイルにある** —
+  持ち越し節の [R5] 項目は **R2-2 で解消済み**だった。`FolderNavigationService.h:18-23` が
+  「`DownloadService`/`UploadService`/… と違って mutex を持たない、`IMegaClient` のモード 2 が
+  同期だから」と自分で書いており、`QuickAccessService.h:19-25` も同様。**持ち越し節から落としてよい**。
+- **`FileListModel`（472 行）は割る必要がない** — 種は「選択モデル + バンド選択セッション + ロール」と
+  3 責務のように書くが、バンド選択は 5 メソッド（`beginBandSelection` / `updateBandSelection` /
+  `updateBandSelectionGrid` / `endBandSelection` / `cancelBandSelection`）+ `applyBandSelection` で、
+  状態は `mBand*` の 4 フィールドに閉じている。`Q_INVOKABLE` 13 個は 2 番目に多いが、全て
+  「1 つのリストの選択」という単一の話題。**R5 の対象から外す**。
+- **`FolderNavigationController` の非同期経路の `shared_from_this()` 捕獲** — R2-14 で確認済みの
+  17 箇所は今回も全て健全。R5-1 の分割で新クラスへ移す際に**この形ごと移すこと**が制約になる
+  （新クラスも `enable_shared_from_this` + `makeGuiOwned` が必要）。問題ではないが、分割設計の
+  入力として記録する。
+
+#### 推奨実施順（各項目 1 セッション）
+
+```
+R5-2  loadRoot の Q_INVOKABLE 除去              … 1 行。R5-1 の前に数字を合わせる
+  ↓
+R5-6  IMegaClient の同期例外を位置非依存に      … doc コメントのみ。R2-22 の判断もここで
+  ↓
+R5-5  ClipboardController::Entry を src/core へ … 実インクルードが消え、R5-1 の分割面が単純になる
+  ↓
+R5-3  busy 機構を独立クラスへ                   … reset() の 3 番目の書き手も同時に畳む
+  ↓
+R5-4  BulkOperationRunner を切り出し            … R5-3 の後でないと親への逆参照が要る
+  ↓
+R5-1  ミューテーション群を別コントローラへ      … 本丸。ここまでで 398 行の依存が整理済み
+  ↓
+R5-9  観測者解除の競合                          ★製品挙動の変更を含む。R5-1 の直後（踏む直前）
+  ↓
+R5-8  ジョブ id 照合 + optional<Job> mActive    … R2-8 の合流先。テストは修正と同時
+  ↓
+R5-10 生 errorMessage の 2 経路                 … ErrorReason を DownloadJob へ。R4-2 のテストも直す
+  ↓
+R5-7  MegaSdkClient のリスナ切り出し            … 行数のみの利得。時間が余ったら
+```
+
+**★ の 2 件は 2026-08-07 に方針決定済み**（上の決定表）。R5-9 は製品コード変更ゼロの契約明文化に
+落ちたので ★ は実質 R5-10 の文言 1 件のみ。R5-1 の分割の形も同表で確定しており、実施手順の
+ステップ 3 で改めて止まる必要があるのは**各項目の具体的な diff の形**だけ。
+
+未決のまま残しているのは、いずれも「実施中に判断すればよく、前もって決めても情報が増えない」もの:
+
+- **R5-7 をやるか**（匿名 namespace → 名前付き namespace）。internal linkage を捨てて得るのが
+  行数だけなので、**推奨は見送り**。R5-1〜R5-6 を終えて時間が余ったときに再考する。
+- **`static create()` 化**（R2-14 の R5 送り分）。違反者ゼロなので利得は将来分だけ。R5-1 で
+  新コントローラを足すとき、そちらに同じ形を要求するかと合わせて判断する。
+- **`AccountIdentity` を単位として検証するか**（R2-22）。R5-6 で同じメソッドの doc コメントを
+  触るので、そのついでに結論を出す。
+
 ### R6 — 未着手
 ### R7 — 未着手
 
@@ -2382,6 +2623,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `fileName` は意味が通り、問題は `%2` の `errorMessage` だけ。ただしダウンロードは `Result` ではなく
   `DownloadJob`（R3-11 の「3 つ目のエラー表現」）に乗っているので、`notifyError` の enum 化とは
   別の入口が要る。R3-11 が既に R5 のサービス整理に合流させると決めており、そこで一緒に畳む。
+  → **R5 調査で回収（2026-08-07）、R5-10 に統合**。下の `kEInternal` の件と同族なので 1 項目にした。
 - **[R4] `DownloadController` にテストが無い** — `tests/UploadControllerTest.cpp:19` が理由を
   「`QDesktopServices` が QtGui を引く」と説明している。R1-1 の修正で `computeDestinationPath` に
   検証ロジックが入るなら、テスト可能な形（`src/core` の純関数）に出すのが望ましい。（R1 調査中に発見）
@@ -2420,10 +2662,15 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   変えるときはそのケース（`LoginErrorsMapToErrorKinds` の `kEInternal` 行）も一緒に直す。
   上の `[R3] ToastStack.qml:85` と同じ「生 `errorMessage` の露出」族なので、R5 でまとめて
   畳むのが自然。（R4-2 実施中に確認、2026-08-07）
+  → **R5 調査で回収（2026-08-07）、R5-10 に統合**。`kEInternal` を返す箇所は現時点で
+  `src/platform` + `MegaSdkClient` の 8 箇所。
 - **[R5] `FolderNavigationService` / `QuickAccessService` が mutex 無しで安全な根拠が別ファイルにある** —
   根拠（`MegaSdkClient` の `getChildren`/`getNodeInfo` が同期であること）は
   `src/core/DownloadService.h:49-51` に書かれており、当の 2 ファイルには何も無い。R2-2 の契約書き直しで
   一部は移すが、サービス整理そのものは R5。（R2 調査中に発見）
+  → **解消済み。R2-2 が全部持っていっていた（R5 調査で確認、2026-08-07）**。
+  `FolderNavigationService.h:18-23` と `QuickAccessService.h:19-25` が現在それぞれ自分の根拠を
+  持っている。R5 でやることは残っていない。
 - **[R5] 完了/進捗ラムダが `mQueue.front()` 決め打ちで、ジョブ id を照合していない** —
   `DownloadService.cpp` と `UploadService.cpp` の両コールバックは、届いた結果がどのジョブのものか
   検証せずに先頭ジョブへ書き込む。`onTransferFinish` の後に `onTransferUpdate` が来ないという SDK の
@@ -2432,6 +2679,8 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   あえてテストで固定しなかった** — 現行挙動を固定すると、id 照合を入れるときにそのテストごと
   書き換えることになるため。`enqueue()` が返す id は既にあるので、直すなら渡すだけ。
   （R4-6 実施中に確認、2026-08-07）
+  → **R5 調査で回収（2026-08-07）、R5-8 に統合**。R2-8 の `optional<Job> mActive` 化と同じ項目に
+  まとめた。`UploadService` には `checkUpload` 失敗を書く 3 つ目の `front()` 経路もある。
 - **[R5] `~DownloadController` / `~UploadController` の `setOnProgress(nullptr)` は競合を防げていない** —
   `DownloadController.cpp:57-67` のコメントは「サービスがロック下でコピーし null チェックしてから
   呼ぶので mid-flight でも安全」と書くが、実際の `DownloadService.cpp:186-198` は**ロック下で
@@ -2440,3 +2689,5 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   コピー**前**の値を見ているので無力。現状は両コントローラが `main.cpp` のスタックローカルで、
   破棄が `client->shutdown()`（SDK スレッド join 済み）より後なので到達不能だが、
   **コントローラをタブ単位化した瞬間に踏む**。製品側の修正が要るので R5。（R4-6 調査中に発見、2026-08-07）
+  → **R5 調査で回収（2026-08-07）、R5-9 に統合**。`UploadController.cpp:85-91` も同文で同じ穴。
+  実施順は R5-1（分割）の直後 — 踏む直前に置く。
