@@ -152,8 +152,8 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
     `MegaExplorer` cannot be imported from a Qt Quick Test target at all; see R4-4/R4-5 in
     `docs/REFACTOR_PLANS.md`.
 
-  Classes the rule says to test but that have none yet (`AuthController`, `DownloadController`,
-  `MenuActions`) are tracked as R4-2/R4-3 there. Those are gaps, not decisions.
+  Classes the rule says to test but that have none yet (`DownloadController`, `MenuActions`) are
+  tracked as R4-3 there. Those are gaps, not decisions.
 - **Known limit of the suite**: no test in this repo runs more than one thread. `MockMegaClient`
   delivers every completion synchronously on the calling thread via `testing::InvokeArgument`, so
   the `std::mutex`es in `DownloadService`/`UploadService`/`ThumbnailService` never contend and

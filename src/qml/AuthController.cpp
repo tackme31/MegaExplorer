@@ -7,26 +7,13 @@
 #include <QLocale>
 #include <QString>
 
-namespace
-{
-
-// How long the fetchNodes byte progress must stay quiet before the loading
-// screen calls the download done and switches to the decrypt message.
-// Measured: 141 events over 162s, so ~1.15s apart on average -- 8s is far
-// outside normal jitter, while being short enough that the bar doesn't sit
-// visibly frozen at 99% while we wait. The SDK cannot emit further updates
-// once the response is complete (request_response_progress early-returns
-// unless the fetchnodes CS request is still pending), so a long quiet spell
-// really does mean the download finished.
-constexpr int kStallTimeoutMs = 8000;
-
-} // namespace
-
-AuthController::AuthController(std::shared_ptr<AuthService> authService, QObject* parent)
+AuthController::AuthController(std::shared_ptr<AuthService> authService,
+                               int stallTimeoutMs,
+                               QObject* parent)
     : QObject(parent), mAuthService(std::move(authService))
 {
     mStallTimer.setSingleShot(true);
-    mStallTimer.setInterval(kStallTimeoutMs);
+    mStallTimer.setInterval(stallTimeoutMs);
     connect(&mStallTimer, &QTimer::timeout, this, [this]() {
         if (mLoadingStage == DownloadingNodes)
             setLoadingStage(DecryptingNodes);

@@ -1621,7 +1621,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     assert の役割と Release での挙動、`std::expected` を採らなかった理由、`QuickAccessModel` が
     唯一の間接ガードであること）。**これで本節は完成**。
 
-### R4 — 調査済み / R4-1・R4-4・R4-9 対応済み、次は R4-2（調査 2026-08-07）
+### R4 — 調査済み / R4-1・R4-2・R4-4・R4-9 対応済み、次は R4-3（調査 2026-08-07）
 
 計画の「種」4 件 +「持ち越し」の [R4] 2 件を現物で検証した結果。**確認 6 件 / 種の誤り 4 件 /
 問題なしと確認 4 件 / 新規 3 件**。R1〜R3 と同じく、以下はそのまま plan mode の作業単位として使える
@@ -1637,7 +1637,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
 | 領域 | 規模 | テスト |
 | --- | --- | --- |
 | `src/core`（11 サービス） | 1,379 行（`.cpp` のみ） | **11/11 にテストあり。穴なし** |
-| `src/qml`（31 ファイル） | 5,529 行 | 10 クラスに専用テスト、1 クラスはリンクのみ、4 クラスは未リンク |
+| `src/qml`（31 ファイル） | 5,529 行 | 11 クラスに専用テスト、1 クラスはリンクのみ、3 クラスは未リンク（R4-2 で `AuthController` が移動） |
 | `src/platform`（2 アダプタ） | 318 行 | 1/2（`WindowsSessionStore` のみ） |
 | `src/mega` | 1,000 行超 | 0（実アカウントが要るため意図的） |
 | `qml/`（29 ファイル） | 7,356 行 | **0 件** |
@@ -1651,9 +1651,9 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
 
   | 層 | クラス |
   | --- | --- |
-  | 専用テストあり（10） | `FolderNavigationController` / `FileListModel` / `TabsController` / `UploadController` / `QuickAccessModel` / `AccountController` / `FolderTreeModel` / `ClipboardController` / `NotificationController` / `LicenseModel` |
+  | 専用テストあり（調査時 10、R4-2 後 11） | `FolderNavigationController` / `FileListModel` / `TabsController` / `UploadController` / `QuickAccessModel` / `AccountController` / `FolderTreeModel` / `ClipboardController` / `NotificationController` / `LicenseModel` / **`AuthController`（R4-2 で追加）** |
   | テストターゲットにリンクだけされている（1） | `ThumbnailController`（`TabsControllerTest` がタブ毎に構築するため必要。単体の検証はゼロ） |
-  | テストターゲットに存在しない（4） | `AuthController` / `DownloadController` / `MenuActions` / `KeyboardState` |
+  | テストターゲットに存在しない（調査時 4、R4-2 後 3） | `DownloadController` / `MenuActions` / `KeyboardState` |
 
 - CI は無い（`.github` 不在）。linter も無い。サニタイザ構成も無い（`CMakePresets.json` は
   `msvc-debug` のみ。Release プリセットが無い件は既に節 5 の持ち越しにある）。
@@ -1715,7 +1715,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     既に事実と反対だったため、丸ごと削除。
   - コード変更はゼロ（コメントのみ）。**ビルド不要・テスト不要**と判断した。
 
-**R4-2 [中] `AuthController` の `LoadingStage` 状態機械が最大の未テスト論理**
+**R4-2 [中] ✅対応済み `AuthController` の `LoadingStage` 状態機械が最大の未テスト論理**
 
 - 482 行（`.cpp` 322 + `.h` 160）。テストターゲットに入っていない。持っている状態は
   `AuthState` 7 値 × `LoadingStage` 5 値 + 世代カウンタ + ストールタイマ + 2FA 保留資格情報。
@@ -1740,6 +1740,39 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
   引かない。既存の `MegaExplorerTests` に `AuthService` のモック（既存の `AuthServiceTest` と同じ
   `MockMegaClient` + `MockSessionStore`）でそのまま入る。`QTimer` を使うので `TestApp.h` の
   `testApp()` が必須。
+- **対応（2026-08-07）**: `tests/AuthControllerTest.cpp` を新設。**32 ケース**、7 群
+  （起動経路と状態ゲート / `LoadingStage` の導出 / 進捗表示値 / ストールタイマ / 世代ガード /
+  2FA 保留資格情報 / エラー分類）。`tests/CMakeLists.txt` は 1 行追加のみ（R4-4 済みで
+  `MegaExplorerQml` をリンク済みのため、追加ライブラリは不要）。決めた点:
+  - **製品側の変更は 1 点のみ**: `kStallTimeoutMs` を `.cpp` の匿名名前空間から
+    `AuthController.h` の `kDefaultStallTimeoutMs` へ移し、コンストラクタ第 2 引数
+    （既定値付き、`parent` の手前）で注入可能にした。**8 秒の測定根拠コメントも定数に付けて移動**
+    してある。構築箇所は `main.cpp:119` の 1 箇所だけで、既定値のまま無変更。挙動不変。
+  - **`mStallTimer.stop()` は観測不能だと判明した**。`setLoadingStage` の `stop()` を
+    コメントアウトしても 32 ケース全部が緑のまま — タイムアウトハンドラ自身が
+    `mLoadingStage == DownloadingNodes` を再確認しているので、タイマが余分に発火しても no-op に
+    なる。**二重に守られていて、片方だけを固定するテストは書けない**。該当ケースは
+    `StaleStallTimerCannotFlipASignedInWindow` に改名し、「機構ではなく結果を固定している」旨を
+    テスト内コメントに明記した。`stop()` 自体は防御として残す。
+  - **世代ガードは変異テストで裏を取った**。`generation != mLoadGeneration` の early-return を
+    潰すと `StaleProgressAfterReloginIsIgnored` と
+    `StaleProgressFromAbandonedRestoreIsIgnored` の 2 本が落ちる。対になる
+    `CurrentGenerationProgressIsStillHonoured` は緑のまま — つまり「そもそも何も配達されて
+    いないから緑」ではないことも同時に担保できている。
+  - **2FA 資格情報は間接検証に留めた（既知の限界）**。`mPendingEmail`/`mPendingPassword` は
+    private で観測できないので、`MockMegaClient::multiFactorAuthLogin` に届く email/password で
+    「後続の 2FA 送信が前回の資格情報を運ばない」ことだけを固定した（cancel 後・成功後の 2 経路
+    ＋「PIN 誤りの再送信では消してはいけない」という逆側）。**平文パスワードがプロセスメモリに
+    残らないことは検証できていない** — 項目 3 が挙げていた R1 の観点はテストでは担保されない。
+  - **`kEInternal(-1) → UnknownError` は現状のまま固定し、節 5 に持ち越した**。テストは
+    「`-1` は `UnknownError` になり `rawErrorMessage` に SDK の生英文が入る」をそのまま
+    アサートしている。UX 上の是非は別件として切り離した。
+  - **`signals` は変数名に使えない**（Qt が `#define signals public` するため、最初のビルドが
+    `error C2059: 構文エラー: 'public'` で落ちた）。`stateSignals` に改名済み。
+  - 実行は **exe 一括（32/32）と `ctest` の 1 ケース 1 プロセス（32/32）の両方で緑**。
+    本テストは `QTimer`/`QEventLoop` を使うので R4-8 の「`QCoreApplication` の有無がフィルタ
+    依存」の罠に正面から乗るが、`SetUp()` の `testApp()` がそれを閉じている。全体は
+    **419/419**（従来 387 ＋ 新規 32）、`/W4` 新規警告ゼロ。
 
 **R4-3 [中] `DownloadController` にテストが無い（節 5 の持ち越しを回収）**
 
@@ -2073,7 +2106,7 @@ R4-9 が R4-4 と同時実施の必須項目になった。
 R4-1  慣例の書き直し（ARCHITECTURE.md + コメント 10 箇所）✅ … コード変更ゼロ。認識を先に揃える
 R4-4  MegaExplorerQml への分離（(b) 確定）                ✅ … ★R4 の背骨。R4-9 の /W4 維持を同梱
       + R4-9  /W4 を自前 4 target へ                     ✅ … 既存警告ゼロ。R7 送りは発生せず
-R4-2  AuthController のテスト                               … 最大の穴。R4-4 と独立に着手可
+R4-2  AuthController のテスト                             ✅ … 32 ケース。stall timeout のみ注入
 R4-3  DownloadController のテスト                           … R4-4 済みなので Qt6::Gui は解決済み
 R4-7  QSettingsPinnedFolderStore のテスト                   … 小。パス注入の口だけ製品側に開ける
 R4-8  QCoreApplication のプロセス毎 1 回化                  … 小。R4-6 段階 2 の前提
@@ -2119,6 +2152,10 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
 - ✅ `CLAUDE.md` の Build 節の `/W4` の記述を R4-9 の結果に合わせて更新（4 target が対象、
   経路は `MegaExplorerWarnings`）。併せて「生成ソースの警告は**フル**リビルドでしか出ない」を
   注記（増分ビルドのクリーンさを無警告の証拠と読まないため）。
+- ✅ `tests/AuthControllerTest.cpp`（R4-2、32 ケース）と `tests/CMakeLists.txt` の 1 行追加。
+  製品側は `src/qml/AuthController.h`/`.cpp` の stall timeout 注入のみ（挙動不変）。
+- ✅ `docs/ARCHITECTURE.md` の「規約は言うがテストがまだ無いクラス」一覧から `AuthController`
+  を削除（残りは `DownloadController` / `MenuActions` の 2 つ、参照先も R4-3 のみ）。
 
 ### R5 — 未着手
 ### R6 — 未着手
@@ -2159,6 +2196,15 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   **見送りを推奨**する結論になった — MSVC/clang-cl には Windows 版 ThreadSanitizer が無く、
   本命のデータ競合検出器がこの toolchain では使えないため。ASan で取れる UAF までに限る。
   段階 2 の前提として R4-8（`QCoreApplication` のプロセス毎 1 回化）が要る。
+- **[未割当] `kEInternal(-1)` がログイン画面に SDK の生英文を出す** — `classifyError`
+  （`src/qml/AuthController.cpp`）は `kENoEnt`/`kEBlocked`/`kETooMany`/`kEAgain` の 4 値しか
+  畳まず、`default:` は `UnknownError` ＋ `rawErrorMessage` の素通しになる。R3-1 で
+  「分類できない失敗には `kEInternal = -1` を入れる」と決めたので、**その全部がこの経路に
+  落ちる**。`LoginView.qml` の `describeError()` は `UnknownError` のときだけ生文字列を出すので、
+  日本語 UI に英語が 1 文だけ混ざる。R4-2 のテストは**現状の挙動をそのまま固定してある**ので、
+  変えるときはそのケース（`LoginErrorsMapToErrorKinds` の `kEInternal` 行）も一緒に直す。
+  上の `[R3] ToastStack.qml:85` と同じ「生 `errorMessage` の露出」族なので、R5 でまとめて
+  畳むのが自然。（R4-2 実施中に確認、2026-08-07）
 - **[R5] `FolderNavigationService` / `QuickAccessService` が mutex 無しで安全な根拠が別ファイルにある** —
   根拠（`MegaSdkClient` の `getChildren`/`getNodeInfo` が同期であること）は
   `src/core/DownloadService.h:49-51` に書かれており、当の 2 ファイルには何も無い。R2-2 の契約書き直しで

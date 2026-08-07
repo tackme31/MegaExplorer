@@ -23,6 +23,20 @@
 // is either silent or shown inline on that same screen, and logout always
 // succeeds from the caller's perspective (AuthService::logout's own
 // contract) -- there is no failure path left that needs a global toast.
+
+// How long the fetchNodes byte progress must stay quiet before the loading
+// screen calls the download done and switches to the decrypt message.
+// Measured: 141 events over 162s, so ~1.15s apart on average -- 8s is far
+// outside normal jitter, while being short enough that the bar doesn't sit
+// visibly frozen at 99% while we wait. The SDK cannot emit further updates
+// once the response is complete (request_response_progress early-returns
+// unless the fetchnodes CS request is still pending), so a long quiet spell
+// really does mean the download finished.
+//
+// Overridable via the constructor only so tests need not spend 8 real seconds
+// per case waiting for the handover; production always uses this value.
+constexpr int kDefaultStallTimeoutMs = 8000;
+
 class AuthController : public QObject
 {
     Q_OBJECT
@@ -95,7 +109,9 @@ public:
     Q_PROPERTY(qreal fetchProgress READ fetchProgress NOTIFY loadingStateChanged)
     Q_PROPERTY(QString fetchProgressText READ fetchProgressText NOTIFY loadingStateChanged)
 
-    explicit AuthController(std::shared_ptr<AuthService> authService, QObject* parent = nullptr);
+    explicit AuthController(std::shared_ptr<AuthService> authService,
+                            int stallTimeoutMs = kDefaultStallTimeoutMs,
+                            QObject* parent = nullptr);
 
     // Not Q_INVOKABLE: called once from main.cpp's composition root before
     // app.exec(), same convention as FolderNavigationController::loadRoot.
