@@ -2927,7 +2927,130 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
 - ~~**`AccountIdentity` を単位として検証するか**（R2-22）~~ → **R5-6 で決定: しない**。
   裂けても表示 1 フレーム分にしかならないため。反転条件は R5-6 の対応欄。
 
-### R6 — 未着手
+### R6 — 調査済み / 未着手（調査 2026-08-08）
+
+#### 前提: 「重複」は 1 系統ではなく 2 系統あり、境界は種の見立てとずれている
+
+種は「ドロップ先 6 箇所」と「2 ビューの `Keys.onPressed`」を別々の話として並べていたが、実物を
+当たると (a) ドロップ受けの中に**混ぜてはいけない 2 系統**があり、(b) 2 ビューの重複は
+`Keys.onPressed` だけでなく**4 ブロック**に及ぶ。抽出の単位を種のまま取ると、前者は畳めない形を
+無理に畳み、後者は 4 分の 1 しか回収できない。
+
+もう 1 つの前提として、**R6 には安全網が無い**（R6-5）。R4 が張った網は C++ 側だけで、`qml/views/`
+と `qml/Main.qml` はテストがゼロ。R1–R5 と同じ感覚で進められるスコープではない。
+
+#### 確認された問題
+
+- **R6-1: ドロップ受けの重複は「per-delegate 4 箇所」＋「view-level 2 箇所」の 2 系統。** 実測:
+
+  | 箇所 | 行数 | 系統 | 固有の追加 |
+  | --- | --- | --- | --- |
+  | `Breadcrumb.qml:208-266` | 59 | per-delegate | なし |
+  | `FolderTreePanel.qml:238-325` | 88 | per-delegate | `autoScroller` + `onPositionChanged` |
+  | `QuickAccessSection.qml:218-266` | 49 | per-delegate | なし |
+  | `TabStrip.qml:294-368` | 75 | per-delegate | `dwellTimer` + `onPositionChanged` |
+  | `FileGridView.qml:408-459` | 52 | view-level | — |
+  | `FileTableView.qml:711-763` | 53 | view-level | — |
+
+  合計 376 行。**per-delegate の 4 箇所は `(handle, isRoot)` の 2 引数だけが違い**、`keys` /
+  `property bool accepting` / `Connections { onCopyModeChanged }` / `onEntered` の 3 分岐 /
+  `onExited` / `onDropped` の 4 分岐が逐語的に同一。ここが `NodeDropArea.qml`（`targetHandle`・
+  `targetIsRoot`・`dragProxy` を `required`、`accepting` を外へ公開して枠線に使わせる）。固有の追加は
+  分岐の**外**で `entered(drag)` / `exited()` / `dropped(drop)` を出せば吸収できる — `TabStrip` の
+  spring-load は `accepting` に依らず arm する必要があるので、分岐の中に置くと壊れる。
+
+  **view-level の 2 箇所は同じ器に入らない。** 状態が `accepting` 1 つではなく
+  `dropRow`/`dropOnCurrentFolder` の 2 つで、`onEntered`/`onPositionChanged` はどちらも
+  `updateDropTarget(drag)` に丸投げする殻でしかない。DropArea 自体を共通化する利得はほぼ無く、
+  実体は R6-2 の「ビュー間の重複」の一部。**2 系統を 1 コンポーネントに畳もうとしない**のが結論。
+
+- **R6-2: 2 ビューの重複は `Keys.onPressed` だけでなく 4 ブロック。** diff を取った結果:
+
+  | ブロック | Grid | Table | 実際の差分 |
+  | --- | --- | --- | --- |
+  | リネーム helper 4 つ | `77-133` | `391-450` | `positionViewAtIndex` / `positionViewAtRow` のみ |
+  | `Keys.onPressed` 9 分岐 | `134-211` | `452-516` | 矢印の次元数のみ |
+  | ドロップ解決 3 関数 + 2 プロパティ | `308-407` | `139-245` | hit-test 名（`indexAtViewportPos` / `rowAt`）のみ |
+  | メニュー / ダイアログ配線 3 つ | `478-491`,`552-558` | `1043-1065` | `id` 名のみ |
+
+  つまり両ビューの差は常に **hit-test 関数・フォーカス取得関数・矢印の次元数の 3 点**に集約される。
+  種の `FileViewKeyHandler.qml` は 2 行目だけを回収する案で、残り 3 ブロックが取り残される。
+  4 ブロックまとめて「この 3 点を注入される共通ふるまい」として括るのが自然な単位。
+
+- **R6-3: `Main.qml` の `header`/`footer` は 270 行ではなく 421 行**（`headerComponent` 257-533 =
+  277 行、`footerComponent` 534-676 = 143 行）。外部参照は `window.currentPane` 9 箇所 /
+  `window.viewMode` 2 箇所と、`Main.qml` 直下のインライン `component ToolbarIconButton`（4 参照）・
+  `StatusIconButton`（2 参照）。**実質的なコストはこのインライン component 2 つ**で、別ファイル化には
+  これも `qml/components/` へ出すか、新ファイルへ持っていくかの判断が要る。`window.*` の側は
+  `required property` で受ければ済む（既存の `TabContentPane.qml` と同じ形）。
+
+- **R6-4: インライン `Dialog` は 3 つではなく 4 つ**（`signOutConfirmDialog` 678-692 /
+  `missingPinDialog` 712-739 / `folderDropDialog` 740-766 / `nameConflictDialog` 767-815、計 138 行）。
+  既に別ファイルなのは `AboutDialog` / `LicenseDialog` に加え `ConfirmRubbishDialog` /
+  `NewFolderDialog` の計 4 つ。ただし後ろ 3 つの Dialog は `property var filePaths` などの受け渡し状態を
+  持ち、`uploadController` に直接答えるので、**別ファイル化しても `Main.qml` 末尾の `Connections`
+  6 ブロック（986-1071）は残る**。行数の削減は 138 行止まりで、R6-3 の 421 行に比べて利得は小さい。
+
+- **R6-5: R6 が触る範囲は丸ごとテスト外で、検証手段がスクリーンショットしかない。**
+  `tests/qml/` は `tst_ActionCatalog.qml` / `tst_DragProxy.qml` / `tst_ToastStack.qml` の 3 本のみ。
+  `qml/views/` と `qml/Main.qml` はゼロ、R6-1 の 6 箇所も全部ゼロ。R4 の安全網は C++ 側なので効かない。
+  → **着手前に `tst_NodeDropArea.qml` を先に用意する**のが唯一の実質的な担保。`tst_DragProxy.qml` が
+  ドラッグ状態機械を QML から検証している前例なので、新しい仕掛けは要らない。逆に言えば、
+  テスト可能な形（`dragProxy` を注入できる `NodeDropArea.qml`）に切り出すこと自体が R6 の価値の半分。
+
+#### 種が不正確だった / 判断が要るもの
+
+- **「ドロップ先 6 箇所」の内訳** — `DropArea` の数は確かに 6 だが、種が挙げた 7 つの名前のうち
+  「空白」は独立した `DropArea` ではなく、ビューの `DropArea` の `dropRow === -1` 分岐。
+- **「1 箇所 40〜60 行 × 6」** → 実測 49〜88 行 / 計 376 行。`FolderTreePanel` の 88 行が最大。
+- **「`header`/`footer` 計 270 行」** → 421 行（R6-3）。
+- **「残り 3 つ（の Dialog）」** → 4 つ（R6-4）。
+
+#### 問題なしと確認できた種
+
+- `keys: ["application/x-megaexplorer-nodes", "text/uri-list"]` は 6 箇所とも完全に同一で、片方だけ
+  欠けている・順序が違うといったズレは無い。
+- hover 側が `dragProxy.active`（ビューだけ `sourceMutations`）で分岐し、`onDropped` が
+  `drop.hasUrls` で分岐する**非対称は 6 箇所すべてで一貫**しており、各箇所のコメントが根拠も
+  説明している。共通化のついでに「揃える」と壊れる — `NodeDropArea` はこの非対称をそのまま持つこと。
+- `ToastStack.qml` の `describe*` 4 関数と `LoginView.qml` の `describeError()` は名前が似ているだけで
+  別物（前者は通知 context、後者は認証 kind）。重複ではないので R6 の対象外。
+
+#### 新規発見
+
+- **[R6] Grid だけが持つ `takeFocus()` / `activeRenameField` は GridView が focus scope であることに
+  由来する**（`FileGridView.qml:79-93`）。R6-2 で共通化するとき、フォーカス取得を単なる
+  `forceActiveFocus()` に統一すると Grid のリネーム field の click-outside commit が発火しなくなる。
+  「フォーカス取得も注入される 3 点の 1 つ」という設計制約であって、消せる差分ではない。
+- **[R6] `TabStrip.qml` の spring-load 間隔がコメント・調査文書と食い違う** — 実装は
+  `dwellTimer.interval: 300`（`TabStrip.qml:372`）だが、すぐ上のコメント 2 箇所は「600ms after
+  entering」と書き、`docs/investigations/CROSS_TAB_DND_INVESTIGATION.md:72` も 600。
+  `docs/PROGRESS.md` の Phase 22b ログに 300 へ変えた記述は無い。どちらが正かは挙動の話なので R6 の
+  範囲外だが、R6-1 でこのコメントごと移動させるので、そのとき決めるのが自然。
+- **[R7 持ち越し] コメントの重複はコードの重複に完全に従属している** — 6 箇所のドロップ受けは
+  「なぜ hover は `active`、drop は `hasUrls` か」を**それぞれ別の言い回しで書き直して**おり
+  （`FolderTreePanel` が原典、他 5 箇所が "see FolderTreePanel.qml" ＋ 各自の要約）、2 ビューの
+  4 ブロックも同様。R6-1/R6-2 を畳めばこの重複は自動的に消えるので、**R7 で QML コメントを独立した
+  項目として持つ必要は無い**。R7 側は C++ とドキュメントに集中してよい。
+
+#### 推奨実施順（各項目 1 セッション）
+
+```
+R6-5 テストの器（tst_NodeDropArea.qml）
+   ↓  （以降の唯一の担保。抽出より先に置く）
+R6-1 NodeDropArea.qml — per-delegate 4 箇所
+   ↓  （最も定型的。cycle のスクショ差分ゼロを確認しやすい）
+R6-2 2 ビューの共通化 — 4 ブロック（view-level DropArea 2 箇所を含む）
+   ↓  （R6-1 で per-delegate 系を片付けてから、残った view-level 系に取り組む）
+R6-3 header/footer の別ファイル化（インライン component 2 つの扱いを含む）
+   ↓
+R6-4 Dialog 4 つの別ファイル化
+```
+
+R6-3/R6-4 は `Main.qml` の機械的な切り出しで他と依存しないので最後でよい。利得の大きさは
+R6-3（421 行）> R6-1（376 行）> R6-2 > R6-4（138 行）だが、**リスクの小ささは逆順**なので、
+安全網を作ってから定型的なものを先に片付ける上の順にした。
+
 ### R7 — 未着手
 
 ## 5. 持ち越し（スコープ外で見つかった事項）
