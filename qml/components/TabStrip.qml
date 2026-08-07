@@ -369,7 +369,7 @@ RowLayout {
 
                 Timer {
                     id: dwellTimer
-                    interval: 600
+                    interval: 300
                     onTriggered: tabsController.currentIndex = tabButton.index
                 }
 
