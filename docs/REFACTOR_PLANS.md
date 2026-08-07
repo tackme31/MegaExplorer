@@ -2927,7 +2927,7 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
 - ~~**`AccountIdentity` を単位として検証するか**（R2-22）~~ → **R5-6 で決定: しない**。
   裂けても表示 1 フレーム分にしかならないため。反転条件は R5-6 の対応欄。
 
-### R6 — 調査済み / 未着手（調査 2026-08-08）
+### R6 — 調査済み / R6-5 のみ対応済み（調査 2026-08-08、R6-5 で 2026-08-08）
 
 #### 前提: 「重複」は 1 系統ではなく 2 系統あり、境界は種の見立てとずれている
 
@@ -2997,6 +2997,50 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
   → **着手前に `tst_NodeDropArea.qml` を先に用意する**のが唯一の実質的な担保。`tst_DragProxy.qml` が
   ドラッグ状態機械を QML から検証している前例なので、新しい仕掛けは要らない。逆に言えば、
   テスト可能な形（`dragProxy` を注入できる `NodeDropArea.qml`）に切り出すこと自体が R6 の価値の半分。
+
+- **対応（2026-08-08）**: `qml/components/NodeDropArea.qml` と `tests/qml/tst_NodeDropArea.qml` を
+  新規追加（47 ケース）。**既存 4 箇所のインライン `DropArea` には触っていない** — 呼び出し側の
+  差し替えは R6-1。分岐の中身は原典 `FolderTreePanel.qml:238-325` からコメントごと逐語で移した。
+  実施して分かったこと:
+  - **上の R6-1 が指定するフック名 3 つは、そのままでは型がロードに失敗する。** `DropArea` 派生型で
+    `signal entered` / `exited` / `dropped`（と `positionChanged`）を宣言すると
+    *Duplicate signal name: invalid override of property change signal or superclass signal* になる。
+    実際に採ったのは `dragEntered` / `dragMoved` / `dragExited` / `dragDropped`。**R6-1 に着手する人は
+    上の 2959 行の名前ではなくこちらを読むこと。** 同じ理由で `DragAutoScroller.qml` が `Timer` 派生
+    なのに `stop()`/`start()` を避けている（同ファイルのコメント）ので、本 repo で 2 例目。
+  - **`dragDropped` だけ分岐の「前」に出す**。他 3 つは分岐の後。`TabStrip` の `dwellTimer.stop()` が
+    `onDropped` の先頭にあるのはコメント付きの意図的な選択なのに対し、`FolderTreePanel` の
+    `autoScroller.release()` が先頭か末尾かは観測不能（`dropUrls` はシグナルを出すだけでイベント
+    ループを回さない）。**片方だけが順序に意味を持つので、意味のあるほうに合わせた。**
+    代償として `onDragDropped` の中では `accepting` がまだドロップ前の値になる。
+  - **注入プロパティを `uploadController` と同名にできない。** 同名だとスコープ遮蔽で
+    `uploadController: uploadController` が自己束縛して `undefined` になる（`Main.qml:964-970` に
+    既出の罠）。`uploadService` は `src/core/UploadService.h` が別クラスとして実在するので誤解を招く。
+    → `uploads`。
+  - **テストの偽 `dragProxy` は `QtObject` でなければ意味がない。** `Connections.target` は `QObject*`
+    型で、`tst_DragProxy.qml` 流の素の JS オブジェクトを渡すと **`null` に落ちて再問い合わせ経路が
+    無言で死に、copyMode のテストは全部通る**。false green を作りかけて気づいた箇所で、テスト側に
+    その旨をコメントで残した。`uploads` のほうは `Connections` の的にならないので JS オブジェクトで可。
+  - **偽イベントの `accepted` 初期値は `false` ではなくセンチネル文字列**。「external 分岐が false を
+    書いた」と「どの分岐も触らなかった」は別の事実で、move 経路は後者（key 一致による暗黙の受理）に
+    依拠している。`false` 初期化だとこの不変条件が検証できない。
+  - **`containsDrag` は検証できない** — 読み取り専用で、ウィンドウが無い以上は常に false。ガードを
+    `syncCopyMode(hovering)` の引数に外出しして両側を検証し、`Connections` は 1 行のアダプタにした。
+    残る穴（`containsDrag` を読む行そのもの）はテスト冒頭に明記。
+  - **ハンドラ本体を関数に括り出したのはテスト専用 API に見えるが、必然**。`DragEvent` は QML から
+    合成できず、シグナル経由で検証するには実ドラッグセッションが要る。`ToastStack` の
+    `describeReason`/`describeError` が同じ理由で切り出されている先例に倣った。
+  - **網が本当に効くかを意図的な退行 2 件で確認した**（この種のテストは書いた直後が一番信用できない）。
+    ① drop の分岐を `drop.hasUrls` から `!dragProxy.active` に変える → 3 ケース失敗（うち専用の
+    非対称回帰テスト）。② `dragEntered` を分岐の中に入れる → 4 ケース失敗。どちらも戻して 486 件全通過。
+  - **ビルドの落とし穴**: `.qml` を変えて `appMegaExplorer` だけビルドしても、
+    `MegaExplorerQmlTests` は古い QML キャッシュのまま走る（静的リンクなので実行ファイルの再リンクが
+    要る）。退行確認の途中で一度これに引っかかった。QML を触ったら**テストターゲットも明示ビルド**する。
+  - **R6-1 への申し送り**: `Breadcrumb` と `QuickAccessSection` は今 `onPositionChanged` を持たないが
+    `NodeDropArea` は常に持つ。外部ドラッグ中の `drag.accepted` 再表明が増える厳密な上位互換で、
+    ほぼ確実に正しい挙動だが、R6-1 のスクショ差分の原因として誤診されないよう記録しておく。
+  - **実機確認は未実施**。新コンポーネントはまだどこからも参照されておらず `Main.qml` も無変更なので、
+    実行経路は 1 本も変わっていない。実機で意味が出るのは R6-1 から。
 
 #### 種が不正確だった / 判断が要るもの
 

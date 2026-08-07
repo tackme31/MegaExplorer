@@ -206,6 +206,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/InlineRenameField.qml
         qml/components/LicenseDialog.qml
         qml/components/NewFolderDialog.qml
+        qml/components/NodeDropArea.qml
         qml/components/QuickAccessSection.qml
         qml/components/SidePanel.qml
         qml/components/TabStrip.qml
