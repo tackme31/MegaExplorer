@@ -38,8 +38,10 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
                     : QString::fromStdString(job.name);
             if (job.state == DownloadState::Failed)
             {
-                // Log only -- DownloadSnackbar already surfaces this to the
-                // user via downloadFinished below, so no notifyError() here.
+                // Log only -- DownloadSnackbar already surfaces the failure to
+                // the user via downloadFinished below, so no notifyError()
+                // here. This is also the last stop for the SDK's English text
+                // and its code: neither is on the signal (R5-10).
                 qCWarning(lcDownload)
                     << "download failed for" << displayName << ":"
                     << QString::fromStdString(job.errorMessage) << "code=" << job.errorCode;
@@ -47,7 +49,6 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
             emit downloadFinished(job.state == DownloadState::Completed,
                                   displayName,
                                   QString::fromStdString(job.resolvedLocalPath),
-                                  QString::fromStdString(job.errorMessage),
                                   job.alreadyPresent);
             refreshActiveJob(); // reflect whatever's now at the front (or nothing)
         });

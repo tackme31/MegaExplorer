@@ -184,7 +184,7 @@ TEST(ThreadedDeliveryTest, DownloadControllerEmitsOnTheGuiThreadWhenCompletionAr
         &controller,
         &DownloadController::downloadFinished,
         &controller,
-        [&emittedOn, &finished](bool, QString, QString, QString, bool) {
+        [&emittedOn, &finished](bool, QString, QString, bool) {
             emittedOn.store(QThread::currentThread());
             finished.store(true);
         },

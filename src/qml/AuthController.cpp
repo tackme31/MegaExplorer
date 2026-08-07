@@ -130,10 +130,7 @@ void AuthController::login(const QString& email, const QString& password)
                     qCWarning(lcAuth)
                         << "login failed:" << QString::fromStdString(result.errorMessage)
                         << "code=" << result.errorCode;
-                    const AuthErrorKind kind = classifyError(result.errorCode);
-                    setError(kind,
-                             kind == UnknownError ? QString::fromStdString(result.errorMessage)
-                                                  : QString());
+                    setError(classifyError(result.errorCode));
                     setState(LoggedOut);
                 });
         });
@@ -176,13 +173,9 @@ void AuthController::submitTwoFactorCode(const QString& pin)
                     case MegaErrorCode::kEExpired:
                         setError(InvalidCredentials);
                         break;
-                    default: {
-                        const AuthErrorKind kind = classifyError(result.errorCode);
-                        setError(kind,
-                                 kind == UnknownError ? QString::fromStdString(result.errorMessage)
-                                                      : QString());
+                    default:
+                        setError(classifyError(result.errorCode));
                         break;
-                    }
                 }
                 setState(NeedsTwoFactor);
             });
@@ -223,11 +216,6 @@ AuthController::AuthState AuthController::authState() const
 AuthController::AuthErrorKind AuthController::authErrorKind() const
 {
     return mErrorKind;
-}
-
-QString AuthController::rawErrorMessage() const
-{
-    return mRawErrorMessage;
 }
 
 void AuthController::setState(AuthState state)
@@ -284,10 +272,9 @@ QString AuthController::fetchProgressText() const
             static_cast<qint64>(mTotalBytes), 1, QLocale::DataSizeTraditionalFormat));
 }
 
-void AuthController::setError(AuthErrorKind kind, const QString& rawMessage)
+void AuthController::setError(AuthErrorKind kind)
 {
     mErrorKind = kind;
-    mRawErrorMessage = rawMessage;
     emit authErrorKindChanged();
 }
 

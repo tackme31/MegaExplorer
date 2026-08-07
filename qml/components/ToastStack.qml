@@ -77,9 +77,13 @@ Item {
     // alreadyPresent means the SDK skipped the transfer because an identical
     // file was already there -- without saying so the generic "completed"
     // message is indistinguishable from an overwrite.
-    function describeDownload(success, fileName, errorMessage, alreadyPresent) {
+    //
+    // The failure branch names the file and stops there: the SDK's reason for
+    // it is an English sentence that never gets translated, and it stays in
+    // DownloadController's qCWarning (R5-10).
+    function describeDownload(success, fileName, alreadyPresent) {
         if (!success)
-            return qsTr("Failed to download %1: %2").arg(fileName).arg(errorMessage);
+            return qsTr("Couldn't download %1").arg(fileName);
         if (alreadyPresent)
             return qsTr("%1 is already downloaded").arg(fileName);
         return qsTr("%1 downloaded").arg(fileName);
@@ -88,8 +92,8 @@ Item {
     // Success gets an "Open" button wired to DownloadController::openFile();
     // failure shows only the message, mirroring the "no auto-open" rule this
     // feature is built around.
-    function showDownload(success, fileName, localPath, errorMessage, alreadyPresent) {
-        const text = root.describeDownload(success, fileName, errorMessage, alreadyPresent);
+    function showDownload(success, fileName, localPath, alreadyPresent) {
+        const text = root.describeDownload(success, fileName, alreadyPresent);
         root.push(text, success ? qsTr("Open") : "", localPath);
     }
 
@@ -168,8 +172,9 @@ Item {
     // change, since the reason is a value and not a piece of text.
     //
     // Unknown is the only branch that shows rawMessage, and NotificationController
-    // is the only thing that decides when that is -- see AuthController's
-    // rawErrorMessage for the same rule on the login screen.
+    // is the only thing that decides when that is. Since R5-10 it is also the
+    // only place in the app where an SDK English sentence can still surface --
+    // the login screen and describeDownload above both dropped theirs.
     function describeReason(clause, reason, rawMessage) {
         switch (reason) {
         case NotificationController.NotFound:

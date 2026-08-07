@@ -323,11 +323,13 @@ TestCase {
 
     function test_describeDownload_data() {
         return [
+                    // Names the file and nothing else -- the SDK's reason is
+                    // untranslated English and stays in the log (R5-10).
                     {
                         tag: "failure",
                         success: false,
                         already: false,
-                        expected: "Failed to download a.txt: disk full"
+                        expected: "Couldn't download a.txt"
                     },
                     // Without this wording a skipped transfer is indistinguishable from
                     // an overwrite.
@@ -348,16 +350,14 @@ TestCase {
 
     function test_describeDownload(data) {
         const toast = makeToast();
-        compare(toast.describeDownload(data.success, "a.txt", "disk full", data.already),
-                data.expected);
+        compare(toast.describeDownload(data.success, "a.txt", data.already), data.expected);
     }
 
     // alreadyPresent is only consulted on success -- a failed transfer reports
     // the error either way.
     function test_describeDownload_failureIgnoresAlreadyPresent() {
         const toast = makeToast();
-        compare(toast.describeDownload(false, "a.txt", "disk full", true),
-                "Failed to download a.txt: disk full");
+        compare(toast.describeDownload(false, "a.txt", true), "Couldn't download a.txt");
     }
 
     // ---- show*: only that composing and pushing are still connected --------
@@ -388,7 +388,7 @@ TestCase {
     function test_showDownload_pushes() {
         const toast = makeToast();
         const before = toast.nextSeq;
-        toast.showDownload(true, "a.txt", "C:/tmp/a.txt", "", false);
+        toast.showDownload(true, "a.txt", "C:/tmp/a.txt", false);
         compare(toast.nextSeq, before + 1);
     }
 }

@@ -857,9 +857,9 @@ TEST_F(AuthControllerTest, LoginErrorsMapToErrorKinds)
         AuthController::AuthErrorKind expected;
     };
     // kEInternal is what an unclassified SDK failure carries, so it lands in
-    // UnknownError and the raw English sentence reaches the login screen.
-    // Pinned as-is here; whether that is the right UX is carried over in
-    // docs/REFACTOR_PLANS.md section 5.
+    // UnknownError -- which is the common case, not a rare one. R5-10 gave that
+    // kind a fixed sentence of its own in LoginView.qml, so nothing here
+    // forwards the SDK's English any more.
     const std::vector<Case> cases = {
         {MegaErrorCode::kENoEnt, AuthController::InvalidCredentials},
         {MegaErrorCode::kEBlocked, AuthController::AccountBlocked},
@@ -882,14 +882,10 @@ TEST_F(AuthControllerTest, LoginErrorsMapToErrorKinds)
         controller.login(QStringLiteral("ada@example.com"), QStringLiteral("pw"));
         flush();
 
-        // Assert -- the raw text is passed through only when QML has no
-        // sentence of its own to show.
+        // Assert -- the kind is the whole payload; "Server said no" reaches the
+        // log and nothing else.
         EXPECT_EQ(controller.authErrorKind(), testCase.expected);
         EXPECT_EQ(controller.authState(), AuthController::LoggedOut);
-        if (testCase.expected == AuthController::UnknownError)
-            EXPECT_EQ(controller.rawErrorMessage(), QStringLiteral("Server said no"));
-        else
-            EXPECT_TRUE(controller.rawErrorMessage().isEmpty());
     }
 }
 
@@ -931,9 +927,5 @@ TEST_F(AuthControllerTest, TwoFactorErrorsMapToErrorKinds)
         // Assert -- the user stays on the PIN prompt either way.
         EXPECT_EQ(controller.authErrorKind(), testCase.expected);
         EXPECT_EQ(controller.authState(), AuthController::NeedsTwoFactor);
-        if (testCase.expected == AuthController::UnknownError)
-            EXPECT_EQ(controller.rawErrorMessage(), QStringLiteral("rejected"));
-        else
-            EXPECT_TRUE(controller.rawErrorMessage().isEmpty());
     }
 }

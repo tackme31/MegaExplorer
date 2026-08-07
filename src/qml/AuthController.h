@@ -19,7 +19,7 @@
 //
 // Deliberately has no NotificationController* dependency, unlike every other
 // controller in this directory: login/2FA failures are shown inline on the
-// login screen (via authErrorKind/rawErrorMessage below), a restore failure
+// login screen (via authErrorKind below), a restore failure
 // is either silent or shown inline on that same screen, and logout always
 // succeeds from the caller's perspective (AuthService::logout's own
 // contract) -- there is no failure path left that needs a global toast.
@@ -96,15 +96,9 @@ public:
 
     Q_PROPERTY(AuthState authState READ authState NOTIFY authStateChanged)
     Q_PROPERTY(AuthErrorKind authErrorKind READ authErrorKind NOTIFY authErrorKindChanged)
-    // Only ever populated for UnknownError -- every other AuthErrorKind maps
-    // to a fixed, localized sentence composed entirely in QML (see
-    // LoginView.qml's describeError()), same "C++ passes structured fields,
-    // QML composes text" convention as NotificationController/ToastStack.qml.
-    Q_PROPERTY(QString rawErrorMessage READ rawErrorMessage NOTIFY authErrorKindChanged)
 
     // One signal for the whole loading cluster, same grouping as
-    // authErrorKind/rawErrorMessage above and DownloadController's
-    // downloadActiveChanged.
+    // authErrorKind above and DownloadController's downloadActiveChanged.
     Q_PROPERTY(LoadingStage loadingStage READ loadingStage NOTIFY loadingStateChanged)
     Q_PROPERTY(qreal fetchProgress READ fetchProgress NOTIFY loadingStateChanged)
     Q_PROPERTY(QString fetchProgressText READ fetchProgressText NOTIFY loadingStateChanged)
@@ -124,7 +118,6 @@ public:
 
     AuthState authState() const;
     AuthErrorKind authErrorKind() const;
-    QString rawErrorMessage() const;
 
     LoadingStage loadingStage() const;
     qreal fetchProgress() const; // 0.0-1.0, 0.0 while the total is unknown
@@ -140,7 +133,10 @@ signals:
 
 private:
     void setState(AuthState state);
-    void setError(AuthErrorKind kind, const QString& rawMessage = QString());
+    // Takes the kind only: every kind, UnknownError included, maps to a fixed
+    // localized sentence in LoginView.qml. The SDK's own English never leaves
+    // the qCWarning at the call site (R5-10).
+    void setError(AuthErrorKind kind);
     AuthErrorKind classifyError(int errorCode) const;
 
     void setLoadingStage(LoadingStage stage);
@@ -153,7 +149,6 @@ private:
     std::shared_ptr<AuthService> mAuthService;
     AuthState mState = Restoring;
     AuthErrorKind mErrorKind = NoError;
-    QString mRawErrorMessage;
 
     LoadingStage mLoadingStage = Authenticating; // matches mState's Restoring
     std::uint64_t mTransferredBytes = 0;

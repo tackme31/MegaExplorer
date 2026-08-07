@@ -99,13 +99,11 @@ protected:
                          [this](bool success,
                                 QString fileName,
                                 QString localPath,
-                                QString errorMessage,
                                 bool alreadyPresent) {
                              ++finishedCalls;
                              lastSuccess = success;
                              lastFileName = fileName;
                              lastLocalPath = localPath;
-                             lastErrorMessage = errorMessage;
                              lastAlreadyPresent = alreadyPresent;
                          });
         QObject::connect(
@@ -152,7 +150,6 @@ protected:
     bool lastSuccess = false;
     QString lastFileName;
     QString lastLocalPath;
-    QString lastErrorMessage;
     bool lastAlreadyPresent = false;
     int activeChanges = 0;
     int errorCalls = 0;
@@ -224,10 +221,12 @@ TEST_F(DownloadControllerTest, SuccessForwardsTheResolvedPathAndTheAlreadyPresen
     ASSERT_EQ(finishedCalls, 1);
     EXPECT_EQ(lastLocalPath, QStringLiteral("C:\\Downloads\\photo.jpg"));
     EXPECT_TRUE(lastAlreadyPresent);
-    EXPECT_TRUE(lastErrorMessage.isEmpty());
 }
 
-TEST_F(DownloadControllerTest, FailureKeepsTheRequestedNameAndCarriesTheErrorMessage)
+// The SDK's "network error" must not appear on the signal at all: the snackbar
+// says only "Couldn't download photo.jpg", and the reason lives in the log
+// (R5-10). Deleting the errorMessage argument is what this pins.
+TEST_F(DownloadControllerTest, FailureKeepsTheRequestedNameAndCarriesNoSdkText)
 {
     controller->downloadFile(1, "photo.jpg", 0);
     finish(Result<DownloadOutcome>::fail("network error", 2));
@@ -236,7 +235,6 @@ TEST_F(DownloadControllerTest, FailureKeepsTheRequestedNameAndCarriesTheErrorMes
     EXPECT_FALSE(lastSuccess);
     EXPECT_EQ(lastFileName, QStringLiteral("photo.jpg")); // nothing was saved
     EXPECT_TRUE(lastLocalPath.isEmpty());
-    EXPECT_EQ(lastErrorMessage, QStringLiteral("network error"));
 }
 
 // The snackbar already shows the failure, so raising a toast on top of it

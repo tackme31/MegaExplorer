@@ -9,8 +9,8 @@ import QtQuick.Layouts
 // Shown by Main.qml's Loader instead of the header/footer/content whenever
 // authController.authState !== AuthController.LoggedIn. All user-facing text
 // is composed here from authController's structured authErrorKind/
-// rawErrorMessage/loadingStage -- same "C++ passes fields, QML composes
-// text" convention as NotificationController/ToastStack.qml. describeError()
+// loadingStage -- same "C++ passes fields, QML composes text" convention as
+// NotificationController/ToastStack.qml. describeError()
 // varies its wording by the current state too, since e.g. InvalidCredentials
 // reads differently on the password step vs. the 2FA code step.
 //
@@ -50,8 +50,12 @@ Item {
             return qsTr("Too many attempts. Please try again later.");
         case AuthController.NetworkError:
             return qsTr("Couldn't connect. Please check your connection.");
+            // Not a rare fallback: since R3-1 every failure the SDK layer couldn't
+            // classify arrives as kEInternal, so this is the wording most unusual
+            // login failures get. The SDK's own sentence is English-only and stays
+            // in AuthController's qCWarning (R5-10).
         case AuthController.UnknownError:
-            return authController.rawErrorMessage;
+            return qsTr("Couldn't sign in. Please try again.");
         default:
             return "";
         }

@@ -52,7 +52,9 @@ signals:
 
     // Fired once per finished job, success or failure -- drives the
     // snackbar. localPath and alreadyPresent are only meaningful when success
-    // is true; errorMessage is only meaningful when success is false.
+    // is true. No reason field: a failed download says only "couldn't download
+    // <name>", so the SDK's English message and its errorCode stop at the
+    // qCWarning in the handler (R5-10; same call as R3-4 made for openFile).
     // alreadyPresent is true when an identical (fingerprint-matching) file was
     // already at the destination and the SDK skipped the transfer instead of
     // downloading/renaming/overwriting -- lets the snackbar say "already
@@ -63,11 +65,7 @@ signals:
     // saved file (e.g. "photo (1).jpg"), and echoing the pre-rename name here
     // would read as if the original file got overwritten. On failure, no file
     // was saved, so fileName is simply what was requested.
-    void downloadFinished(bool success,
-                          QString fileName,
-                          QString localPath,
-                          QString errorMessage,
-                          bool alreadyPresent);
+    void downloadFinished(bool success, QString fileName, QString localPath, bool alreadyPresent);
 
 private:
     void refreshActiveJob();

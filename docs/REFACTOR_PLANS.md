@@ -2364,7 +2364,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `tests/UploadControllerTest.cpp` 冒頭の「`DownloadController` と違ってこちらは入っている」
   （削除）。R4-1 が意図的に残した箇所だが、`Qt6::Gui` が入った時点で事実として誤りになった。
 
-### R5 — 調査済み / R5-1〜R5-6・R5-8・R5-9 対応済み（調査 2026-08-07、R5-8 で 2026-08-08）
+### R5 — 調査済み / R5-1〜R5-6・R5-8〜R5-10 対応済み（調査 2026-08-07、R5-10 で 2026-08-08）
 
 計画の「種」5 件 +「持ち越し」の [R5] 3 件 + R2/R3 が明示的に R5 送りにした 5 件を現物で検証した
 結果。**確認 10 件 / 種の誤り・判断が要るもの 4 件 / 問題なしと確認 3 件**。R1〜R4 と同じく、
@@ -2785,7 +2785,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
     `UploadController` にはさらに解除不能な `moveToRubbish` の一発コールバック（R2-3）があり、
     これも同じ停止点に乗っている旨を同じコメントに残した。
 
-**R5-10 [低] 生 `errorMessage` の UI 露出が 2 経路残っている（持ち越し 2 件の統合）**
+**R5-10 [低] ✅対応済み 生 `errorMessage` の UI 露出が 2 経路残っている（持ち越し 2 件の統合）**
 
 - (a) `qml/components/ToastStack.qml:82` `describeDownload` の `%2`。`DownloadJob`（R3-11 の
   「3 つ目のエラー表現」）経由なので、R3-4 が作った `NotificationController::ErrorReason` に
@@ -2797,6 +2797,36 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `DownloadJob` 側にも通すのが自然な畳み方。
 - 変更すると `tests/AuthControllerTest.cpp` の `LoginErrorsMapToErrorKinds` の `kEInternal` 行
   （R4-2 が現状挙動をそのまま固定した）も一緒に直す必要がある。
+- **対応（2026-08-08）**: 決定表どおり固定文。生文字列を渡す配管そのもの
+  （`downloadFinished` の `errorMessage` 引数、`AuthController::rawErrorMessage` プロパティと
+  `setError` の第 2 引数）も削除した — R3-4 が `openFile` で「渡す形自体を消して `qCWarning` に
+  残す」をやった先例に揃えたため。実施して分かったこと:
+  - **「固定文に倒す」は削除作業ではなく、文言を 1 つ増やす作業だった**。`AuthController` 側の
+    生文字列を落とすと `LoginView.qml:54` の `UnknownError` 分岐が空文字を返し、**分類できない
+    ログイン失敗が何も言わずに終わる**。決定表は C++ 側しか書いていなかったが、QML 側に
+    `Couldn't sign in. Please try again.` を足さないと成立しない。しかも R3-1 の `kEInternal`
+    既定により **`UnknownError` は稀なフォールバックではなく常道**なので、この 1 文は
+    「万一の保険」ではなく実際に一番出る文言として選んでいる（その旨をコメントに残した）。
+  - **`DownloadJob` の `errorMessage`/`errorCode` フィールドは残した**。R5-8 が触らないと決めた
+    2 フィールドで、`DownloadController` の `qCWarning` が今も両方使う。R5-10 が消したのは
+    **QML に渡る経路**だけで、`ErrorReason` を `DownloadJob` に通す案（決定表が分量を理由に
+    見送ったもの）は依然として未着手のまま。
+  - **生英文の露出は 0 にはならず、1 経路残る** — `NotificationController` の `Unknown` 分岐
+    （`ToastStack.qml` の `describeReason` default、3 引数版 `notifyError` の 8 呼び出し）。
+    R3-4 が意図的に残した形なので R5-10 の 2 経路には数えられていないが、`kEInternal` 既定は
+    こちらにも同じく効くので、**同じ理由で常道になっている**。今回はスコープを広げず、
+    代わりに「ここが最後の 1 経路」であることを `NotificationController.h` と
+    `ToastStack.qml:170` の 2 箇所のコメントに書いて、次に触る人が探さなくて済むようにした。
+    → 下の持ち越し節に第 3 経路として記録。
+  - テスト: `DownloadControllerTest` の `FailureKeepsTheRequestedNameAndCarriesTheErrorMessage`
+    は名前ごと反転させて `...AndCarriesNoSdkText` にした。**「生文字列が乗らない」は本来
+    アサートできない性質**（乗る場所が型から消えたので、テストは引数の欠如をコンパイルで
+    固定しているだけ）で、テスト本体が担保しているのは残る 3 フィールドのほう。
+    `AuthControllerTest` は 2 ループの `rawErrorMessage` アサーション計 4 行が消え、
+    `kEInternal` 行そのものは残る（分類先は変わっていない）。
+    485 件全通過、`/W4` 新規警告ゼロ。QML 側は `tst_ToastStack.qml` の 5 ケースが新シグネチャで通る。
+  - **実機確認は未実施**。ログイン失敗の `UnknownError` もダウンロード失敗も、任意に起こすには
+    実アカウントか回線遮断が要る。文言 2 件はテストで固定済みだが、画面での見え方は未確認。
 
 #### 種が不正確だった / 判断が要るもの
 
@@ -2893,6 +2923,8 @@ R5-7  MegaSdkClient のリスナ切り出し            … 行数のみの利�
   `DownloadJob`（R3-11 の「3 つ目のエラー表現」）に乗っているので、`notifyError` の enum 化とは
   別の入口が要る。R3-11 が既に R5 のサービス整理に合流させると決めており、そこで一緒に畳む。
   → **R5 調査で回収（2026-08-07）、R5-10 に統合**。下の `kEInternal` の件と同族なので 1 項目にした。
+  → **R5-10 で解消（2026-08-08）**。`Couldn't download %1` の固定文にし、`errorMessage` は
+  `downloadFinished` の引数ごと削除。
 - **[R4] `DownloadController` にテストが無い** — `tests/UploadControllerTest.cpp:19` が理由を
   「`QDesktopServices` が QtGui を引く」と説明している。R1-1 の修正で `computeDestinationPath` に
   検証ロジックが入るなら、テスト可能な形（`src/core` の純関数）に出すのが望ましい。（R1 調査中に発見）
@@ -2933,6 +2965,18 @@ R5-7  MegaSdkClient のリスナ切り出し            … 行数のみの利�
   畳むのが自然。（R4-2 実施中に確認、2026-08-07）
   → **R5 調査で回収（2026-08-07）、R5-10 に統合**。`kEInternal` を返す箇所は現時点で
   `src/platform` + `MegaSdkClient` の 8 箇所。
+  → **R5-10 で解消（2026-08-08）**。`rawErrorMessage` プロパティごと削除し、`UnknownError` は
+  `LoginView.qml` の固定文 `Couldn't sign in. Please try again.` になった。
+- **[未割当] 生 SDK 英文が残る最後の 1 経路 — `NotificationController` の `Unknown`** —
+  3 引数版 `notifyError` の 8 呼び出し（`navigation` / `search` / `refresh` / `rename` /
+  `createFolder` / `paste` ×2 / `copy` / `thumbnail`）が、`classify()` の畳めない
+  コード（`kENoEnt`/`kEAccess`/`kEAgain` 以外＝ R3-1 既定の `kEInternal` を含む全部）で
+  `errorOccurred` の `rawMessage` に生英文を乗せ、`ToastStack.qml` の `describeReason` の
+  `default:` が `%1: %2` で出す。**R3-4 が意図的に残した形**（`NotificationControllerTest` に
+  「`Unknown` のときだけ raw が乗る」ケースがある）で、R5-10 のスコープは 2 経路のみと
+  決めたので今回は触っていない。閉じるなら `describeReason` の `default:` を固定文にして
+  `rawMessage` 引数と `notifyError` の `errorMessage` 引数を落とす形で、R5-10 と同型。
+  （R5-10 実施中に確認、2026-08-08）
 - **[R5] `FolderNavigationService` / `QuickAccessService` が mutex 無しで安全な根拠が別ファイルにある** —
   根拠（`MegaSdkClient` の `getChildren`/`getNodeInfo` が同期であること）は
   `src/core/DownloadService.h:49-51` に書かれており、当の 2 ファイルには何も無い。R2-2 の契約書き直しで

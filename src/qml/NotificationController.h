@@ -42,7 +42,9 @@ public:
 
     // A failure that carries an SDK/service errorCode. The code is classified
     // here, once, rather than at each call site; errorMessage reaches QML only
-    // when classification gave up, mirroring AuthController::rawErrorMessage.
+    // when classification gave up. Since R5-10 dropped the raw text from the
+    // login screen and the download snackbar, this is the last route by which
+    // an SDK English sentence can reach the UI.
     //
     // Not Q_INVOKABLE: only C++ controllers call this; QML only ever listens
     // to errorOccurred.
