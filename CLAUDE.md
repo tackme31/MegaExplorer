@@ -178,8 +178,12 @@ cmake --build build/msvc-debug --config Debug --target appMegaExplorer
 ```
 
 Build only `appMegaExplorer`, not the full solution — the SDK's `gfxworker` tool currently fails to
-link, unrelated to our code (`docs/BUILD.md`). Test target: `MegaExplorerTests` instead, then run
-via `ctest --preset msvc-debug` or `build/msvc-debug/tests/Debug/MegaExplorerTests.exe` directly.
+link, unrelated to our code (`docs/BUILD.md`). Test targets: `MegaExplorerTests` (GoogleTest) and
+`MegaExplorerQmlTests` (Qt Quick Test over `qml/`, sources in `tests/qml/`); `ctest --preset
+msvc-debug` runs both. The binaries are `build/msvc-debug/Debug/MegaExplorer{,Qml}Tests.exe`.
+Running the QML one by hand needs `-o -,tap`: QtTest's default logger sends its output to
+`OutputDebugString` instead of stdout whenever no console is attached to the process, which is
+every run from Git Bash, so without it a failure prints nothing at all.
 
 Binary: `build/msvc-debug/Debug/appMegaExplorer.exe`. Needs Qt's `bin`
 and vcpkg's `debug/bin` on `PATH` to run outside Qt Creator:
@@ -188,8 +192,9 @@ and vcpkg's `debug/bin` on `PATH` to run outside Qt Creator:
 set PATH=C:\Qt\6.11.1\msvc2022_64\bin;%CD%\build\msvc-debug\vcpkg_installed\x64-windows-mega\debug\bin;%PATH%
 ```
 
-**Compiler warnings**: all four of our targets — `MegaExplorerCore`, `MegaExplorerQml`,
-`appMegaExplorer`, `MegaExplorerTests` — build at `/W4`, via the `MegaExplorerWarnings` interface
+**Compiler warnings**: all five of our targets — `MegaExplorerCore`, `MegaExplorerQml`,
+`appMegaExplorer`, `MegaExplorerTests`, `MegaExplorerQmlTests` — build at `/W4`, via the
+`MegaExplorerWarnings` interface
 target they each link (`docs/BUILD.md` covers that and the two Qt-header suppressions it carries).
 At the end of any task touching
 `main.cpp`/`src/`, check for new warnings and fix them before considering the task done. Preferred:

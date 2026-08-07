@@ -117,8 +117,8 @@ is a reliable path-prefix check rather than a text-based `grep -v`. Confirmed 20
 raised only on our own targets (via `/W4`) don't leak SDKlib/third_party noise into the array at
 all, since those are separate CMake targets.
 
-`/W4` reaches all four of our targets — `MegaExplorerCore`, `MegaExplorerQml`, `appMegaExplorer`,
-`MegaExplorerTests` — through the `MegaExplorerWarnings` interface target they each link
+`/W4` reaches all five of our targets — `MegaExplorerCore`, `MegaExplorerQml`, `appMegaExplorer`,
+`MegaExplorerTests`, `MegaExplorerQmlTests` — through the `MegaExplorerWarnings` interface target they each link
 `PRIVATE`. `PRIVATE` is what keeps it off `third_party/sdk` and QWindowKit; putting `/W4` in
 `CMAKE_CXX_FLAGS` instead would hit everything and is why the flag was target-scoped from the
 start. Before R4-9 it was on `appMegaExplorer` alone, which meant `src/core` and all of `tests/`

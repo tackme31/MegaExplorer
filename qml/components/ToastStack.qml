@@ -74,28 +74,29 @@ Item {
             toastModel.remove(0);
     }
 
+    // alreadyPresent means the SDK skipped the transfer because an identical
+    // file was already there -- without saying so the generic "completed"
+    // message is indistinguishable from an overwrite.
+    function describeDownload(success, fileName, errorMessage, alreadyPresent) {
+        if (!success)
+            return qsTr("Failed to download %1: %2").arg(fileName).arg(errorMessage);
+        if (alreadyPresent)
+            return qsTr("%1 is already downloaded").arg(fileName);
+        return qsTr("%1 downloaded").arg(fileName);
+    }
+
     // Success gets an "Open" button wired to DownloadController::openFile();
     // failure shows only the message, mirroring the "no auto-open" rule this
-    // feature is built around. alreadyPresent means the SDK skipped the
-    // transfer because an identical file was already there -- without saying so
-    // the generic "completed" message is indistinguishable from an overwrite.
+    // feature is built around.
     function showDownload(success, fileName, localPath, errorMessage, alreadyPresent) {
-        let text;
-        if (!success)
-            text = qsTr("Failed to download %1: %2").arg(fileName).arg(errorMessage);
-        else if (alreadyPresent)
-            text = qsTr("%1 is already downloaded").arg(fileName);
-        else
-            text = qsTr("%1 downloaded").arg(fileName);
+        const text = root.describeDownload(success, fileName, errorMessage, alreadyPresent);
         root.push(text, success ? qsTr("Open") : "", localPath);
     }
 
-    // Bulk-operation outcomes, fed by
-    // notificationController.operationFinished(context, succeeded, failed).
-    // No Undo button: a Rubbish-bin undo is finally expressible since Phase
-    // 14a added a general move, but it would need the pre-move parent of every
-    // item in the batch, which nothing records.
-    function showOperation(context, succeeded, failed) {
+    // Returns "" for a context with no case, which showOperation below reads as
+    // "say nothing". Unlike describeError's default that is not a gap to warn
+    // about: C++ only emits operationFinished for the contexts listed here.
+    function describeOperation(context, succeeded, failed) {
         let text = "";
         switch (context) {
         case "move":
@@ -145,6 +146,16 @@ Item {
             text = qsTr("Folder created");
             break;
         }
+        return text;
+    }
+
+    // Bulk-operation outcomes, fed by
+    // notificationController.operationFinished(context, succeeded, failed).
+    // No Undo button: a Rubbish-bin undo is finally expressible since Phase
+    // 14a added a general move, but it would need the pre-move parent of every
+    // item in the batch, which nothing records.
+    function showOperation(context, succeeded, failed) {
+        const text = root.describeOperation(context, succeeded, failed);
         if (text !== "")
             root.push(text, "", "");
     }
@@ -172,8 +183,6 @@ Item {
         }
     }
 
-    // Errors from controllers with no dedicated feedback path, fed by
-    // notificationController.errorOccurred(context, reason, rawMessage).
     // context names the operation, reason says why; no English from the SDK
     // reaches this function except as rawMessage on an Unknown reason.
     //
@@ -182,7 +191,7 @@ Item {
     // failure never reached the SDK and so has no code to classify. The second
     // group ignores both reason and rawMessage by design -- C++ sends them
     // Unknown and "".
-    function showError(context, reason, rawMessage) {
+    function describeError(context, reason, rawMessage) {
         let text;
         switch (context) {
         case "navigation":
@@ -265,7 +274,13 @@ Item {
             text = root.describeReason(qsTr("Something went wrong"), reason, rawMessage);
             break;
         }
-        root.push(text, "", "");
+        return text;
+    }
+
+    // Errors from controllers with no dedicated feedback path, fed by
+    // notificationController.errorOccurred(context, reason, rawMessage).
+    function showError(context, reason, rawMessage) {
+        root.push(root.describeError(context, reason, rawMessage), "", "");
     }
 
     Column {

@@ -70,3 +70,7 @@ target_compile_definitions(MegaExplorerTests PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(MegaExplorerTests)
+
+# The .qml side needs a QGuiApplication and a QML engine, neither of which this
+# target has, so it gets a binary of its own rather than more source files here.
+add_subdirectory(qml)

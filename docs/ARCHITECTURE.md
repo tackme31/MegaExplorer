@@ -64,7 +64,7 @@ tests/         GoogleTest-based unit tests, one per src/core service
 
 ### CMake targets
 
-Four targets, all defined in the root `CMakeLists.txt`:
+Five targets; all but the last are defined in the root `CMakeLists.txt`:
 
 | Target | Holds | Why it is separate |
 | --- | --- | --- |
@@ -72,6 +72,7 @@ Four targets, all defined in the root `CMakeLists.txt`:
 | `MegaExplorerQml` (STATIC) | `src/qml` + `qml/`, and carries `qt_add_qml_module` | Same reason, one level up: the QML module's backing target is a library rather than the executable so `MegaExplorerTests` can link the QML-facing C++ types instead of hand-copying the file list, and so a Qt Quick Test target can `import MegaExplorer` at all. |
 | `appMegaExplorer` (WIN32 executable) | `main.cpp` + `src/app`, `src/mega`, `src/platform` | The composition root and the only target that touches the SDK or the OS. |
 | `MegaExplorerTests` | `tests/` | GoogleTest binary; links the two libraries above. |
+| `MegaExplorerQmlTests` (`tests/qml/CMakeLists.txt`) | `tests/qml/` | Qt Quick Test binary, separate from `MegaExplorerTests` because it needs a `QGuiApplication` and a QML engine, which `quick_test_main()` supplies and `tests/TestMain.cpp`'s `QCoreApplication` cannot. |
 
 Two consequences worth knowing before editing the build files:
 
@@ -81,8 +82,8 @@ Two consequences worth knowing before editing the build files:
 - A static backing library means the generated type registration lives in a translation unit that
   nothing references by name, so the linker would drop it and every QML type would fail to
   register at startup. `appMegaExplorer` therefore links `MegaExplorerQmlplugin` *and* `main.cpp`
-  carries `Q_IMPORT_QML_PLUGIN(MegaExplorerPlugin)`. Neither half works without the other; a Qt
-  Quick Test target added later will need the same pair.
+  carries `Q_IMPORT_QML_PLUGIN(MegaExplorerPlugin)`. Neither half works without the other, and
+  `MegaExplorerQmlTests` repeats both in `tests/qml/QmlTestMain.cpp` for the same reason.
 
 Note the split: `src/qml/` is C++ (`.h`/`.cpp`) that QML consumes; `qml/` (project root) is the
 `.qml` files themselves. Don't conflate the two when adding a feature that needs both a controller
@@ -151,13 +152,20 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
     `QSettings`). Each takes its storage location through the constructor, so a test points it at a
     temp file instead of the user's session file or registry — `QSettingsPinnedFolderStore`'s
     optional INI path exists for exactly that and is empty in production.
-  - `qml/` — none. `qt_add_qml_module` hangs off the `appMegaExplorer` executable, so URI
-    `MegaExplorer` cannot be imported from a Qt Quick Test target at all; see R4-4/R4-5 in
-    `docs/REFACTOR_PLANS.md`.
+  - `qml/` — the functions whose result is decided by their arguments, and nothing else. Qt Quick
+    Test in `tests/qml/` covers `ToastStack`'s message composition, `ActionCatalog`'s per-action
+    label/icon/enabled/trigger, and `DragProxy.canDropOn`; all three fail *silently* when wrong,
+    producing a wrong sentence or a drop target that lights up when it shouldn't. What is not
+    tested is the views whose substance is rendering and gestures — `FileTableView`,
+    `FileGridView`, `TabStrip` — where a Qt Quick Test asserts on layout accidents and breaks on
+    every restyle. R4-5 in `docs/REFACTOR_PLANS.md` has the reasoning.
 
-  One class the rule says to test still has none: `MenuActions`. That is a gap, not a decision —
-  a small one, since all it does is map a two-valued site enum onto `MenuActionResolver`, which
-  has 47 cases of its own. R4 in `docs/REFACTOR_PLANS.md` records the assessment.
+  Three gaps the rule says to close and nothing has yet — all gaps, not decisions:
+  `MenuActions` (small: it maps a two-valued site enum onto `MenuActionResolver`, which has 47
+  cases of its own); `ActionCatalog`'s five `trigger` lambdas that name the `downloadController`
+  /`tabsController`/`quickAccessModel`/`clipboardController` context properties, since only
+  `main.cpp` ever sets those; and `ToastStack.push`'s oldest-first trimming, whose `ListModel` is
+  private to the component. R4 in `docs/REFACTOR_PLANS.md` records each assessment.
 - **Known limit of the suite**: no test in this repo runs more than one thread. `MockMegaClient`
   delivers every completion synchronously on the calling thread via `testing::InvokeArgument`, so
   the `std::mutex`es in `DownloadService`/`UploadService`/`ThumbnailService` never contend and

@@ -1625,7 +1625,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     assert の役割と Release での挙動、`std::expected` を採らなかった理由、`QuickAccessModel` が
     唯一の間接ガードであること）。**これで本節は完成**。
 
-### R4 — 調査済み / R4-1〜R4-4・R4-7〜R4-9 対応済み、次は R4-5（調査 2026-08-07）
+### R4 — 調査済み / R4-1〜R4-5・R4-7〜R4-9 対応済み、残るは R4-6（調査 2026-08-07）
 
 計画の「種」4 件 +「持ち越し」の [R4] 2 件を現物で検証した結果。**確認 6 件 / 種の誤り 4 件 /
 問題なしと確認 4 件 / 新規 3 件**。R1〜R3 と同じく、以下はそのまま plan mode の作業単位として使える
@@ -1968,7 +1968,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     `CorePrivate/GuiPrivate/QuickPrivate ... not declared` 警告は
     `_qt_internal_finalize_executable` 由来の**既存**のもので、R4-4 とは無関係。
 
-**R4-5 [中] `qml/` 7,356 行が全面ノーテストで、かつ現在のビルド構成ではテスト用に import できない**
+**R4-5 [中] ✅対応済み `qml/` 7,356 行が全面ノーテストで、かつ現在のビルド構成ではテスト用に import できない**
 
 - 種は「対象を絞って `qt-development-skills:qt-qml-test` を使う」としており方向は正しいが、
   **先に構成上の障害がある**: `qt_add_qml_module` は `appMegaExplorer`（`WIN32_EXECUTABLE` な
@@ -1996,6 +1996,53 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
 - **対象外にすると決めておくもの**: `FileTableView.qml`（1,060 行）/ `FileGridView.qml`（766 行）/
   `TabStrip.qml`（537 行）。描画とジェスチャが本体で、Qt Quick Test で書くと壊れやすいテストに
   なる。R6 の安全網としては上記 3 ファイルの純関数で足りる、と割り切る。
+- **対応（2026-08-07）**: `tests/qml/` に `MegaExplorerQmlTests`（Qt Quick Test）を新設し、
+  **105 ケース**（ToastStack 47 / ActionCatalog 46 / DragProxy 12、`initTestCase` 等を除く実数）。
+  ctest は `.qml` ファイル毎に 1 エントリで **455 → 458**。着手前に決めた 3 点と、
+  **実施設計が外していた点 3 つ**:
+  - **ToastStack は `describe*` を切り出した**（承認済みの選択肢）。`showError`/`showOperation`/
+    `showDownload` は戻り値が無く、唯一の観測点 `toastModel` は `id` なのでテストから届かない。
+    文字列を返す `describeError` / `describeOperation` / `describeDownload` を分離し、`show*` は
+    `push(describe*(...))` になった（挙動不変）。これで**シーンも ListModel も delegate も
+    Timer も生成せずに 14 の error context・4 の operation context を全分岐 assert できる**。
+    `model` の alias 露出案を採らなかったのは、全ケースで FluentWinUI3 の delegate と 6 秒
+    Timer が立ち上がる代償に見合うのが `push()` のトリムだけだったため（→ 下の取りこぼし）。
+  - **`-o -,tap` は飾りではなく必須だった（実施設計の見落とし・今回の最大の落とし穴）**。
+    最初 `add_test` を素で登録したところ ctest は緑になったが、**わざと失敗させても
+    `--output-on-failure` が空**だった。原因は QtTest の既定 plain logger で、Windows では
+    プロセスにコンソールが付いていないとき出力を `OutputDebugStringA` に振り替えて stdout に
+    何も書かない —— ctest 経由も Git Bash からの手動実行も、まさにその条件に当たる。
+    `-o -,txt` でも同じ（stream が stdout である限り同じ分岐）。**TAP logger にはこの分岐が
+    無い**ので `-o -,tap` に固定した。失敗時に `.qml` のファイル名と行番号まで出る。
+    これを踏まないと「将来の失敗が全部デバッグ不能」という形で静かに効き続けるところだった。
+  - **`src/app/Logging.cpp` のコンパイルが要った（実施設計の漏れ）**。`MegaExplorerQml` の中の
+    `src/qml` 各クラスが `lcNavigation()` 等を呼ぶが、これらはライブラリではなく
+    `src/app/Logging.cpp` に定義があるため、リンクだけでは 10 個の未解決シンボルになる。
+    `tests/CMakeLists.txt` が同じ理由で同じファイルを足しているのを見落としていた。
+  - **`add_executable` であって `qt_add_executable` ではない**（実施設計どおりだが理由を明記）。
+    後者は Windows で `WIN32_EXECUTABLE` を付けるので、テストランナーの出力先が消える。
+  - **`.qml` を直したら再ビルドしないとテストは古い実装を見る**。`ToastStack` はソースツリー
+    からではなく `:/qt/qml/MegaExplorer/` のリソースから読まれるので、`describe*` を足した直後に
+    テストを回して 35 件が `is not a function` で落ちた。テスト側 `.qml` は `-input` で
+    ソースツリーから直に読まれる**のに製品側 `.qml` はそうではない**、という非対称が原因で、
+    ここを取り違えると「テストが間違っている」と誤診する。
+  - 「387 → 390」という実施設計の見積もりは**基準値が古かった**。387 は R4 調査時点の数で、
+    R4-2/R4-3/R4-7 が足した分が反映されていない。実際の基準は 455。
+- **意図的に取りこぼしたもの**（いずれも gap であって「テストしない決定」ではない。
+  `docs/ARCHITECTURE.md` の Testing 規約にも同じ 3 件を並べてある）:
+  - **`ActionCatalog` の `trigger` 11 個中 5 個**（`download` / `openInNewTab` / `togglePin` /
+    `cut` / `copy`）。`downloadController` 等のコンテキストプロパティを直接名指しし、それを
+    設定するのは `main.cpp` だけなので、埋めるには `QUICK_TEST_MAIN_WITH_SETUP` +
+    C++ のテストダブルが要る。今回は「C++ を増やさない」を優先した。残る 6 個（`ctx` の
+    コールバックと `ctx.navController` に流れるもの）は**カバー済み**。
+  - **`ToastStack.push()` の `maxVisible` トリム**。上記のとおり `toastModel` を露出させない
+    判断の裏返し。`show*` は `nextSeq` の増分で「押し込んだ／押し込まなかった」だけ見ている。
+  - **`DragProxy.sampleCopyMode()`**。`KeyboardState.modifiers()` が実 OS のキー状態を読むので
+    QML から決定的にできない。`begin()`/`moveTo()`/`finish()` も内部でこれを呼ぶため、
+    まとめてテストから外した（調査時の判断どおり）。
+- 検証: 458 ケース緑、自前 5 target を中間生成物ごと消してのフルリビルドで**警告ゼロ**、
+  アプリ起動＆Cloud Drive 描画をスクショで確認（`ToastStack` は `Main.qml` が無条件に生成する
+  ので、起動できた時点で改造後の QML が読めていることの担保になる）。
 
 **R4-6 [中〜大] スレッド起因の欠陥を構造的に検出できない（R2-19 / 節 5 の持ち越しを回収）**
 
@@ -2209,7 +2256,7 @@ R4-2  AuthController のテスト                             ✅ … 32 ケー�
 R4-3  DownloadController のテスト                         ✅ … 18 ケース。製品側の変更ゼロ
 R4-7  QSettingsPinnedFolderStore のテスト                 ✅ … 17 ケース。既定値付き ini パスのみ注入
 R4-8  QCoreApplication のプロセス毎 1 回化                 ✅ … 独自 main。R4-6 段階 2 の前提
-R4-5  QML テスト（ToastStack / ActionCatalog / DragProxy）  … R4-4 完了後。R6 の安全網
+R4-5  QML テスト（ToastStack / ActionCatalog / DragProxy） ✅ … 105 ケース。ToastStack のみ改造
 R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）          … ★範囲の承認が要る。最後
 ```
 
@@ -2267,6 +2314,19 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `src/platform` の項（「テストが無い、`QSettings` が実レジストリに書くから」）を訂正し、
   Testing 規約の箇条書きに `src/platform` の行（**実アダプタをテストする／保存先はコンストラクタ
   注入**）を追加。
+- ✅ `tests/qml/`（R4-5）— `CMakeLists.txt`（`MegaExplorerQmlTests` と ctest 3 エントリ）、
+  `QmlTestMain.cpp`、`tst_ToastStack.qml` / `tst_ActionCatalog.qml` / `tst_DragProxy.qml`。
+  ルート `CMakeLists.txt` は `find_package` の `QuickTest` 追加のみ、`tests/CMakeLists.txt` は
+  `add_subdirectory(qml)` の 1 行のみ、`CMakePresets.json` の `targets` に 1 語追加。
+  製品側は `qml/components/ToastStack.qml` の `describe*` 分離だけ（挙動不変）。
+- ✅ `docs/ARCHITECTURE.md` の Testing 規約の `qml/` の行を書き換え（R4-5）。R4-4 完了で
+  「`appMegaExplorer` に付いているので import できない」が事実として誤りになっていた箇所。
+  併せて `MenuActions` 1 件だった「gap であって decision ではない」一覧を 3 件に拡張
+  （`ActionCatalog` の 5 trigger、`ToastStack.push` のトリムを追加）、`CMake targets` 表に
+  `MegaExplorerQmlTests` の行と「なぜ `MegaExplorerTests` と別バイナリか」を追記。
+- ✅ `CLAUDE.md` の Build 節にテスト target 2 つと **`-o -,tap` が要る理由**を明記（R4-5）。
+  同節のバイナリパス（`build/msvc-debug/tests/Debug/...`）が実態と違っていたのも併せて訂正。
+  `/W4` の対象は `docs/BUILD.md` ともども 4 → **5 target**。
 - ✅ R4-4 で前提が消えた陳腐化コメントを 2 箇所訂正（R4-3 と同一コミット）:
   `src/core/DownloadService.h` の `safeLocalFileName` の配置理由（「`DownloadController` は
   テストターゲットに入っていないから」→「Qt 非依存の文字列規則だから `src/core`」）と、

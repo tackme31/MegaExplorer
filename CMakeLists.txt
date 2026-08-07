@@ -9,7 +9,8 @@ include(GNUInstallDirs)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Gui is for QWindowKit, which links Qt's Core/Gui/Quick *private* modules.
-find_package(Qt6 REQUIRED COMPONENTS Gui Quick)
+# QuickTest backs tests/qml, which runs the .qml TestCases in-process.
+find_package(Qt6 REQUIRED COMPONENTS Gui Quick QuickTest)
 
 qt_standard_project_setup(REQUIRES 6.10)
 
@@ -114,8 +115,8 @@ target_compile_features(MegaExplorerCore PUBLIC cxx_std_17)
 target_link_libraries(MegaExplorerCore PRIVATE MegaExplorerWarnings)
 
 # The QML module's backing target. A library rather than appMegaExplorer itself
-# so that MegaExplorerTests can link the same QML-facing C++ types (and, from
-# R4-5 on, import the MegaExplorer URI from a Qt Quick Test target) instead of
+# so that MegaExplorerTests can link the same QML-facing C++ types, and
+# MegaExplorerQmlTests can import the MegaExplorer URI at all (R4-5), instead of
 # recompiling a hand-copied subset of src/qml -- the same reason
 # MegaExplorerCore is a library. Everything below is plain QObject with no QML
 # registration; the QML_ELEMENT types are in qt_add_qml_module's SOURCES.
@@ -273,6 +274,7 @@ target_compile_definitions(appMegaExplorer PRIVATE
 # uses ("WindowAgent is not a type"). Verified with dumpbin: without this,
 # qml_register_types_MegaExplorer is present in the .lib and absent from the
 # .exe. main.cpp's Q_IMPORT_QML_PLUGIN is the other half; neither works alone.
+# tests/qml repeats both halves for the same reason.
 target_link_libraries(appMegaExplorer
     PRIVATE MegaExplorerQml
     PRIVATE MegaExplorerQmlplugin
