@@ -355,3 +355,94 @@ TEST(UploadServiceTest, SynchronousUploadFailuresDrainTheQueueWithoutRecursing)
     EXPECT_EQ(maxDepth, 1); // recursing would make this 49
     EXPECT_EQ(service.queueLength(), 0u);
 }
+
+TEST(UploadServiceTest, CheckUploadRejectionMidQueueDoesNotStopTheJobBehindIt)
+{
+    // The two drain tests above are homogeneous: every job takes the same exit.
+    // This one interleaves them, because the checkUpload fast-fail leaves the
+    // loop through `continue` rather than through onDone -- the path that has
+    // to clear mAdvancing itself. Getting that wrong strands job 3 as Queued
+    // with nobody left to start it, which no all-failing queue would show.
+    auto mockClient = makeClient();
+    EXPECT_CALL(*mockClient, checkUpload(8, false))
+        .WillRepeatedly(::testing::Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
+    std::function<void(Result<UploadOutcome>)> onDone1;
+    std::function<void(Result<UploadOutcome>)> onDone3;
+    EXPECT_CALL(*mockClient,
+                upload(::testing::_, 7, false, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&onDone1));
+    EXPECT_CALL(*mockClient,
+                upload(::testing::_, 9, false, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&onDone3));
+
+    UploadService service(mockClient);
+    std::vector<UploadJob> finished;
+    service.setOnJobFinished([&](UploadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    std::uint64_t id1 = service.enqueue("a", "a.txt", 7, false, 0);
+    std::uint64_t id2 = service.enqueue("b", "b.txt", 8, false, 0);
+    std::uint64_t id3 = service.enqueue("c", "c.txt", 9, false, 0);
+
+    // Act: finishing job 1 hands the loop to job 2, which fast-fails, and the
+    // same loop turn must carry on to job 3
+    onDone1(Result<UploadOutcome>::ok(UploadOutcome{11}));
+
+    // Assert: job 3 started (upload() was called for it) with job 2 failed
+    ASSERT_TRUE(static_cast<bool>(onDone3));
+    ASSERT_EQ(finished.size(), 2u);
+    EXPECT_EQ(finished[0].id, id1);
+    EXPECT_EQ(finished[0].state, UploadState::Completed);
+    EXPECT_EQ(finished[1].id, id2);
+    EXPECT_EQ(finished[1].state, UploadState::Failed);
+    EXPECT_EQ(finished[1].errorCode, MegaErrorCode::kENoEnt);
+
+    onDone3(Result<UploadOutcome>::ok(UploadOutcome{33}));
+    ASSERT_EQ(finished.size(), 3u);
+    EXPECT_EQ(finished[2].id, id3);
+    EXPECT_EQ(finished[2].state, UploadState::Completed);
+    EXPECT_EQ(finished[2].nodeHandle, 33u);
+    EXPECT_TRUE(finished[2].errorMessage.empty());
+    EXPECT_EQ(service.queueLength(), 0u);
+}
+
+TEST(UploadServiceTest, CompletionArrivingAfterTheQueueDrainedIsIgnored)
+{
+    // The `if (mQueue.empty()) return;` guard at the top of both callbacks --
+    // MegaSdkClient::shutdown() completes everything still pending as it joins
+    // the SDK thread, so an already-finished job can be completed a second
+    // time and front() would be UB by then. Same shape as DownloadService's.
+    auto mockClient = makeClient();
+    std::function<void(std::uint64_t, std::uint64_t)> onProgress;
+    std::function<void(Result<UploadOutcome>)> onDone;
+    EXPECT_CALL(*mockClient,
+                upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::DoAll(::testing::SaveArg<3>(&onProgress),
+                                   ::testing::SaveArg<4>(&onDone)));
+
+    UploadService service(mockClient);
+    int finishedCount = 0;
+    int progressCount = 0;
+    service.setOnJobFinished([&](UploadJob) {
+        ++finishedCount;
+    });
+    service.setOnProgress([&](UploadJob) {
+        ++progressCount;
+    });
+
+    service.enqueue("C:\\tmp\\a.txt", "a.txt", 7, false, 0);
+    onDone(Result<UploadOutcome>::ok(UploadOutcome{1}));
+    ASSERT_EQ(finishedCount, 1);
+    ASSERT_EQ(service.queueLength(), 0u);
+
+    // Act: the same callbacks fire again against the now-empty queue
+    onProgress(50, 100);
+    onDone(Result<UploadOutcome>::fail("late", MegaErrorCode::kENoEnt));
+
+    // Assert: both dropped silently
+    EXPECT_EQ(finishedCount, 1);
+    EXPECT_EQ(progressCount, 0);
+    EXPECT_EQ(service.queueLength(), 0u);
+    EXPECT_FALSE(service.currentJob().has_value());
+}

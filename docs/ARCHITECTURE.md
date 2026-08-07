@@ -166,13 +166,24 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
   /`tabsController`/`quickAccessModel`/`clipboardController` context properties, since only
   `main.cpp` ever sets those; and `ToastStack.push`'s oldest-first trimming, whose `ListModel` is
   private to the component. R4 in `docs/REFACTOR_PLANS.md` records each assessment.
-- **Known limit of the suite**: no test in this repo runs more than one thread. `MockMegaClient`
-  delivers every completion synchronously on the calling thread via `testing::InvokeArgument`, so
-  the `std::mutex`es in `DownloadService`/`UploadService`/`ThumbnailService` never contend and
-  `makeGuiOwned`'s cross-thread branch (`src/qml/GuiThread.h`) is never reached — deleting either
-  would leave the suite green. Everything the "Threading model" section below asserts is held up by
-  review, not by a test. Windows has no ThreadSanitizer under MSVC or clang-cl either, so no build
-  flag closes this; see R4-6 in `docs/REFACTOR_PLANS.md`.
+- **Threads in the suite, and the limit that remains**: `MockMegaClient` delivers every completion
+  synchronously on the calling thread via `testing::InvokeArgument`, and all but one test file
+  leaves it that way. `tests/ThreadedDeliveryTest.cpp` opts out through `tests/WorkerDelivery.h`,
+  which hands a captured callback to a thread of its own — the same opt-in shape a new test should
+  use, rather than a mode on the shared mock. What that covers, each case failing deterministically
+  if the product code loses its hop: `makeGuiOwned`'s cross-thread branch, `invokeOnGuiThread`
+  actually posting from a foreign thread, `~QObject` dropping a call still queued for it, and the
+  two hops with the most to lose — `DownloadController`'s `downloadFinished` emit and
+  `ThumbnailController`'s write into `FileListModel`.
+  - **Still not covered: data races themselves.** The `std::mutex`es in
+    `DownloadService`/`UploadService`/`ThumbnailService` never contend, so deleting one leaves the
+    suite green. Windows has no ThreadSanitizer under MSVC or clang-cl, so no build flag closes
+    this; ASan would only reach use-after-free. Everything else the "Threading model" section
+    below asserts is held up by review, not by a test. See R4-6 in `docs/REFACTOR_PLANS.md`.
+  - **Trap when writing one of these.** Observe the emitting thread with an explicitly
+    `Qt::DirectConnection`ed handler. An auto-connected one whose context object lives on the GUI
+    thread gets queued by Qt itself when the signal comes from another thread, so it reports the
+    GUI thread no matter which thread emitted — and passes with the product code's own hop deleted.
 - **`MegaExplorerCore`**: a static library target (root `CMakeLists.txt`) bundling `src/core`'s
   SDK-free headers/`.cpp` files. Exists so `appMegaExplorer` and `MegaExplorerTests` link the same
   compiled domain logic instead of each recompiling it standalone.

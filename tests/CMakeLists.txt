@@ -34,6 +34,7 @@ add_executable(MegaExplorerTests
     NotificationControllerTest.cpp
     AuthControllerTest.cpp
     DownloadControllerTest.cpp
+    ThreadedDeliveryTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/QSettingsPinnedFolderStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
@@ -41,6 +42,7 @@ add_executable(MegaExplorerTests
     MockSessionStore.h
     MockPinnedFolderStore.h
     TestApp.h
+    WorkerDelivery.h
 )
 
 # GTest::gtest, not GTest::gtest_main: TestMain.cpp supplies main() so that

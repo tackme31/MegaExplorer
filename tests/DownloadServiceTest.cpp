@@ -326,3 +326,101 @@ TEST(DownloadServiceTest, SynchronousFailuresDrainTheQueueWithoutRecursing)
     EXPECT_EQ(maxDepth, 1); // recursing would make this 49
     EXPECT_FALSE(service.currentJob().has_value());
 }
+
+TEST(DownloadServiceTest, MixedSuccessAndFailureQueueKeepsPerJobResultFieldsSeparate)
+{
+    // Every other queue test drains an all-success or an all-failure queue, so
+    // nothing so far would notice the completion callback writing a failure
+    // into the wrong job: it edits mQueue.front() in place and only then
+    // erases it, and the job behind inherits whatever the struct still holds.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<DownloadOutcome>)> onDone1;
+    std::function<void(Result<DownloadOutcome>)> onDone2;
+    std::function<void(Result<DownloadOutcome>)> onDone3;
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<3>(&onDone1));
+    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<3>(&onDone2));
+    EXPECT_CALL(*mockClient, download(3, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<3>(&onDone3));
+
+    DownloadService service(mockClient);
+    std::vector<DownloadJob> finished;
+    service.setOnJobFinished([&](DownloadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    std::uint64_t id1 = service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
+    std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 0);
+    std::uint64_t id3 = service.enqueue(3, "c.txt", "/tmp/c.txt", 0);
+
+    // Act: success, then failure, then success -- each one auto-advancing to
+    // the next (an unstarted job's onDone would still be unset).
+    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a (1).txt", false}));
+    ASSERT_TRUE(static_cast<bool>(onDone2));
+    onDone2(Result<DownloadOutcome>::fail("network error", 2));
+    ASSERT_TRUE(static_cast<bool>(onDone3));
+    onDone3(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/c.txt", true}));
+
+    // Assert: notified in enqueue order, and the failure in the middle left no
+    // trace on the job behind it
+    ASSERT_EQ(finished.size(), 3u);
+    EXPECT_EQ(finished[0].id, id1);
+    EXPECT_EQ(finished[0].state, DownloadState::Completed);
+    EXPECT_EQ(finished[0].resolvedLocalPath, "/tmp/a (1).txt");
+    EXPECT_TRUE(finished[0].errorMessage.empty());
+
+    EXPECT_EQ(finished[1].id, id2);
+    EXPECT_EQ(finished[1].state, DownloadState::Failed);
+    EXPECT_EQ(finished[1].errorMessage, "network error");
+    EXPECT_EQ(finished[1].errorCode, 2);
+    EXPECT_TRUE(finished[1].resolvedLocalPath.empty());
+
+    EXPECT_EQ(finished[2].id, id3);
+    EXPECT_EQ(finished[2].state, DownloadState::Completed);
+    EXPECT_EQ(finished[2].resolvedLocalPath, "/tmp/c.txt");
+    EXPECT_TRUE(finished[2].alreadyPresent);
+    EXPECT_TRUE(finished[2].errorMessage.empty());
+    EXPECT_EQ(finished[2].errorCode, 0);
+
+    EXPECT_FALSE(service.currentJob().has_value());
+}
+
+TEST(DownloadServiceTest, CompletionArrivingAfterTheQueueDrainedIsIgnored)
+{
+    // The `if (mQueue.empty()) return;` guard at the top of both callbacks.
+    // MegaSdkClient::shutdown() completes everything still pending as it joins
+    // the SDK thread, so a job that already finished can be completed a second
+    // time; the queue is empty by then and front() would be UB.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(std::uint64_t, std::uint64_t)> onProgress;
+    std::function<void(Result<DownloadOutcome>)> onDone;
+    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::DoAll(::testing::SaveArg<2>(&onProgress),
+                                   ::testing::SaveArg<3>(&onDone)));
+
+    DownloadService service(mockClient);
+    int finishedCount = 0;
+    int progressCount = 0;
+    service.setOnJobFinished([&](DownloadJob) {
+        ++finishedCount;
+    });
+    service.setOnProgress([&](DownloadJob) {
+        ++progressCount;
+    });
+
+    service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
+    onDone(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt", false}));
+    ASSERT_EQ(finishedCount, 1);
+    ASSERT_TRUE(service.jobs().empty());
+
+    // Act: the same callbacks fire again against the now-empty queue
+    onProgress(50, 100);
+    onDone(Result<DownloadOutcome>::fail("late", 2));
+
+    // Assert: both dropped silently -- no second notification, no new job
+    EXPECT_EQ(finishedCount, 1);
+    EXPECT_EQ(progressCount, 0);
+    EXPECT_TRUE(service.jobs().empty());
+    EXPECT_FALSE(service.currentJob().has_value());
+}

@@ -1625,7 +1625,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     assert の役割と Release での挙動、`std::expected` を採らなかった理由、`QuickAccessModel` が
     唯一の間接ガードであること）。**これで本節は完成**。
 
-### R4 — 調査済み / R4-1〜R4-5・R4-7〜R4-9 対応済み、残るは R4-6（調査 2026-08-07）
+### R4 — 全項目対応済み（調査 2026-08-07、R4-6 で完了 2026-08-07）
 
 計画の「種」4 件 +「持ち越し」の [R4] 2 件を現物で検証した結果。**確認 6 件 / 種の誤り 4 件 /
 問題なしと確認 4 件 / 新規 3 件**。R1〜R3 と同じく、以下はそのまま plan mode の作業単位として使える
@@ -2044,7 +2044,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
   アプリ起動＆Cloud Drive 描画をスクショで確認（`ToastStack` は `Main.qml` が無条件に生成する
   ので、起動できた時点で改造後の QML が読めていることの担保になる）。
 
-**R4-6 [中〜大] スレッド起因の欠陥を構造的に検出できない（R2-19 / 節 5 の持ち越しを回収）**
+**R4-6 [中〜大] ✅対応済み スレッド起因の欠陥を構造的に検出できない（R2-19 / 節 5 の持ち越しを回収）**
 
 - 事実確認（R2-19 の再確認）: `tests/MockMegaClient.h` は純 gmock で、完了は全て
   `testing::InvokeArgument<N>` によりテスト自身のスレッドで同期に配達される。
@@ -2069,6 +2069,37 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
      一緒に扱う。
 - **1 と 2 のどちらまでやるかは着手前に承認が要る**（2 は `MockMegaClient` の全 16 利用箇所に
   影響しうる設計変更）。
+- **承認された範囲（2026-08-07）**: 段階 1 の残ギャップ ＋ 段階 2 を opt-in 限定。段階 3 は上記
+  のとおり見送り確定。
+- **対応（2026-08-07）**: 製品コードの変更はゼロ。464 ケース緑（+9）、ctest 467/467。決めた点:
+  - **着手時点で段階 1 の前提が古くなっていた**。「同期失敗を N 件返すモックを足すだけ」の本体は
+    R2-2 の修正時に既に書かれている（`DownloadServiceTest.cpp` の
+    `SynchronousFailuresDrainTheQueueWithoutRecursing` ほか 3 サービス分）。**上の段階 1 の記述は
+    調査時点のもので、実施内容とは違う**。代わりに埋めたのは、①成功と失敗が混在するキュー
+    （17 ケース中ゼロだった）、②`if (mQueue.empty()) return;` の早期 return 経路の 2 件。
+  - **UploadService には失敗の出口が 2 つあり、混在キューでしか差が出ない**。`onDone` 経由
+    （トランポリンが受ける）と `checkUpload` 拒否の `continue` 経由（**自分で `mAdvancing` を
+    クリアしなければならない側**）で、既存の 2 つのドレインテストはどちらも均質なキューなので
+    後者を取り違えても緑になる。`CheckUploadRejectionMidQueueDoesNotStopTheJobBehindIt` はその
+    差を突く唯一のケース。
+  - **段階 2 は `MockMegaClient` に触らずに実現した**。配達方法はモック本体ではなく**呼び出し側の
+    gmock アクション**が決めているので、専用モードを足す必要が無い。既存 18 ファイル・199 箇所の
+    `InvokeArgument` は 1 行も変えていない — これが opt-in であることの構造的な担保になる
+    （`tests/WorkerDelivery.h` の `deliver()` にコールバックを渡すだけ。専用アクション
+    テンプレートも作っていない）。
+  - **最初に書いた 4a/4b は無効なテストだった**。逆確認（`invokeOnGuiThread` を
+    `Qt::DirectConnection` に差し替える）で発覚: **auto-connection のせいで、ワーカで emit しても
+    Qt 自身が受信側スレッドへキューし直す**ため、観測ラムダは常に GUI スレッドを報告する。
+    製品側の hop を消しても緑のままだった。観測側を明示的に `Qt::DirectConnection` にして修正。
+    この罠は次に書く人が同じ穴に落ちるので `docs/ARCHITECTURE.md` にも書いた。
+  - **`flushDeferredDeletes()` が要る**。`deleteLater` の `DeferredDelete` を `processEvents()` が
+    配達するかはイベントループのネスト段数に依存し、テストは `exec()` の外で走る。型を明示した
+    `sendPostedEvents` は無条件なので、そちらに寄せた。
+  - **逆確認は 2 通り効くことを確認**。`makeGuiOwned` のデリータを素の `delete` にすると
+    テスト 1 だけが落ち、`invokeOnGuiThread` を `Qt::DirectConnection` にすると残る 4 つだけが
+    落ちる（直交している）。flaky チェックは `--gtest_repeat=50` × 2 回で 0 件。
+  - **担保できたのは経路の実行であって、データ競合の検出ではない**。TSan がこの toolchain に
+    無い以上、3 サービスの mutex は依然として消しても緑になる。この限界の明記が R4 の成果物 (c)。
 
 #### 種が不正確だった / 判断が要るもの
 
@@ -2257,7 +2288,7 @@ R4-3  DownloadController のテスト                         ✅ … 18 ケー�
 R4-7  QSettingsPinnedFolderStore のテスト                 ✅ … 17 ケース。既定値付き ini パスのみ注入
 R4-8  QCoreApplication のプロセス毎 1 回化                 ✅ … 独自 main。R4-6 段階 2 の前提
 R4-5  QML テスト（ToastStack / ActionCatalog / DragProxy） ✅ … 105 ケース。ToastStack のみ改造
-R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）          … ★範囲の承認が要る。最後
+R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         ✅ … 9 ケース。段階 2 は opt-in 限定
 ```
 
 順序の要点:
@@ -2375,6 +2406,11 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   本命のデータ競合検出器がこの toolchain では使えないため。ASan で取れる UAF までに限る。
   段階 2 の前提として R4-8（`QCoreApplication` のプロセス毎 1 回化）が要る → **R4-8 は
   2026-08-07 に完了**（`tests/TestMain.cpp`）。段階 2 は前提を気にせず着手してよい。
+  → **R4-6 で決着（2026-08-07）**。段階 1 の残ギャップ 4 ケースと、段階 2 の
+  `tests/ThreadedDeliveryTest.cpp` 5 ケース（`tests/WorkerDelivery.h` 経由の opt-in）。
+  **クロススレッドの配達経路は担保されたが、データ競合そのものは依然として担保外** — 3 サービスの
+  mutex は消してもテストが通る。TSan がこの toolchain に無いのが理由で、これは R4-6 の
+  対応ログと `docs/ARCHITECTURE.md` の「Threads in the suite」に既知の限界として明記した。
 - **[未割当] `kEInternal(-1)` がログイン画面に SDK の生英文を出す** — `classifyError`
   （`src/qml/AuthController.cpp`）は `kENoEnt`/`kEBlocked`/`kETooMany`/`kEAgain` の 4 値しか
   畳まず、`default:` は `UnknownError` ＋ `rawErrorMessage` の素通しになる。R3-1 で
@@ -2388,3 +2424,19 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   根拠（`MegaSdkClient` の `getChildren`/`getNodeInfo` が同期であること）は
   `src/core/DownloadService.h:49-51` に書かれており、当の 2 ファイルには何も無い。R2-2 の契約書き直しで
   一部は移すが、サービス整理そのものは R5。（R2 調査中に発見）
+- **[R5] 完了/進捗ラムダが `mQueue.front()` 決め打ちで、ジョブ id を照合していない** —
+  `DownloadService.cpp` と `UploadService.cpp` の両コールバックは、届いた結果がどのジョブのものか
+  検証せずに先頭ジョブへ書き込む。`onTransferFinish` の後に `onTransferUpdate` が来ないという SDK の
+  暗黙の保証に寄りかかった設計で、破れると前ジョブの進捗が次ジョブの
+  `transferredBytes`/`totalBytes` を上書きする（クラッシュではなく表示の乱れ）。**R4-6 では
+  あえてテストで固定しなかった** — 現行挙動を固定すると、id 照合を入れるときにそのテストごと
+  書き換えることになるため。`enqueue()` が返す id は既にあるので、直すなら渡すだけ。
+  （R4-6 実施中に確認、2026-08-07）
+- **[R5] `~DownloadController` / `~UploadController` の `setOnProgress(nullptr)` は競合を防げていない** —
+  `DownloadController.cpp:57-67` のコメントは「サービスがロック下でコピーし null チェックしてから
+  呼ぶので mid-flight でも安全」と書くが、実際の `DownloadService.cpp:186-198` は**ロック下で
+  コピーし、ロックを解放してから呼ぶ**。SDK スレッドがコピーを取った直後に GUI スレッドが
+  デストラクタを走り切れば、解放済み `this` に対して `invokeOnGuiThread` が呼ばれる。null チェックは
+  コピー**前**の値を見ているので無力。現状は両コントローラが `main.cpp` のスタックローカルで、
+  破棄が `client->shutdown()`（SDK スレッド join 済み）より後なので到達不能だが、
+  **コントローラをタブ単位化した瞬間に踏む**。製品側の修正が要るので R5。（R4-6 調査中に発見、2026-08-07）
