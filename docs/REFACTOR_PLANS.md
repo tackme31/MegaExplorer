@@ -1625,7 +1625,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     assert の役割と Release での挙動、`std::expected` を採らなかった理由、`QuickAccessModel` が
     唯一の間接ガードであること）。**これで本節は完成**。
 
-### R4 — 調査済み / R4-1〜R4-4・R4-7・R4-9 対応済み、次は R4-8（調査 2026-08-07）
+### R4 — 調査済み / R4-1〜R4-4・R4-7〜R4-9 対応済み、次は R4-5（調査 2026-08-07）
 
 計画の「種」4 件 +「持ち越し」の [R4] 2 件を現物で検証した結果。**確認 6 件 / 種の誤り 4 件 /
 問題なしと確認 4 件 / 新規 3 件**。R1〜R3 と同じく、以下はそのまま plan mode の作業単位として使える
@@ -2099,7 +2099,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     `kEInternal` 失敗、非オブジェクト要素・`handle == 0`・handle 欠落のスキップ、name 欠落時の
     ハンドル保持。
 
-**R4-8 [低] 387 ケースが 387 プロセスに分かれ、`QCoreApplication` の有無がフィルタ依存になっている**
+**R4-8 [低] ✅対応済み 387 ケースが 387 プロセスに分かれ、`QCoreApplication` の有無がフィルタ依存になっている**
 
 - `tests/CMakeLists.txt:83` の `gtest_discover_tests` は **1 gtest ケース = 1 ctest テスト**を
   生成するので、`ctest` は exe を 387 回起動する（`--gtest_filter` 付き）。
@@ -2118,6 +2118,36 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
 - 修正方針: `::testing::AddGlobalTestEnvironment` で `QCoreApplication` をプロセス毎に 1 回
   構築する（`TestApp.h` の「1 プロセス 1 インスタンス」制約はそのまま満たせる）。
   全 fixture の `SetUp` に `testApp()` を書き足すより漏れが無い。
+- **対応（2026-08-07）**: `tests/TestMain.cpp` を新設し、`QCoreApplication` を `main` のローカルに
+  した。`testApp()` は削除、`TestApp.h` は `flushQueuedEvents()` だけの薄いヘッダとして名前ごと
+  残した（include 行を 7 ファイルで書き換える価値が無いため）。決めた点:
+  - **`AddGlobalTestEnvironment` ではなく独自 `main` にした**（調査時の方針からの変更）。
+    環境登録も**結局 `.cpp` の新設が要る** — `TestApp.h` に静的初期化で書くと include している
+    10 TU から 10 回登録されるので、ファイル数は同じ。同じコストなら
+    (a) `QCoreApplication` は `argc` への**参照**を保持するため `main` のローカルなら寿命が
+    構造的に正しい（旧 `testApp()` が `argc`/`argv` まで関数内 static にしていたのはこの回避）、
+    (b) 静的デストラクタより**前**に破棄される、という 2 点で独自 `main` が上。(b) は
+    R4-6 段階 2 でワーカスレッドが絡んだときに「誰が先に死ぬか」を読めるかどうかの差になる。
+  - **`GTest::gtest_main` → `GTest::gtest` は必須**（`main` の二重定義になる）。ついでに
+    `InitGoogleMock` を呼ぶ形にした。`gtest_main` の `main` は `InitGoogleTest` しか呼ばないので、
+    **`GTest::gmock` をリンクしているのに `--gmock_*` フラグは一度もパースされていなかった**。
+    リークしたモックの報告は `MockObjectRegistry` のデストラクタ由来で init とは無関係なので、
+    既存 454 ケースの挙動は変わっていない（実測でも変化なし）。
+  - **不変条件そのものの回帰テストを `TestMain.cpp` に 1 ケース置いた**
+    （`TestProcessEnvironment.QueuedGuiThreadCallIsDelivered`）。`QCoreApplication::instance()`
+    の非 null だけでなく `invokeOnGuiThread` → `flushQueuedEvents` の**実配達**まで見る。
+    守りたいのは「インスタンスがある」ではなく「キューした呼び出しが届く」方なので。
+    不変条件を作る側のファイルがその検証も持つ形にした。
+  - **`gtest_discover_tests` の 1 ケース 1 プロセスは維持**。プロセス数を減らせば同じ問題は
+    消えるが、失敗ケースが ctest 上で名指しされる利点を失うので採らなかった。
+- 実測: **454 → 455 ケース**、`exe` 一括と `ctest`（1 ケース 1 プロセス）の**両方で緑**。
+  `ctest` 全体 27.9 秒 / 1 ケース 0.05〜0.06 秒で、全プロセスで `QCoreApplication` を建てる
+  オーバーヘッドは計測ノイズに埋もれた。`/W4` 新規警告ゼロ。
+- 調査時「22 ファイル中 7 つが `testApp()` を呼ぶ」だったのが、実施時には **25 ファイル中 10**
+  になっていた。間に入った R4-2/R4-3/R4-7 の 3 件がそのまま増分で、**fixture 側に書く方式は
+  放っておくと書き忘れの母数が増え続ける**ことの実例になっている。
+- `QSettingsPinnedFolderStoreTest` は R4-7 で意図的に `QCoreApplication` 非依存にしてあるが、
+  明示パス + `IniFormat` は organization/application 名を見ないので影響なし（`ctest` で確認）。
 
 **R4-9 [中] ✅対応済み `/W4` は `appMegaExplorer` にしか掛かっておらず、`src/core` は既に監視外**
 
@@ -2178,7 +2208,7 @@ R4-4  MegaExplorerQml への分離（(b) 確定）                ✅ … ★R4 
 R4-2  AuthController のテスト                             ✅ … 32 ケース。stall timeout のみ注入
 R4-3  DownloadController のテスト                         ✅ … 18 ケース。製品側の変更ゼロ
 R4-7  QSettingsPinnedFolderStore のテスト                 ✅ … 17 ケース。既定値付き ini パスのみ注入
-R4-8  QCoreApplication のプロセス毎 1 回化                  … 小。R4-6 段階 2 の前提
+R4-8  QCoreApplication のプロセス毎 1 回化                 ✅ … 独自 main。R4-6 段階 2 の前提
 R4-5  QML テスト（ToastStack / ActionCatalog / DragProxy）  … R4-4 完了後。R6 の安全網
 R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）          … ★範囲の承認が要る。最後
 ```
@@ -2283,7 +2313,8 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   → **R4 調査で回収（2026-08-07）、R4-6 に統合**。3 段階に分解し、段階 3（サニタイザ）は
   **見送りを推奨**する結論になった — MSVC/clang-cl には Windows 版 ThreadSanitizer が無く、
   本命のデータ競合検出器がこの toolchain では使えないため。ASan で取れる UAF までに限る。
-  段階 2 の前提として R4-8（`QCoreApplication` のプロセス毎 1 回化）が要る。
+  段階 2 の前提として R4-8（`QCoreApplication` のプロセス毎 1 回化）が要る → **R4-8 は
+  2026-08-07 に完了**（`tests/TestMain.cpp`）。段階 2 は前提を気にせず着手してよい。
 - **[未割当] `kEInternal(-1)` がログイン画面に SDK の生英文を出す** — `classifyError`
   （`src/qml/AuthController.cpp`）は `kENoEnt`/`kEBlocked`/`kETooMany`/`kEAgain` の 4 値しか
   畳まず、`default:` は `UnknownError` ＋ `rawErrorMessage` の素通しになる。R3-1 で

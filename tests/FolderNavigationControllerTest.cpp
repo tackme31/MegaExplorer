@@ -63,7 +63,6 @@ class FolderNavigationControllerTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        testApp();
         client = std::make_shared<MockMegaClient>();
         navigationService = std::make_shared<FolderNavigationService>(client);
         searchService = std::make_shared<SearchService>(client, navigationService);

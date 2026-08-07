@@ -14,14 +14,12 @@ namespace
 // ensureLoaded()'s result always arrives via a queued invoke onto the GUI
 // thread (see src/qml/GuiThread.h), even though
 // MockMegaClient's InvokeArgument action below fires synchronously, so this
-// fixture needs the shared QCoreApplication from TestApp.h and an explicit
-// flushQueuedEvents() after triggering a load.
+// fixture needs an explicit flushQueuedEvents() after triggering a load.
 class FolderTreeModelTest : public ::testing::Test
 {
 protected:
     void SetUp() override
     {
-        testApp();
         client = std::make_shared<MockMegaClient>();
         // TRAP: Result<bool>::success defaults to false (src/core/Result.h), so
         // gmock's default action for an unstubbed hasSubfolders() is *failure*,
@@ -118,8 +116,8 @@ TEST_F(FolderTreeModelTest, EnsureLoadedFailureResetsToNotLoadedForRetry)
     const QModelIndex root = rootIndex();
 
     EXPECT_CALL(*client, getRootChildren(::testing::_, ::testing::_))
-        .WillOnce(
-            ::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::fail("network error", MegaErrorCode::kEAgain)));
+        .WillOnce(::testing::InvokeArgument<1>(
+            Result<std::vector<FileEntry>>::fail("network error", MegaErrorCode::kEAgain)));
     model->ensureLoaded(root);
     flushQueuedEvents();
 

@@ -57,7 +57,6 @@ class QuickAccessModelTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        testApp();
         client = std::make_shared<MockMegaClient>();
         store = std::make_shared<MockPinnedFolderStore>();
         // Fixed account for every test here (Phase 11a) -- none of this

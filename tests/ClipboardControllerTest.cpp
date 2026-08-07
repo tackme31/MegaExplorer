@@ -29,7 +29,6 @@ class ClipboardControllerTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        testApp();
         QObject::connect(&clipboard, &ClipboardController::contentChanged, &clipboard, [this]() {
             ++changes;
         });

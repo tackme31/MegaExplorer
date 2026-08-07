@@ -43,7 +43,6 @@ class UploadControllerTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        testApp();
         client = std::make_shared<MockMegaClient>();
         EXPECT_CALL(*client, checkUpload(_, _))
             .Times(AnyNumber())

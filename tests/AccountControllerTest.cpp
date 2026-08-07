@@ -23,8 +23,6 @@ class AccountControllerTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        testApp();
-
         AccountIdentity identity;
         identity.email = "ada@example.com";
         identity.avatarColor = "#FF6A19";

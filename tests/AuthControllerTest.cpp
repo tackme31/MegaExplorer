@@ -85,8 +85,6 @@ class AuthControllerTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        testApp();
-
         // "Nothing stored" -- the cheapest route from Restoring to LoggedOut,
         // which is the gate login() gets tested behind.
         ON_CALL(*mockSessionStore, loadSession())

@@ -8,6 +8,7 @@ find_package(GTest CONFIG REQUIRED)
 # categories (lcSession, lcQuickAccess), which is why that file is compiled in
 # too.
 add_executable(MegaExplorerTests
+    TestMain.cpp
     FolderNavigationServiceTest.cpp
     AuthServiceTest.cpp
     AccountServiceTest.cpp
@@ -42,6 +43,9 @@ add_executable(MegaExplorerTests
     TestApp.h
 )
 
+# GTest::gtest, not GTest::gtest_main: TestMain.cpp supplies main() so that
+# every process this binary is started in gets a QCoreApplication (see R4-8).
+#
 # MegaExplorerQml is the QML module's backing library, so linking it is what
 # gives the tests the src/qml controllers and models -- before R4-4 this file
 # listed those 22 source files by hand and drifted from the root CMakeLists.txt.
@@ -53,7 +57,7 @@ target_link_libraries(MegaExplorerTests PRIVATE
     MegaExplorerCore
     MegaExplorerQml
     crypt32
-    GTest::gtest_main
+    GTest::gtest
     GTest::gmock
     MegaExplorerWarnings
 )

@@ -1,7 +1,5 @@
 #include "qml/LicenseModel.h"
 
-#include "TestApp.h"
-
 #include <QSet>
 
 #include <gtest/gtest.h>
@@ -18,11 +16,10 @@
 namespace
 {
 
-// Also brings the QCoreApplication up, which qCWarning needs on the failure
-// paths. LicenseModel is a QObject, so it can't be handed back by value.
+// A directory rather than a ready-made model: LicenseModel is a QObject, so it
+// can't be handed back by value.
 QString licensesDir()
 {
-    testApp();
     return QStringLiteral(MEGAEXPLORER_LICENSE_DIR);
 }
 
@@ -107,7 +104,6 @@ TEST(LicenseModelTest, OutOfRangeRowsYieldEmptyText)
 
 TEST(LicenseModelTest, MissingManifestYieldsEmptyModel)
 {
-    testApp();
     // Not a crash and not an assert: the app has to start even if its resources
     // were mangled, same policy as MenuActions::forSite's unknown site.
     const LicenseModel model(QStringLiteral("/no/such/directory"));

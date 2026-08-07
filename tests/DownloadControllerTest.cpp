@@ -71,8 +71,6 @@ class DownloadControllerTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        testApp();
-
         client = std::make_shared<MockMegaClient>();
         // download() captures its arguments instead of invoking either
         // callback, so a started job stays Active until a test fires onDone
