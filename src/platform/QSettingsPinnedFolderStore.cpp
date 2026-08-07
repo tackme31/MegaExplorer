@@ -9,6 +9,9 @@
 #include <QSettings>
 #include <QString>
 
+#include <memory>
+#include <utility>
+
 namespace
 {
 const char* const kFieldName = "name";
@@ -21,16 +24,28 @@ QString settingsKeyFor(const std::string& accountKey)
     return QStringLiteral("quickAccess/accounts/%1/pinnedFolders")
         .arg(QString::fromStdString(accountKey));
 }
+
+// unique_ptr because QSettings is neither copyable nor movable.
+std::unique_ptr<QSettings> openSettings(const std::string& iniFilePath)
+{
+    if (iniFilePath.empty())
+        return std::make_unique<QSettings>();
+    return std::make_unique<QSettings>(QString::fromStdString(iniFilePath),
+                                       QSettings::IniFormat);
+}
 } // namespace
 
-QSettingsPinnedFolderStore::QSettingsPinnedFolderStore() = default;
+QSettingsPinnedFolderStore::QSettingsPinnedFolderStore(std::string iniFilePath)
+    : mIniFilePath(std::move(iniFilePath))
+{
+}
 QSettingsPinnedFolderStore::~QSettingsPinnedFolderStore() = default;
 
 Result<std::vector<PinnedFolder>>
 QSettingsPinnedFolderStore::load(const std::string& accountKey) const
 {
-    QSettings settings;
-    const QString stored = settings.value(settingsKeyFor(accountKey)).toString();
+    const std::unique_ptr<QSettings> settings = openSettings(mIniFilePath);
+    const QString stored = settings->value(settingsKeyFor(accountKey)).toString();
     if (stored.isEmpty())
         return Result<std::vector<PinnedFolder>>::ok({});
 
@@ -82,14 +97,14 @@ Result<void> QSettingsPinnedFolderStore::save(const std::string& accountKey,
         array.append(object);
     }
 
-    QSettings settings;
-    settings.setValue(settingsKeyFor(accountKey),
-                      QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)));
-    settings.sync();
-    if (settings.status() != QSettings::NoError)
+    const std::unique_ptr<QSettings> settings = openSettings(mIniFilePath);
+    settings->setValue(settingsKeyFor(accountKey),
+                       QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)));
+    settings->sync();
+    if (settings->status() != QSettings::NoError)
     {
         qCWarning(lcQuickAccess) << "failed to write quick-access pins, status="
-                                 << settings.status();
+                                 << settings->status();
         return Result<void>::fail("failed to save quick-access pins", MegaErrorCode::kEInternal);
     }
 

@@ -53,11 +53,10 @@ src/platform/  Local-storage adapters, not part of MegaExplorerCore (parallels s
                WindowsSessionStore (session token persistence via Windows DPAPI) and
                QSettingsPinnedFolderStore (quick-access pin list as JSON under QSettings'
                quickAccess/accounts/<accountKey>/pinnedFolders key, one per MEGA account
-               since Phase 11a -- see docs/PROGRESS.md's Phase 11a log). WindowsSessionStore
-               gets its own adapter-level test (tests/WindowsSessionStoreTest.cpp) since --
-               unlike MegaSdkClient -- it needs no live account; QSettingsPinnedFolderStore
-               doesn't, since QSettings writes to the real per-user registry (see
-               docs/PROGRESS.md's Phase 11 log).
+               since Phase 11a -- see docs/PROGRESS.md's Phase 11a log). Both get their own
+               adapter-level test (tests/WindowsSessionStoreTest.cpp,
+               tests/QSettingsPinnedFolderStoreTest.cpp) since -- unlike MegaSdkClient --
+               neither needs a live account.
 src/qml/       C++ types exposed to QML (Q_PROPERTY etc.): FileListModel, controllers,
                NotificationController (shared error-toast relay)
 tests/         GoogleTest-based unit tests, one per src/core service
@@ -148,6 +147,10 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
     Rendering and gestures live in `qml/`, not here, so "it's GUI glue" is not a reason to skip a
     class.
   - `src/mega` — none. `MegaSdkClient` would need a live MEGA account.
+  - `src/platform` — all of it, driven as the real adapter (no mock stands in for DPAPI or
+    `QSettings`). Each takes its storage location through the constructor, so a test points it at a
+    temp file instead of the user's session file or registry — `QSettingsPinnedFolderStore`'s
+    optional INI path exists for exactly that and is empty in production.
   - `qml/` — none. `qt_add_qml_module` hangs off the `appMegaExplorer` executable, so URI
     `MegaExplorer` cannot be imported from a Qt Quick Test target at all; see R4-4/R4-5 in
     `docs/REFACTOR_PLANS.md`.

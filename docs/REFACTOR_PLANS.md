@@ -1621,7 +1621,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
     assert の役割と Release での挙動、`std::expected` を採らなかった理由、`QuickAccessModel` が
     唯一の間接ガードであること）。**これで本節は完成**。
 
-### R4 — 調査済み / R4-1〜R4-4・R4-9 対応済み、次は R4-7（調査 2026-08-07）
+### R4 — 調査済み / R4-1〜R4-4・R4-7・R4-9 対応済み、次は R4-8（調査 2026-08-07）
 
 計画の「種」4 件 +「持ち越し」の [R4] 2 件を現物で検証した結果。**確認 6 件 / 種の誤り 4 件 /
 問題なしと確認 4 件 / 新規 3 件**。R1〜R3 と同じく、以下はそのまま plan mode の作業単位として使える
@@ -2058,7 +2058,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
 
 #### 新規発見
 
-**R4-7 [低] `QSettingsPinnedFolderStore` にアダプタテストが無い**
+**R4-7 [低] ✅対応済み `QSettingsPinnedFolderStore` にアダプタテストが無い**
 
 - `tests/CMakeLists.txt:3-9` は `WindowsSessionStore` を実アダプタとしてテストする理由を
   「`MegaSdkClient` と違って完全にオフラインでテスト可能だから」と書いている。
@@ -2072,6 +2072,28 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
 - コストは低い: `QSettings` に明示パス（`QSettings(tempFile, QSettings::IniFormat)`）を渡すか
   `QCoreApplication::setOrganizationName` をテスト用に振れば、レジストリを汚さずに済む。
   ただし現状のコンストラクタは引数を取らないので、**パス注入の口を開ける小さな製品側変更が要る**。
+- **対応（2026-08-07）**: `tests/QSettingsPinnedFolderStoreTest.cpp` を新設（**17 ケース**）。
+  決めた点:
+  - **注入は「既定値付きの ini パス引数」**（`explicit QSettingsPinnedFolderStore(std::string
+    iniFilePath = {})`）。空＝既定の `QSettings`（＝本番のレジストリ経路）なので **`main.cpp` は
+    無変更・保存先も挙動も不変**、非空＝その ini だけを見る。`QSettings` はコピー/ムーブ不可なので
+    `.cpp` 側は `std::unique_ptr<QSettings>` を返す生成ヘルパ 1 つで両経路を吸収した。
+    `QSettings::setDefaultFormat`/`setPath` をテスト側で振る案（製品側変更ゼロ）は、プロセス全体の
+    グローバル状態に依存し、将来 `QSettings` を使うテストが増えると順序依存になるので採らなかった。
+  - **`QCoreApplication` は不要**。明示パス + `IniFormat` の `QSettings` は organization/application
+    名にもアプリインスタンスにも依存しない。よって `TestApp.h` は include していない
+    （R4-8 の論点をこのファイルに持ち込まないため）。
+  - **一時 ini は 1 ケース 1 個・テスト名埋め込み**（`WindowsSessionStoreTest.cpp` と同じ流儀）。
+    ここではパスの一意性が単なる作法以上の意味を持つ: `QSettings` はファイルパスをキーに
+    プロセス内キャッシュを共有するので、パスを使い回すとケース間で互いの未書き出し状態が見える。
+  - **`save` の失敗経路も入った**（調査時は「決定論的に失敗させにくい」と見ていた）。
+    「親ディレクトリの位置に既存の通常ファイルがある」パスを渡すと `QSettings` はディレクトリも
+    ファイルも作れず `status() != NoError` になる。`--gtest_repeat=5` で安定を確認済み。
+  - カバーした振る舞い: 往復と順序、48bit ハンドルの厳密往復（`double` 経由の主張の検証）、
+    UTF-8 とカンマ/引用符入りの名前、**5 件 → 2 件の縮小**と空リスト化、**アカウント毎の入れ子**
+    （読み側・書き側の両方＝Phase 11a の実バグの回帰）、壊れた保存値と配列でない JSON の
+    `kEInternal` 失敗、非オブジェクト要素・`handle == 0`・handle 欠落のスキップ、name 欠落時の
+    ハンドル保持。
 
 **R4-8 [低] 387 ケースが 387 プロセスに分かれ、`QCoreApplication` の有無がフィルタ依存になっている**
 
@@ -2151,7 +2173,7 @@ R4-4  MegaExplorerQml への分離（(b) 確定）                ✅ … ★R4 
       + R4-9  /W4 を自前 4 target へ                     ✅ … 既存警告ゼロ。R7 送りは発生せず
 R4-2  AuthController のテスト                             ✅ … 32 ケース。stall timeout のみ注入
 R4-3  DownloadController のテスト                         ✅ … 18 ケース。製品側の変更ゼロ
-R4-7  QSettingsPinnedFolderStore のテスト                   … 小。パス注入の口だけ製品側に開ける
+R4-7  QSettingsPinnedFolderStore のテスト                 ✅ … 17 ケース。既定値付き ini パスのみ注入
 R4-8  QCoreApplication のプロセス毎 1 回化                  … 小。R4-6 段階 2 の前提
 R4-5  QML テスト（ToastStack / ActionCatalog / DragProxy）  … R4-4 完了後。R6 の安全網
 R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）          … ★範囲の承認が要る。最後
@@ -2203,6 +2225,14 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `MenuActionResolver`（47 ケース済み）に流すだけ」という R4 の評価もその場に書いた。
 - ✅ `tests/DownloadControllerTest.cpp`（R4-3、18 ケース）と `tests/CMakeLists.txt` の 1 行追加。
   **製品側の変更はゼロ**。
+- ✅ `tests/QSettingsPinnedFolderStoreTest.cpp`（R4-7、17 ケース）と `tests/CMakeLists.txt`
+  への 2 行追加（テスト本体と `src/platform/QSettingsPinnedFolderStore.cpp`。`WindowsSessionStore`
+  と同じ扱い）。冒頭のコメントも「`WindowsSessionStore` だけがオフラインでテストできる」から
+  「`src/platform` の 2 アダプタとも」に書き換えた —— R4-7 の指摘の出どころそのもの。
+  製品側は既定値付き ini パス引数の追加のみ（挙動不変）。併せて `docs/ARCHITECTURE.md` の
+  `src/platform` の項（「テストが無い、`QSettings` が実レジストリに書くから」）を訂正し、
+  Testing 規約の箇条書きに `src/platform` の行（**実アダプタをテストする／保存先はコンストラクタ
+  注入**）を追加。
 - ✅ R4-4 で前提が消えた陳腐化コメントを 2 箇所訂正（R4-3 と同一コミット）:
   `src/core/DownloadService.h` の `safeLocalFileName` の配置理由（「`DownloadController` は
   テストターゲットに入っていないから」→「Qt 非依存の文字列規則だから `src/core`」）と、

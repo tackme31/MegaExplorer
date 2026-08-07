@@ -1,6 +1,8 @@
 #pragma once
 #include "core/IPinnedFolderStore.h"
 
+#include <string>
+
 // Stores the pin list as a single JSON array string under QSettings, nested
 // per account at "quickAccess/accounts/<accountKey>/pinnedFolders" (Phase
 // 11a) -- distinct from the QML Settings item's own default "General" group
@@ -27,7 +29,12 @@
 class QSettingsPinnedFolderStore : public IPinnedFolderStore
 {
 public:
-    QSettingsPinnedFolderStore();
+    // iniFilePath empty (production, main.cpp) means QSettings' own
+    // organization/application-scoped store -- the registry on Windows. A
+    // non-empty path confines the store to that one INI file, which is what
+    // lets tests exercise the real adapter without writing to the user's
+    // registry; nothing in production passes one.
+    explicit QSettingsPinnedFolderStore(std::string iniFilePath = {});
     ~QSettingsPinnedFolderStore() override;
 
     QSettingsPinnedFolderStore(const QSettingsPinnedFolderStore&) = delete;
@@ -36,4 +43,7 @@ public:
     Result<std::vector<PinnedFolder>> load(const std::string& accountKey) const override;
     Result<void> save(const std::string& accountKey,
                       const std::vector<PinnedFolder>& pins) override;
+
+private:
+    std::string mIniFilePath;
 };

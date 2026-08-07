@@ -1,12 +1,12 @@
 find_package(GTest CONFIG REQUIRED)
 
-# WindowsSessionStore (src/platform, not part of MegaExplorerCore -- same
-# reason src/mega isn't) is fully offline-testable, unlike MegaSdkClient
-# which needs a live account, so it gets its own real adapter test here
-# instead of a mock-only substitute. That pulls src/app/Logging.cpp into this
-# otherwise Qt-free test target, since WindowsSessionStore.cpp logs through
-# its lcSession category and that category's actual Q_LOGGING_CATEGORY
-# definition lives there.
+# Both src/platform adapters (not part of MegaExplorerCore -- same reason
+# src/mega isn't) are fully offline-testable, unlike MegaSdkClient which needs
+# a live account, so they get their own real adapter tests here instead of
+# mock-only substitutes. QSettingsPinnedFolderStore takes a test-only INI path
+# so it never touches the user's registry. Both log through src/app/Logging.cpp
+# categories (lcSession, lcQuickAccess), which is why that file is compiled in
+# too.
 add_executable(MegaExplorerTests
     FolderNavigationServiceTest.cpp
     AuthServiceTest.cpp
@@ -20,6 +20,7 @@ add_executable(MegaExplorerTests
     FileOperationServiceTest.cpp
     FolderNavigationControllerTest.cpp
     WindowsSessionStoreTest.cpp
+    QSettingsPinnedFolderStoreTest.cpp
     FileListModelTest.cpp
     MenuActionResolverTest.cpp
     TabsControllerTest.cpp
@@ -33,6 +34,7 @@ add_executable(MegaExplorerTests
     AuthControllerTest.cpp
     DownloadControllerTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/platform/QSettingsPinnedFolderStore.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
     MockMegaClient.h
     MockSessionStore.h
