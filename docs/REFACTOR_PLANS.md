@@ -2364,7 +2364,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   `tests/UploadControllerTest.cpp` 冒頭の「`DownloadController` と違ってこちらは入っている」
   （削除）。R4-1 が意図的に残した箇所だが、`Qt6::Gui` が入った時点で事実として誤りになった。
 
-### R5 — 調査済み / 未着手（調査 2026-08-07）
+### R5 — 調査済み / R5-2 対応済み（調査 2026-08-07）
 
 計画の「種」5 件 +「持ち越し」の [R5] 3 件 + R2/R3 が明示的に R5 送りにした 5 件を現物で検証した
 結果。**確認 10 件 / 種の誤り・判断が要るもの 4 件 / 問題なしと確認 3 件**。R1〜R4 と同じく、
@@ -2423,12 +2423,28 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
   移すと 19 → 8（navigation 7 + refresh 2 のうち QML 呼び出しのあるもの）まで落ちる。
   QML 側の呼び出し箇所は移動対象 11 個で計 14 箇所しかないので、置換のコストは小さい。
 
-**R5-2 [低] `loadRoot()` のコメントは「Not Q_INVOKABLE」と書いているのに `Q_INVOKABLE` が付いている**
+**R5-2 [低] ✅対応済み `loadRoot()` のコメントは「Not Q_INVOKABLE」と書いているのに `Q_INVOKABLE` が付いている**
 
 - `FolderNavigationController.h:119-121`。「main.cpp の合成ルートから 1 回呼ばれるだけで QML からは
   呼ばれない」という説明自体は正しく、**`qml/` 全体で `loadRoot` の呼び出しは 0 件**（19 個の
   `Q_INVOKABLE` でこれだけ）。宣言のほうが事実に追いついていない。
 - R5-1 の分割前に外しておくと、QML API 面の実数が 18 になり種の数字と一致する。単独では 1 行。
+- **対応（2026-08-07）**: `Q_INVOKABLE` を外し、`Q_INVOKABLE` の実数を **19 → 18** にした。
+  併せて分かったこと:
+  - **コメントは二重に腐っていた**。「`main.cpp` の合成ルートから 1 回呼ばれる」は Phase 22 の
+    タブ化以前の記述で、現在の呼び出し元は `TabsController` の 3 経路
+    （`loadRootAll` `:210` / `addTab` `:111` / `addTabAt` `:125`）。`main.cpp` は
+    `loadRoot` を直接は呼ばない。QML 側の入口は `Main.qml:1027` の
+    `tabsController.loadRootAll()` で、`FolderNavigationController::loadRoot` は
+    **タブ単位の内部エントリポイント**に降格している。この事実に合わせて本文も差し替えた
+    （「QML は `loadRootAll()` 経由で届く」）。**「main.cpp から呼ばれる」を残したまま
+    `Q_INVOKABLE` だけ外すと、R5-1 の分割時に呼び出し元を探す人を誤誘導する**。
+  - `AuthController.h:116-117` の `restoreSession` が「same convention as
+    FolderNavigationController::loadRoot」と参照しているが、こちらは実際に `main.cpp` から
+    `app.exec()` 前に 1 回呼ばれる素の非 `Q_INVOKABLE` メソッドで、記述も正しい。参照先が
+    「QML から呼ばれない public メソッド」という点は変わらないので**無変更**。
+  - ビルド警告なし、`ctest` 467 件全通過。テストは `loadRoot()` を C++ から直接呼んでいるだけ
+    （`FolderNavigationControllerTest` の 43 箇所）なので、`Q_INVOKABLE` の有無に依存しない。
 
 **R5-3 [高] busy 機構は「begin/end の 2 箇所だけ」と書いてあるが、`reset()` が 3 番目の書き手**
 

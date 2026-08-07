@@ -116,9 +116,9 @@ public:
     bool atRoot() const;
     quint64 currentHandle() const;
 
-    // Not Q_INVOKABLE: called once from main.cpp's composition root (via
-    // AuthController::authStateChanged reaching LoggedIn), not from QML.
-    Q_INVOKABLE void loadRoot();
+    // Not Q_INVOKABLE: QML reaches the root load through
+    // TabsController::loadRootAll(), never this per-tab entry point.
+    void loadRoot();
 
     Q_INVOKABLE void openFolder(quint64 handle);
     Q_INVOKABLE void goBack();
