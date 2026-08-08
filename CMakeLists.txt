@@ -199,6 +199,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/DragProxy.qml
         qml/components/FileContextMenu.qml
         qml/components/FileIcon.qml
+        qml/components/FileViewDropArea.qml
         qml/components/FolderBackgroundMenu.qml
         qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
