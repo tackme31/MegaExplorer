@@ -203,15 +203,19 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/FileViewDropArea.qml
         qml/components/FileViewInput.qml
         qml/components/FolderBackgroundMenu.qml
+        qml/components/FolderDropDialog.qml
         qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
         qml/components/IconMenuItem.qml
         qml/components/InlineRenameField.qml
         qml/components/LicenseDialog.qml
+        qml/components/MissingPinDialog.qml
+        qml/components/NameConflictDialog.qml
         qml/components/NewFolderDialog.qml
         qml/components/NodeDropArea.qml
         qml/components/QuickAccessSection.qml
         qml/components/SidePanel.qml
+        qml/components/SignOutDialog.qml
         qml/components/StatusBar.qml
         qml/components/TabStrip.qml
         qml/components/ToastStack.qml

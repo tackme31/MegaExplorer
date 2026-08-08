@@ -1,0 +1,346 @@
+import QtQuick
+import QtTest
+import MegaExplorer
+
+// R6-4. The three dialogs Main.qml used to declare inline and now instantiates
+// from qml/components/: FolderDropDialog, NameConflictDialog, MissingPinDialog.
+// All three wire themselves to their controller's signal, so nothing outside
+// them opens them -- which means every failure mode here is silent. A mistyped
+// handler name makes the dialog simply never appear; Replace and Skip swapped
+// makes the app overwrite the files the user asked to keep. Screenshots cannot
+// see a closed dialog, so this file is the only net.
+//
+// The controllers arrive as required properties rather than being read as
+// context properties, which is the whole reason these are testable: the runner
+// is QUICK_TEST_MAIN with no engine hook, so main.cpp's context properties do
+// not exist here (see QmlTestMain.cpp).
+//
+// Not covered: SignOutDialog. It holds no state and its only logic is a title
+// that flips on downloadActive/uploadActive -- a binding a screenshot can
+// adjudicate, unlike anything below.
+TestCase {
+    id: testCase
+    name: "MainDialogs"
+
+    Component {
+        id: folderDropComponent
+        FolderDropDialog {}
+    }
+
+    Component {
+        id: nameConflictComponent
+        NameConflictDialog {}
+    }
+
+    Component {
+        id: missingPinComponent
+        MissingPinDialog {}
+    }
+
+    // A QtObject, not a JS object literal: Connections.target is typed QObject*,
+    // so a plain JS object lands there as null, the dialog never opens and the
+    // tests that assert on what it called would pass on their own emptiness.
+    // The signal signatures must match src/qml/UploadController.h's, since a
+    // mismatch is exactly what this file exists to catch.
+    Component {
+        id: uploadsComponent
+
+        QtObject {
+            id: fakeUploads
+
+            signal folderDropRequiresConfirmation(var filePaths, int folderCount,
+                                                  var destinationHandle, bool destinationIsRoot)
+            signal nameConflictRequiresConfirmation(var filePaths, var conflictNames,
+                                                    var destinationHandle, bool destinationIsRoot)
+
+            property int uploadFilesCount: 0
+            property int replacingCount: 0
+            property int skippingCount: 0
+            property var lastCall: null
+
+            function uploadFiles(paths, handle, isRoot) {
+                fakeUploads.uploadFilesCount += 1;
+                fakeUploads.lastCall = {
+                    "paths": paths,
+                    "handle": handle,
+                    "isRoot": isRoot
+                };
+            }
+
+            function uploadReplacingExisting(paths, handle, isRoot) {
+                fakeUploads.replacingCount += 1;
+                fakeUploads.lastCall = {
+                    "paths": paths,
+                    "handle": handle,
+                    "isRoot": isRoot
+                };
+            }
+
+            function uploadSkippingExisting(paths, handle, isRoot) {
+                fakeUploads.skippingCount += 1;
+                fakeUploads.lastCall = {
+                    "paths": paths,
+                    "handle": handle,
+                    "isRoot": isRoot
+                };
+            }
+        }
+    }
+
+    Component {
+        id: quickAccessComponent
+
+        QtObject {
+            id: fakeQuickAccess
+
+            signal missing(var handle, string name)
+
+            property int unpinCount: 0
+            property var lastUnpin: null
+
+            function unpin(handle) {
+                fakeQuickAccess.unpinCount += 1;
+                fakeQuickAccess.lastUnpin = handle;
+            }
+        }
+    }
+
+    function makeUploads() {
+        const uploads = createTemporaryObject(uploadsComponent, testCase);
+        verify(uploads !== null);
+        return uploads;
+    }
+
+    function makeQuickAccess() {
+        const quickAccess = createTemporaryObject(quickAccessComponent, testCase);
+        verify(quickAccess !== null);
+        return quickAccess;
+    }
+
+    function makeDialog(component, props) {
+        const dialog = createTemporaryObject(component, testCase, props);
+        // A required property left out returns null here, and every later
+        // failure would then be an opaque null dereference instead of this line.
+        verify(dialog !== null);
+        return dialog;
+    }
+
+    // DialogButtonBox reorders its buttons by role to match platform
+    // convention, so an index would be asserting the platform's preference
+    // rather than ours. Text is what the user actually clicks.
+    function buttonNamed(dialog, label) {
+        const box = dialog.footer;
+        verify(box !== null);
+        for (var i = 0; i < box.count; ++i) {
+            if (box.itemAt(i).text === label)
+                return box.itemAt(i);
+        }
+        fail("no button labelled " + label);
+    }
+
+    // ---- FolderDropDialog ----------------------------------------------
+
+    function test_folderDrop_signalOpensAndCarriesTheDestination() {
+        failOnWarning(/Connections/);
+        const uploads = makeUploads();
+        const dialog = makeDialog(folderDropComponent, {
+                                      "uploads": uploads
+                                  });
+
+        // handle 0 is the account root, and it is falsy -- a guard written as
+        // `if (handle)` anywhere on this path would drop the root case.
+        uploads.folderDropRequiresConfirmation(["a.txt", "b.txt"], 3, 0, true);
+
+        // tryCompare, not compare: Popup.opened is set at the *end* of the
+        // enter transition, so it is still false on the line after open().
+        tryCompare(dialog, "opened", true);
+        compare(dialog.filePaths, ["a.txt", "b.txt"]);
+        compare(dialog.folderCount, 3);
+        compare(dialog.destinationHandle, 0);
+        compare(dialog.destinationIsRoot, true);
+    }
+
+    // The two counts are both integers in the same sentence, so swapping them
+    // is invisible in a screenshot and wrong in every case but folderCount ===
+    // filePaths.length.
+    function test_folderDrop_countsAreNotSwapped() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(folderDropComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.folderDropRequiresConfirmation(["a.txt", "b.txt"], 3, 7, false);
+
+        const text = dialog.contentChildren[0].text;
+        compare(text, "3 folder(s) will be skipped. Upload the remaining 2 file(s)?");
+    }
+
+    function test_folderDrop_acceptUploadsWithoutTheFolders() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(folderDropComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.folderDropRequiresConfirmation(["a.txt"], 1, 42, false);
+        dialog.accept();
+
+        compare(uploads.uploadFilesCount, 1);
+        compare(uploads.lastCall.paths, ["a.txt"]);
+        compare(uploads.lastCall.handle, 42);
+        compare(uploads.lastCall.isRoot, false);
+    }
+
+    function test_folderDrop_rejectEnqueuesNothing() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(folderDropComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.folderDropRequiresConfirmation(["a.txt"], 1, 42, false);
+        dialog.reject();
+
+        compare(uploads.uploadFilesCount, 0);
+    }
+
+    // ---- NameConflictDialog --------------------------------------------
+
+    function test_nameConflict_signalOpensAndCarriesTheDestination() {
+        failOnWarning(/Connections/);
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, true);
+
+        tryCompare(dialog, "opened", true);
+        compare(dialog.filePaths, ["a.txt"]);
+        compare(dialog.conflictNames, ["a.txt"]);
+        compare(dialog.destinationHandle, 0);
+        compare(dialog.destinationIsRoot, true);
+    }
+
+    // This is the destructive one: Replace overwrites what the user has, Skip
+    // keeps it. Swapping them loses data with no error and no visible symptom.
+    function test_nameConflict_replaceReplacesAndOnlyReplaces() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, true);
+        buttonNamed(dialog, "Replace").clicked();
+
+        compare(uploads.replacingCount, 1);
+        compare(uploads.skippingCount, 0);
+        compare(uploads.lastCall.paths, ["a.txt"]);
+        compare(uploads.lastCall.handle, 0);
+        compare(uploads.lastCall.isRoot, true);
+        tryCompare(dialog, "visible", false);
+    }
+
+    function test_nameConflict_skipSkipsAndOnlySkips() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 42, false);
+        buttonNamed(dialog, "Skip").clicked();
+
+        compare(uploads.skippingCount, 1);
+        compare(uploads.replacingCount, 0);
+        compare(uploads.lastCall.handle, 42);
+        compare(uploads.lastCall.isRoot, false);
+        tryCompare(dialog, "visible", false);
+    }
+
+    function test_nameConflict_cancelUploadsNothing() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 42, false);
+        buttonNamed(dialog, "Cancel").clicked();
+
+        compare(uploads.replacingCount, 0);
+        compare(uploads.skippingCount, 0);
+        compare(uploads.uploadFilesCount, 0);
+        tryCompare(dialog, "visible", false);
+    }
+
+    function test_nameConflict_listsAtMostFiveNames_data() {
+        return [
+                    {
+                        tag: "five",
+                        names: ["a", "b", "c", "d", "e"],
+                        shown: "a, b, c, d, e",
+                        ellipsis: false
+                    },
+                    {
+                        tag: "six",
+                        names: ["a", "b", "c", "d", "e", "f"],
+                        shown: "a, b, c, d, e",
+                        ellipsis: true
+                    }
+                ];
+    }
+
+    function test_nameConflict_listsAtMostFiveNames(data) {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.nameConflictRequiresConfirmation(data.names, data.names, 0, true);
+
+        const text = dialog.contentChildren[0].text;
+        compare(text.indexOf(data.shown) !== -1, true);
+        compare(text.indexOf("…") !== -1, data.ellipsis);
+    }
+
+    // ---- MissingPinDialog ----------------------------------------------
+
+    function test_missingPin_signalOpensWithTheName() {
+        failOnWarning(/Connections/);
+        const quickAccess = makeQuickAccess();
+        const dialog = makeDialog(missingPinComponent, {
+                                      "quickAccess": quickAccess
+                                  });
+
+        quickAccess.missing(77, "Photos");
+
+        tryCompare(dialog, "opened", true);
+        compare(dialog.pinHandle, 77);
+        compare(dialog.contentChildren[0].text,
+                "\"Photos\" could not be found. Remove it from Quick access?");
+    }
+
+    function test_missingPin_acceptUnpinsThatHandle() {
+        const quickAccess = makeQuickAccess();
+        const dialog = makeDialog(missingPinComponent, {
+                                      "quickAccess": quickAccess
+                                  });
+
+        quickAccess.missing(77, "Photos");
+        dialog.accept();
+
+        compare(quickAccess.unpinCount, 1);
+        compare(quickAccess.lastUnpin, 77);
+    }
+
+    // Declining has to leave the pin in place: the folder may come back, and a
+    // pin removed here cannot be recovered.
+    function test_missingPin_rejectKeepsThePin() {
+        const quickAccess = makeQuickAccess();
+        const dialog = makeDialog(missingPinComponent, {
+                                      "quickAccess": quickAccess
+                                  });
+
+        quickAccess.missing(77, "Photos");
+        dialog.reject();
+
+        compare(quickAccess.unpinCount, 0);
+    }
+}
