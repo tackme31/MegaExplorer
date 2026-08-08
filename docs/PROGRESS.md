@@ -3643,3 +3643,37 @@ without a refactor outside this phase's scope.
   the tests for no behaviour change.
 - **A filename header in the pane** — Explorer's preview window has none.
 - **Temp-directory cleanup** (4.6) — see above; left as its own task.
+
+### Follow-up: the click regression it exposed was never the preview's (2026-08-09)
+
+Right after the phase landed, clicking around a grid faster than previews could load made the
+selection land one row off, or not land at all. It looked like the preview pane's fault and it
+wasn't: **`FileContextMenu.qml` had `actionIds` live-bound to `FileListModel::availableActions`,
+whose NOTIFY is `selectionChanged`, and `ActionMenu`'s `Instantiator` rebuilds every `MenuItem`
+when that list's contents differ.** Five FluentWinUI3 `MenuItem`s cost ~77ms to build in a Debug
+build, and a tab has two `FileViewInput`s (grid and table), so one click could freeze the GUI
+thread for 154ms. Only the *contents-differ* case rebuilds, which is why it hit roughly one click
+in ten — the trigger is almost always "empty ⇄ non-empty", i.e. the click right after a click on
+empty space. All six stalls in the first capture followed a `row = -1` tap. 6 of 6.
+
+The fix is one line of intent: `actionIds` is now sampled by `sampleActions()` from
+`FileViewInput.popupContextMenu()` instead of being bound. `ActionMenu.qml` already documented the
+rule ("assigned wholesale immediately before opening, never bound to live state") and `context`
+already followed it — `actionIds` was the one property that didn't. It is sampled before `popup()`
+rather than in `onAboutToShow` because adding and removing items feeds menu sizing and positioning,
+unlike the wording swap `context` does, and that is worth keeping outside the popup's own open
+sequence. The cost of building the menu now falls on opening it (~100ms, ~490ms the first time),
+which is where it belongs.
+
+What earns the space here is the **dead ends**, because every one of them was plausible: the SDK's
+global mutex in `resolveNode()`, `mkpath()` per selection, the temp-JPEG read+delete, the
+`mipmap: true` texture teardown inside `publish(Loading)`, and — the one the pre-phase study named
+as its prime suspect — the delegate `DragHandler` cancelling the view-level pending tap. All five
+measured under 2ms or never fired at all. The tap was always delivered and `selectRow()` always
+ran; what moved was the view. `docs/investigations/PREVIEW_CLICK_RESPONSIVENESS.md` has the
+numbers, the grid-geometry arithmetic that proved `contentY` had shifted ~72px, and the one thing
+still unexplained: *what* scrolled it. With the freeze gone the view repaints immediately, so the
+symptom is gone either way; that study lists the exact probes to re-add if it ever comes back.
+
+The lesson worth carrying: a 16ms `QTimer` in `main.cpp` that reports how late it actually fired
+answers "is the GUI thread blocked at all" in one run, and everything else followed from it.

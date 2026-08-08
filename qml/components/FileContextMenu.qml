@@ -19,10 +19,21 @@ ActionMenu {
     signal renameRequested
     signal moveToRubbishRequested
 
-    // Optional-chained: closing a tab clears the Repeater delegate's model
-    // role before the pane (and this menu with it) is actually deleted, so
-    // navController is null for the one binding re-evaluation in between.
-    actionIds: root.navController?.fileListModel?.availableActions ?? []
+    // Sampled by sampleActions() below, never bound to availableActions: that
+    // property is notified by selectionChanged, and the Instantiator behind
+    // actionIds rebuilds every MenuItem whenever the list's contents differ --
+    // ~77ms per menu, twice per tab, on the GUI thread, every time the applicable
+    // set changed (typically empty -> non-empty after a click on empty space).
+    // Same "assign wholesale immediately before opening" rule as context below.
+    actionIds: []
+
+    // Called by the owning view right before popup(), rather than from
+    // onAboutToShow: adding and removing items is a bigger change than the
+    // wording swap context does, and doing it outside the popup's own open
+    // sequence keeps it clear of menu sizing and positioning.
+    function sampleActions() {
+        root.actionIds = root.navController.fileListModel.availableActions;
+    }
 
     onAboutToShow: {
         const entries = root.navController.fileListModel.selectedEntries();

@@ -251,8 +251,12 @@ Item {
     }
 
     // The delegates' right-button handlers reach the selection menu through
-    // this, since the menu itself is no longer theirs to name.
+    // this, since the menu itself is no longer theirs to name. The sampleActions()
+    // call is load-bearing, not a refresh: the menu's actionIds are deliberately
+    // unbound (see FileContextMenu.qml), so dropping it leaves every right-click
+    // menu showing a single disabled "None".
     function popupContextMenu() {
+        contextMenu.sampleActions();
         contextMenu.popup();
     }
 
