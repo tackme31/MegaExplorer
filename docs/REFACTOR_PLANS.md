@@ -2927,7 +2927,7 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
 - ~~**`AccountIdentity` を単位として検証するか**（R2-22）~~ → **R5-6 で決定: しない**。
   裂けても表示 1 フレーム分にしかならないため。反転条件は R5-6 の対応欄。
 
-### R6 — 調査済み / R6-5・R6-1・R6-2a 対応済み（調査 2026-08-08、R6-5・R6-1・R6-2a で 2026-08-08）
+### R6 — 調査済み / R6-5・R6-1・R6-2a・R6-2b 対応済み（調査 2026-08-08、R6-5・R6-1・R6-2a・R6-2b で 2026-08-08）
 
 #### 前提: 「重複」は 1 系統ではなく 2 系統あり、境界は種の見立てとずれている
 
@@ -3112,6 +3112,58 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
     画面に出ていない Grid 側の配線もこれで拾える）。確認項目: 両ビューのフォルダ行への内部 move /
     静止中の Ctrl 押下 / 空白への drop / Explorer からの外部 drop / 下端オートスクロール。
 
+- **対応（R6-2b、2026-08-08）**: R6-2 の後半。リネーム helper 4 本・`Keys.onPressed`・hover 解決・
+  view-level `TapHandler` 2 つ・メニュー / ダイアログ 3 つを `qml/components/FileViewInput.qml` へ
+  （+ `tests/qml/tst_FileViewInput.qml` 28 ケース）。464 行削除 / 68 行追加、ビューは 610→428 /
+  924→710 行。実施して分かったこと:
+  - **注入点は 4 つではなく 5 つだった。** R6-2a が「3 点ではなく 4 点」と申し送った矢印の次元数が、
+    実際には property 2 つに割れる。`arrowColumns: 1` だけの素直な一般化では **Table の Left/Right が
+    「1 つ上/下へ移動」に化けたうえでキーを飲み込む** — 現行 Table は 2 分岐を*書いていない*ことで
+    未受理にしており、その意図はコードのどこにも現れていない。`horizontalArrows: false` という
+    宣言的な property にしたのは、grep できる証拠に変えるため。`cursorDelta()` が `0` ではなく
+    `undefined` を返すのも同じ制約で、`0` だと `moveCursor(0, …)` に落ちて受理してしまう。
+  - **意図的な退行 3 件のうち、③ は「落ちない」ことを実証するつもりが落ちた。** ①
+    clipboard 分岐を `Qt.Key_Delete` より上へ → 1 件（Shift+Delete が Cut に化ける）。②
+    `horizontalArrows` ガードを外す → 2 件（table の Left/Right のみ）。③ `endRename()` を
+    `forceActiveFocus()` に戻す → **1 件失敗**。計画は「フォーカス意味論は網の外なので通るはず」と
+    予想していたが、`takeFocus` が注入 callable のカウンタなので**経路が変わったこと**は捕まる。
+    ただし捕まえているのは配線であって、focus scope がリネーム field の focus を落とすかどうかでは
+    ない。**この失敗を「フォーカスがテストされている」と読まないこと** — 手動確認の第 1 項目は
+    据え置き。
+  - **QML キャッシュの罠に R6-1 の申し送りを読んだうえで踏んだ。** 退行①注入後の `ctest` が**通って
+    しまい**、コンポーネントは QML モジュール（＝実行ファイルに焼かれる）で `tests/qml/*.qml` だけが
+    ソースツリーから読まれる、という非対称を実地で確認した。R6-1 のときは「テストが古いまま走る」
+    症状だったが、今回は**退行確認が false green を返す**という、より危険な出方をする。退行注入の
+    たびに `cmake --build --preset msvc-debug` を挟むこと。
+  - **コンポーネント root に `parent: view` + `anchors.fill` を与えてはいけない。** view-level
+    `TapHandler` がデリゲートより手前に来てポインタ配送順が変わり、デリゲートの `DragHandler` が
+    閾値超過時に view の pending tap を潰す仕掛け（＝選択済み行からのドラッグで選択が畳まれない
+    理由）が壊れる。`FileViewDropArea` は逆に `parent: view` が必須で、同じ「ビューポートを覆う」
+    要求でも root の型が `DropArea` か `Item` かで正解が反転する。子を個別に `parent: root.view`
+    するのが `BandSelector` 以来の形。**テストにもスクショにも映らない**のでコンポーネント冒頭に残した。
+  - **`Menu` / `Dialog` をコンポーネント内へ移すのは無害だった。** `Popup` は `Item` ではないので
+    `contentItem` に入らずクリップもされず、`popup()` はマウスカーソル位置に開く（`ActionMenu.qml`
+    の既存コメントの主張どおり）。Table では宣言位置がファイル末尾から `TableView` 内へ動いただけ。
+  - **`clipboard` は 4 例目の遮蔽の罠。** `uploads`（R6-5）・`dropTarget`（R6-2a）・`moveDragProxy` に
+    続き、`clipboardController: clipboardController` は自己束縛して `undefined` になる。
+    コンテキストプロパティを注入するときは名前を変える、が本 repo の定着した規則。
+  - **Grid の列数は per-key 再計算から binding に変えた。** 挙動は等価だが、現行コメントの理由
+    （「キー毎に再計算するのでリサイズを別扱いしなくて済む」）は成立しなくなるので、移設ではなく
+    書き直した。同時に `hoverIndex` → `hoverRow` に寄せている（モデル側の語彙が row、`dropRow` が
+    R6-2a で先例）。
+  - **孤立コメントは 2a の位置調整の続きで解消した。** `FileTableView` の 10 行コメントは
+    view-level `TapHandler` の根拠なので**コンポーネントのヘッダへ昇格**させ、位置で参照していた
+    `FileGridView` 側の "see the comment there" は参照先ごと消した。
+  - **実機確認は未実施。** 488/488 と Table のスクショ一致（差分は最大 1/255 ＝ アンチエイリアス域）が
+    言えるのは「起動する＝`required` の渡し忘れが無い」まで。`StackLayout` が両ビューを起動時に生成
+    するので Grid 側の binding エラーもここで拾えるが、**キー・タップ・フォーカスは 1 つも通っていない**。
+    確認項目: Grid で F2 → field 外クリックで commit（focus scope 制約）/ 両ビューの F2・Esc・Enter・
+    Delete・Ctrl+A・Ctrl+C/X/V・**Shift+Delete がダイアログであって cut でないこと** / Grid の矢印
+    4 方向とリサイズ後の移動量追従 / Table の Left/Right が何もせず飲み込まれもしないこと / 空白右
+    クリックでカーソル位置にメニュー・New folder がタブのダイアログへ届くこと / 行右クリックで選択
+    メニュー / 空白左クリックで選択解除 / ホイールスクロール中の hover 追従 / 帯選択がリネーム中に
+    抑止されること / タブ切替後も矢印キーが生きていること。
+
 #### 種が不正確だった / 判断が要るもの
 
 - **「ドロップ先 6 箇所」の内訳** — `DropArea` の数は確かに 6 だが、種が挙げた 7 つの名前のうち
@@ -3136,6 +3188,9 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
   由来する**（`FileGridView.qml:79-93`）。R6-2 で共通化するとき、フォーカス取得を単なる
   `forceActiveFocus()` に統一すると Grid のリネーム field の click-outside commit が発火しなくなる。
   「フォーカス取得も注入される 3 点の 1 つ」という設計制約であって、消せる差分ではない。
+  → **R6-2b で `takeFocus` として注入（2026-08-08）**。`activeRenameField` と `takeFocus()` 本体は
+  Grid に残り、コンポーネントが呼ぶのは注入された callable。Table 側は `root.forceActiveFocus()`
+  （`view` に渡す `TableView` ではなく `ColumnLayout` root）を渡す。
 - **[R6] `TabStrip.qml` の spring-load 間隔がコメント・調査文書と食い違う** — 実装は
   `dwellTimer.interval: 300`（`TabStrip.qml:372`）だが、すぐ上のコメント 2 箇所は「600ms after
   entering」と書き、`docs/investigations/CROSS_TAB_DND_INVESTIGATION.md:72` も 600。
@@ -3150,10 +3205,10 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
   `Theme.radius.sm`、Table は角丸なし。R6-2a で `FileViewDropArea.outlineRadius` として明示化したが、
   **どちらが正かは決めていない**（見た目の話なので R6 の領分ではない）。ドラッグ中しか出ない要素なので
   スクショでは判断できず、実機で見るしかない。
-- **[R6-2b 持ち越し] `BandSelector` の配線は 2 ビューで畳めない** — 一見同型だが `isOnItem` が
+- **[R6 範囲外] `BandSelector` の配線は 2 ビューで畳めない** — 一見同型だが `isOnItem` が
   Table 側だけ `contentWidth` 判定を足しており、`onBandChanged` の行き先も
   `updateBandSelectionGrid` / `updateBandSelection` という別のモデルメソッド。共通化すると穴の開いた器に
-  なるので、R6-2b の範囲からも外す。
+  なるので、R6-2b でも予定どおり外した。R6-2b 後もビューに残る唯一の view-level 重複。
 - **[R6 範囲外] デリゲート側の重複は view-level とは別物** — `DragHandler` 本体（25 行 ×2）、
   double-click / middle-click / right-click の `TapHandler` 3 つ（20 行 ×2）、`cutPending`。注入セットが
   view-level と違う（`index`/`row`、デリゲート id）ので第 3 のコンポーネントが要る。R6-2a/2b の後に
@@ -3170,7 +3225,8 @@ R6-2a 2 ビューの共通化 その 1 — ドロップ解決 + view-level DropA
    ↓  （R6-1 で per-delegate 系を片付けてから、残った view-level 系に取り組む）
 R6-2b 2 ビューの共通化 その 2 — リネーム helper / Keys.onPressed / メニュー配線
        ＋ hover 解決・view-level TapHandler 2 つ（2a の調査で追加発見）
-   ↓  （2a と独立。注入点は 4 つ = hit-test・フォーカス取得・行送り・矢印の次元数）
+   ↓  （2a と独立。注入点は実施の結果 5 つ = hit-test・フォーカス取得・行送り・
+        arrowColumns・horizontalArrows）
 R6-3 header/footer の別ファイル化（インライン component 2 つの扱いを含む）
    ↓
 R6-4 Dialog 4 つの別ファイル化
