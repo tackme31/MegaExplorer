@@ -7,10 +7,9 @@ import QtQuick.Controls
 
 // Confirmation for "move the current selection to the Rubbish bin", one
 // instance per file view (alongside that view's FileContextMenu) since the
-// action is always about that view's own selection. Same shape as Main.qml's
-// signOutConfirmDialog/missingPinDialog; parent is pinned to the window
-// overlay so it still centers on the window despite being declared from
-// inside a view.
+// action is always about that view's own selection. Same shape as
+// SignOutDialog/MissingPinDialog; parent is pinned to the window overlay so it
+// still centers on the window despite being declared from inside a view.
 //
 // The message is composed here from the selection count rather than passed in
 // pre-formatted -- same "C++ supplies structured fields, QML supplies wording"

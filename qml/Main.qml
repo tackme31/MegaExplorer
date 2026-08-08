@@ -182,7 +182,7 @@ ApplicationWindow {
             dragProxy: moveDragProxy
             onAboutRequested: aboutDialog.open()
             onLicensesRequested: licenseDialog.open()
-            onSignOutRequested: signOutConfirmDialog.open()
+            onSignOutRequested: signOutDialog.open()
         }
     }
 
@@ -194,21 +194,16 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
-        id: signOutConfirmDialog
-        anchors.centerIn: Overlay.overlay
-        modal: true
-        standardButtons: Dialog.Yes | Dialog.Cancel
-        // Neither DownloadService nor UploadService has a cancel API yet, so an
-        // in-flight transfer is simply aborted by logout(). Warn about it up
-        // front rather than silently dropping it.
-        title: (downloadController.downloadActive || uploadController.uploadActive) ? qsTr(
-                                                                                          "Sign out? (transfer in progress)") :
-                                                                                      qsTr("Sign out?")
-        onAccepted: authController.logout()
+    // One instance each for the whole app -- nothing about them is per-tab. The
+    // last three wire themselves to their controller's signal, so nothing here
+    // opens them.
+    SignOutDialog {
+        id: signOutDialog
+        auth: authController
+        downloads: downloadController
+        uploads: uploadController
     }
 
-    // One instance each for the whole app -- nothing about them is per-tab.
     AboutDialog {
         id: aboutDialog
         onLicensesRequested: licenseDialog.open()
@@ -218,118 +213,16 @@ ApplicationWindow {
         id: licenseDialog
     }
 
-    // Raised when a quick-access pin turns out to point at a folder that no
-    // longer exists -- only reachable for a folder deleted *during* this
-    // session (e.g. on another device), since the login-time sweep in
-    // QuickAccessModel::reload silently drops the ones already gone.
-    // Declining leaves the pin in place, so clicking it again asks again.
-    //
-    // Only a *definitive* answer gets here. A check that couldn't be answered
-    // at all raises the quickAccessUnavailable toast instead, because offering
-    // to delete a pin on the strength of a failed lookup is exactly the bug
-    // this split was made to avoid.
-    Dialog {
-        id: missingPinDialog
-        anchors.centerIn: Overlay.overlay
-        modal: true
-        standardButtons: Dialog.Yes | Dialog.Cancel
-
-        property var pinHandle: 0
-        property string pinName: ""
-
-        title: qsTr("Folder no longer exists")
-        Label {
-            text: qsTr("\"%1\" could not be found. Remove it from Quick access?").arg(
-                      missingPinDialog.pinName)
-        }
-
-        onAccepted: quickAccessModel.unpin(missingPinDialog.pinHandle)
+    MissingPinDialog {
+        quickAccess: quickAccessModel
     }
 
-    // Phase 14b's two upload confirmations. Both live here rather than in
-    // qml/components/ because all five drop targets reach them through a
-    // single uploadController signal -- they're window-global singletons with
-    // no reuse, unlike ConfirmRubbishDialog.qml which is instantiated per view.
-    //
-    // The destination rides along on each dialog instead of being remembered
-    // in C++, so it stays alive exactly as long as the question does (same
-    // shape as missingPinDialog above). destinationHandle is `property var`
-    // because a quint64 doesn't survive QML's int/real property types.
-
-    Dialog {
-        id: folderDropDialog
-        anchors.centerIn: Overlay.overlay
-        modal: true
-        standardButtons: Dialog.Yes | Dialog.Cancel
-
-        property var filePaths: []
-        property int folderCount: 0
-        property var destinationHandle: 0
-        property bool destinationIsRoot: false
-
-        title: qsTr("Folders can't be uploaded")
-        Label {
-            text: qsTr("%1 folder(s) will be skipped. Upload the remaining %2 file(s)?").arg(
-                      folderDropDialog.folderCount).arg(folderDropDialog.filePaths.length)
-        }
-
-        // Cancel needs no handler: nothing has been enqueued yet.
-        onAccepted: uploadController.uploadFiles(folderDropDialog.filePaths,
-                                                 folderDropDialog.destinationHandle,
-                                                 folderDropDialog.destinationIsRoot)
+    FolderDropDialog {
+        uploads: uploadController
     }
 
-    // Three-way, so standardButtons can't express it -- a hand-built
-    // DialogButtonBox with two ActionRole buttons and a RejectRole one. The
-    // answers call uploadController directly rather than going through
-    // onAccepted/onRejected.
-    Dialog {
-        id: nameConflictDialog
-        anchors.centerIn: Overlay.overlay
-        modal: true
-
-        property var filePaths: []
-        property var conflictNames: []
-        property var destinationHandle: 0
-        property bool destinationIsRoot: false
-
-        title: qsTr("Files with the same name already exist")
-        Label {
-            width: 360
-            wrapMode: Text.Wrap
-            text: qsTr("%1 file(s) with the same name already exist in the destination:").arg(
-                      nameConflictDialog.conflictNames.length) + "\n"
-                  + nameConflictDialog.conflictNames.slice(0, 5).join(", ") + (
-                      nameConflictDialog.conflictNames.length > 5 ? " …" : "")
-        }
-
-        footer: DialogButtonBox {
-            Button {
-                text: qsTr("Replace")
-                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
-                onClicked: {
-                    uploadController.uploadReplacingExisting(nameConflictDialog.filePaths,
-                                                             nameConflictDialog.destinationHandle,
-                                                             nameConflictDialog.destinationIsRoot);
-                    nameConflictDialog.close();
-                }
-            }
-            Button {
-                text: qsTr("Skip")
-                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
-                onClicked: {
-                    uploadController.uploadSkippingExisting(nameConflictDialog.filePaths,
-                                                            nameConflictDialog.destinationHandle,
-                                                            nameConflictDialog.destinationIsRoot);
-                    nameConflictDialog.close();
-                }
-            }
-            Button {
-                text: qsTr("Cancel")
-                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
-                onClicked: nameConflictDialog.close()
-            }
-        }
+    NameConflictDialog {
+        uploads: uploadController
     }
 
     Loader {
@@ -509,29 +402,6 @@ ApplicationWindow {
         }
     }
 
-    // The two-dialog chain needs no explicit state machine: answering the
-    // folder question calls uploadFiles(), which raises the name-conflict one
-    // by itself if it finds collisions.
-    Connections {
-        target: uploadController
-        function onFolderDropRequiresConfirmation(filePaths, folderCount, destinationHandle,
-                                                  destinationIsRoot) {
-            folderDropDialog.filePaths = filePaths;
-            folderDropDialog.folderCount = folderCount;
-            folderDropDialog.destinationHandle = destinationHandle;
-            folderDropDialog.destinationIsRoot = destinationIsRoot;
-            folderDropDialog.open();
-        }
-        function onNameConflictRequiresConfirmation(filePaths, conflictNames, destinationHandle,
-                                                    destinationIsRoot) {
-            nameConflictDialog.filePaths = filePaths;
-            nameConflictDialog.conflictNames = conflictNames;
-            nameConflictDialog.destinationHandle = destinationHandle;
-            nameConflictDialog.destinationIsRoot = destinationIsRoot;
-            nameConflictDialog.open();
-        }
-    }
-
     Connections {
         target: notificationController
         function onErrorOccurred(context, reason, rawMessage) {
@@ -565,7 +435,8 @@ ApplicationWindow {
     }
 
     // QuickAccessModel verifies a pin's target before anything happens, then
-    // reports back here -- it deliberately knows nothing about tabs or dialogs.
+    // reports back -- it deliberately knows nothing about tabs. Its other
+    // signal, missing(), is MissingPinDialog.qml's to handle.
     Connections {
         target: quickAccessModel
         function onActivated(handle, inNewTab) {
@@ -573,11 +444,6 @@ ApplicationWindow {
                 tabsController.addTabAt(handle, false);
             else
                 tabsController.currentNavigation?.navigateTo(handle, false);
-        }
-        function onMissing(handle, name) {
-            missingPinDialog.pinHandle = handle;
-            missingPinDialog.pinName = name;
-            missingPinDialog.open();
         }
     }
 

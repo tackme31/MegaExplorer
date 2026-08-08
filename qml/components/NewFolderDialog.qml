@@ -14,8 +14,8 @@ import QtQuick.Layouts
 // Unlike every other dialog here it can't use standardButtons: an already-taken
 // name has to leave the dialog open with the name still in the field, and a
 // standard Ok button accepts and closes unconditionally. Hence the hand-built
-// DialogButtonBox with an ActionRole Ok, the same escape hatch Main.qml's
-// nameConflictDialog uses for its three-way choice.
+// DialogButtonBox with an ActionRole Ok, the same escape hatch
+// NameConflictDialog.qml uses for its three-way choice.
 Dialog {
     id: root
 
