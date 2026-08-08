@@ -296,178 +296,16 @@ GridView {
         onHoveredChanged: root.refreshHoverIndex()
     }
 
-    // Drag & drop (Phase 14a). Both halves live at the view level rather than
-    // per delegate, matching the TapHandler above: a tile is too small a unit
-    // to hit-test against, and the "dropped on empty space" case has no
-    // delegate at all.
-
-    // Row a drop would land in, or -1 when it would land on the folder this
-    // view is showing (empty space, a file tile, or a folder that refuses the
-    // drop). Only meaningful while dropOnCurrentFolder/dropRow are being fed by
-    // the DropArea below.
-    property int dropRow: -1
-    property bool dropOnCurrentFolder: false
-
-    function beginDrag(scenePos) {
-        const entries = root.navController.fileListModel.selectedEntries();
-        if (entries.length === 0)
-            return;
-        const label = entries.length === 1 ? entries[0].name : qsTr("%1 items").arg(entries.length);
-        root.dragProxy.begin(root.mutController, entries, label, scenePos);
-    }
-
-    function clearDropTarget() {
-        root.dropRow = -1;
-        root.dropOnCurrentFolder = false;
-    }
-
-    // Last position a drag event was delivered at, so the internal branch can be
-    // re-run without one -- Ctrl toggling the gesture between move and copy
-    // produces no drag event at all while the pointer is still.
-    property point lastDragPos: Qt.point(0, 0)
-
-    // The internal (node) branch on its own, resolved from lastDragPos rather
-    // than an event, so Ctrl toggling copyMode mid-hover can re-run it.
-    //
-    // Reads the payload off root.dragProxy rather than the event's own
-    // drag.source. They're the same object -- the DropArea's keys let nothing
-    // else in -- but drag.source is typed QObject, so every field access
-    // through it is an unchecked dynamic lookup.
-    function updateNodeDropTarget() {
-        const row = root.indexAtViewportPos(root.lastDragPos);
-        const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
-
-        if (entry.isFolder && root.dragProxy.canDropOn(entry.handle, false)) {
-            root.dropRow = row;
-            root.dropOnCurrentFolder = false;
-            return;
-        }
-
-        // Anything else in this view means "into the folder being shown",
-        // Explorer's own fallback -- which a move rejects when the dragged items
-        // already live there and a Ctrl+drag copy accepts, since that duplicates
-        // them under "... - Copy".
-        root.dropRow = -1;
-        root.dropOnCurrentFolder = root.dragProxy.canDropOn(root.navController.currentHandle,
-                                                            root.navController.atRoot);
-    }
-
-    function updateDropTarget(drag) {
-        root.lastDragPos = Qt.point(drag.x, drag.y);
-        const row = root.indexAtViewportPos(Qt.point(drag.x, drag.y));
-        const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
-
-        // Internal (move) vs. external (upload). Decided on
-        // dragProxy.sourceMutations
-        // rather than dragProxy.active, unlike FolderTreePanel.qml's DropArea:
-        // this view is where the gesture *starts*, so its own DragEnter is
-        // delivered from inside DragProxy.begin()'s `Drag.active = true`
-        // assignment -- before the binding behind DragProxy.active has
-        // re-evaluated, which leaves it reading false. begin() assigns it
-        // ahead of that, so it's the one payload signal already true here.
-        // Reading active instead sent this event down the external branch, where
-        // `drag.accepted = false` rejected the DragEnter outright and Qt then
-        // withheld every later position/drop event from this DropArea -- i.e.
-        // dropping anywhere in the view the drag came from silently did nothing.
-        // Everything downstream (dropRow/dropOnCurrentFolder and the highlight
-        // Rectangles they drive) is payload-agnostic; only the question being
-        // asked here differs.
-        if (!drag.hasUrls && root.dragProxy.sourceMutations) {
-            root.updateNodeDropTarget();
-            return;
-        }
-
-        if (!drag.hasUrls) {
-            root.clearDropTarget();
-            drag.accepted = false;
-            return;
-        }
-
-        if (entry.isFolder && uploadController.canUploadTo(entry.handle, false)) {
-            root.dropRow = row;
-            root.dropOnCurrentFolder = false;
-        } else {
-            root.dropRow = -1;
-            // Unlike the move path, this is true almost always -- an external
-            // drag has no "already lives there" case -- so the viewport frame
-            // stays lit for most of the gesture. That's Explorer's behavior,
-            // not a bug.
-            root.dropOnCurrentFolder = uploadController.canUploadTo(root.navController.currentHandle,
-                                                                    root.navController.atRoot);
-        }
-        // Only the external branch touches drag.accepted: the move path relies
-        // on implicit acceptance by key match.
-        drag.accepted = root.dropRow >= 0 || root.dropOnCurrentFolder;
-    }
-
-    DragAutoScroller {
-        id: autoScroller
-        flickable: root
-    }
-
-    DropArea {
-        id: viewDropArea
-        // parent: root for the same reason the TapHandler below uses it -- a
-        // plain child of a Flickable lands in contentItem, which scrolls and is
-        // only as tall as the content.
-        parent: root
-        anchors.fill: parent
-        // "text/uri-list" is what an external OS drop matches on -- without it
-        // those drops are silently ignored here.
-        keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
-
-        // Ctrl can go down while the pointer sits still, and an internal drag
-        // delivers no event at all for that -- so nothing below would re-run.
-        Connections {
-            target: root.dragProxy
-            function onCopyModeChanged() {
-                if (viewDropArea.containsDrag && root.dragProxy.sourceMutations)
-                    root.updateNodeDropTarget();
-            }
-        }
-
-        onEntered: drag => {
-            root.updateDropTarget(drag);
-            autoScroller.track(drag.y);
-        }
-        onPositionChanged: drag => {
-            root.updateDropTarget(drag);
-            autoScroller.track(drag.y);
-        }
-        onExited: {
-            root.clearDropTarget();
-            autoScroller.release();
-        }
-        // Branches on drop.hasUrls, not on dragProxy.active like
-        // updateDropTarget above -- see FolderTreePanel.qml's onDropped.
-        onDropped: drop => {
-            autoScroller.release();
-            const target = root.dropRow >= 0 ? root.navController.fileListModel.entryAt(root.dropRow).handle :
-                                               root.navController.currentHandle;
-            const targetIsRoot = root.dropRow >= 0 ? false : root.navController.atRoot;
-
-            if (root.dropRow >= 0 || root.dropOnCurrentFolder) {
-                if (drop.hasUrls) {
-                    drop.accept(Qt.CopyAction);
-                    uploadController.dropUrls(drop.urls, target, targetIsRoot);
-                } else {
-                    root.dragProxy.dropOn(target, targetIsRoot);
-                }
-            }
-            root.clearDropTarget();
-        }
-    }
-
-    // Drawn over the whole viewport when a drop would land in the folder this
-    // view is showing, since that target has no delegate to highlight.
-    Rectangle {
-        parent: root
-        anchors.fill: parent
-        visible: root.dropOnCurrentFolder
-        color: "transparent"
-        border.width: Theme.border.drop
-        border.color: Theme.color.accent
-        radius: Theme.radius.sm
+    FileViewDropArea {
+        id: viewDrop
+        view: root
+        rowAtPos: pos => root.indexAtViewportPos(pos)
+        navController: root.navController
+        mutController: root.mutController
+        dragProxy: root.dragProxy
+        uploads: uploadController
+        // The table's outline is square; nobody recorded why the two differ.
+        outlineRadius: Theme.radius.sm
     }
 
     // Selection-driven, one instance for the whole view rather than one per
@@ -570,7 +408,7 @@ GridView {
         readonly property bool renaming: root.renamingHandle !== 0 && root.renamingHandle
                                          === gridDelegateItem.handle
 
-        readonly property bool dropTarget: root.dropRow === gridDelegateItem.index
+        readonly property bool dropTarget: viewDrop.dropRow === gridDelegateItem.index
 
         readonly property bool hovered: root.hoverIndex === gridDelegateItem.index
 
@@ -737,7 +575,7 @@ GridView {
                     root.navController.fileListModel.selectRow(gridDelegateItem.index,
                                                                Qt.NoModifier);
                 }
-                root.beginDrag(dragHandler.centroid.scenePosition);
+                viewDrop.beginDrag(dragHandler.centroid.scenePosition);
             }
 
             // activeTranslation is the documented "changes on every move"

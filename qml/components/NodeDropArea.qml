@@ -7,7 +7,8 @@ import QtQuick
 //
 // The view-level DropAreas in FileGridView/FileTableView deliberately do *not*
 // use this: their state is a row index rather than a single verdict, and folding
-// them in would mean a component that is two components in a trench coat.
+// them in would mean a component that is two components in a trench coat. They
+// share FileViewDropArea.qml instead.
 //
 // Per-site extras hang off the four drag* signals below rather than off the
 // DropArea handlers, which the definition here has already claimed -- a second

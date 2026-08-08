@@ -129,88 +129,6 @@ ColumnLayout {
         };
     }
 
-    // Drag & drop (Phase 14a), the mirror of FileGridView.qml's -- see the
-    // comments there. The one difference is hit-testing: this view's delegate
-    // is a cell, so a row is resolved through TableView.cellAtPosition rather
-    // than GridView.indexAt.
-
-    // Row a drop would land in, or -1 when it would land on the folder this
-    // view is showing (empty space, a file row, or a folder that refuses it).
-    property int dropRow: -1
-    property bool dropOnCurrentFolder: false
-
-    function beginDrag(scenePos) {
-        const entries = root.navController.fileListModel.selectedEntries();
-        if (entries.length === 0)
-            return;
-        const label = entries.length === 1 ? entries[0].name : qsTr("%1 items").arg(entries.length);
-        root.dragProxy.begin(root.mutController, entries, label, scenePos);
-    }
-
-    function clearDropTarget() {
-        root.dropRow = -1;
-        root.dropOnCurrentFolder = false;
-    }
-
-    // Last position a drag event was delivered at; see FileGridView.qml's.
-    property point lastDragPos: Qt.point(0, 0)
-
-    // The internal (node) branch on its own, resolved from lastDragPos so a
-    // Ctrl press with a stationary pointer can re-run it. Reads the payload off
-    // root.dragProxy rather than the event's own drag.source, same reasoning as
-    // FileGridView.qml's.
-    function updateNodeDropTarget() {
-        const row = root.rowAt(root.lastDragPos);
-        const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
-
-        if (entry.isFolder && root.dragProxy.canDropOn(entry.handle, false)) {
-            root.dropRow = row;
-            root.dropOnCurrentFolder = false;
-            return;
-        }
-
-        root.dropRow = -1;
-        root.dropOnCurrentFolder = root.dragProxy.canDropOn(root.navController.currentHandle,
-                                                            root.navController.atRoot);
-    }
-
-    function updateDropTarget(drag) {
-        // The DropArea fills the viewport, so drag.x/y are already in the
-        // coordinates rowAt() wants.
-        root.lastDragPos = Qt.point(drag.x, drag.y);
-        const row = root.rowAt(Qt.point(drag.x, drag.y));
-        const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
-
-        // Internal (move) vs. external (upload), same split as
-        // FileGridView.qml's -- see there for why the guard is sourceMutations
-        // rather than dragProxy.active in the two views a drag can start in.
-        if (!drag.hasUrls && root.dragProxy.sourceMutations) {
-            root.updateNodeDropTarget();
-            return;
-        }
-
-        if (!drag.hasUrls) {
-            root.clearDropTarget();
-            drag.accepted = false;
-            return;
-        }
-
-        if (entry.isFolder && uploadController.canUploadTo(entry.handle, false)) {
-            root.dropRow = row;
-            root.dropOnCurrentFolder = false;
-        } else {
-            root.dropRow = -1;
-            // Almost always true for an external drag (there's no "already
-            // lives there" case), so the viewport frame stays lit for most of
-            // the gesture -- Explorer's behavior, not a bug.
-            root.dropOnCurrentFolder = uploadController.canUploadTo(root.navController.currentHandle,
-                                                                    root.navController.atRoot);
-        }
-        // Only the external branch touches drag.accepted: the move path relies
-        // on implicit acceptance by key match.
-        drag.accepted = root.dropRow >= 0 || root.dropOnCurrentFolder;
-    }
-
     // Matches (English) Windows Explorer's Date modified column: short date
     // + short time, e.g. "7/28/2026 3:45 PM". Not reproducible via
     // Qt.formatDateTime(date, Locale.ShortFormat) -- QLocale's own
@@ -693,6 +611,16 @@ ColumnLayout {
             onHoveredChanged: root.refreshHoverRow()
         }
 
+        FileViewDropArea {
+            id: viewDrop
+            view: tableView
+            rowAtPos: pos => root.rowAt(pos)
+            navController: root.navController
+            mutController: root.mutController
+            dragProxy: root.dragProxy
+            uploads: uploadController
+        }
+
         // The handler is declared inside TableView, which would install it on the
         // contentItem (Qt docs, TableView::cellAtPosition) -- i.e. it would never see
         // taps below the last row, since contentItem is only as tall as the content.
@@ -703,76 +631,6 @@ ColumnLayout {
         // gesturePolicy (DragThreshold) takes a passive grab only, so a per-cell
         // TapHandler would fire in addition to this one and Ctrl+click would toggle
         // the same row twice, cancelling itself out.
-        DragAutoScroller {
-            id: autoScroller
-            flickable: tableView
-        }
-
-        DropArea {
-            id: tableDropArea
-            // parent: tableView for the same reason as the TapHandler below --
-            // a plain child of a Flickable lands in contentItem, which scrolls
-            // and is only as tall as the content.
-            parent: tableView
-            anchors.fill: parent
-            // "text/uri-list" is what an external OS drop matches on -- without
-            // it those drops are silently ignored here.
-            keys: ["application/x-megaexplorer-nodes", "text/uri-list"]
-
-            // Ctrl can go down while the pointer sits still, and an internal
-            // drag delivers no event at all for that; see FileGridView.qml's.
-            Connections {
-                target: root.dragProxy
-                function onCopyModeChanged() {
-                    if (tableDropArea.containsDrag && root.dragProxy.sourceMutations)
-                        root.updateNodeDropTarget();
-                }
-            }
-
-            onEntered: drag => {
-                root.updateDropTarget(drag);
-                autoScroller.track(drag.y);
-            }
-            onPositionChanged: drag => {
-                root.updateDropTarget(drag);
-                autoScroller.track(drag.y);
-            }
-            onExited: {
-                root.clearDropTarget();
-                autoScroller.release();
-            }
-            // Branches on drop.hasUrls, not on dragProxy.active like
-            // updateDropTarget above -- see FolderTreePanel.qml's onDropped.
-            onDropped: drop => {
-                autoScroller.release();
-                const target = root.dropRow >= 0 ? root.navController.fileListModel.entryAt(
-                                                       root.dropRow).handle :
-                                                   root.navController.currentHandle;
-                const targetIsRoot = root.dropRow >= 0 ? false : root.navController.atRoot;
-
-                if (root.dropRow >= 0 || root.dropOnCurrentFolder) {
-                    if (drop.hasUrls) {
-                        drop.accept(Qt.CopyAction);
-                        uploadController.dropUrls(drop.urls, target, targetIsRoot);
-                    } else {
-                        root.dragProxy.dropOn(target, targetIsRoot);
-                    }
-                }
-                root.clearDropTarget();
-            }
-        }
-
-        // Drawn over the whole viewport when a drop would land in the folder
-        // this view is showing, since that target has no delegate to highlight.
-        Rectangle {
-            parent: tableView
-            anchors.fill: parent
-            visible: root.dropOnCurrentFolder
-            color: "transparent"
-            border.width: Theme.border.drop
-            border.color: Theme.color.accent
-        }
-
         TapHandler {
             parent: tableView
             acceptedButtons: Qt.LeftButton
@@ -898,7 +756,7 @@ ColumnLayout {
             // -- one per cell would put a vertical line at every column
             // boundary and stop short of the row's end.
             Rectangle {
-                visible: root.dropRow === cell.row && cell.column === 0
+                visible: viewDrop.dropRow === cell.row && cell.column === 0
                 width: root.viewportRight - cell.x
                 height: parent.height
                 color: "transparent"
@@ -1004,7 +862,7 @@ ColumnLayout {
                         root.forceActiveFocus();
                         root.navController.fileListModel.selectRow(cell.row, Qt.NoModifier);
                     }
-                    root.beginDrag(dragHandler.centroid.scenePosition);
+                    viewDrop.beginDrag(dragHandler.centroid.scenePosition);
                 }
 
                 onActiveTranslationChanged: if (dragHandler.active)
