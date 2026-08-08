@@ -2927,7 +2927,7 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
 - ~~**`AccountIdentity` を単位として検証するか**（R2-22）~~ → **R5-6 で決定: しない**。
   裂けても表示 1 フレーム分にしかならないため。反転条件は R5-6 の対応欄。
 
-### R6 — 調査済み / R6-4 以外は対応済み（調査 2026-08-08、R6-5・R6-1・R6-2a・R6-2b・R6-3 で 2026-08-08）
+### R6 — 全項目対応済み（調査 2026-08-08、R6-5・R6-1・R6-2a・R6-2b・R6-3・R6-4 で 2026-08-08）
 
 #### 前提: 「重複」は 1 系統ではなく 2 系統あり、境界は種の見立てとずれている
 
@@ -3208,6 +3208,51 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
     more メニューが 280px 右揃えで開き背景の粒が滲まないこと・3 項目でダイアログが開くこと /
     表示モード 2 ボタンの切り替えとチェック追従 / **2 つ目のタブで表示モードを変えて戻る**
     （`currentPane` が live 束縛である唯一の検証）/ ボタン押下直後に矢印キーが生きていること。
+
+- **対応（R6-4、2026-08-08）**: 4 つのインライン `Dialog` を `qml/components/` の
+  `SignOutDialog` / `MissingPinDialog` / `FolderDropDialog` / `NameConflictDialog` へ。
+  `Main.qml` 590 → 456 行（157 削除 / 22 追加）。R6-2b と同じ 2 コミット構成（先に 4 ファイル＋
+  `tests/qml/tst_MainDialogs.qml` 14 ケース、次に `Main.qml` 差し替え）。実施して分かったこと:
+  - **上の R6-4 の見立て「`Connections` 6 ブロックは残る／削減は 138 行止まり」は両方とも外れ。**
+    前提が古く、`NewFolderDialog.qml` が既に**注入した controller に対する `Connections` を自分で
+    持って**おり、`uploads: uploadController` の注入も R6-1/R6-2a を経て 6 箇所で定着していた。
+    この形を採ると `uploadController` 宛ての `Connections` は丸ごと消え、`quickAccessModel` 宛ては
+    `onActivated`（タブの話でダイアログの話ではない）だけが残る。実削減は 136 行。
+    **利得が小さいという理由で R6-4 を最後に置いた判断自体は、順序としては正しかったが根拠は誤り。**
+  - **引いた線は「表示は直接参照してよい、アカウントを変える呼び出しは注入する」。** R6-3 の
+    `StatusBar.qml` が `downloadController` を context property のまま読んでいる前例と衝突して見えるが、
+    あちらは**読み取り専用の表示バインディング**。こちらは 4 つ中 3 つが `unpin()` / `uploadFiles()` /
+    `uploadReplacingExisting()` を**呼ぶ**。`NameConflictDialog` の Replace と Skip を取り違えると
+    「消さないで」と言ったファイルが無言で上書きされるので、ここは表示側と同じ扱いにできない。
+  - **注入は「行儀」ではなくテストの前提条件。** `QmlTestMain.cpp` は engine hook 無しの
+    `QUICK_TEST_MAIN` なので、`uploadController` を名前で読むファイルは**テストランナー上で
+    インスタンス化すらできない**。R6-5 が NodeDropArea で言った「テスト可能な形に切り出すこと自体が
+    価値の半分」がそのまま効く。**この 2 つ（線の引き方とテスト可能性）は同じ結論に落ちる。**
+  - **`Popup.opened` は `open()` の次の行ではまだ false。** enter transition の終わりで立つので、
+    テストは `compare` ではなく `tryCompare` が要る。最初 3 ケースがこれで落ちた。
+  - **`DialogButtonBox` はロール順にボタンを並べ替える。** index で取ると「プラットフォームの
+    並び順の好み」を検証することになるので、テストは**テキストで引く**ヘルパ経由にした。
+  - **陳腐化コメントは今回も移設元の外にあった**（R6-3 と同じ罠、3 例目）。`ConfirmRubbishDialog.qml`
+    と `NewFolderDialog.qml` がどちらも `Main.qml` の旧 id を名指ししていた。**移動する識別子で
+    grep しても出てこない** —— 旧 id をキーに全 `qml/`・`docs/` を掃く必要がある。
+  - **「ここに置く理由」を書いたコメントは移さず消した。** `Main.qml:249-252` の「window-global で
+    再利用が無いから `qml/components/` ではなくここに置いた」は本項目が覆した主張で、新ファイルへ
+    持っていくと自己矛盾になる。半分（宛先が dialog に載る理由・`property var` の理由）は生きているので
+    両ファイルへ複製した。**移設時のコメントは「移す／消す」の 2 択ではなく、割って判断するもの。**
+  - **`parent: Overlay.overlay` は追加が要る。** インラインの 4 つは `window` の直接の子だったので
+    `anchors.centerIn` だけで足りていた。既存 4 ダイアログに揃えて明示した。
+  - **逐語 diff にならないので R6-3 の手法で検証した** —— コメント除去＋空白正規化＋旧 id プレフィクスを
+    `root.` に置換してトークン列を diff。差分は imports・`id: root`・`required property`・`parent:`・
+    `Connections` の移設のみで、本体の欠落ゼロを確認。
+  - **実機確認は起動までしか未実施。** 489/489 通過、警告ゼロ、起動してクロームが一致するところまで。
+    確認項目: サインアウト（転送中の分岐含む）/ フォルダ＋ファイルの混在ドロップ /
+    同名ファイルのドロップで Replace が実際に上書きし Skip が既存を残すこと /
+    **[フォルダ＋同名ファイル] を 1 回のドロップで** 2 段の chain が繋がること（`onAccepted` →
+    `uploadFiles()` → 第 2 シグナル、が別ファイル 2 つの `Connections` を跨ぐようになった）/
+    ピン先を Rubbish へ送ってからピンをクリック（`missing()` は**同一セッション内で再現できる** ——
+    `QuickAccessService::classify` は `inCloud` が false なら `Gone` を返し、Rubbish 内のノードは
+    `inCloud == false`。上の調査が「別デバイスでの削除が要る」と書いたのは不正確）/
+    各ダイアログが 1 トリガにつき**ちょうど 1 回**開くこと（二重 open は閉じるまで正常と区別できない）。
 
 #### 種が不正確だった / 判断が要るもの
 
