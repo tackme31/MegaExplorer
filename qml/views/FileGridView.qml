@@ -56,8 +56,8 @@ GridView {
     // Theme.grid.gap instead.
     topMargin: Theme.grid.gap / 2
     bottomMargin: Theme.grid.gap / 2
-    // An overlay, so it takes nothing off root.width and the column math in
-    // Keys.onPressed below stays right.
+    // An overlay, so it takes nothing off root.width and the arrowColumns
+    // binding below stays right.
     ScrollBar.vertical: ScrollBar {
         policy: ScrollBar.AsNeeded
     }
@@ -70,11 +70,6 @@ GridView {
     // movement + auto-scroll) that would otherwise fight with the selection
     // model driven by Keys.onPressed below.
     keyNavigationEnabled: false
-
-    // Rename state and its three entry-point helpers, identical in behavior to
-    // FileTableView.qml's -- see the comments there for the reasoning behind
-    // each (this view only differs in using positionViewAtIndex).
-    property var renamingHandle: 0
 
     // The live InlineRenameField, published by its Loader below (null while not
     // renaming). Needed because GridView is itself a focus scope, unlike
@@ -92,115 +87,9 @@ GridView {
         root.forceActiveFocus();
     }
 
-    function beginRename() {
-        if (root.renamingHandle !== 0)
-            return;
-        const model = root.navController.fileListModel;
-        const row = model.cursorRow();
-        if (row < 0)
-            return;
-        model.selectRow(row, Qt.NoModifier);
-        const entries = model.selectedEntries();
-        if (entries.length !== 1)
-            return;
-        root.renamingHandle = entries[0].handle;
-        root.positionViewAtIndex(row, GridView.Contain);
-    }
-
-    // See FileTableView.qml's matching function.
-    function putOnClipboard(cut) {
-        const entries = root.navController.fileListModel.selectedEntries();
-        if (entries.length === 0)
-            return;
-        if (cut)
-            clipboardController.cut(entries, root.navController.currentHandle,
-                                    root.navController.atRoot);
-        else
-            clipboardController.copy(entries, root.navController.currentHandle,
-                                     root.navController.atRoot);
-    }
-
-    function endRename() {
-        root.renamingHandle = 0;
-        root.forceActiveFocus();
-    }
-
-    function commitRename(handle, oldName, newName) {
-        if (newName !== oldName)
-            root.mutController.renameEntry(handle, newName);
-        Qt.callLater(root.endRename);
-    }
-
-    Keys.onPressed: event => {
-        if (event.modifiers & Qt.AltModifier)
-            return; // reserved for a future Alt+Left "back" shortcut
-
-        // See FileTableView.qml's matching guard: the rename field doesn't
-        // consume F2/Delete, so this view has to stand down while it's up.
-        if (root.renamingHandle !== 0)
-            return;
-
-        if (event.key === Qt.Key_F2) {
-            root.beginRename();
-            event.accepted = true;
-            return;
-        }
-
-        if (event.key === Qt.Key_Delete) {
-            confirmRubbishDialog.confirm();
-            event.accepted = true;
-            return;
-        }
-
-        if (event.matches(StandardKey.SelectAll)) {
-            root.navController.fileListModel.selectAll();
-            event.accepted = true;
-            return;
-        }
-
-        // Below the Delete branch, for the Shift+Delete reason spelled out in
-        // FileTableView.qml.
-        if (event.matches(StandardKey.Copy)) {
-            root.putOnClipboard(false);
-            event.accepted = true;
-            return;
-        }
-
-        if (event.matches(StandardKey.Cut)) {
-            root.putOnClipboard(true);
-            event.accepted = true;
-            return;
-        }
-
-        if (event.matches(StandardKey.Paste)) {
-            root.mutController.paste();
-            event.accepted = true;
-            return;
-        }
-
-        // Matches GridView's own FlowLeftToRight layout math; the vertical
-        // ScrollBar is an overlay and takes nothing off the viewport width.
-        // Recomputed per key press rather than cached, so a window resize
-        // doesn't need separate handling.
-        const columns = Math.max(1, Math.floor(root.width / root.cellWidth));
-        let delta = 0;
-        if (event.key === Qt.Key_Left)
-            delta = -1;
-        else if (event.key === Qt.Key_Right)
-            delta = 1;
-        else if (event.key === Qt.Key_Up)
-            delta = -columns;
-        else if (event.key === Qt.Key_Down)
-            delta = columns;
-        else
-            return;
-
-        root.navController.fileListModel.moveCursor(delta, event.modifiers);
-        const row = root.navController.fileListModel.cursorRow();
-        if (row >= 0)
-            root.positionViewAtIndex(row, GridView.Contain);
-        event.accepted = true;
-    }
+    // Attached properties only fire on the item that holds activeFocus, which
+    // is this view and never the component below, so the attachment stays here.
+    Keys.onPressed: event => viewInput.handleKey(event)
 
     // Index under a point given in view (viewport) coordinates, -1 past the
     // last tile *and* anywhere in the gap around one. Shared by every hit test
@@ -270,30 +159,23 @@ GridView {
         };
     }
 
-    // Tile under the pointer (S8). Resolved once at the view level rather than
-    // with a HoverHandler per delegate, for the same reason as
-    // FileTableView.qml's hoverRow: a plain child of a Flickable is installed
-    // on contentItem, which scrolls away under a stationary pointer.
-    property int hoverIndex: -1
-
-    function refreshHoverIndex() {
-        if (!tileHover.hovered) {
-            root.hoverIndex = -1;
-            return;
-        }
-        root.hoverIndex = root.indexAtViewportPos(tileHover.point.position);
-    }
-
-    // Scrolling slides a different tile under a stationary pointer, which the
-    // handler can't see on its own (no point event is delivered).
-    onContentYChanged: root.refreshHoverIndex()
-
-    HoverHandler {
-        id: tileHover
-        // parent: root for the same reason as the TapHandler below.
-        parent: root
-        onPointChanged: root.refreshHoverIndex()
-        onHoveredChanged: root.refreshHoverIndex()
+    FileViewInput {
+        id: viewInput
+        view: root
+        navController: root.navController
+        mutController: root.mutController
+        clipboard: clipboardController
+        rowAtPos: pos => root.indexAtViewportPos(pos)
+        // The `root.` is load-bearing: this view has a takeFocus() of its own,
+        // so without it the lambda would call itself.
+        takeFocus: () => root.takeFocus()
+        revealRow: row => root.positionViewAtIndex(row, GridView.Contain)
+        // Matches GridView's own FlowLeftToRight layout math; the vertical
+        // ScrollBar is an overlay and takes nothing off the viewport width. A
+        // binding, so a window resize is not a separate case.
+        arrowColumns: Math.max(1, Math.floor(root.width / root.cellWidth))
+        horizontalArrows: true
+        onNewFolderRequested: root.newFolderRequested()
     }
 
     FileViewDropArea {
@@ -308,68 +190,12 @@ GridView {
         outlineRadius: Theme.radius.sm
     }
 
-    // Selection-driven, one instance for the whole view rather than one per
-    // delegate item (see FileContextMenu.qml's own comment) -- Menu is a
-    // Popup, not an Item, so it's neither laid out by GridView nor clipped
-    // by its Flickable viewport; a parentless popup() opens at the mouse
-    // cursor regardless.
-    FileContextMenu {
-        id: gridContextMenu
-        navController: root.navController
-        onRenameRequested: root.beginRename()
-        onMoveToRubbishRequested: confirmRubbishDialog.confirm()
-    }
-
-    ConfirmRubbishDialog {
-        id: confirmRubbishDialog
-        navController: root.navController
-        mutController: root.mutController
-    }
-
-    // Same rationale as FileTableView.qml's -- see the comment there for why
-    // this handler is re-parented to the view and why it owns the selection.
-    TapHandler {
-        parent: root
-        acceptedButtons: Qt.LeftButton
-        onTapped: {
-            const idx = root.indexAtViewportPos(point.position);
-            // Passive grab, so this also fires for taps inside the active
-            // rename field -- see FileTableView.qml's matching guard.
-            if (root.renamingHandle !== 0 && idx === root.navController.fileListModel.cursorRow())
-                return;
-            root.takeFocus();
-            if (idx < 0)
-                root.navController.fileListModel.clearSelection();
-            else
-                root.navController.fileListModel.selectRow(idx, point.modifiers);
-        }
-    }
-
-    // Right-click on empty space targets the folder this view is showing, not
-    // the selection -- so it gets its own menu, and clears the selection first
-    // the way the left-button handler above does. The delegates' own
-    // right-button handlers take only a passive grab and therefore fire *as
-    // well as* this one, so a tap that lands on a tile has to bail out here;
-    // the hit test is the same one drag & drop uses, keeping tap, hover and
-    // drop in agreement.
-    TapHandler {
-        parent: root
-        acceptedButtons: Qt.RightButton
-        onTapped: {
-            if (root.indexAtViewportPos(point.position) >= 0)
-                return;
-            root.takeFocus();
-            root.navController.fileListModel.clearSelection();
-            backgroundMenu.popup();
-        }
-    }
-
     // Rubber-band selection (Phase 21). The gesture itself lives in the
     // component; what stays here is the grid geometry it can't know about.
     BandSelector {
         id: bandSelector
         view: root
-        suppressed: root.renamingHandle !== 0
+        suppressed: viewInput.renamingHandle !== 0
         isOnItem: pos => root.indexAtViewportPos(pos) >= 0
 
         onBandStarted: additive => {
@@ -387,13 +213,6 @@ GridView {
         onBandCanceled: root.navController.fileListModel.cancelBandSelection()
     }
 
-    FolderBackgroundMenu {
-        id: backgroundMenu
-        navController: root.navController
-        mutController: root.mutController
-        onNewFolderRequested: root.newFolderRequested()
-    }
-
     delegate: Item {
         id: gridDelegateItem
         required property int index
@@ -405,12 +224,12 @@ GridView {
         required property string thumbnailPath
         required property bool selected
 
-        readonly property bool renaming: root.renamingHandle !== 0 && root.renamingHandle
-                                         === gridDelegateItem.handle
+        readonly property bool renaming: viewInput.renamingHandle !== 0
+                                         && viewInput.renamingHandle === gridDelegateItem.handle
 
         readonly property bool dropTarget: viewDrop.dropRow === gridDelegateItem.index
 
-        readonly property bool hovered: root.hoverIndex === gridDelegateItem.index
+        readonly property bool hovered: viewInput.hoverRow === gridDelegateItem.index
 
         // See FileTableView.qml's matching property for why this is bound to
         // the list rather than asked through a method.
@@ -528,19 +347,18 @@ GridView {
                         InlineRenameField {
                             originalName: gridDelegateItem.name
                             isFolder: gridDelegateItem.isFolder
-                            onCommitted: newName => root.commitRename(gridDelegateItem.handle,
-                                                                      gridDelegateItem.name,
-                                                                      newName)
-                            onCancelled: Qt.callLater(root.endRename)
+                            onCommitted: newName => viewInput.commitRename(gridDelegateItem.handle,
+                                                                          gridDelegateItem.name,
+                                                                          newName)
+                            onCancelled: Qt.callLater(viewInput.endRename)
                         }
                     }
                 }
             }
         }
 
-        // Left-click selection is handled entirely by the view-level
-        // background TapHandler above (see its comment) -- this one is
-        // double-click-only.
+        // Left-click selection is handled entirely by FileViewInput's
+        // view-level TapHandler -- this one is double-click-only.
         TapHandler {
             acceptedButtons: Qt.LeftButton
             onDoubleTapped: root.activateRequested(gridDelegateItem.isFolder,
@@ -603,7 +421,7 @@ GridView {
                     root.navController.fileListModel.selectRow(gridDelegateItem.index,
                                                                Qt.NoModifier);
                 }
-                gridContextMenu.popup();
+                viewInput.popupContextMenu();
             }
         }
     }

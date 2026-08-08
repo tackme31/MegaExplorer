@@ -78,23 +78,6 @@ ColumnLayout {
     // positioned in -- what the row fill and the drop outline extend to.
     readonly property real viewportRight: tableView.contentX + tableView.width
 
-    // Row under the pointer, read by all three of its cells (S6). The delegate
-    // is a cell, so a HoverHandler on it lights that cell alone; resolving the
-    // row once at the viewport level makes the fill span the row the way
-    // Explorer's does, and covers the strip to the right of the last column,
-    // which belongs to the row but has no delegate (S6a).
-    property int hoverRow: -1
-
-    // Written from the viewport HoverHandler below and from vertical
-    // scrolling, which slides a different row under a stationary pointer.
-    function refreshHoverRow() {
-        if (!rowHover.hovered) {
-            root.hoverRow = -1;
-            return;
-        }
-        root.hoverRow = root.rowAt(rowHover.point.position);
-    }
-
     // Row under a point given in tableView (viewport) coordinates, -1 past the
     // last row. x is clamped inside the last column so a position to its right
     // still resolves to the row, matching Explorer's full-row hit area.
@@ -302,135 +285,14 @@ ColumnLayout {
         root.fitNameColumnOnce();
     }
 
-    // Handle of the row currently being renamed in place, 0 when not renaming
-    // (same meaningless-sentinel convention as PathSegment::isRoot's handle).
-    // Only the name cell of that one row swaps its Label for an
-    // InlineRenameField, via a Loader -- see the delegate below.
-    property var renamingHandle: 0
-
-    // Shared by F2 and the context menu's renameRequested. Renaming is
-    // inherently single-item, so this collapses the selection to the cursor row
-    // first -- selectRow(row, Qt.NoModifier) already means "deselect
-    // everything else and select just this row", so FileListModel needed
-    // nothing new. After a right-click the cursor is already on the clicked
-    // row (the delegate's right-button TapHandler selects it), so both entry
-    // points land here identically.
-    function beginRename() {
-        if (root.renamingHandle !== 0)
-            return;
-        const model = root.navController.fileListModel;
-        const row = model.cursorRow();
-        if (row < 0)
-            return;
-        model.selectRow(row, Qt.NoModifier);
-        const entries = model.selectedEntries();
-        if (entries.length !== 1)
-            return;
-        root.renamingHandle = entries[0].handle;
-        tableView.positionViewAtRow(row, TableView.Contain);
-    }
-
-    // Shared by Ctrl+C/Ctrl+X and the context menu's cut/copy entries. The
-    // source folder is recorded with the entries because the paste may well
-    // happen in another tab, long after this one has navigated elsewhere.
-    function putOnClipboard(cut) {
-        const entries = root.navController.fileListModel.selectedEntries();
-        if (entries.length === 0)
-            return;
-        if (cut)
-            clipboardController.cut(entries, root.navController.currentHandle,
-                                    root.navController.atRoot);
-        else
-            clipboardController.copy(entries, root.navController.currentHandle,
-                                     root.navController.atRoot);
-    }
-
-    // Focus must be handed back explicitly, same reason the focusPolicy:
-    // Qt.NoFocus assignments elsewhere exist -- otherwise arrow keys go dead
-    // once the field is gone.
-    function endRename() {
-        root.renamingHandle = 0;
-        root.forceActiveFocus();
-    }
-
-    // Called from the field's committed signal, so tearing the field down is
-    // deferred past the end of that signal's own handler.
-    function commitRename(handle, oldName, newName) {
-        if (newName !== oldName)
-            root.mutController.renameEntry(handle, newName);
-        Qt.callLater(root.endRename);
-    }
-
-    // Placed on root (not tableView) so Main.qml has a single forceActiveFocus()
-    // target per view, regardless of which child actually holds activeFocus.
-    // Ctrl+A is handled here rather than via a window-level Shortcut so it
-    // doesn't fire while the header search TextField has focus (Shortcut
-    // ignores focus entirely and would steal Ctrl+A from text selection);
-    // Keys.onPressed only fires for the item that currently has activeFocus.
-    Keys.onPressed: event => {
-        if (event.modifiers & Qt.AltModifier)
-            return; // reserved for a future Alt+Left "back" shortcut
-
-        // While the rename field has focus this is still on its key-propagation
-        // path, and it doesn't consume F2/Delete the way it consumes arrows and
-        // Ctrl+A -- so the view has to stand down explicitly.
-        if (root.renamingHandle !== 0)
-            return;
-
-        if (event.key === Qt.Key_F2) {
-            root.beginRename();
-            event.accepted = true;
-            return;
-        }
-
-        if (event.key === Qt.Key_Delete) {
-            confirmRubbishDialog.confirm();
-            event.accepted = true;
-            return;
-        }
-
-        if (event.matches(StandardKey.SelectAll)) {
-            root.navController.fileListModel.selectAll();
-            event.accepted = true;
-            return;
-        }
-
-        // Below the Delete branch above on purpose: StandardKey.Cut is Ctrl+X
-        // *and* Shift+Delete on Windows, and that branch tests no modifiers, so
-        // moving these up would silently turn Shift+Delete from "Rubbish bin"
-        // into "cut".
-        if (event.matches(StandardKey.Copy)) {
-            root.putOnClipboard(false);
-            event.accepted = true;
-            return;
-        }
-
-        if (event.matches(StandardKey.Cut)) {
-            root.putOnClipboard(true);
-            event.accepted = true;
-            return;
-        }
-
-        if (event.matches(StandardKey.Paste)) {
-            root.mutController.paste();
-            event.accepted = true;
-            return;
-        }
-
-        let delta = 0;
-        if (event.key === Qt.Key_Up)
-            delta = -1;
-        else if (event.key === Qt.Key_Down)
-            delta = 1;
-        else
-            return;
-
-        root.navController.fileListModel.moveCursor(delta, event.modifiers);
-        const row = root.navController.fileListModel.cursorRow();
-        if (row >= 0)
-            tableView.positionViewAtRow(row, TableView.Contain);
-        event.accepted = true;
-    }
+    // Attached properties only fire on the item that holds activeFocus, and
+    // this root is the view's single focus target -- so the attachment stays
+    // here while everything it decides lives in FileViewInput.
+    //
+    // Ctrl+A goes through it rather than a window-level Shortcut so it doesn't
+    // fire while the header search TextField has focus (Shortcut ignores focus
+    // entirely and would steal Ctrl+A from text selection).
+    Keys.onPressed: event => viewInput.handleKey(event)
 
     HorizontalHeaderView {
         id: header
@@ -595,22 +457,6 @@ ColumnLayout {
                                                                ScrollBar.AlwaysOff
         }
 
-        // Scrolling slides a different row under a stationary pointer, which
-        // the handler below can't see on its own (no point event is delivered).
-        onContentYChanged: root.refreshHoverRow()
-
-        // Viewport-level for the same reason as the TapHandler below: a plain
-        // child of a Flickable is installed on contentItem, which is only as
-        // tall as the content. S6 had one HoverHandler per cell writing a
-        // shared row instead; that can't reach the strip to the right of the
-        // last column, which S6a brought back (see columnWidthProvider).
-        HoverHandler {
-            id: rowHover
-            parent: tableView
-            onPointChanged: root.refreshHoverRow()
-            onHoveredChanged: root.refreshHoverRow()
-        }
-
         FileViewDropArea {
             id: viewDrop
             view: tableView
@@ -621,54 +467,22 @@ ColumnLayout {
             uploads: uploadController
         }
 
-        // The handler is declared inside TableView, which would install it on the
-        // contentItem (Qt docs, TableView::cellAtPosition) -- i.e. it would never see
-        // taps below the last row, since contentItem is only as tall as the content.
-        // parent: tableView scopes it to the viewport instead, at the cost of having
-        // to map the tap into content coordinates by hand.
-        //
-        // It also does the row selection, not just the clearing. The default
-        // gesturePolicy (DragThreshold) takes a passive grab only, so a per-cell
-        // TapHandler would fire in addition to this one and Ctrl+click would toggle
-        // the same row twice, cancelling itself out.
-        TapHandler {
-            parent: tableView
-            acceptedButtons: Qt.LeftButton
-            onTapped: {
-                const row = root.rowAt(point.position);
-                // This handler only takes a passive grab, so it also fires for
-                // taps that land inside the active rename field -- and
-                // forceActiveFocus() below would then commit the edit on the
-                // user's first click into their own text. The renamed row is the
-                // cursor row by construction (see beginRename), so that's the
-                // one to stand down for; a tap on any other row falls through
-                // and commits via focus loss, which is the wanted behavior.
-                if (root.renamingHandle !== 0 && row === root.navController.fileListModel.cursorRow(
-                            ))
-                    return;
-                root.forceActiveFocus();
-                if (row < 0)
-                    root.navController.fileListModel.clearSelection();
-                else
-                    root.navController.fileListModel.selectRow(row, point.modifiers);
-            }
-        }
-
-        // Right-click on empty space targets the folder this view is showing,
-        // not the selection -- so it gets its own menu, and clears the
-        // selection first the way the handler above does. Same passive-grab
-        // caveat: the delegates' right-button handlers fire as well as this
-        // one, so a tap that landed on a row has to bail out here.
-        TapHandler {
-            parent: tableView
-            acceptedButtons: Qt.RightButton
-            onTapped: {
-                if (root.rowAt(point.position) >= 0)
-                    return;
-                root.forceActiveFocus();
-                root.navController.fileListModel.clearSelection();
-                backgroundMenu.popup();
-            }
+        FileViewInput {
+            id: viewInput
+            view: tableView
+            navController: root.navController
+            mutController: root.mutController
+            clipboard: clipboardController
+            rowAtPos: pos => root.rowAt(pos)
+            // root, not tableView: this ColumnLayout is the view's single focus
+            // target, so Main.qml has one to aim at whatever holds activeFocus.
+            takeFocus: () => root.forceActiveFocus()
+            revealRow: row => tableView.positionViewAtRow(row, TableView.Contain)
+            // One row per arrow, and Left/Right deliberately left unaccepted --
+            // see FileViewInput's cursorDelta().
+            arrowColumns: 1
+            horizontalArrows: false
+            onNewFolderRequested: root.newFolderRequested()
         }
 
         // Rubber-band selection (Phase 21). The strip right of the last column
@@ -678,7 +492,7 @@ ColumnLayout {
         BandSelector {
             id: bandSelector
             view: tableView
-            suppressed: root.renamingHandle !== 0
+            suppressed: viewInput.renamingHandle !== 0
             isOnItem: pos => {
                 const contentPos = tableView.contentItem.mapFromItem(tableView, pos);
                 if (contentPos.x >= tableView.contentWidth)
@@ -712,8 +526,9 @@ ColumnLayout {
             required property bool selected
 
             // Only the name column of the one renamed row turns into an editor.
-            readonly property bool renaming: root.renamingHandle !== 0 && root.renamingHandle
-                                             === cell.handle && cell.column === 0
+            readonly property bool renaming: viewInput.renamingHandle !== 0
+                                             && viewInput.renamingHandle === cell.handle
+                                             && cell.column === 0
 
             // Bound to the list rather than asked through a method: a method
             // call reads no property, so the binding would never re-evaluate
@@ -725,7 +540,7 @@ ColumnLayout {
             // No rounded corners here, unlike the side panel's pill (S5-a):
             // this delegate is a cell, so a radius would round off the middle
             // of a row at every column boundary.
-            color: cell.selected ? Theme.color.selection : (root.hoverRow === cell.row
+            color: cell.selected ? Theme.color.selection : (viewInput.hoverRow === cell.row
                                                             ? Theme.color.subtleHover :
                                                               "transparent")
 
@@ -831,15 +646,15 @@ ColumnLayout {
                     InlineRenameField {
                         originalName: cell.name
                         isFolder: cell.isFolder
-                        onCommitted: newName => root.commitRename(cell.handle, cell.name, newName)
-                        onCancelled: Qt.callLater(root.endRename)
+                        onCommitted: newName => viewInput.commitRename(cell.handle, cell.name,
+                                                                      newName)
+                        onCancelled: Qt.callLater(viewInput.endRename)
                     }
                 }
             }
 
-            // Left-click selection is handled entirely by the view-level
-            // background TapHandler above (see its comment) -- this one is
-            // double-click-only.
+            // Left-click selection is handled entirely by FileViewInput's
+            // view-level TapHandler -- this one is double-click-only.
             TapHandler {
                 acceptedButtons: Qt.LeftButton
                 onDoubleTapped: root.activateRequested(cell.isFolder, cell.handle, cell.name,
@@ -887,38 +702,9 @@ ColumnLayout {
                         root.forceActiveFocus();
                         root.navController.fileListModel.selectRow(cell.row, Qt.NoModifier);
                     }
-                    contextMenu.popup();
+                    viewInput.popupContextMenu();
                 }
             }
         }
-    }
-
-    // Selection-driven, one instance for the whole view rather than one per
-    // delegate cell (see FileContextMenu.qml's own comment) -- Menu is a
-    // Popup, not an Item, so it's neither laid out by this ColumnLayout nor
-    // clipped by TableView's Flickable viewport; a parentless popup() opens
-    // at the mouse cursor regardless.
-    FileContextMenu {
-        id: contextMenu
-        navController: root.navController
-        onRenameRequested: root.beginRename()
-        onMoveToRubbishRequested: confirmRubbishDialog.confirm()
-    }
-
-    // The empty-space counterpart, popped by the viewport's right-button
-    // TapHandler above.
-    FolderBackgroundMenu {
-        id: backgroundMenu
-        navController: root.navController
-        mutController: root.mutController
-        onNewFolderRequested: root.newFolderRequested()
-    }
-
-    // One per view, same reasoning as the menu above -- the action always
-    // targets this view's own selection.
-    ConfirmRubbishDialog {
-        id: confirmRubbishDialog
-        navController: root.navController
-        mutController: root.mutController
     }
 }
