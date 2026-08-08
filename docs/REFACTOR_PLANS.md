@@ -2927,7 +2927,7 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
 - ~~**`AccountIdentity` を単位として検証するか**（R2-22）~~ → **R5-6 で決定: しない**。
   裂けても表示 1 フレーム分にしかならないため。反転条件は R5-6 の対応欄。
 
-### R6 — 調査済み / R6-5・R6-1 対応済み（調査 2026-08-08、R6-5・R6-1 で 2026-08-08）
+### R6 — 調査済み / R6-5・R6-1・R6-2a 対応済み（調査 2026-08-08、R6-5・R6-1・R6-2a で 2026-08-08）
 
 #### 前提: 「重複」は 1 系統ではなく 2 系統あり、境界は種の見立てとずれている
 
@@ -3069,6 +3069,49 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
     検証**で、これは未実施。確認項目: 4 箇所への内部 move / Ctrl+copy / 外部ファイル drop、静止中の
     Ctrl 押下での枠線切り替え、ツリー端のオートスクロール、拒否タブでも効く spring-load。
 
+- **対応（R6-2a、2026-08-08）**: **R6-2 を 2 セッションに割り、前半だけを実施した。** 4 ブロックのうち
+  「ドロップ解決 3 関数 + 2 プロパティ」と view-level `DropArea` を `qml/components/FileViewDropArea.qml`
+  へ（+ `tests/qml/tst_FileViewDropArea.qml` 31 ケース）。328 行削除 / 24 行追加。残る 3 ブロック
+  （リネーム helper・`Keys.onPressed`・メニュー配線）と、調査で追加発見した hover 解決・view-level
+  TapHandler 2 つは **R6-2b** に送る。分けた理由は、両者が互いに独立で、片方ずつならスクショ差分と
+  退行の切り分け範囲が半分で済むこと。実施して分かったこと:
+  - **上の R6-2 の見立て「差は 3 点」は、同じ節の表自身と矛盾していて、実際は 4 点。** 表の 1 行目が
+    挙げている `positionViewAtIndex` / `positionViewAtRow` が本文の 3 点に入っていない。しかもこれは
+    メソッド名だけでなく **enum も受け手も違う**（`root.positionViewAtIndex(row, GridView.Contain)` /
+    `tableView.positionViewAtRow(row, TableView.Contain)`）。2a には無関係だが、**R6-2b に着手する人は
+    3 点ではなく 4 点として設計すること**。
+  - **`endRename()` はコンポーネント化すると壊れる形をしている。** 中身が `root.forceActiveFocus()` で、
+    移設すると `root` がコンポーネント自身を指し、フォーカスがビューから外れて矢印キーと Ctrl+A が
+    死ぬ。スクショにもユニットテストにも映らない。2b では注入したフォーカス callable を必ず経由させる。
+    これも 2b への申し送り。
+  - **`id: dropTarget` は使えない。** `FileGridView` のデリゲートが既に
+    `readonly property bool dropTarget` を持っており、デリゲートスコープでは `dropTarget.dropRow` が
+    その bool に静かに解決される。`viewDrop` にした。R6-5 の `uploads` と同じ遮蔽の罠で、本 repo 3 例目。
+  - **R6-1 の「`id` 据え置き」原則はここでは適用しない。** あちらは `accepting` が同じオブジェクトに
+    残るケースで、据え置きが無料だった。今回は `dropRow` / `beginDrag` の所有者が実際に変わるので、
+    デリゲート 4 行を `viewDrop.` に張り替えた。ビュー root に `readonly property alias` を置けば
+    デリゲートは逐語のままにできるが、その indirection 自体が説明コメントを要求する。
+  - **枠線の `radius` 分岐は統一せず注入にした。** Grid だけ `Theme.radius.sm` を持ち、理由はどこにも
+    記録が無い。ただし**この枠線はドラッグ中しか存在しないので `ui_shot.py` の網に映らない** —
+    自分の検証手段が見られない挙動変更をリファクタに混ぜないため、既定 0 の `outlineRadius` にして
+    Grid だけが渡す形にした。分岐そのものは下の新規発見に持ち越し。
+  - **`FileTableView` の 10 行コメントは宿主がずれていた。** 内容は左ボタン `TapHandler` の根拠なのに
+    `DragAutoScroller` の上に付いており、`FileGridView` がそれを位置で参照していた。新ブロックを
+    **そのコメントの前**に挿入したので、削除の結果コメントが本来の説明対象の直上に着地した。位置を
+    変えずに直せたのは偶然ではなく、挿入位置を先に決めたから。
+  - **意図的な退行 3 件。** ① ガードを `sourceMutations` → `active` に変える → 6 ケース失敗。
+    ② `keys` から `"text/uri-list"` を削る → 1 ケース。③ drop のターゲットを無条件 `currentHandle` に
+    する → 1 ケース。②③が 1 件なのは**網が薄いのではなく、その退行の観測可能な症状が 1 つしかない**
+    から。件数の多寡を網の質と読み違えないこと。
+  - **`DragAutoScroller` が初めてテストされた。** Phase 14a 以来テスト外だったが、`view` を
+    `required property Flickable` にしたせいでテストが本物の `Flickable` を渡さざるを得なくなり、
+    `contentY` の変化として観測できるようになった。型を厳しくした副産物。
+  - **実機のドラッグ確認は未実施。** 487/487 と スクショ一致が言えるのは「起動する＝`required` の
+    渡し忘れが無い」までで、`parent: view` がビューポートを覆えているかすらテストの外。加えて
+    アプリを 25 秒走らせて QML 警告ゼロを確認した（`StackLayout` は両ビューを起動時に生成するので、
+    画面に出ていない Grid 側の配線もこれで拾える）。確認項目: 両ビューのフォルダ行への内部 move /
+    静止中の Ctrl 押下 / 空白への drop / Explorer からの外部 drop / 下端オートスクロール。
+
 #### 種が不正確だった / 判断が要るもの
 
 - **「ドロップ先 6 箇所」の内訳** — `DropArea` の数は確かに 6 だが、種が挙げた 7 つの名前のうち
@@ -3103,6 +3146,18 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
   （`FolderTreePanel` が原典、他 5 箇所が "see FolderTreePanel.qml" ＋ 各自の要約）、2 ビューの
   4 ブロックも同様。R6-1/R6-2 を畳めばこの重複は自動的に消えるので、**R7 で QML コメントを独立した
   項目として持つ必要は無い**。R7 側は C++ とドキュメントに集中してよい。
+- **[`docs/DESIGN_IMPROVEMENT.md` 持ち越し] ドロップ枠線の角丸が 2 ビューで違う** — Grid は
+  `Theme.radius.sm`、Table は角丸なし。R6-2a で `FileViewDropArea.outlineRadius` として明示化したが、
+  **どちらが正かは決めていない**（見た目の話なので R6 の領分ではない）。ドラッグ中しか出ない要素なので
+  スクショでは判断できず、実機で見るしかない。
+- **[R6-2b 持ち越し] `BandSelector` の配線は 2 ビューで畳めない** — 一見同型だが `isOnItem` が
+  Table 側だけ `contentWidth` 判定を足しており、`onBandChanged` の行き先も
+  `updateBandSelectionGrid` / `updateBandSelection` という別のモデルメソッド。共通化すると穴の開いた器に
+  なるので、R6-2b の範囲からも外す。
+- **[R6 範囲外] デリゲート側の重複は view-level とは別物** — `DragHandler` 本体（25 行 ×2）、
+  double-click / middle-click / right-click の `TapHandler` 3 つ（20 行 ×2）、`cutPending`。注入セットが
+  view-level と違う（`index`/`row`、デリゲート id）ので第 3 のコンポーネントが要る。R6-2a/2b の後に
+  残る最大の重複で、やるなら独立した項目として立てること。
 
 #### 推奨実施順（各項目 1 セッション）
 
@@ -3111,8 +3166,11 @@ R6-5 テストの器（tst_NodeDropArea.qml）
    ↓  （以降の唯一の担保。抽出より先に置く）
 R6-1 NodeDropArea.qml — per-delegate 4 箇所
    ↓  （最も定型的。cycle のスクショ差分ゼロを確認しやすい）
-R6-2 2 ビューの共通化 — 4 ブロック（view-level DropArea 2 箇所を含む）
+R6-2a 2 ビューの共通化 その 1 — ドロップ解決 + view-level DropArea 2 箇所
    ↓  （R6-1 で per-delegate 系を片付けてから、残った view-level 系に取り組む）
+R6-2b 2 ビューの共通化 その 2 — リネーム helper / Keys.onPressed / メニュー配線
+       ＋ hover 解決・view-level TapHandler 2 つ（2a の調査で追加発見）
+   ↓  （2a と独立。注入点は 4 つ = hit-test・フォーカス取得・行送り・矢印の次元数）
 R6-3 header/footer の別ファイル化（インライン component 2 つの扱いを含む）
    ↓
 R6-4 Dialog 4 つの別ファイル化
