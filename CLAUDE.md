@@ -13,9 +13,10 @@ session lives in companion docs, linked from the relevant section below rather t
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
   and the per-stage log for S0–S11 (S0–S10 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
   the four C++ changes it caused are cross-linked from both.
-- `docs/REFACTOR_PLANS.md` — the pre-Phase-15 code-tidying pass (Japanese): the R1–R6 scope split,
-  the per-item findings, and the log of what each fix decided. Active work stream; check it before
-  starting anything that looks like cleanup.
+- `docs/REFACTOR_PLANS.md` — the pre-Phase-15 code-tidying pass (Japanese): the R1–R7 scope split,
+  the per-item findings, and the log of what each fix decided. **All seven scopes are done
+  (2026-08-08)**, so it is now a reference rather than a work queue — read it before cleanup work to
+  see what was already decided, but new tidying items get their own document.
 - `docs/ARCHITECTURE.md` — directory layout detail + the ports-and-adapters/DI design.
 - `docs/BUILD.md` — rationale behind each build gotcha below (why VS generator, why
   `CMakePresets.json`, the FFmpeg link fix, etc.).
@@ -132,9 +133,9 @@ go-ahead before proceeding (as part of normal plan review, not a separate approv
 
 ## Project status
 
-Phases 0–14b and 17–23a are done — several were pulled forward out of numeric order. **Next up:
-phases 15–16** (in-app preview, real-time remote-change reflection), with a pre-15 code-tidying pass
-running first in `docs/REFACTOR_PLANS.md`.
+Phases 0–14b and 17–23a are done — several were pulled forward out of numeric order. The pre-15
+code-tidying pass in `docs/REFACTOR_PLANS.md` finished on 2026-08-08 (all of R1–R7). **Next up:
+phases 15–16** (in-app preview, real-time remote-change reflection).
 
 That one paragraph is deliberately all this file tracks. What a phase actually built, what it
 changed its mind about mid-way, and what it knowingly left open is `docs/PROGRESS.md`: its Roadmap
@@ -264,8 +265,10 @@ fact said three ways. One fact, one line. Prose that needs more room belongs in 
 comment can link there.
 
 This is also a **cleanup rule**, not just a writing rule: when you touch a file whose comments
-predate this section, prune them by the same test in the same edit (R7 in `docs/REFACTOR_PLANS.md`
-is the deliberate sweep; `src/app/Logging.cpp` is the worked example — 45 comment lines to 20).
+predate this section, prune them by the same test in the same edit. R7 in `docs/REFACTOR_PLANS.md`
+already swept `src/` and `main.cpp` once under this rule (3049 → 1832 comment lines);
+`src/app/Logging.cpp` is the worked example there — 45 comment lines to 20. `tests/` was left out of
+that sweep, so it is the one tree where pre-rule comments are still expected.
 
 ## Git: every write goes through `scripts/git_unlock.sh`
 
