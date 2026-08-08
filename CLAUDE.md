@@ -33,6 +33,9 @@ session lives in companion docs, linked from the relevant section below rather t
     work, not the build files.
   - `RECENTLY_UPDATED_FILE_API.md` — which SDK call backs a "recently updated files" listing.
     No phase attached; relevant to Phase 16.
+  - `PREVIEW_PANE_INVESTIGATION.md` — feeds Phase 15 (in-app preview pane). Conclusion: the
+    server-side 1000×1000 preview JPEG covers image/video/PDF in one code path; video *playback*
+    and PDF paging are out, since `USE_LIBUV` is off in this build and Qt PDF isn't installed.
 
   New studies go in this folder, not in `docs/` directly.
 
