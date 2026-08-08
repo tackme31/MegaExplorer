@@ -7,6 +7,7 @@
 #include <QString>
 
 #include <memory>
+#include <optional>
 #include <QtQml/qqmlregistration.h>
 #include <string>
 #include <vector>
@@ -18,7 +19,8 @@
 // One per window, not per tab. The pane is a single item in Main.qml's SplitView,
 // and nothing here is tab-specific -- the input arrives as arguments. Which tab is
 // asking only matters in that switching tabs must invalidate whatever is in flight,
-// and bumping the generation on every showSelection()/clear() already does that.
+// and bumping the generation on every showSelection()/clear() that changes the shown
+// node already does that.
 //
 // No NotificationController, unlike every other controller that can fail: "this file
 // has no preview" is the normal case, not an error, so failures land in the pane's
@@ -76,7 +78,8 @@ public:
 
     // The single selected row. Everything needed to classify it is passed in, so
     // this never reaches back into a model that may belong to another tab by the
-    // time a result lands.
+    // time a result lands. Repeating the handle already shown does nothing -- QML
+    // re-emits the selection on a click that changed nothing.
     Q_INVOKABLE void
     showSelection(quint64 handle, const QString& name, qulonglong sizeBytes, bool isFolder);
 
@@ -128,6 +131,10 @@ private:
     // GUI thread only: showSelection/clear come from QML, and results are hopped
     // back before they are compared against it.
     quint64 mGeneration = 0;
+
+    // The node the pane is currently showing (or fetching), so a repeat of the same
+    // selection is a no-op rather than a refetch.
+    std::optional<quint64> mShownHandle;
 
     State mState = Empty;
     Kind mKind = NoKind;

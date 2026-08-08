@@ -23,6 +23,14 @@ void PreviewController::showSelection(quint64 handle,
                                       qulonglong sizeBytes,
                                       bool isFolder)
 {
+    // Re-clicking the selected row, or switching to a tab whose selection is the
+    // same node, re-emits selectionChanged, and re-fetching would throw away a
+    // preview that is already on screen. clear() resets this, so hiding and
+    // re-showing the pane still refetches.
+    if (mShownHandle && *mShownHandle == handle)
+        return;
+    mShownHandle = handle;
+
     ++mGeneration;
     mImageStore->clear();
 
@@ -48,6 +56,7 @@ void PreviewController::showSelection(quint64 handle,
 
 void PreviewController::clear()
 {
+    mShownHandle.reset();
     ++mGeneration;
     mImageStore->clear();
     publish(Empty, NoKind, NoReason);

@@ -85,6 +85,34 @@ TEST(PreviewControllerTest, ImageArrivalPublishesReadyImageAndRemovesTheTempFile
     EXPECT_FALSE(QFile::exists(QString::fromStdString(writtenPath)));
 }
 
+TEST(PreviewControllerTest, RepeatingTheSameSelectionDoesNotRefetch)
+{
+    Fixture f;
+    EXPECT_CALL(*f.client, getPreview(7, ::testing::_, ::testing::_))
+        .Times(1)
+        .WillOnce(::testing::Invoke([](std::uint64_t,
+                                       const std::string& path,
+                                       std::function<void(Result<std::string>)> onDone) {
+            writeFile(path, QByteArray("not-really-a-jpeg"));
+            onDone(Result<std::string>::ok(path));
+        }));
+
+    f.controller.showSelection(7, QStringLiteral("photo.jpg"), 200000, false);
+    drainEvents();
+    const QString firstSource = f.controller.imageSource();
+    // Clicking the already-selected row re-emits the selection.
+    f.controller.showSelection(7, QStringLiteral("photo.jpg"), 200000, false);
+    drainEvents();
+
+    EXPECT_EQ(f.controller.state(), PreviewController::Ready);
+    EXPECT_EQ(f.controller.imageSource(), firstSource);
+
+    // Hiding the pane and coming back does fetch again -- clear() dropped the image.
+    EXPECT_CALL(*f.client, getPreview(7, ::testing::_, ::testing::_)).Times(1);
+    f.controller.clear();
+    f.controller.showSelection(7, QStringLiteral("photo.jpg"), 200000, false);
+}
+
 TEST(PreviewControllerTest, SupersededArrivalIsDiscardedAndItsFileDeleted)
 {
     // The regression guard for the generation counter: getPreview cannot be
