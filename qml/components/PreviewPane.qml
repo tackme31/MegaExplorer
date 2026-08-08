@@ -120,7 +120,7 @@ Rectangle {
                 selectByMouse: true
                 wrapMode: TextEdit.Wrap
                 font.family: "Consolas"
-                font.pixelSize: Theme.font.caption
+                font.pixelSize: Theme.font.body
                 // The pane must never take focus away from the file views, whose
                 // arrow keys Main.qml's StackLayout hands back on every tab switch.
                 activeFocusOnTab: false
