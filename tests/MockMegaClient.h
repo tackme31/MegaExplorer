@@ -58,6 +58,14 @@ public:
                 (std::uint64_t, const std::string&, std::function<void(Result<std::string>)>),
                 (override));
     MOCK_METHOD(void,
+                getPreview,
+                (std::uint64_t, const std::string&, std::function<void(Result<std::string>)>),
+                (override));
+    MOCK_METHOD(void,
+                readFileContent,
+                (std::uint64_t, std::uint64_t, std::function<void(Result<std::vector<char>>)>),
+                (override));
+    MOCK_METHOD(void,
                 getPath,
                 (std::uint64_t, bool, std::function<void(Result<std::vector<PathSegment>>)>),
                 (override));

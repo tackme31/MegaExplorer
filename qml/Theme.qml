@@ -170,6 +170,11 @@ QtObject {
         // a new glyph actually paints.
         readonly property string viewList: "\uE8FD" // List
         readonly property string viewGrid: "\uE8A9" // ViewAll
+        // Preview-pane toggle, third button on that same row (Phase 15). Not
+        // E890 View, the obvious name match: that one is COLR-layered like
+        // E80A above and paints as an amber eye. DockRight draws what the
+        // button actually does -- a pane down the right-hand edge.
+        readonly property string preview: "\uE90D" // DockRight
         // Toast dismiss (S10). No cmap check needed: TabStrip's tab-close and
         // CaptionBar's window-close already paint this one.
         readonly property string close: "\uE8BB" // ChromeClose

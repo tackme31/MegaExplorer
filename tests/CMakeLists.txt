@@ -17,6 +17,10 @@ add_executable(MegaExplorerTests
     UploadServiceTest.cpp
     UploadControllerTest.cpp
     ThumbnailServiceTest.cpp
+    PreviewKindTest.cpp
+    PreviewServiceTest.cpp
+    PreviewControllerTest.cpp
+    TextPreviewDecoderTest.cpp
     FolderTreeServiceTest.cpp
     FileOperationServiceTest.cpp
     FolderNavigationControllerTest.cpp

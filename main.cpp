@@ -5,6 +5,7 @@
 #include "core/FileOperationService.h"
 #include "core/FolderNavigationService.h"
 #include "core/FolderTreeService.h"
+#include "core/PreviewService.h"
 #include "core/QuickAccessService.h"
 #include "core/SearchService.h"
 #include "core/ThumbnailService.h"
@@ -22,6 +23,9 @@
 #include "qml/FolderTreeModel.h"
 #include "qml/GuiThread.h"
 #include "qml/NotificationController.h"
+#include "qml/PreviewController.h"
+#include "qml/PreviewImageProvider.h"
+#include "qml/PreviewImageStore.h"
 #include "qml/QuickAccessModel.h"
 #include "qml/TabsController.h"
 #include "qml/ThumbnailController.h"
@@ -90,6 +94,10 @@ int main(int argc, char* argv[])
     // Shared across every tab: handle-keyed cache, no per-tab state. What is
     // inherently per-tab lives in tabFactory below instead.
     auto thumbnailService = std::make_shared<ThumbnailService>(client);
+    // Shared too, but for the opposite reason: one preview shows at a time for the
+    // whole window, so there is nothing per-tab to keep.
+    auto previewService = std::make_shared<PreviewService>(client);
+    auto previewImageStore = std::make_shared<PreviewImageStore>();
     // Stateless validate-and-pass-through, so one instance serves every tab.
     auto fileOperationService = std::make_shared<FileOperationService>(client);
     auto authService = std::make_shared<AuthService>(client, sessionStore);
@@ -105,6 +113,7 @@ int main(int argc, char* argv[])
     UploadController uploadController(uploadService, fileOperationService, &notifications);
     AuthController authController(authService);
     AccountController accountController(accountService);
+    PreviewController previewController(previewService, previewImageStore);
 
     // Shared: the side panel is chrome beside the tab content, not per-tab state.
     auto folderTreeService = std::make_shared<FolderTreeService>(client);
@@ -154,6 +163,11 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("quickAccessModel", &quickAccessModel);
     engine.rootContext()->setContextProperty("clipboardController", &clipboard);
     engine.rootContext()->setContextProperty("accountController", &accountController);
+    engine.rootContext()->setContextProperty("previewController", &previewController);
+    // The engine takes ownership of the provider, which is why the bytes it serves
+    // live in previewImageStore rather than in the provider itself.
+    engine.addImageProvider(QStringLiteral("megapreview"),
+                            new PreviewImageProvider(previewImageStore));
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

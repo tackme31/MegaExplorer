@@ -136,9 +136,9 @@ go-ahead before proceeding (as part of normal plan review, not a separate approv
 
 ## Project status
 
-Phases 0–14b and 17–23a are done — several were pulled forward out of numeric order. The pre-15
+Phases 0–15 and 17–23a are done — several were pulled forward out of numeric order. The pre-15
 code-tidying pass in `docs/REFACTOR_PLANS.md` finished on 2026-08-08 (all of R1–R7). **Next up:
-phases 15–16** (in-app preview, real-time remote-change reflection).
+phase 16** (real-time remote-change reflection).
 
 That one paragraph is deliberately all this file tracks. What a phase actually built, what it
 changed its mind about mid-way, and what it knowingly left open is `docs/PROGRESS.md`: its Roadmap

@@ -55,7 +55,7 @@ are post-MVP, sequenced by priority/dependency.
 | 22a | Quick-access reordering | done (pulled forward) |
 | 22b | Tab reordering + drop-onto-tab move | done (pulled forward) |
 | 23 | Copy / cut / paste | done (pulled forward) |
-| 15 | In-app preview (side panel, `getPreview`) | planned |
+| 15 | In-app preview (right pane, `getPreview` + `startStreaming`) | done |
 | 16 | Real-time remote-change reflection | future, post-MVP |
 | 24+ | Undecided | undo and full bidirectional local sync both stay out of scope |
 
@@ -75,11 +75,6 @@ copy/cut/paste/undo) and dropped: MEGA has no native undo, so every operation wo
 hand-built inverse (rename↔rename, rubbish→move back, copy→delete, create→delete), a record hook in
 every mutating path, and a policy for when the history has to be thrown away. That is a phase in its
 own right, and with 23 in place the practical need for it is small. Not deferred — out of scope.
-
-### Phase 15 — in-app preview (side panel, `getPreview`/`startStreaming`)
-
-Lowest priority; explicitly deferred in Phase 4 since download→open already covers "view the file".
-Format-specific rendering (image/PDF/text/...) makes this the highest-effort item on the list.
 
 ### Phase 16 (future) — real-time remote-change reflection
 
@@ -3522,3 +3517,129 @@ so the two numbers are always comparable.
   `$LOCALAPPDATA/MegaExplorer/MegaExplorer/MegaExplorer.log` (`MegaExplorer` nests twice) — and note
   that `ui-style`'s default `--method print` cannot capture a `Popup.Window` menu at all;
   `--method screen` is required, as a command flag rather than a step.
+
+## Phase 15 — in-app preview pane (done)
+
+> **Planned as.** Right-hand `SplitView` pane toggled from the status bar, showing the selected
+> file. Scope fixed at A+B+C of `docs/investigations/PREVIEW_PANE_INVESTIGATION.md` section 7: the
+> pane shell and its ON/OFF, the server-side preview JPEG (which covers image, video and PDF in one
+> code path), and text files of 50 KB or less read whole. Video playback and PDF paging are out —
+> both need a build-configuration change (`USE_LIBUV`, Qt PDF). Preview content is never cached;
+> ON/OFF is per tab, pane width is per window.
+
+The investigation settled nearly everything before this started, so what follows is only where the
+implementation went somewhere the study didn't.
+
+### The temp file lives for milliseconds, and two design problems disappear with it
+
+The study's 4.1 is a long argument about QML's `Image` caching by source URL: writing every preview
+to one path shows the first picture forever, so it proposed a fresh filename per request plus a
+delete of the previous one. 4.2 then adds a generation counter whose job includes deleting the file
+a superseded request left behind.
+
+Both exist only because the preview was assumed to *stay* on disk. It doesn't have to. The SDK has
+no memory-returning attribute API — every one of `getThumbnail`/`getPreview`/`getUserAvatar` takes a
+`dstFilePath` (`megaapi.h:14951-15062`), and a preview is a file attribute rather than a node, so
+`startStreaming` cannot reach it either — but nothing says the file has to outlive the callback.
+`PreviewController::onImageFetched` reads it and `QFile::remove`s it in the same breath, before it
+even checks the generation, and the bytes go to `PreviewImageStore`. `PreviewImageProvider` then
+serves them under `image://megapreview/<generation>`.
+
+So: no `file://` URL, hence no stale-pixmap problem; no superseded file to chase; and "don't cache"
+is met literally rather than by careful housekeeping. At most one file exists at any moment and
+after a normal session the directory is empty, which is also why 4.6's temp-directory sweep isn't
+here — with nothing accumulating there was nothing left for it to do that a crash-only leftover
+justifies. The existing `MegaExplorerThumbnails`/`MegaExplorerAvatars` accumulation is untouched and
+still open.
+
+The generation counter survives, doing the one job that remains: `getPreview` cannot be cancelled,
+so a request abandoned by a cursor move still lands and its result must be dropped. It also has to
+advance on tab switch (6.2), which is why it lives in the controller rather than in the service.
+
+### One controller for the window, not one per tab
+
+The study assumed a per-tab `PreviewController` by analogy with `ThumbnailController`. That analogy
+is wrong: a thumbnail controller writes into *its tab's* model, but there is one pane in the
+`SplitView` and only one preview visible at a time. Nothing here is per-tab — the input arrives as
+arguments (`handle`, `name`, `sizeBytes`, `isFolder`), so the controller is a stack local in
+`main.cpp` beside `downloadController`, exposed as a context property.
+
+That avoided the five-site change a per-tab controller needs (`TabContext`, the factory, the `Roles`
+enum, `data()`, `roleNames()` and `TabsController`'s `CppOwnership` block) and the
+`enable_shared_from_this`/`makeGuiOwned` lifetime dance with it. Per-tab visibility still works,
+because visibility is a `TabContentPane` property and only the *pane* follows it.
+
+The fetch is driven from `PreviewPane.qml`, not from C++, because its trigger is the product of
+three things — selection changed, active tab changed, pane visible — and only QML can see all three.
+6.2's "the generation must also advance on tab change" then falls out of the structure instead of
+being a special case: a tab switch re-runs `refresh()`, and every `showSelection`/`clear()` bumps it.
+
+### Section 8's cancellation question, answered "none"
+
+The study left the interaction between `onTransferData` returning `false` and GUI-side teardown
+unresolved. There is no interaction, because there is no cancellation: `return false` fires only on
+`maxBytes` overflow. The payload is capped at 50 KB, so there is no bandwidth worth reclaiming, and
+any real cancel channel would need state the SDK thread polls — exactly the cross-thread lifetime
+problem the worry was about. One consequence is easy to get wrong: an aborted streaming transfer
+arrives at `onTransferFinish` as `API_EINCOMPLETE`, not `API_OK`, so `StreamingContentListener`
+checks its own overflow flag *before* the error code, or a too-large file reports as a network
+failure.
+
+`readFileContent` returns `Result<std::vector<char>>` rather than `Result<std::string>`: the latter
+already means "a local path" at `getThumbnail`/`getMyAvatar`, and a third silent meaning would be
+one too many. It is also the first in-memory byte payload `src/core` carries at all.
+
+### Smaller things worth keeping
+
+- **`PreviewService` holds thunks, not a job struct.** Images and text share one in-flight slot on
+  purpose — arrowing from a JPEG to a text file must supersede the JPEG, not race it — but the two
+  return different payloads. A `Pending` of `{start, reportSuperseded}` closures keeps the scheduler
+  payload-agnostic; the alternative was a struct carrying one of each callback with the other null.
+- **The waiting slot holds exactly one request.** A new arrival evicts whatever was waiting and
+  finishes it with `kPreviewSuperseded` (3). Holding Down across a hundred rows costs two SDK calls.
+  An evicted request never started, so it wrote no file and needs no cleanup.
+- **`FileListModel::selectedEntry()`** was added rather than reusing `cursorRow()` + `entryAt()`.
+  Those are not just O(n) on a 600k-row model, they mean something different: the cursor is the
+  last-touched row, and Ctrl+clicking it off the selection leaves it pointing at a non-selected one.
+- **`PreviewController` takes no `NotificationController`, structurally.** "No preview" is the
+  normal case; 4.4's rule is enforced by there being nothing to toast with. `AuthController` is the
+  other controller deliberately built that way.
+- **One `changed()` signal for all five properties.** They only move together as a state
+  transition, and per-property NOTIFYs let QML observe `kind == Text` beside the previous
+  `imageSource`.
+- **U+E890 `View` was rejected after the cmap check passed.** It is COLR-layered and painted as an
+  amber eye in a monochrome status bar — the same trap `viewGrid` hit with E80A, and the reason
+  `Theme.qml` says the cmap check is necessary but not sufficient. U+E90D `DockRight` replaced it
+  and also draws what the button does.
+- **The `SplitView` handle delegate is shared by every handle**, and its 1px rule was anchored
+  right, which is correct only when the `surfaceAlt` panel is on the left. With a pane on the right
+  the second rule sat 6px inside it. The delegate now derives `panelOnLeft` from its own x against
+  the content stack's.
+
+### Testing
+
+`PreviewKindTest`, `PreviewServiceTest` (including the trampoline regression, mirroring
+`ThumbnailServiceTest`'s), `PreviewControllerTest` (the generation/temp-file guard is the one that
+matters), `TextPreviewDecoderTest`, two `FileListModelTest` cases, and `tst_PreviewPane.qml`.
+
+Two notes for whoever extends them. `TestCase` declares itself `visible: false` and `Item.visible`
+reads back the *effective* value, so every child reports false until the test case sets
+`visible: true` — the visibility assertions are meaningless without it. And `MegaExplorerQmlTests`
+embeds the QML as a resource, so editing a `.qml` under `qml/` requires relinking *that* target;
+building `appMegaExplorer` alone leaves the test binary running the previous copy.
+
+**No `tst_StatusBar.qml`.** `StatusBar.qml` reads `downloadController`/`uploadController` as bare
+context properties, and `QmlTestMain.cpp` installs none, so the new toggle is untestable there
+without a refactor outside this phase's scope.
+
+### Deliberately not done
+
+- **The 3.3 fallback** (showing the 200px thumbnail when no preview exists) — a square crop
+  stretched into a 300-600px pane is visibly mush, it needs a second async hop and a second
+  temp-file family, and it would couple a feature whose requirement is "never cache" to a caching
+  service.
+- **`FileEntry::hasPreview`** — only a hint, and the design already treats fetch failure as normal,
+  so it would cost a field, an `operator==` arm, `nodeToEntry` and every positional initializer in
+  the tests for no behaviour change.
+- **A filename header in the pane** — Explorer's preview window has none.
+- **Temp-directory cleanup** (4.6) — see above; left as its own task.

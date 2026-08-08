@@ -99,6 +99,13 @@ public:
     // drag snapshot) need a stable order.
     Q_INVOKABLE QVariantList selectedEntries() const;
 
+    // The same map as selectedEntries()' elements, but only when exactly one row is
+    // selected; empty otherwise. The preview pane runs this on every selection
+    // change, where selectedEntries()' full walk of a 600k-row model would not do.
+    // Not cursorRow() + entryAt(): the cursor is the last-touched row, which
+    // Ctrl+clicking it off the selection leaves pointing at a non-selected row.
+    Q_INVOKABLE QVariantMap selectedEntry() const;
+
     // One row's {handle, name, isFolder}, empty when out of range. Drag/drop
     // handlers can't reach data() from QML -- the Role enum isn't exposed there.
     Q_INVOKABLE QVariantMap entryAt(int row) const;

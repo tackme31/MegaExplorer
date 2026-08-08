@@ -141,6 +141,34 @@ public:
                               const std::string& destinationPath,
                               std::function<void(Result<std::string>)> onDone) = 0;
 
+    // Same call shape and same separator rule as getThumbnail, but the attribute
+    // fetched is the preview: a JPEG scaled to fit inside 1000x1000, not the 200px
+    // square crop.
+    //
+    // Unlike getThumbnail there is no FileEntry flag to gate on, and a preview only
+    // exists when the uploading client generated one. Callers must therefore read
+    // *any* failure as "no preview" and must not surface it as an error -- the same
+    // rule getMyAvatar states.
+    virtual void getPreview(std::uint64_t handle,
+                            const std::string& destinationPath,
+                            std::function<void(Result<std::string>)> onDone) = 0;
+
+    // Reads a whole file into memory instead of writing it anywhere
+    // (MegaApi::startStreaming). The only caller is the preview pane's text view,
+    // which must leave nothing behind on disk.
+    //
+    // maxBytes is a hard stop, not a range request: exceeding it aborts the transfer
+    // and fails. Callers gate on FileEntry::sizeBytes first, so this is the check
+    // against a node bigger than the listing claimed.
+    //
+    // There is deliberately no way to cancel. The payload is capped in the tens of
+    // kilobytes, so there is no bandwidth worth reclaiming, and a cancel channel
+    // would need shared state the SDK thread polls -- the cross-thread lifetime
+    // problem this design exists to avoid.
+    virtual void readFileContent(std::uint64_t handle,
+                                 std::uint64_t maxBytes,
+                                 std::function<void(Result<std::vector<char>>)> onDone) = 0;
+
     // Ancestor chain root-first, always including the root as the first element
     // and the node itself as the last. Must follow a successful fetchNodes().
     virtual void getPath(std::uint64_t handle,

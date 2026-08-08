@@ -1,0 +1,137 @@
+#pragma once
+#include "core/PreviewService.h"
+#include "core/Result.h"
+#include "PreviewImageStore.h"
+
+#include <QObject>
+#include <QString>
+
+#include <memory>
+#include <QtQml/qqmlregistration.h>
+#include <string>
+#include <vector>
+
+// Drives the window's single preview pane: given the one selected row, it decides
+// what kind of preview that name can have, fetches it, and exposes the result as a
+// state machine PreviewPane.qml switches on.
+//
+// One per window, not per tab. The pane is a single item in Main.qml's SplitView,
+// and nothing here is tab-specific -- the input arrives as arguments. Which tab is
+// asking only matters in that switching tabs must invalidate whatever is in flight,
+// and bumping the generation on every showSelection()/clear() already does that.
+//
+// No NotificationController, unlike every other controller that can fail: "this file
+// has no preview" is the normal case, not an error, so failures land in the pane's
+// own wording and in qCDebug -- never a toast. AuthController is the other
+// controller deliberately built without one.
+class PreviewController : public QObject
+{
+    Q_OBJECT
+    QML_ELEMENT
+    QML_UNCREATABLE("Provided as the previewController context property")
+
+public:
+    enum State
+    {
+        Empty,      // nothing selected, several rows selected, or a folder
+        Loading,    // fetch in flight
+        Ready,      // imageSource or text is set, per kind
+        Unsupported // nothing to show; reason says why
+    };
+    Q_ENUM(State)
+
+    enum Kind
+    {
+        NoKind,
+        Image, // covers video and PDF: all three arrive as one server-side JPEG
+        Text
+    };
+    Q_ENUM(Kind)
+
+    // A code, not a sentence: QML composes the wording, as FileListModel.h requires
+    // of everything user-facing.
+    enum Reason
+    {
+        NoReason,
+        NoPreviewAvailable, // the type is previewable, this file has no preview stored
+        UnsupportedType,    // the extension is not one this app previews
+        TooLarge,           // text past kMaxTextPreviewBytes, refused without a request
+        BinaryContent       // a text extension whose bytes are not text
+    };
+    Q_ENUM(Reason)
+
+    // One signal for all five, not one each: they only ever move together as a state
+    // transition, and separate NOTIFYs would let QML observe kind == Text alongside
+    // the previous imageSource. DownloadController splits its signals because its
+    // progress and file name genuinely change independently.
+    Q_PROPERTY(State state READ state NOTIFY changed)
+    Q_PROPERTY(Kind kind READ kind NOTIFY changed)
+    Q_PROPERTY(QString imageSource READ imageSource NOTIFY changed)
+    Q_PROPERTY(QString text READ text NOTIFY changed)
+    Q_PROPERTY(Reason reason READ reason NOTIFY changed)
+
+    explicit PreviewController(std::shared_ptr<PreviewService> service,
+                               std::shared_ptr<PreviewImageStore> imageStore,
+                               QObject* parent = nullptr);
+
+    // The single selected row. Everything needed to classify it is passed in, so
+    // this never reaches back into a model that may belong to another tab by the
+    // time a result lands.
+    Q_INVOKABLE void
+    showSelection(quint64 handle, const QString& name, qulonglong sizeBytes, bool isFolder);
+
+    // Back to Empty, and invalidates anything in flight. Called when the selection
+    // is not exactly one row, and when the pane is hidden.
+    Q_INVOKABLE void clear();
+
+    State state() const
+    {
+        return mState;
+    }
+    Kind kind() const
+    {
+        return mKind;
+    }
+    QString imageSource() const
+    {
+        return mImageSource;
+    }
+    QString text() const
+    {
+        return mText;
+    }
+    Reason reason() const
+    {
+        return mReason;
+    }
+
+signals:
+    void changed();
+
+private:
+    void publish(State state, Kind kind, Reason reason);
+    void requestImage(quint64 handle);
+    void
+    onImageFetched(quint64 generation, const QString& destinationPath, Result<std::string> result);
+    void requestText(quint64 handle, qulonglong sizeBytes);
+    void onTextFetched(quint64 generation, Result<std::vector<char>> result);
+
+    // Unique per request, so no two previews ever share an image:// URL --
+    // QQuickPixmapCache keys on it, and a repeated URL would show the first picture
+    // forever. Deliberately the inverse of ThumbnailController's fixed name per
+    // handle, which exists precisely so repeats reuse one cached file.
+    QString computeDestinationPath(quint64 handle, quint64 generation) const;
+
+    std::shared_ptr<PreviewService> mService;
+    std::shared_ptr<PreviewImageStore> mImageStore;
+
+    // GUI thread only: showSelection/clear come from QML, and results are hopped
+    // back before they are compared against it.
+    quint64 mGeneration = 0;
+
+    State mState = Empty;
+    Kind mKind = NoKind;
+    QString mImageSource;
+    QString mText;
+    Reason mReason = NoReason;
+};

@@ -418,6 +418,57 @@ void MegaSdkClient::getThumbnail(std::uint64_t handle,
         node.get(), destinationPath.c_str(), new megasdk::AttributeFileListener(std::move(onDone)));
 }
 
+void MegaSdkClient::getPreview(std::uint64_t handle,
+                               const std::string& destinationPath,
+                               std::function<void(Result<std::string>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::string>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<std::string>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
+            MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    // Same TYPE_GET_ATTR_FILE request as getThumbnail above, so the listener is
+    // reused as-is; only the attribute type differs.
+    mApi->getPreview(
+        node.get(), destinationPath.c_str(), new megasdk::AttributeFileListener(std::move(onDone)));
+}
+
+void MegaSdkClient::readFileContent(std::uint64_t handle,
+                                   std::uint64_t maxBytes,
+                                   std::function<void(Result<std::vector<char>>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<char>>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<std::vector<char>>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
+            MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    // Without this the SDK aborts a streaming transfer with API_EAGAIN whenever it
+    // decides the rate is too low -- which a few tens of kilobytes easily looks like.
+    mApi->setStreamingMinimumRate(0);
+    mApi->startStreaming(node.get(),
+                         0,
+                         node->getSize(),
+                         new megasdk::StreamingContentListener(maxBytes, std::move(onDone)));
+}
+
 void MegaSdkClient::getPath(std::uint64_t handle,
                             bool isRoot,
                             std::function<void(Result<std::vector<PathSegment>>)> onDone)

@@ -157,6 +157,31 @@ ToolBar {
             onClicked: if (root.currentPane)
                            root.currentPane.viewMode = 1
         }
+
+        // Separates the two view-mode toggles from the preview toggle, which
+        // is a different kind of switch: those two pick one of a pair, this
+        // one turns a panel on and off.
+        Rectangle {
+            Layout.preferredWidth: Theme.border.thin
+            Layout.preferredHeight: 16
+            Layout.alignment: Qt.AlignVCenter
+            Layout.leftMargin: Theme.spacing.xs
+            Layout.rightMargin: Theme.spacing.xs
+            color: Theme.color.stroke
+        }
+
+        // Same currentPane, so all three buttons on this row agree about which
+        // tab they are talking to. checkable stays false here too, for the
+        // consistency of the row rather than the binding-override reason above
+        // -- a toggle always changes the value it reads.
+        StatusIconButton {
+            text: Theme.glyph.preview
+            ToolTip.text: qsTr("Preview pane")
+            checkable: false
+            checked: root.currentPane?.previewVisible ?? false
+            onClicked: if (root.currentPane)
+                           root.currentPane.previewVisible = !root.currentPane.previewVisible
+        }
     }
 
     // The address bar's ToolbarIconButton (AddressToolBar.qml) has a

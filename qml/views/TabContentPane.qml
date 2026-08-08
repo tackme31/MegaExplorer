@@ -41,11 +41,17 @@ ColumnLayout {
     required property real initialColumnWidthName
     required property real initialColumnWidthModified
     required property real initialColumnWidthSize
+    required property bool initialPreviewVisible
 
     // 0 = list, 1 = grid. Literal default (not bound to initialViewMode) --
     // see the required-property block's comment above for why the real
     // starting value is assigned once, imperatively, in Component.onCompleted.
     property int viewMode: 0
+
+    // Whether the window's single preview pane shows while this tab is the
+    // active one. Per-tab for the same reason viewMode is, and so that the
+    // status bar's three toggles all read the same object.
+    property bool previewVisible: false
 
     // Relayed up to Main.qml, which writes it through to the single Settings
     // instance -- see this file's top comment. Also fires once during
@@ -54,7 +60,13 @@ ColumnLayout {
     signal viewModeWriteBack(int viewMode)
     onViewModeChanged: pane.viewModeWriteBack(pane.viewMode)
 
-    Component.onCompleted: pane.viewMode = pane.initialViewMode
+    signal previewVisibleWriteBack(bool previewVisible)
+    onPreviewVisibleChanged: pane.previewVisibleWriteBack(pane.previewVisible)
+
+    Component.onCompleted: {
+        pane.viewMode = pane.initialViewMode;
+        pane.previewVisible = pane.initialPreviewVisible;
+    }
 
     // Called by Main.qml's Repeater delegate (StackLayout.onIsCurrentItemChanged)
     // when this pane's tab becomes the active one -- hands focus to whichever

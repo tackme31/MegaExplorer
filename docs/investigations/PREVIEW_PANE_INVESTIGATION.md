@@ -428,6 +428,19 @@ N 系統に増える。割に合わない。既存の `treePanelWidth` も同じ
 
 ## 8. この調査で確認していないこと
 
+**実装後の追記（2026-08-09）**: Phase 15 は A+B+C まで実装済み。下記のうち 2 件は
+「実測で確認」ではなく**設計で論点ごと消した**形で決着しているので、先に書いておく
+（経緯は `docs/PROGRESS.md` の Phase 15 エントリ）。
+
+- `SplitView` の子を `visible: false → true` に戻したときの `preferredWidth` は、
+  **`onVisibleChanged` で毎回入れ直す**ことにしたので保たれるかどうかを問わない。
+- `startStreaming` のスレッド境界は、**キャンセル機構を一切持たない**と決めたことで
+  論点が消えた。`onTransferData` の `return false` は maxBytes 超過専用。
+- なお §4.1（`Image` の URL キャッシュ）と §4.2 の一時ファイル削除も、
+  **SDK が書いた JPEG を即読み込んで即削除しメモリで持つ**方式にしたため両方とも不要になった。
+  §4.6 の一時ディレクトリ掃除は、プレビュー分についてはゴミが出なくなったので見送り
+  （既存の Thumbnails/Avatars の蓄積は未解決のまま）。
+
 - `getPreview` の実測レイテンシ（`getThumbnail` と同等と推測しているだけ）。
 - `SplitView` の子を `visible: false` → `true` に戻したとき `SplitView.preferredWidth` が
   保たれるか。attached property の値なので機構上は残るはずだが、実機未確認（§6.2）。

@@ -101,6 +101,10 @@ add_library(MegaExplorerCore STATIC
     src/core/UploadService.cpp
     src/core/ThumbnailService.h
     src/core/ThumbnailService.cpp
+    src/core/PreviewKind.h
+    src/core/PreviewKind.cpp
+    src/core/PreviewService.h
+    src/core/PreviewService.cpp
     src/core/FolderTreeService.h
     src/core/FolderTreeService.cpp
     src/core/QuickAccessService.h
@@ -139,6 +143,11 @@ add_library(MegaExplorerQml STATIC
     src/qml/UploadController.cpp
     src/qml/ThumbnailController.h
     src/qml/ThumbnailController.cpp
+    src/qml/PreviewImageStore.h
+    src/qml/PreviewImageProvider.h
+    src/qml/PreviewImageProvider.cpp
+    src/qml/TextPreviewDecoder.h
+    src/qml/TextPreviewDecoder.cpp
     src/qml/ClipboardController.h
     src/qml/ClipboardController.cpp
     src/qml/TabsController.h
@@ -213,6 +222,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/NameConflictDialog.qml
         qml/components/NewFolderDialog.qml
         qml/components/NodeDropArea.qml
+        qml/components/PreviewPane.qml
         qml/components/QuickAccessSection.qml
         qml/components/SidePanel.qml
         qml/components/SignOutDialog.qml
@@ -235,6 +245,8 @@ qt_add_qml_module(MegaExplorerQml
         src/qml/MenuActions.cpp
         src/qml/NotificationController.h
         src/qml/NotificationController.cpp
+        src/qml/PreviewController.h
+        src/qml/PreviewController.cpp
         src/qml/WindowAgentForeign.h
     RESOURCES
         ${MEGAEXPLORER_LICENSE_RESOURCES}

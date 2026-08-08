@@ -298,4 +298,62 @@ private:
     std::unique_ptr<mega::MegaCancelToken> mCancelToken;
 };
 
+// The one listener that collects bytes rather than a path: startStreaming hands
+// them over in onTransferData and writes no file at all.
+//
+// No mutex around mBuffer -- the SDK serializes one transfer's callbacks, the same
+// assumption DownloadListener already makes across onTransferUpdate/onTransferFinish.
+class StreamingContentListener: public mega::MegaTransferListener
+{
+public:
+    StreamingContentListener(std::uint64_t maxBytes,
+                             std::function<void(Result<std::vector<char>>)> onDone)
+        : mMaxBytes(maxBytes), mOnDone(std::move(onDone))
+    {}
+
+    bool onTransferData(mega::MegaApi* /*api*/,
+                        mega::MegaTransfer* /*transfer*/,
+                        char* buffer,
+                        size_t size) override
+    {
+        // The SDK owns buffer and reuses it after this returns, so the copy is
+        // mandatory, not an optimisation left undone.
+        if (mBuffer.size() + size > mMaxBytes)
+        {
+            mOverflowed = true;
+            return false; // aborts the transfer; the only reason we ever refuse
+        }
+        mBuffer.insert(mBuffer.end(), buffer, buffer + size);
+        return true;
+    }
+
+    void onTransferFinish(mega::MegaApi* /*api*/,
+                          mega::MegaTransfer* /*transfer*/,
+                          mega::MegaError* e) override
+    {
+        // mOverflowed first: refusing above ends the transfer as API_EINCOMPLETE,
+        // so the error code alone would report it as a network failure.
+        if (mOverflowed)
+        {
+            mOnDone(Result<std::vector<char>>::fail("File is larger than the preview limit",
+                                                    MegaErrorCode::kETooMany));
+        }
+        else if (e->getErrorCode() == mega::MegaError::API_OK)
+        {
+            mOnDone(Result<std::vector<char>>::ok(std::move(mBuffer)));
+        }
+        else
+        {
+            mOnDone(Result<std::vector<char>>::fail(e->getErrorString(), e->getErrorCode()));
+        }
+        delete this;
+    }
+
+private:
+    std::uint64_t mMaxBytes;
+    std::function<void(Result<std::vector<char>>)> mOnDone;
+    std::vector<char> mBuffer;
+    bool mOverflowed = false;
+};
+
 } // namespace megasdk

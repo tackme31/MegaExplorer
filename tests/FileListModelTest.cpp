@@ -509,3 +509,31 @@ TEST(FileListModelTest, BandRepaintsOnlyTheRowsThatChanged)
     EXPECT_EQ(firstChanged, 10);
     EXPECT_EQ(lastChanged, 12);
 }
+
+TEST(FileListModelTest, SelectedEntryIsEmptyUnlessExactlyOneRowIsSelected)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(5));
+
+    EXPECT_TRUE(model.selectedEntry().isEmpty());
+
+    model.selectRow(1, Qt::NoModifier);
+    model.selectRow(3, Qt::ControlModifier);
+    EXPECT_TRUE(model.selectedEntry().isEmpty());
+}
+
+TEST(FileListModelTest, SelectedEntryCarriesSizeBytesUnlikeEntryAt)
+{
+    FileListModel model;
+    // The preview pane gates text fetches on this size, so it has to be present.
+    model.setEntries({FileEntry{"notes.txt", 42, 1234, false, 0, false}});
+
+    model.selectRow(0, Qt::NoModifier);
+
+    const QVariantMap entry = model.selectedEntry();
+    EXPECT_EQ(entry.value("handle").toULongLong(), 42u);
+    EXPECT_EQ(entry.value("name").toString(), QStringLiteral("notes.txt"));
+    EXPECT_EQ(entry.value("sizeBytes").toULongLong(), 1234u);
+    EXPECT_FALSE(entry.value("isFolder").toBool());
+    EXPECT_FALSE(model.entryAt(0).contains("sizeBytes"));
+}

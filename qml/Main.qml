@@ -113,6 +113,15 @@ ApplicationWindow {
     // TabContentPane.qml's initialViewMode (see its own comment for why).
     property real treePanelWidth: 240
 
+    // Phase 15's preview pane. The width is window-wide like treePanelWidth
+    // above, but previewVisible is the *new tab's* starting point in the
+    // last-write-wins sense viewMode is -- whether the pane shows is per-tab
+    // (TabContentPane.qml's previewVisible), while how wide it is cannot be:
+    // SplitView.preferredWidth attaches to the one pane item, so N tabs would
+    // need N panes, N controllers and N temp files to disagree about it.
+    property bool previewVisible: false
+    property real previewPaneWidth: 320
+
     // The currently active tab's TabContentPane, kept in sync by the Binding
     // inside mainContentComponent below and injected into StatusBar.qml, which
     // reads/writes it to drive the view-mode toggle against whichever tab is
@@ -131,6 +140,8 @@ ApplicationWindow {
         property alias columnWidthModified: window.columnWidthModified
         property alias columnWidthSize: window.columnWidthSize
         property alias treePanelWidth: window.treePanelWidth
+        property alias previewVisible: window.previewVisible
+        property alias previewPaneWidth: window.previewPaneWidth
     }
 
     // A window-level Shortcut is fine here, unlike FileTableView's Ctrl+A:
@@ -266,8 +277,15 @@ ApplicationWindow {
                     cursorShape: Qt.SplitHCursor
                 }
 
+                // Which edge the rule sits on depends on which side of this
+                // handle the surfaceAlt panel is: left for the tree panel,
+                // right for the preview pane. One delegate serves every
+                // handle, so it has to work this out rather than be told.
+                readonly property bool panelOnLeft: splitHandle.x < contentStack.x
+
                 Rectangle {
-                    anchors.right: parent.right
+                    anchors.right: splitHandle.panelOnLeft ? parent.right : undefined
+                    anchors.left: splitHandle.panelOnLeft ? undefined : parent.left
                     height: parent.height
                     width: splitHandle.active ? Theme.border.drop : Theme.border.thin
                     color: splitHandle.active ? Theme.color.accent : Theme.color.stroke
@@ -292,6 +310,10 @@ ApplicationWindow {
             }
 
             StackLayout {
+                id: contentStack
+                // Stated, not left to SplitView's "last visible child fills"
+                // default: adding the preview pane below would otherwise hand
+                // the fill to it.
                 SplitView.fillWidth: true
                 currentIndex: tabsController.currentIndex
 
@@ -326,8 +348,10 @@ ApplicationWindow {
                         initialColumnWidthName: window.columnWidthName
                         initialColumnWidthModified: window.columnWidthModified
                         initialColumnWidthSize: window.columnWidthSize
+                        initialPreviewVisible: window.previewVisible
 
                         onViewModeWriteBack: vm => window.viewMode = vm
+                        onPreviewVisibleWriteBack: v => window.previewVisible = v
                         onSortOrderWriteBack: (column, ascending) => {
                             window.sortColumn = column;
                             window.sortAscending = ascending;
@@ -366,8 +390,29 @@ ApplicationWindow {
                 }
             }
 
-            onResizingChanged: if (!resizing)
-                                   window.treePanelWidth = treePanel.width
+            PreviewPane {
+                id: previewPane
+                controller: previewController
+                currentPane: window.currentPane
+                visible: window.currentPane?.previewVisible ?? false
+                SplitView.minimumWidth: 220
+                SplitView.maximumWidth: 800
+
+                // Re-applied on every show, not read once like treePanel's
+                // width above: SplitView drops a hidden child out of its
+                // layout entirely, and the tab switches that drive `visible`
+                // here happen throughout the session rather than at creation.
+                // Idempotent, since onResizingChanged writes any user drag
+                // straight back to window.previewPaneWidth.
+                onVisibleChanged: if (visible)
+                                      previewPane.SplitView.preferredWidth = window.previewPaneWidth
+            }
+
+            onResizingChanged: if (!resizing) {
+                                   window.treePanelWidth = treePanel.width;
+                                   if (previewPane.visible)
+                                       window.previewPaneWidth = previewPane.width;
+                               }
         }
     }
 
