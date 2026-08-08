@@ -31,8 +31,8 @@ Item {
     readonly property int contentPadding: Theme.spacing.sm
 
     // Only a fallback: in the toolbar the frame is sized to the search field
-    // beside it (Main.qml). The inner row is 28, smaller than the frame, so it
-    // can't be what states this any more.
+    // beside it (AddressToolBar.qml). The inner row is 28, smaller than the
+    // frame, so it can't be what states this any more.
     implicitHeight: Theme.rowHeight.normal
 
     // Index of the first (leftmost) segment still shown; segments before it

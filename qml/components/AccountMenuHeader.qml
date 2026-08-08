@@ -25,8 +25,8 @@ Item {
 
     // Only a floor. A Menu's contentItem is a ListView, which does not
     // aggregate its children's implicitWidth, so this does not widen the menu
-    // -- Main.qml sets the menu's width explicitly instead, and this item is
-    // stretched to it.
+    // -- AddressToolBar.qml sets the menu's width explicitly instead, and this
+    // item is stretched to it.
     implicitWidth: 280
     implicitHeight: layout.implicitHeight + Theme.spacing.lg * 2
 

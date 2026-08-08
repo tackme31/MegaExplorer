@@ -191,6 +191,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/AboutDialog.qml
         qml/components/AccountMenuHeader.qml
         qml/components/ActionMenu.qml
+        qml/components/AddressToolBar.qml
         qml/components/BandSelector.qml
         qml/components/Breadcrumb.qml
         qml/components/CaptionBar.qml
@@ -211,6 +212,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/NodeDropArea.qml
         qml/components/QuickAccessSection.qml
         qml/components/SidePanel.qml
+        qml/components/StatusBar.qml
         qml/components/TabStrip.qml
         qml/components/ToastStack.qml
         qml/views/FileGridView.qml
