@@ -33,6 +33,10 @@ session lives in companion docs, linked from the relevant section below rather t
     work, not the build files.
   - `RECENTLY_UPDATED_FILE_API.md` — which SDK call backs a "recently updated files" listing.
     No phase attached; relevant to Phase 16.
+  - `SPECIAL_VIEWS_INVESTIGATION.md` — the *framework* for special views (Rubbish, Favourites,
+    Albums, recently-updated) openable as tabs and pinned in the side panel, not any one of them.
+    Conclusion: the "tab = one folder" premise is baked into C++ but barely into QML, and the real
+    trap is that Delete/Ctrl+C/drag-start never consult the menu-action resolver. No phase attached.
   - `PREVIEW_PANE_INVESTIGATION.md` — feeds Phase 15 (in-app preview pane). Conclusion: the
     server-side 1000×1000 preview JPEG covers image/video/PDF in one code path; video *playback*
     and PDF paging are out, since `USE_LIBUV` is off in this build and Qt PDF isn't installed.
