@@ -730,6 +730,24 @@ tab.navigation->refreshIfAffectedBy(destination, destinationIsRoot);   // Favour
 - 完了条件: `tst_DragProxy.qml` に `sourceKind` × `copyMode` の 4 通り、
   `tst_NodeDropArea.qml` に `targetKind` の拒否、`tst_FileViewDropArea.qml` にフォールバック抑止
 
+**F4 実装時に確定した 3 点（2026-08-09）**:
+
+- **お気に入り一覧の中のフォルダ行は「通常のフォルダ」のまま。** §4.1 のマトリクスは「移動 Drop は
+  両方向 ❌」と読めるが、そう実装すると*ツリーやピンの上の同じフォルダは移動を受けるのに一覧の上では
+  受けない*という非対称が残る。行は実ノードなので、抑止するのは §4.3 が言うフォールバック
+  （＝行に当たらないときの「現在フォルダへ」）だけとし、行への move / copy / 外部アップロードは
+  素通しにした。禁じられるのは *(a)* 一覧から出る移動と *(b)* 一覧そのもの（`currentHandle == 0`）
+  への投入の 2 つで、要件の「⇄ 移動不可・Ctrl+コピー可」はこの 2 つで満たされる
+- **出所と行き先で判定の綴りを意図的に変えた。** 出所側 `DragProxy.canDropOn()` は
+  `sourceKind === Favourites` で落とす（その画面の**ポリシー**なので、ゴミ箱やアルバムが
+  黙って継承しないよう名指しする）。行き先側 `NodeDropArea.targetTakesDrops()` は
+  `targetKind === CloudDrive` の default-deny（フォルダ一覧でない画面に**投入先が存在しない**という
+  構造的事実なので、未知の種別は拒否が正しい）。同じ enum を見ていても既定の向きが逆になる
+- **`NodeDropArea.targetKind` は仕様書の「既定 `CloudDrive`」ではなく `required`。** F2 が
+  `setViewKind()` を選んだのと同じ §6-8 の罠を避けるため。隣の `targetHandle` / `targetIsRoot` も
+  required で形が揃う。**ただし設定漏れはコンパイルではなく実行時**（デリゲート生成が null を返す）に
+  出るので、F4 の検証には実機起動で 4 設置箇所すべてを描画させる手順が要った
+
 ### F5 — お気に入りの取得
 
 `IMegaClient::listFavourites()` + `MegaSdkClient` 実装 + `MockMegaClient`。

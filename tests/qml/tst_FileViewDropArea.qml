@@ -78,13 +78,14 @@ TestCase {
                 };
             }
 
-            function begin(mutations, entries, label, scenePos) {
+            function begin(mutations, entries, label, scenePos, sourceKind) {
                 fakeProxy.beginCount += 1;
                 fakeProxy.lastBegin = {
                     "mutations": mutations,
                     "entries": entries,
                     "label": label,
-                    "scenePos": scenePos
+                    "scenePos": scenePos,
+                    "sourceKind": sourceKind
                 };
             }
         }
@@ -118,7 +119,7 @@ TestCase {
         return rec;
     }
 
-    function makeNav(entries, currentHandle, atRoot) {
+    function makeNav(entries, currentHandle, atRoot, viewKind) {
         const model = {
             "entryAtCount": 0,
             "selected": []
@@ -133,7 +134,8 @@ TestCase {
         return {
             "fileListModel": model,
             "currentHandle": currentHandle === undefined ? 7 : currentHandle,
-            "atRoot": atRoot === undefined ? false : atRoot
+            "atRoot": atRoot === undefined ? false : atRoot,
+            "viewKind": viewKind === undefined ? ViewKind.CloudDrive : viewKind
         };
     }
 
@@ -383,6 +385,75 @@ TestCase {
         compare(proxy.lastCanDrop.isRoot, true);
     }
 
+    // A favourites listing is a query, not a folder -- its currentHandle is 0 -- so
+    // the "nothing under the pointer -> into the folder being shown" fallback has
+    // no target and must not even be asked about. Its folder rows are real nodes
+    // and stay ordinary drop targets, move and upload included (spec 4.3).
+    function test_updateDropTarget_favouritesHasNoCurrentFolderFallback_data() {
+        return [
+                    {
+                        "tag": "move onto empty space",
+                        "hasUrls": false,
+                        "entries": [],
+                        "row": -1,
+                        "dropRow": -1,
+                        "onCurrent": false,
+                        "accepted": "untouched",
+                        "canDropCount": 0,
+                        "canUploadCount": 0
+                    },
+                    {
+                        "tag": "move onto a folder row",
+                        "hasUrls": false,
+                        "entries": testCase.folderRow,
+                        "row": 0,
+                        "dropRow": 0,
+                        "onCurrent": false,
+                        "accepted": "untouched",
+                        "canDropCount": 1,
+                        "canUploadCount": 0
+                    },
+                    {
+                        "tag": "upload onto empty space",
+                        "hasUrls": true,
+                        "entries": [],
+                        "row": -1,
+                        "dropRow": -1,
+                        "onCurrent": false,
+                        "accepted": false,
+                        "canDropCount": 0,
+                        "canUploadCount": 0
+                    },
+                    {
+                        "tag": "upload onto a folder row",
+                        "hasUrls": true,
+                        "entries": testCase.folderRow,
+                        "row": 0,
+                        "dropRow": 0,
+                        "onCurrent": false,
+                        "accepted": true,
+                        "canDropCount": 0,
+                        "canUploadCount": 1
+                    }
+                ];
+    }
+
+    function test_updateDropTarget_favouritesHasNoCurrentFolderFallback(data) {
+        const proxy = makeProxy(!data.hasUrls, true);
+        const uploads = makeUploads(true);
+        const nav = makeNav(data.entries, 0, false, ViewKind.Favourites);
+        const area = makeArea(proxy, uploads, nav, makeHits(data.row));
+        const drag = makeDrag(data.hasUrls);
+
+        area.updateDropTarget(drag);
+
+        compare(area.dropRow, data.dropRow);
+        compare(area.dropOnCurrentFolder, data.onCurrent);
+        compare(drag.accepted, data.accepted);
+        compare(proxy.canDropCount, data.canDropCount);
+        compare(uploads.canUploadCount, data.canUploadCount);
+    }
+
     function test_updateDropTarget_hitTestsAtTheEventPosition() {
         const hits = makeHits(-1);
         const area = makeArea(makeProxy(true, false), makeUploads(false), makeNav([]), hits);
@@ -592,6 +663,24 @@ TestCase {
         // The payload's owner: the drag has to be attributed to this tab's
         // mutation controller, not the window's.
         compare(proxy.lastBegin.mutations, testCase.fakeMutations);
+    }
+
+    // Which screen the nodes came from is not recoverable from the payload once the
+    // gesture is under way, so the view's own kind travels with it from here.
+    function test_beginDrag_carriesTheViewKind() {
+        const proxy = makeProxy(false, false);
+        const nav = makeNav([], 0, false, ViewKind.Favourites);
+        nav.fileListModel.selected = [
+                    {
+                        "name": "a.txt",
+                        "handle": 1
+                    }
+                ];
+        const area = makeArea(proxy, makeUploads(false), nav, makeHits());
+
+        area.beginDrag(Qt.point(5, 6));
+
+        compare(proxy.lastBegin.sourceKind, ViewKind.Favourites);
     }
 
     // The only test that exercises DragAutoScroller anywhere in the repo. y is

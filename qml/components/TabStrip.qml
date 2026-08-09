@@ -297,6 +297,7 @@ RowLayout {
                     uploads: uploadController
                     targetHandle: tabButton.navigation.currentHandle
                     targetIsRoot: tabButton.navigation.atRoot
+                    targetKind: tabButton.navigation.viewKind
 
                     // Armed regardless of `accepting`: this tab's own current
                     // folder may be a bad destination (dragging within one tab,

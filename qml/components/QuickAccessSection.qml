@@ -220,6 +220,7 @@ ColumnLayout {
                 uploads: uploadController
                 targetHandle: pinDelegate.handle
                 targetIsRoot: false
+                targetKind: ViewKind.CloudDrive
             }
 
             // activate() rather than navigateTo() directly: the pin's target

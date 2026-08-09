@@ -42,6 +42,11 @@ Item {
     // for why), so it must be nulled by both finish() and cancel().
     property var sourceMutations: null
 
+    // The ViewKind the gesture started in. Which screen the nodes came from is not
+    // recoverable from the payload -- a favourites listing holds rows scattered
+    // across the drive -- so it travels alongside sourceMutations.
+    property int sourceKind: ViewKind.CloudDrive
+
     property string label: ""
 
     readonly property bool active: root.Drag.active
@@ -143,8 +148,9 @@ Item {
         root.y = local.y + 12;
     }
 
-    function begin(mutations, draggedEntries, text, scenePos) {
+    function begin(mutations, draggedEntries, text, scenePos, kind) {
         root.sourceMutations = mutations;
+        root.sourceKind = kind;
         root.entries = draggedEntries;
         root.label = text;
         // Before Drag.active, like sourceMutations: the source view's own DragEnter is
@@ -183,6 +189,13 @@ Item {
     function canDropOn(handle, isRoot) {
         if (!root.sourceMutations)
             return false;
+        // The favourites list forbids moves but not the gesture: copy-vs-move is
+        // only decided by the modifier held at drop time, so the refusal lives here
+        // rather than at drag start (FAVOURITES_VIEW_SPEC.md 4.3). Spelled as one
+        // kind rather than "anything but CloudDrive" because it is that screen's
+        // policy, not a structural fact a later special view would inherit.
+        if (root.sourceKind === ViewKind.Favourites && !root.copyMode)
+            return false;
         return root.copyMode ? root.sourceMutations.canCopyEntriesOn(root.entries, handle, isRoot) :
                                root.sourceMutations.canDropHandlesOn(root.handles, handle, isRoot);
     }
@@ -212,6 +225,7 @@ Item {
         root.Drag.active = false;
         root.entries = [];
         root.sourceMutations = null;
+        root.sourceKind = ViewKind.CloudDrive;
         root.label = "";
         root.copyMode = false;
     }
@@ -223,6 +237,7 @@ Item {
         root.Drag.cancel();
         root.entries = [];
         root.sourceMutations = null;
+        root.sourceKind = ViewKind.CloudDrive;
         root.label = "";
         root.copyMode = false;
     }

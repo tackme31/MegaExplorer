@@ -209,6 +209,9 @@ Item {
                         uploads: uploadController
                         targetHandle: delegateRoot.modelData.handle
                         targetIsRoot: delegateRoot.modelData.isRoot
+                        // Per segment, not per trail: a favourites listing's synthetic
+                        // segment names no node, while a real folder's still does.
+                        targetKind: delegateRoot.modelData.kind
                     }
                 }
 

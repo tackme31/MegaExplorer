@@ -158,6 +158,59 @@ TestCase {
         compare(proxy.canDropOn(99, false), data.answer);
     }
 
+    // The favourites list allows a Ctrl+copy out of it but no move, and the move
+    // has to be refused without asking the controller at all -- the question
+    // "may these nodes move here" has no bearing on a screen that forbids moving.
+    //
+    // Only the refusal is covered here. begin() setting sourceKind is checked in
+    // tst_FileViewDropArea (the one caller), and finish()/cancel() restoring it
+    // cannot be: both need a live drag session, per this file's header.
+    function test_canDropOn_refusesMovesOutOfFavourites_data() {
+        return [
+                    {
+                        tag: "cloud drive/move",
+                        sourceKind: ViewKind.CloudDrive,
+                        copyMode: false,
+                        allowed: true
+                    },
+                    {
+                        tag: "cloud drive/copy",
+                        sourceKind: ViewKind.CloudDrive,
+                        copyMode: true,
+                        allowed: true
+                    },
+                    {
+                        tag: "favourites/move",
+                        sourceKind: ViewKind.Favourites,
+                        copyMode: false,
+                        allowed: false
+                    },
+                    {
+                        tag: "favourites/copy",
+                        sourceKind: ViewKind.Favourites,
+                        copyMode: true,
+                        allowed: true
+                    }
+                ];
+    }
+
+    function test_canDropOn_refusesMovesOutOfFavourites(data) {
+        const proxy = makeProxy();
+        proxy.sourceMutations = makeMutations(true);
+        proxy.sourceKind = data.sourceKind;
+        proxy.copyMode = data.copyMode;
+        compare(proxy.canDropOn(99, false), data.allowed);
+        // Refused before the controller is consulted, not after.
+        compare(testCase.lastCall === null, !data.allowed);
+    }
+
+    // A proxy nobody told otherwise carries an ordinary folder drag, so the guard
+    // above is inert until begin() says so.
+    function test_sourceKind_defaultsToCloudDrive() {
+        const proxy = makeProxy();
+        compare(proxy.sourceKind, ViewKind.CloudDrive);
+    }
+
     // handles is a binding over entries, so assigning entries is enough to keep
     // the two in step -- including back down to nothing.
     function test_handles_trackEntries() {
