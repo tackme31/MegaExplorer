@@ -707,6 +707,20 @@ tab.navigation->refreshIfAffectedBy(destination, destinationIsRoot);   // Favour
 - 完了条件: `tst_FileViewInput.qml` に「`CloudDrive` では従来どおり全部通る」ケース。
   Favourites 側は F6 以降に実機で確認
 
+**F3 実装時に確定した 2 点（2026-08-09）**:
+
+- ガードは**分岐の中**に置き、弾いても `event.accepted = true` は立てる（§4.2 の表は「早期 return」と
+  書いていたが、そうしない）。理由は 2 つ。①`canPerform("moveToRubbish")` / `("cut")` は**選択ゼロでも
+  false** になる（`menuActionApplies` が `selection.total() == 0` で落とす）ので、素通しにすると
+  CloudDrive で選択ゼロの Delete / Ctrl+X が `accepted` を立てなくなり、「挙動変化なし」でなくなる。
+  今日そこは `confirm()` / `putOnClipboard()` が自分で bail したうえで true を立てている。
+  ②分岐構造が変わらないので、Shift+Delete が Cut 分岐へ落ちない保証（`StandardKey.Cut` は Windows で
+  Ctrl+X **かつ** Shift+Delete）が現状のまま残る
+- **F2 をガードしない理由は「仕様がそう言っているから」ではない。** `beginRename()` は選択ゼロのとき
+  カーソル行を選んでから始める設計なので、キー到達時点の選択で `canPerform("rename")` を引くと
+  SingleOnly に落ちてこのフローが壊れる。Ctrl+C のほうは copy が両 `ViewKind` に載っている以上
+  純粋に死にコードなので足さなかった（ゴミ箱など copy を禁じる画面が来たらその phase で足す）
+
 ### F4 — D&D の出所・行き先に種別
 
 `DragProxy.sourceKind`（`begin()` で設定、`finish()`/`cancel()` で戻す）、

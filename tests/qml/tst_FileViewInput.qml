@@ -49,6 +49,9 @@ TestCase {
         const model = {
             "cursor": p.cursor === undefined ? 0 : p.cursor,
             "selected": p.selected === undefined ? [] : p.selected,
+            // ConfirmRubbishDialog.confirm() reads the selection before opening, so
+            // this is how "the Delete key never reached the dialog" is observable.
+            "selectedEntriesCount": 0,
             "selectAllCount": 0,
             "clearCount": 0,
             "selectRowCalls": [],
@@ -58,6 +61,7 @@ TestCase {
             return model.cursor;
         };
         model.selectedEntries = function () {
+            model.selectedEntriesCount += 1;
             return model.selected;
         };
         model.selectAll = function () {
@@ -85,7 +89,15 @@ TestCase {
             "atRoot": p.atRoot === undefined ? false : p.atRoot,
             // Read by FolderBackgroundMenu's actionIds binding, which is evaluated
             // when this component is created -- not only when a menu opens.
-            "viewKind": p.viewKind === undefined ? ViewKind.CloudDrive : p.viewKind
+            "viewKind": p.viewKind === undefined ? ViewKind.CloudDrive : p.viewKind,
+            "canPerformCalls": [],
+            // The action IDs this screen withholds. Empty is Cloud Drive's answer
+            // for every ID the key handler asks about.
+            "denied": p.denied === undefined ? [] : p.denied
+        };
+        nav.canPerform = function (actionId) {
+            nav.canPerformCalls.push(actionId);
+            return nav.denied.indexOf(actionId) === -1;
         };
 
         const mut = {
@@ -307,6 +319,129 @@ TestCase {
         compare(f.clip.cutCount, data.cutCount);
         compare(f.mut.pasteCount, data.pasteCount);
         compare(ev.accepted, true);
+    }
+
+    // ---- handleKey: the resolver gate --------------------------------------
+
+    // Delete / Ctrl+X / Ctrl+V stand in for a menu row, so they ask
+    // FolderNavigationController.canPerform() first (Phase 24b F3). Cloud Drive
+    // allows all three, so the withholding side is only reachable through the
+    // stub until the favourites listing exists.
+    function test_handleKey_gatedKeys_data() {
+        return [
+                    {
+                        "tag": "delete",
+                        "key": Qt.Key_Delete,
+                        "modifiers": Qt.NoModifier,
+                        "standard": [],
+                        "actionId": "moveToRubbish"
+                    },
+                    {
+                        "tag": "cut",
+                        "key": Qt.Key_X,
+                        "modifiers": Qt.ControlModifier,
+                        "standard": [StandardKey.Cut],
+                        "actionId": "cut"
+                    },
+                    {
+                        "tag": "paste",
+                        "key": Qt.Key_V,
+                        "modifiers": Qt.ControlModifier,
+                        "standard": [StandardKey.Paste],
+                        "actionId": "paste"
+                    }
+                ];
+    }
+
+    function test_handleKey_gatedKeys(data) {
+        const f = makeFixture({
+                                  "selected": testCase.oneEntry,
+                                  "denied": [data.actionId]
+                              });
+        const ev = testCase.makeKey(data.key, data.modifiers, data.standard);
+        f.input.handleKey(ev);
+        compare(f.nav.canPerformCalls.length, 1);
+        compare(f.nav.canPerformCalls[0], data.actionId);
+        // Nothing downstream ran: the rubbish dialog never sampled the selection,
+        // and neither clipboard nor paste moved.
+        compare(f.model.selectedEntriesCount, 0);
+        compare(f.clip.cutCount, 0);
+        compare(f.mut.pasteCount, 0);
+        // Consumed all the same -- see handleKey's comment for why the guard sits
+        // inside the branch rather than around it.
+        compare(ev.accepted, true);
+    }
+
+    function test_handleKey_allowedKeysStillAskFirst_data() {
+        return [
+                    {
+                        "tag": "delete",
+                        "key": Qt.Key_Delete,
+                        "modifiers": Qt.NoModifier,
+                        "standard": [],
+                        "actionId": "moveToRubbish",
+                        "sampled": 1,
+                        "cutCount": 0,
+                        "pasteCount": 0
+                    },
+                    {
+                        "tag": "cut",
+                        "key": Qt.Key_X,
+                        "modifiers": Qt.ControlModifier,
+                        "standard": [StandardKey.Cut],
+                        "actionId": "cut",
+                        "sampled": 1,
+                        "cutCount": 1,
+                        "pasteCount": 0
+                    },
+                    {
+                        "tag": "paste",
+                        "key": Qt.Key_V,
+                        "modifiers": Qt.ControlModifier,
+                        "standard": [StandardKey.Paste],
+                        "actionId": "paste",
+                        "sampled": 0,
+                        "cutCount": 0,
+                        "pasteCount": 1
+                    }
+                ];
+    }
+
+    function test_handleKey_allowedKeysStillAskFirst(data) {
+        const f = makeFixture({
+                                  "selected": testCase.oneEntry
+                              });
+        const ev = testCase.makeKey(data.key, data.modifiers, data.standard);
+        f.input.handleKey(ev);
+        compare(f.nav.canPerformCalls.length, 1);
+        compare(f.nav.canPerformCalls[0], data.actionId);
+        compare(f.model.selectedEntriesCount, data.sampled);
+        compare(f.clip.cutCount, data.cutCount);
+        compare(f.mut.pasteCount, data.pasteCount);
+        compare(ev.accepted, true);
+    }
+
+    // The two deliberate exemptions. Copy is offered on every screen, and F2's
+    // beginRename() selects the cursor row when nothing is selected -- asking
+    // canPerform("rename") on the pre-selection state would reject that as
+    // multi/empty and break the flow.
+    function test_handleKey_copyAndF2AreNotGated() {
+        const f = makeFixture({
+                                  "selected": testCase.oneEntry,
+                                  "denied": ["copy", "rename"]
+                              });
+
+        const copyEv = testCase.makeKey(Qt.Key_C, Qt.ControlModifier, [StandardKey.Copy]);
+        f.input.handleKey(copyEv);
+        compare(f.clip.copyCount, 1);
+        compare(copyEv.accepted, true);
+
+        const renameEv = testCase.makeKey(Qt.Key_F2);
+        f.input.handleKey(renameEv);
+        compare(f.input.renamingHandle, 11);
+        compare(renameEv.accepted, true);
+
+        compare(f.nav.canPerformCalls.length, 0);
     }
 
     // ---- handleKey: the arrow matrix ---------------------------------------
