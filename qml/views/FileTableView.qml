@@ -72,19 +72,18 @@ ColumnLayout {
     required property real initialColumnWidthSize
 
     readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size")]
-    readonly property int lastColumn: root.columnLabels.length - 1
-
-    // Right edge of the viewport in the content coordinates cell delegates are
-    // positioned in -- what the row fill and the drop outline extend to.
-    readonly property real viewportRight: tableView.contentX + tableView.width
 
     // Row under a point given in tableView (viewport) coordinates, -1 past the
-    // last row. x is clamped inside the last column so a position to its right
-    // still resolves to the row, matching Explorer's full-row hit area.
+    // last row and -1 anywhere right of the last column: that strip is empty
+    // space, not part of the row. Reverses S6a-a, which had clamped x into the
+    // last column to give Explorer's full-row hit area
+    // (docs/DESIGN_IMPROVEMENT.md 4-1) -- the fill below stops at the same edge,
+    // so the two still agree.
     function rowAt(viewportPos) {
         const pos = tableView.contentItem.mapFromItem(tableView, viewportPos);
-        const x = Math.min(pos.x, tableView.contentWidth - 1);
-        return tableView.cellAtPosition(Qt.point(x, pos.y), false).y;
+        if (pos.x >= tableView.contentWidth)
+            return -1;
+        return tableView.cellAtPosition(pos, false).y;
     }
 
     // Rows a band rectangle (content coordinates) covers, as the {firstRow,
@@ -97,8 +96,9 @@ ColumnLayout {
     // thing that sets their height) and the first one starts at content y 0 --
     // the header is a separate view above this one, not a header row inside it.
     //
-    // x is deliberately not consulted: a row is a full-width target here, the
-    // same rule rowAt() encodes by clamping x into the last column.
+    // x is deliberately not consulted, unlike rowAt() above: a band dragged
+    // down the empty strip right of the last column still catches every row it
+    // spans vertically, which is the whole point of that strip being empty.
     function bandRows(contentRect) {
         const rowHeight = Theme.rowHeight.normal;
         const firstRow = Math.max(0, Math.floor(contentRect.y / rowHeight));
@@ -435,9 +435,9 @@ ColumnLayout {
         // (DESIGN_IMPROVEMENT.md 4-5).
         //
         // The two problems that arrangement had solved are handled elsewhere
-        // now: the row fill reaching past the last column is the delegate's
-        // `trailing` band below, and a total wider than the viewport is what
-        // the horizontal scroll bar is for.
+        // now: a total wider than the viewport is what the horizontal scroll
+        // bar is for, and the strip left over when the columns are narrower is
+        // deliberately empty space rather than part of the row (see rowAt).
         columnWidthProvider: column => root.columnWidthFor(column)
         onWidthChanged: root.fitNameColumnOnce()
 
@@ -486,19 +486,14 @@ ColumnLayout {
         }
 
         // Rubber-band selection (Phase 21). The strip right of the last column
-        // is empty space for this gesture even though rowAt() treats it as
-        // part of the row for clicks: it carries no delegate and no
-        // DragHandler, so a press-drag there has nothing else to mean.
+        // is empty space here as it is everywhere else, so rowAt() alone
+        // answers this: it carries no delegate and no DragHandler, leaving a
+        // press-drag there nothing else to mean.
         BandSelector {
             id: bandSelector
             view: tableView
             suppressed: viewInput.renamingHandle !== 0
-            isOnItem: pos => {
-                const contentPos = tableView.contentItem.mapFromItem(tableView, pos);
-                if (contentPos.x >= tableView.contentWidth)
-                    return false;
-                return tableView.cellAtPosition(contentPos, false).y >= 0;
-            }
+            isOnItem: pos => root.rowAt(pos) >= 0
 
             onBandStarted: additive => {
                 root.forceActiveFocus();
@@ -545,35 +540,13 @@ ColumnLayout {
                                                             ? Theme.color.subtleHover :
                                                               "transparent")
 
-            // Distance from the last column's right edge to the viewport's, 0
-            // for every other column and whenever the columns overflow. Cells
-            // sit in content coordinates, so the viewport's right edge is
-            // contentX + width.
-            readonly property real trailing: cell.column !== root.lastColumn ? 0 : Math.max(0,
-                                                                                            root.viewportRight
-                                                                                            - (cell.x
-                                                                                               + cell.width))
-
-            // Carries the row's fill across that strip. Without it the fill
-            // stops at the last column while the strip stays part of the row
-            // for hit-testing (see rowAt), which is what B6 originally
-            // reported. Nothing clips it: TableView's clip is on the viewport,
-            // not per delegate.
-            Rectangle {
-                x: parent.width
-                width: cell.trailing
-                height: parent.height
-                color: parent.color
-            }
-
             // Outlined rather than filled, so a drop target that also happens
             // to be selected still reads as two distinct states. Drawn once
-            // per row by its first cell, spanning to the viewport's right edge
-            // -- one per cell would put a vertical line at every column
-            // boundary and stop short of the row's end.
+            // per row by its first cell, spanning every column -- one per cell
+            // would put a vertical line at every column boundary.
             Rectangle {
                 visible: viewDrop.dropRow === cell.row && cell.column === 0
-                width: root.viewportRight - cell.x
+                width: tableView.contentWidth - cell.x
                 height: parent.height
                 color: "transparent"
                 border.width: Theme.border.drop
@@ -587,9 +560,9 @@ ColumnLayout {
             // column (4-4).
             RowLayout {
                 visible: !cell.renaming
-                // On the content, not the cell: the selection fill, the
-                // trailing row band and the drop outline all stay solid, and
-                // the rename editor is a sibling, so it is never ghosted.
+                // On the content, not the cell: the selection fill and the drop
+                // outline stay solid, and the rename editor is a sibling, so it
+                // is never ghosted.
                 opacity: cell.cutPending ? Theme.opacity.cut : 1
                 anchors.fill: parent
                 // Horizontal only, and the same token the header uses (S6-a):

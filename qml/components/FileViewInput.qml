@@ -66,8 +66,7 @@ Item {
 
     // Row under the pointer, resolved once here rather than per delegate: a
     // plain child of a Flickable rides contentItem, which scrolls away under a
-    // stationary pointer, and in the table a per-cell handler cannot reach the
-    // strip right of the last column, which still belongs to the row (S6/S6a).
+    // stationary pointer.
     property int hoverRow: -1
 
     // Raised by the empty-space menu, relayed by the host to the tab's single
