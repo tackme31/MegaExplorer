@@ -10,6 +10,7 @@ session lives in companion docs, linked from the relevant section below rather t
   `docs/MEMO.md`'s former roadmap section moved here (2026-07-28, to end dual-tracking drift between
   the two files). The roadmap covers only phases **not yet done**; a shipped phase's original plan
   sits at the top of its own log entry as a `> **Planned as.**` block (2026-08-07, same reason).
+- `docs/FEATURE_IDEAS.md` — candidate features and ideas for future implementation.
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
   and the per-stage log for S0–S11 (S0–S10 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
   the four C++ changes it caused are cross-linked from both.
