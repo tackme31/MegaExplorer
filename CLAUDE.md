@@ -51,6 +51,12 @@ session lives in companion docs, linked from the relevant section below rather t
     "answers synchronously on the calling thread" contract for `getChildren` alone — and measuring
     first, since the post-fetch model reset can't leave the GUI thread either way.
 
+  - `VIEW_HIT_TEST_OFFSET_INVESTIGATION.md` — why hover/click/band selection in both file views
+    land on a row *below* the pointer once the view is scrolled. A bug report, not a phase.
+    Conclusion, measured on Qt 6.11.1: `parent: <a Flickable>` on a pointer handler silently
+    installs it on that Flickable's `contentItem`, so `point.position` already carries `contentY`
+    and the views' `mapFromItem()` adds it a second time.
+
   New studies go in this folder, not in `docs/` directly.
 
 **Writing into those logs.** `docs/PROGRESS.md`, `docs/DESIGN_IMPROVEMENT.md` and

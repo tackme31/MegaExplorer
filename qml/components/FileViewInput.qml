@@ -4,11 +4,13 @@ import QtQuick
 // keyboard, hover, background taps and the three popups those reach. What stays
 // behind in a view is the geometry the injected callables below wrap.
 //
-// Every handler here is parented to `view`, the Flickable viewport. Declared
-// inside a Flickable they would be installed on its contentItem instead (Qt
-// docs, TableView::cellAtPosition), which is only as tall as the content -- so
-// they would never see a tap below the last row. The cost is that positions
-// arrive in viewport coordinates and rowAtPos has to map them.
+// Every handler here is declared with `parent: view` rather than left on this
+// component's own root, which is zero-sized and would never be hovered at all.
+// Qt then installs the handler on the Flickable's *contentItem*, not on `view`
+// itself -- undocumented, measured on 6.11 -- so their positions arrive in
+// content coordinates and viewPos() below is what turns them back into the view
+// coordinates rowAtPos is specified in.
+// docs/investigations/VIEW_HIT_TEST_OFFSET_INVESTIGATION.md has the numbers.
 //
 // The left-button handler also does the row selection, not just the clearing:
 // the default gesturePolicy (DragThreshold) takes a passive grab only, so a
@@ -212,6 +214,15 @@ Item {
         event.accepted = true;
     }
 
+    // A handler's point.position is in *its own parent item's* coordinates, and
+    // that parent is the view's contentItem, which scrolls (see this file's top
+    // comment). Written as a mapping from handler.parent rather than from
+    // view.contentItem so it degrades to an identity if a future Qt honours
+    // `parent: view` literally.
+    function viewPos(handler, pos) {
+        return root.view.mapFromItem(handler.parent, pos);
+    }
+
     // hovered and pos are parameters rather than reads of viewHover so a test
     // can drive both sides without a window; the handler below supplies the real
     // ones. Same for the three below.
@@ -262,8 +273,10 @@ Item {
     HoverHandler {
         id: viewHover
         parent: root.view
-        onPointChanged: root.resolveHover(viewHover.hovered, viewHover.point.position)
-        onHoveredChanged: root.resolveHover(viewHover.hovered, viewHover.point.position)
+        onPointChanged: root.resolveHover(viewHover.hovered,
+                                          root.viewPos(viewHover, viewHover.point.position))
+        onHoveredChanged: root.resolveHover(viewHover.hovered,
+                                            root.viewPos(viewHover, viewHover.point.position))
     }
 
     // Scrolling slides a different row under a stationary pointer, which the
@@ -271,20 +284,23 @@ Item {
     Connections {
         target: root.view
         function onContentYChanged() {
-            root.resolveHover(viewHover.hovered, viewHover.point.position);
+            root.resolveHover(viewHover.hovered,
+                              root.viewPos(viewHover, viewHover.point.position));
         }
     }
 
     TapHandler {
+        id: leftTap
         parent: root.view
         acceptedButtons: Qt.LeftButton
-        onTapped: root.handleLeftTap(point.position, point.modifiers)
+        onTapped: root.handleLeftTap(root.viewPos(leftTap, point.position), point.modifiers)
     }
 
     TapHandler {
+        id: rightTap
         parent: root.view
         acceptedButtons: Qt.RightButton
-        onTapped: root.handleRightTap(point.position)
+        onTapped: root.handleRightTap(root.viewPos(rightTap, point.position))
     }
 
     // Selection-driven, one instance for the whole view rather than one per

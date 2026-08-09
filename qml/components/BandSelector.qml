@@ -74,10 +74,12 @@ Item {
             root.bandFinished();
     }
 
-    // parent: root.view rather than the default: an Item child of a Flickable
-    // lands in contentItem, which is content-sized and scrolls -- it would
-    // never see a press below the last row. Same reason the views' own
-    // view-level handlers and DropAreas spell this out.
+    // parent: root.view rather than the default, so a press below the last row
+    // is still seen -- this component's own root is zero-sized. Qt installs the
+    // handler on the Flickable's contentItem rather than on the view itself, so
+    // its positions arrive in content coordinates and have to be mapped back;
+    // see FileViewInput.qml's viewPos() and
+    // docs/investigations/VIEW_HIT_TEST_OFFSET_INVESTIGATION.md.
     DragHandler {
         id: bandDrag
 
@@ -91,7 +93,8 @@ Item {
                 return;
             }
 
-            const press = bandDrag.centroid.pressPosition;
+            const press = root.view.mapFromItem(bandDrag.parent,
+                                                bandDrag.centroid.pressPosition);
             if (root.suppressed || root.isOnItem(press))
                 return; // not a band gesture; stay inert for its duration
 
@@ -107,7 +110,8 @@ Item {
         onActiveTranslationChanged: {
             if (!root.tracking)
                 return;
-            root.pointerView = bandDrag.centroid.position;
+            root.pointerView = root.view.mapFromItem(bandDrag.parent,
+                                                     bandDrag.centroid.position);
             autoScroller.track(root.pointerView.y);
         }
 
