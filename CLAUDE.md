@@ -39,6 +39,9 @@ session lives in companion docs, linked from the relevant section below rather t
     trap is that Delete/Ctrl+C/drag-start never consult the menu-action resolver. Feeds the future
     phase 24b (Favourites view); its §4.1 "no `FileEntry` change needed" call was already overturned
     by phase 24a, which draws the flag per row.
+  - `FAVOURITES_VIEW_SPEC.md` — the Phase 24b spec proper, built on the framework study above.
+    Its pivot: "Back returns to the Favourites list" forces the view kind into
+    `FolderNavigationService`'s back stack, which rules out a separate controller per screen.
   - `PREVIEW_PANE_INVESTIGATION.md` — feeds Phase 15 (in-app preview pane). Conclusion: the
     server-side 1000×1000 preview JPEG covers image/video/PDF in one code path; video *playback*
     and PDF paging are out, since `USE_LIBUV` is off in this build and Qt PDF isn't installed.
