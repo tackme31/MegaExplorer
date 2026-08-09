@@ -26,6 +26,45 @@ Menu {
     // re-evaluates the bindings below.
     property var context: ({})
 
+    // FluentWinUI3's Menu gives its ListView contentItem an implicitHeight but
+    // no implicitWidth (Qt 6.11), so Menu's own
+    // `implicitContentWidth + padding` term is always 0 and every menu in the
+    // app sat at the style's 200px background width. Labels longer than "Move
+    // to Rubbish bin" were silently elided -- both toggle actions' longer
+    // branch ("Unpin from Quick access", "Remove from Favourites") among them.
+    //
+    // Measured, not bound: itemAt() is not a notifying property, so a binding
+    // over it would never re-evaluate. Re-run on every open below.
+    property real measuredContentWidth: 0
+
+    implicitWidth: Math.max(root.implicitBackgroundWidth + root.leftInset + root.rightInset,
+                            root.measuredContentWidth + root.leftPadding + root.rightPadding)
+
+    // implicitContentWidth + the item's own padding, deliberately not the
+    // item's implicitWidth: MenuItem floors that at its 200px background, which
+    // would widen every menu by the Menu's own padding instead of only the ones
+    // that actually overflow.
+    function remeasure() {
+        let widest = 0;
+        for (let i = 0; i < root.count; ++i) {
+            const item = root.itemAt(i);
+            if (item)
+                widest = Math.max(widest, item.implicitContentWidth + item.leftPadding
+                                  + item.rightPadding);
+        }
+        root.measuredContentWidth = widest;
+    }
+
+    // Connections rather than a declarative onAboutToShow: two of the three
+    // sites declare one of their own, and a handler in a derived component
+    // replaces the base component's outright.
+    Connections {
+        target: root
+        function onAboutToShow() {
+            root.remeasure();
+        }
+    }
+
     // Instantiator (Qt's "Dynamically Generating Menu Items" pattern) rather
     // than a Repeater: Menu's contentItem isn't a plain Item container a
     // Repeater can target. This also avoids the old visible+height:0 hack's
