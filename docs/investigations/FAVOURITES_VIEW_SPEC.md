@@ -678,14 +678,28 @@ tab.navigation->refreshIfAffectedBy(destination, destinationIsRoot);   // Favour
 
 - 決定 1（カット禁止）と §4.1 のマトリクスを `defaultMenuActions()` の `scopes` に落とす。
   **この時点で Favourites 側の期待値もテストに書ける**（画面はまだ無くてよい）
-- **やらない**: QML 側の呼び出し付け替え（F3）
+- **やらない**: キー経路の付け替え（F3）
 - 完了条件: `MenuActionResolverTest` に Favourites の membership ケース、
   `FileListModelTest` に `availableActions` の種別分岐
+
+**F2 実装時に確定した 3 点（2026-08-09）**:
+
+- `MenuActions::forSite()` の QML 呼び出し側 2 箇所は **F3 ではなく F2 で直した**。C++ 側で
+  シグネチャを変えた時点で 1 引数呼び出しは実行時エラーになり、F2 単体で緑を保つには
+  同時に直すか一時的な既定引数を置くしかない。後者は F3 で剥がす往復になる
+- `canPerform(actionId)` は **FileSelection 文脈と `folderTargetContext(FolderBackground)` の
+  OR**。ショートカットは「ファイルビューが開ける 2 つのメニューのどちらかの行の代替」
+  という意味付けで、どの action がどの site に載るかの知識を QML 側に漏らさずに済む。
+  ID 引き当ては `menuActionAllowed(actionId, ctx)` として resolver 側に置いた
+- `FileListModel` への種別注入は `setEntries()` の引数ではなく `setViewKind()`。前者は
+  テスト側の呼び出しが約 50 箇所ある一方、既定引数を付ければ §6-8 と同じ「渡し忘れが黙って
+  CloudDrive」の罠を作る。コントローラ側は `publishViewKind()` 1 つを `refreshBreadcrumb()` の
+  commit と `reset()` の 2 箇所から呼ぶ（＝ `mBreadcrumb` が変わる場所と同じ）
 
 ### F3 — アクション可否の一本化（QML 経路）
 
 `FileViewInput.handleKey` の Delete / Ctrl+X / Ctrl+V を `canPerform()` 経由にする。
-`MenuActions.forSite()` の呼び出し側（`FolderBackgroundMenu` / `FolderPinMenu`）に種別を渡す。
+（`MenuActions.forSite()` の呼び出し側 2 箇所は F2 で済ませた —— 上記参照）
 
 - **ここが 24b で一番「静かに壊れる」箇所**（§4.2 の表）。resolver に軸を足しただけでは
   キー経路は素通しのまま、という SPECIAL_VIEWS §2.3 の指摘そのもの

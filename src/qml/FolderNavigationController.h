@@ -100,6 +100,11 @@ public:
 
     Q_INVOKABLE void navigateTo(quint64 handle, bool isRoot);
 
+    // Whether this tab's screen allows the action with that stable ID right now, for
+    // the keyboard shortcuts that stand in for a menu row. The menu itself doesn't
+    // need it -- its rows already come from the same resolver.
+    Q_INVOKABLE bool canPerform(const QString& actionId) const;
+
     // Empty query restores the cached folder listing, no round-trip. A non-empty one
     // searches recursively under the open folder; results replace the list but leave
     // navigation state alone, so openFolder() still works from search results.
@@ -165,6 +170,10 @@ private:
     // when the resolved path differs, so a sort-order change doesn't rebuild the
     // Breadcrumb Repeater.
     void refreshBreadcrumb();
+
+    // Copies the breadcrumb-derived view kind into the model, which needs it to
+    // resolve availableActions. Called from the only two places mBreadcrumb changes.
+    void publishViewKind();
 
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<SearchService> mSearchService;

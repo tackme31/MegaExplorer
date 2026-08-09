@@ -1,6 +1,7 @@
 #pragma once
 #include "core/FileEntry.h"
 #include "core/MenuAction.h"
+#include "core/ViewKind.h"
 
 #include <QAbstractTableModel>
 #include <QStringList>
@@ -54,6 +55,12 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     void setEntries(std::vector<FileEntry> entries);
+
+    // Which screen these rows belong to, i.e. the scope axis availableActions()
+    // resolves against. Pushed in by the owning FolderNavigationController rather
+    // than passed to setEntries(): the two change together, but a defaulted extra
+    // parameter would let a forgotten call site read as Cloud Drive.
+    void setViewKind(ViewKind kind);
 
     // Updates one role for one row, rather than resetting the model, so the grid
     // doesn't relayout when a thumbnail arrives. No-op if the row is gone.
@@ -165,6 +172,7 @@ private:
     void applyBandSelection(
         int firstGridRow, int lastGridRow, int columns, int firstColumn, int lastColumn);
 
+    ViewKind mViewKind = ViewKind::CloudDrive;
     std::vector<FileEntry> mEntries;
     // Parallel to mEntries. Kept out of FileEntry so that stays Qt-free SDK domain
     // data, not a session-local GUI cache.

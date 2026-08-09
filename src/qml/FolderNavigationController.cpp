@@ -1,6 +1,7 @@
 #include "FolderNavigationController.h"
 
 #include "app/Logging.h"
+#include "core/MenuActionResolver.h"
 #include "GuiThread.h"
 #include "NotificationController.h"
 #include "ViewKindEnum.h"
@@ -188,9 +189,28 @@ void FolderNavigationController::refreshBreadcrumb()
                 if (breadcrumb == mBreadcrumb)
                     return;
                 mBreadcrumb = std::move(breadcrumb);
+                publishViewKind();
                 emit breadcrumbChanged();
             });
         });
+}
+
+void FolderNavigationController::publishViewKind()
+{
+    mFileListModel->setViewKind(static_cast<ViewKind>(viewKind()));
+}
+
+bool FolderNavigationController::canPerform(const QString& actionId) const
+{
+    const std::string id = actionId.toStdString();
+    const ViewKind kind = static_cast<ViewKind>(viewKind());
+
+    // A shortcut stands in for a row of one of the two menus a file view can open --
+    // the selection's and the background's -- so either offering it is enough.
+    const MenuContext selectionContext{
+        kind, MenuSite::FileSelection, mFileListModel->selectionSummary()};
+    return menuActionAllowed(id, selectionContext) ||
+           menuActionAllowed(id, folderTargetContext(MenuSite::FolderBackground, kind));
 }
 
 void FolderNavigationController::search(QString query)
@@ -377,6 +397,7 @@ void FolderNavigationController::reset()
     mLastSearchQuery.clear();
     mHasLoadedOnce = false;
     mBreadcrumb.clear();
+    publishViewKind();
     mBusy->abandonAll();
     emit canGoBackChanged();
     emit breadcrumbChanged();

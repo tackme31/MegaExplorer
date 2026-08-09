@@ -605,3 +605,37 @@ TEST(FileListModelTest, SelectedEntryCarriesIsFavouriteForTheContextMenu)
     EXPECT_TRUE(model.selectedEntry().value("isFavourite").toBool());
     EXPECT_TRUE(model.selectedEntries().first().toMap().value("isFavourite").toBool());
 }
+
+TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
+{
+    // Same selection, two screens: the view kind is the only difference, and it
+    // takes cut and moveToRubbish away (FAVOURITES_VIEW_SPEC.md 4.1).
+    FileListModel model;
+    model.setEntries(makeEntries(3));
+    model.selectRow(0, Qt::NoModifier);
+    ASSERT_EQ(
+        model.availableActions(),
+        (QStringList{"download", "toggleFavourite", "cut", "copy", "rename", "moveToRubbish"}));
+
+    model.setViewKind(ViewKind::Favourites);
+
+    EXPECT_EQ(model.availableActions(),
+              (QStringList{"download", "toggleFavourite", "copy", "rename"}));
+}
+
+TEST(FileListModelTest, SetViewKindNotifiesOnlyOnAChange)
+{
+    // availableActions is a Q_PROPERTY whose NOTIFY is selectionChanged, and the
+    // kind is one of its inputs -- so a real change has to emit, and a no-op mustn't.
+    FileListModel model;
+    int emitted = 0;
+    QObject::connect(&model, &FileListModel::selectionChanged, [&emitted]() {
+        ++emitted;
+    });
+
+    model.setViewKind(ViewKind::CloudDrive);
+    EXPECT_EQ(emitted, 0);
+
+    model.setViewKind(ViewKind::Favourites);
+    EXPECT_EQ(emitted, 1);
+}

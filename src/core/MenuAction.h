@@ -1,4 +1,5 @@
 #pragma once
+#include "ViewKind.h"
 
 #include <vector>
 
@@ -66,6 +67,10 @@ struct MenuActionSpec
     MenuAction action;
     // Never empty: an action nothing can reach is a table bug, not a valid state.
     std::vector<MenuSite> sites;
+    // Same never-empty contract. A set rather than an "any view" value: a ViewKind
+    // added later then starts out offered nowhere -- an empty menu, which is visible --
+    // instead of silently inheriting Cloud Drive's answer everywhere.
+    std::vector<ViewKind> scopes;
     ActionTarget target;
     ActionArity arity;
 };
@@ -83,6 +88,9 @@ struct SelectionSummary
 
 struct MenuContext
 {
+    // First so that a positional initializer written before this field existed fails
+    // to compile rather than binding site to kind -- MenuSite doesn't convert.
+    ViewKind kind = ViewKind::CloudDrive;
     MenuSite site = MenuSite::FileSelection;
     // For FolderBackground/FolderRow this is the synthesized "one folder" summary, so
     // target/arity need no site-specific case: it satisfies FoldersOnly/SingleOnly by

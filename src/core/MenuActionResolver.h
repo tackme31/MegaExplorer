@@ -1,6 +1,7 @@
 #pragma once
 #include "MenuAction.h"
 
+#include <string_view>
 #include <vector>
 
 // Which right-click-menu actions apply here. Owns two of the three things a menu
@@ -25,7 +26,12 @@ resolveMenuActions(const MenuContext& ctx,
 
 // Context for a site whose target is always exactly one folder. Synthesizing
 // {0 files, 1 folder} lets those sites reuse the selection-shaped axes unchanged.
-MenuContext folderTargetContext(MenuSite site);
+MenuContext folderTargetContext(MenuSite site, ViewKind kind);
+
+// Whether the action with this stable ID applies in ctx. resolveMenuActions()'s
+// counterpart for the keyboard, which has an ID but no menu to filter down.
+// Unknown IDs are false.
+bool menuActionAllowed(std::string_view actionId, const MenuContext& ctx);
 
 // Stable string ID for QML, since MenuAction lives in Qt-free src/core and Q_ENUM
 // would need a Q_NAMESPACE wrapper just for this. Unknown actions return "".

@@ -82,7 +82,10 @@ TestCase {
         const nav = {
             "fileListModel": model,
             "currentHandle": p.currentHandle === undefined ? 7 : p.currentHandle,
-            "atRoot": p.atRoot === undefined ? false : p.atRoot
+            "atRoot": p.atRoot === undefined ? false : p.atRoot,
+            // Read by FolderBackgroundMenu's actionIds binding, which is evaluated
+            // when this component is created -- not only when a menu opens.
+            "viewKind": p.viewKind === undefined ? ViewKind.CloudDrive : p.viewKind
         };
 
         const mut = {

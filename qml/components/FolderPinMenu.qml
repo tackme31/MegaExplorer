@@ -13,7 +13,9 @@ import QtQuick
 ActionMenu {
     id: root
 
-    actionIds: MenuActions.forSite(MenuActions.FolderRow)
+    // Always Cloud Drive: a tree row and a pin both name a real folder, whatever the
+    // file view beside them happens to be showing.
+    actionIds: MenuActions.forSite(MenuActions.FolderRow, ViewKind.CloudDrive)
 
     // Fills in the context immediately before opening rather than binding to
     // anything: this describes one particular click.

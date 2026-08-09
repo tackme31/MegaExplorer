@@ -7,21 +7,32 @@ namespace
 
 // The site every target/arity case below is about: FileSelection is the only
 // site whose target actually varies, which is why those two axes exist at all.
-MenuContext fileSelection(int files, int folders)
+MenuContext fileSelection(int files, int folders, ViewKind kind = ViewKind::CloudDrive)
 {
     MenuContext ctx;
+    ctx.kind = kind;
     ctx.site = MenuSite::FileSelection;
     ctx.selection.fileCount = files;
     ctx.selection.folderCount = folders;
     return ctx;
 }
 
-MenuActionSpec spec(ActionTarget target, ActionArity arity)
+// Cloud Drive is what the site/target/arity cases are all about; the scope cases
+// below name the kind themselves.
+MenuContext folderTarget(MenuSite site, ViewKind kind = ViewKind::CloudDrive)
+{
+    return folderTargetContext(site, kind);
+}
+
+MenuActionSpec spec(ActionTarget target,
+                    ActionArity arity,
+                    std::vector<ViewKind> scopes = {ViewKind::CloudDrive, ViewKind::Favourites})
 {
     // The action value itself never matters to menuActionApplies -- only
-    // site/target/arity are inspected -- so every synthetic spec here reuses
+    // site/scope/target/arity are inspected -- so every synthetic spec here reuses
     // one real MenuAction value.
-    return MenuActionSpec{MenuAction::Download, {MenuSite::FileSelection}, target, arity};
+    return MenuActionSpec{
+        MenuAction::Download, {MenuSite::FileSelection}, std::move(scopes), target, arity};
 }
 
 const ActionTarget kAllTargets[] = {
@@ -128,8 +139,32 @@ TEST(MenuActionResolverTest, SiteMustMatchEvenWhenTargetAndArityDo)
     // apply is invisible at a site it doesn't belong to.
     MenuActionSpec s = spec(ActionTarget::Any, ActionArity::Any);
     EXPECT_TRUE(menuActionApplies(s, fileSelection(1, 0)));
-    EXPECT_FALSE(menuActionApplies(s, folderTargetContext(MenuSite::FolderRow)));
-    EXPECT_FALSE(menuActionApplies(s, folderTargetContext(MenuSite::FolderBackground)));
+    EXPECT_FALSE(menuActionApplies(s, folderTarget(MenuSite::FolderRow)));
+    EXPECT_FALSE(menuActionApplies(s, folderTarget(MenuSite::FolderBackground)));
+}
+
+TEST(MenuActionResolverTest, ScopeMustMatchEvenWhenEverythingElseDoes)
+{
+    // Same independence as the site check above, along the view-kind axis.
+    MenuActionSpec s = spec(ActionTarget::Any, ActionArity::Any, {ViewKind::CloudDrive});
+    EXPECT_TRUE(menuActionApplies(s, fileSelection(1, 0)));
+    EXPECT_FALSE(menuActionApplies(s, fileSelection(1, 0, ViewKind::Favourites)));
+}
+
+TEST(MenuActionResolverTest, ScopeAdmitsEveryKindItLists)
+{
+    MenuActionSpec s = spec(ActionTarget::Any, ActionArity::Any);
+    EXPECT_TRUE(menuActionApplies(s, fileSelection(1, 0)));
+    EXPECT_TRUE(menuActionApplies(s, fileSelection(1, 0, ViewKind::Favourites)));
+}
+
+TEST(MenuActionResolverTest, FolderTargetContextCarriesTheViewKind)
+{
+    // The fixed-target sites have no selection to read a kind off, so the caller's
+    // kind has to survive the synthesis -- otherwise a favourites background would
+    // resolve as Cloud Drive's.
+    EXPECT_EQ(folderTargetContext(MenuSite::FolderBackground, ViewKind::Favourites).kind,
+              ViewKind::Favourites);
 }
 
 TEST(MenuActionResolverTest, FolderTargetContextSynthesizesExactlyOneFolder)
@@ -137,7 +172,7 @@ TEST(MenuActionResolverTest, FolderTargetContextSynthesizesExactlyOneFolder)
     // This is what lets the fixed-target sites reuse the selection-shaped
     // target/arity axes unchanged -- FoldersOnly and SingleOnly are satisfied
     // by construction, and the empty-selection short circuit can never fire.
-    MenuContext ctx = folderTargetContext(MenuSite::FolderRow);
+    MenuContext ctx = folderTarget(MenuSite::FolderRow);
     EXPECT_EQ(ctx.site, MenuSite::FolderRow);
     EXPECT_EQ(ctx.selection.fileCount, 0);
     EXPECT_EQ(ctx.selection.folderCount, 1);
@@ -284,9 +319,9 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersToggleFavouriteForMultipleIt
 
 TEST(MenuActionResolverTest, DefaultTableNeverOffersToggleFavouriteOnFixedTargetSites)
 {
-    EXPECT_FALSE(contains(resolveMenuActions(folderTargetContext(MenuSite::FolderBackground)),
+    EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)),
                           MenuAction::ToggleFavourite));
-    EXPECT_FALSE(contains(resolveMenuActions(folderTargetContext(MenuSite::FolderRow)),
+    EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)),
                           MenuAction::ToggleFavourite));
 }
 
@@ -353,8 +388,7 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersRenameOrMoveToRubbishForAnEm
 
 TEST(MenuActionResolverTest, DefaultTableOffersNewFolderPasteSelectAllAndRefreshOnABackground)
 {
-    std::vector<MenuAction> result =
-        resolveMenuActions(folderTargetContext(MenuSite::FolderBackground));
+    std::vector<MenuAction> result = resolveMenuActions(folderTarget(MenuSite::FolderBackground));
     ASSERT_EQ(result.size(), 4u);
     EXPECT_EQ(result[0], MenuAction::NewFolder);
     EXPECT_EQ(result[1], MenuAction::Paste);
@@ -376,15 +410,14 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersPasteAtTheSelectionOrRowSite
     // 14a's drop targets, it deliberately doesn't reach folder rows (Phase 23).
     EXPECT_FALSE(contains(resolveMenuActions(fileSelection(0, 1)), MenuAction::Paste));
     EXPECT_FALSE(
-        contains(resolveMenuActions(folderTargetContext(MenuSite::FolderRow)), MenuAction::Paste));
+        contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::Paste));
 }
 
 TEST(MenuActionResolverTest, DefaultTableNeverOffersCutOrCopyOnABackgroundOrRow)
 {
     const std::vector<MenuAction> background =
-        resolveMenuActions(folderTargetContext(MenuSite::FolderBackground));
-    const std::vector<MenuAction> row =
-        resolveMenuActions(folderTargetContext(MenuSite::FolderRow));
+        resolveMenuActions(folderTarget(MenuSite::FolderBackground));
+    const std::vector<MenuAction> row = resolveMenuActions(folderTarget(MenuSite::FolderRow));
     EXPECT_FALSE(contains(background, MenuAction::Cut));
     EXPECT_FALSE(contains(background, MenuAction::Copy));
     EXPECT_FALSE(contains(row, MenuAction::Cut));
@@ -403,7 +436,7 @@ TEST(MenuActionResolverTest, ClipboardActionIdsAreStable)
 
 TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabAndTogglePinOnAFolderRow)
 {
-    std::vector<MenuAction> result = resolveMenuActions(folderTargetContext(MenuSite::FolderRow));
+    std::vector<MenuAction> result = resolveMenuActions(folderTarget(MenuSite::FolderRow));
     ASSERT_EQ(result.size(), 2u);
     EXPECT_EQ(result[0], MenuAction::OpenInNewTab);
     EXPECT_EQ(result[1], MenuAction::TogglePin);
@@ -415,8 +448,8 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersNewFolderAtTheOtherSites)
     // or clicked, so it must not leak into the selection or row menus.
     EXPECT_FALSE(contains(resolveMenuActions(fileSelection(0, 1)), MenuAction::NewFolder));
     EXPECT_FALSE(contains(resolveMenuActions(fileSelection(1, 0)), MenuAction::NewFolder));
-    EXPECT_FALSE(contains(resolveMenuActions(folderTargetContext(MenuSite::FolderRow)),
-                          MenuAction::NewFolder));
+    EXPECT_FALSE(
+        contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::NewFolder));
 }
 
 TEST(MenuActionResolverTest, SharedActionsKeepTheSameRelativeOrderAcrossSites)
@@ -425,8 +458,7 @@ TEST(MenuActionResolverTest, SharedActionsKeepTheSameRelativeOrderAcrossSites)
     // TogglePin no matter which menu you opened. Regression test for the
     // hand-synchronized ordering the old hardcoded FolderPinMenu.qml needed.
     const std::vector<MenuAction> selection = resolveMenuActions(fileSelection(0, 1));
-    const std::vector<MenuAction> row =
-        resolveMenuActions(folderTargetContext(MenuSite::FolderRow));
+    const std::vector<MenuAction> row = resolveMenuActions(folderTarget(MenuSite::FolderRow));
 
     std::vector<MenuAction> sharedInSelection;
     for (MenuAction action : selection)
@@ -435,4 +467,55 @@ TEST(MenuActionResolverTest, SharedActionsKeepTheSameRelativeOrderAcrossSites)
             sharedInSelection.push_back(action);
     }
     EXPECT_EQ(sharedInSelection, row);
+}
+
+TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourites)
+{
+    // FAVOURITES_VIEW_SPEC.md 4.1: a favourites listing can rename and copy but
+    // never move, and cut is a deferred move (its decision 1).
+    const std::vector<MenuAction> result =
+        resolveMenuActions(fileSelection(1, 0, ViewKind::Favourites));
+    ASSERT_EQ(result.size(), 4u);
+    EXPECT_EQ(result[0], MenuAction::Download);
+    EXPECT_EQ(result[1], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[2], MenuAction::Copy);
+    EXPECT_EQ(result[3], MenuAction::Rename);
+}
+
+TEST(MenuActionResolverTest, DefaultTableStillOffersOpenInNewTabAndTogglePinInFavourites)
+{
+    // Both act on the folder the row names, which is a real node wherever it is
+    // listed -- so neither has a reason to drop out.
+    const std::vector<MenuAction> result =
+        resolveMenuActions(fileSelection(0, 1, ViewKind::Favourites));
+    EXPECT_TRUE(contains(result, MenuAction::OpenInNewTab));
+    EXPECT_TRUE(contains(result, MenuAction::TogglePin));
+}
+
+TEST(MenuActionResolverTest, DefaultTableOffersOnlySelectAllAndRefreshOnAFavouritesBackground)
+{
+    // New folder and paste both need a destination folder, which a flat
+    // cross-drive listing doesn't have.
+    const std::vector<MenuAction> result =
+        resolveMenuActions(folderTarget(MenuSite::FolderBackground, ViewKind::Favourites));
+    ASSERT_EQ(result.size(), 2u);
+    EXPECT_EQ(result[0], MenuAction::SelectAll);
+    EXPECT_EQ(result[1], MenuAction::Refresh);
+}
+
+TEST(MenuActionResolverTest, MenuActionAllowedAgreesWithTheResolvedMenu)
+{
+    // The keyboard's entry point: same table, same answer, addressed by ID.
+    EXPECT_TRUE(menuActionAllowed("moveToRubbish", fileSelection(1, 0)));
+    EXPECT_FALSE(menuActionAllowed("moveToRubbish", fileSelection(1, 0, ViewKind::Favourites)));
+    EXPECT_FALSE(menuActionAllowed("moveToRubbish", fileSelection(0, 0)));
+    EXPECT_TRUE(menuActionAllowed("paste", folderTarget(MenuSite::FolderBackground)));
+    EXPECT_FALSE(
+        menuActionAllowed("paste", folderTarget(MenuSite::FolderBackground, ViewKind::Favourites)));
+}
+
+TEST(MenuActionResolverTest, MenuActionAllowedRejectsAnUnknownId)
+{
+    EXPECT_FALSE(menuActionAllowed("noSuchAction", fileSelection(1, 0)));
+    EXPECT_FALSE(menuActionAllowed("", fileSelection(1, 0)));
 }

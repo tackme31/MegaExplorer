@@ -325,3 +325,26 @@ TEST_F(FolderNavigationControllerTest, RefreshHoldsBusyUntilTheServerSyncAnswers
 
     EXPECT_TRUE(waitForBusy(*busy, false));
 }
+
+TEST_F(FolderNavigationControllerTest, CanPerformAnswersForBothMenusThisViewCouldOpen)
+{
+    // The keyboard's gate (F3 wires Delete/Ctrl+X/Ctrl+V to it): a shortcut stands
+    // in for a row of either the selection menu or the background one. The
+    // Favourites side of the scope axis can't be reached until F5 gives the
+    // controller a way to arrive at that location.
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    FileListModel* model = qobject_cast<FileListModel*>(controller->fileListModel());
+    ASSERT_NE(model, nullptr);
+
+    EXPECT_FALSE(controller->canPerform("moveToRubbish")); // nothing selected
+    EXPECT_TRUE(controller->canPerform("paste"));          // background site, no selection needed
+
+    model->selectRow(0, Qt::NoModifier);
+
+    EXPECT_TRUE(controller->canPerform("moveToRubbish"));
+    EXPECT_TRUE(controller->canPerform("cut"));
+    EXPECT_FALSE(controller->canPerform("noSuchAction"));
+}
