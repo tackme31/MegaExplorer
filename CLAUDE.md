@@ -45,6 +45,11 @@ session lives in companion docs, linked from the relevant section below rather t
   - `PREVIEW_PANE_INVESTIGATION.md` — feeds Phase 15 (in-app preview pane). Conclusion: the
     server-side 1000×1000 preview JPEG covers image/video/PDF in one code path; video *playback*
     and PDF paging are out, since `USE_LIBUV` is off in this build and Qt PDF isn't installed.
+  - `FOLDER_LOAD_ASYNC_INVESTIGATION.md` — making folder navigation stop blocking the GUI thread.
+    No phase attached; overlaps Phase 16. Conclusion: the call chain is already callback-shaped and
+    the tab spinner already exists, so the work is breaking `IMegaClient`'s documented
+    "answers synchronously on the calling thread" contract for `getChildren` alone — and measuring
+    first, since the post-fetch model reset can't leave the GUI thread either way.
 
   New studies go in this folder, not in `docs/` directly.
 
