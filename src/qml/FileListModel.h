@@ -39,6 +39,7 @@ public:
         IsFolderRole,
         HandleRole,
         HasThumbnailRole,
+        IsFavouriteRole,
         ThumbnailPathRole,
         ModificationTimeRole,
         FormattedSizeRole,
@@ -57,6 +58,11 @@ public:
     // Updates one role for one row, rather than resetting the model, so the grid
     // doesn't relayout when a thumbnail arrives. No-op if the row is gone.
     void setThumbnailPath(quint64 handle, QString path);
+
+    // Same one-row/one-role update as setThumbnailPath above, and for the same
+    // reason: setEntries() would reset the model, which relayouts the grid and
+    // drops the scroll position -- too much for toggling one heart.
+    void setFavourite(quint64 handle, bool favourite);
 
     // modifiers is a Qt::KeyboardModifiers value, passed as int from QML. Plain
     // click replaces the selection and moves the anchor; Ctrl toggles this row and
@@ -94,7 +100,8 @@ public:
     // MenuActions singleton instead.
     QStringList availableActions() const;
 
-    // Row-ordered {handle, name, sizeBytes, isFolder} maps. Walks mEntries, not the
+    // Row-ordered {handle, name, sizeBytes, isFolder, isFavourite} maps. Walks
+    // mEntries, not the
     // unordered mSelectedHandles: callers acting on the selection (bulk download, a
     // drag snapshot) need a stable order.
     Q_INVOKABLE QVariantList selectedEntries() const;

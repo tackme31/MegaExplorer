@@ -56,6 +56,12 @@ public:
     // tracks per-row names.
     Q_INVOKABLE void renameEntry(quint64 handle, const QString& newName);
 
+    // Reports nothing on success -- no toast, no cross-tab fan-out. A heart is
+    // toggled often enough that a toast per click would be noise, and the flag is
+    // written straight into this tab's model rather than re-read (see
+    // FolderNavigationController::applyFavouriteChange).
+    Q_INVOKABLE void setEntryFavourite(quint64 handle, bool favourite);
+
     // One SDK call per handle, tallied once through
     // NotificationController::notifyOperation.
     //

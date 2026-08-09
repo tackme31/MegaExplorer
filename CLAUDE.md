@@ -36,7 +36,9 @@ session lives in companion docs, linked from the relevant section below rather t
   - `SPECIAL_VIEWS_INVESTIGATION.md` — the *framework* for special views (Rubbish, Favourites,
     Albums, recently-updated) openable as tabs and pinned in the side panel, not any one of them.
     Conclusion: the "tab = one folder" premise is baked into C++ but barely into QML, and the real
-    trap is that Delete/Ctrl+C/drag-start never consult the menu-action resolver. No phase attached.
+    trap is that Delete/Ctrl+C/drag-start never consult the menu-action resolver. Feeds the future
+    phase 24b (Favourites view); its §4.1 "no `FileEntry` change needed" call was already overturned
+    by phase 24a, which draws the flag per row.
   - `PREVIEW_PANE_INVESTIGATION.md` — feeds Phase 15 (in-app preview pane). Conclusion: the
     server-side 1000×1000 preview JPEG covers image/video/PDF in one code path; video *playback*
     and PDF paging are out, since `USE_LIBUV` is off in this build and Qt PDF isn't installed.
@@ -140,7 +142,7 @@ go-ahead before proceeding (as part of normal plan review, not a separate approv
 
 ## Project status
 
-Phases 0–15 and 17–23a are done — several were pulled forward out of numeric order. The pre-15
+Phases 0–15, 17–23a and 24a are done — several were pulled forward out of numeric order. The pre-15
 code-tidying pass in `docs/REFACTOR_PLANS.md` finished on 2026-08-08 (all of R1–R7). **Next up:
 phase 16** (real-time remote-change reflection).
 

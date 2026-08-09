@@ -122,6 +122,12 @@ QtObject {
         readonly property int tileHeight: 138
         readonly property int thumbSize: 80
         readonly property int labelHeight: 38 // two lines at font.body
+        // Favourite marker overlaid on the thumbnail's bottom-right corner.
+        // Drawn bare, so it can vanish into a light or busy photo -- accepted,
+        // an opaque disc behind it was more conspicuous than the state it
+        // reports. Sits fully inside the thumbnail frame, so it neither fights
+        // the frame's clip nor changes tileHeight above.
+        readonly property int favouriteGlyph: 12
     }
 
     // Segoe Fluent Icons code points, spelled as escapes: the raw glyphs sit in
@@ -175,6 +181,15 @@ QtObject {
         // E80A above and paints as an amber eye. DockRight draws what the
         // button actually does -- a pane down the right-hand edge.
         readonly property string preview: "\uE90D" // DockRight
+        // Favourite marker on a grid tile and a detail-view name cell. Both
+        // hearts are in Segoe MDL2 Assets at the same code points (the cmap
+        // script in docs/DESIGN_IMPROVEMENT.md section 11), and both were
+        // rendered before being picked -- necessary, because the pair is the
+        // reverse of what the MDL2 names suggest: EB51 draws the outline and
+        // EB52 the solid one.
+        readonly property string favourite: "\uEB52"        // solid heart
+        readonly property string favouriteOutline: "\uEB51" // outline heart
+
         // Toast dismiss (S10). No cmap check needed: TabStrip's tab-close and
         // CaptionBar's window-close already paint this one.
         readonly property string close: "\uE8BB" // ChromeClose
@@ -193,6 +208,12 @@ QtObject {
             readonly property string openInNewTab: "\uE8A7"  // OpenInNewWindow
             readonly property string pin: glyphSet.pin
             readonly property string unpin: "\uE77A"         // Unpin
+            // One glyph for both directions, unlike pin/unpin above: the font
+            // has no crossed-out heart (HeartBroken is a different idea, not a
+            // negation), and a solid heart for "add" was the only filled icon
+            // in an otherwise outline menu, which read as emphasis rather than
+            // as a different action. The label carries the direction.
+            readonly property string toggleFavourite: glyphSet.favouriteOutline
             readonly property string cut: "\uE8C6"           // Cut
             readonly property string copy: "\uE8C8"          // Copy
             readonly property string paste: "\uE77F"         // Paste

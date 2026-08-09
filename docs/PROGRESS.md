@@ -56,7 +56,9 @@ are post-MVP, sequenced by priority/dependency.
 | 22b | Tab reordering + drop-onto-tab move | done (pulled forward) |
 | 23 | Copy / cut / paste | done (pulled forward) |
 | 15 | In-app preview (right pane, `getPreview` + `startStreaming`) | done |
+| 24a | Favourite toggle (context menu + heart badge) | done (pulled forward) |
 | 16 | Real-time remote-change reflection | future, post-MVP |
+| 24b | Favourites view (a special view; needs the 24b prep in the investigation) | future |
 | 24+ | Undecided | undo and full bidirectional local sync both stay out of scope |
 
 ### Phases 20a–23 — the detail pass (all pulled forward, ahead of 15)
@@ -80,6 +82,15 @@ own right, and with 23 in place the practical need for it is small. Not deferred
 
 Reflect other devices' changes via the SDK's push-notification mechanism into whatever listing is
 open. Additive on top of phase 6's refresh.
+
+### Phase 24b (future) — the Favourites view
+
+The listing half of 24a. `MegaSearchFilter::byFavourite(BOOL_FILTER_ONLY_TRUE)` fed to
+`MegaApi::search()` returns real nodes, so the existing table/grid can show it as-is
+(`MegaApi::getFavourites()` is deprecated and hands back bare handles). What it actually needs first
+is the framework work in `docs/investigations/SPECIAL_VIEWS_INVESTIGATION.md` — a location value
+type carrying a view kind, and the "can this action run here" query that Delete/Ctrl+C/drag-start
+currently bypass. Per that study's own ordering, the Rubbish bin is the cheaper first special view.
 
 ### Phase 24+ — undecided
 
@@ -3677,3 +3688,109 @@ symptom is gone either way; that study lists the exact probes to re-add if it ev
 
 The lesson worth carrying: a 16ms `QTimer` in `main.cpp` that reports how late it actually fired
 answers "is the GUI thread blocked at all" in one run, and everything else followed from it.
+
+## Phase 24a — favourite toggle (done)
+
+> **Planned as.** Context-menu entry to add/remove a node's favourite flag, plus a heart marker on
+> the row: bottom-right of the thumbnail in the grid, right-aligned in the name cell in the detail
+> view. Menu wording decided from the flag fetched with the listing, not read back at right-click
+> time. If the flag has drifted from the server, do what the user pressed; toast only if the SDK
+> refuses. Single-selection only, `MenuSite::FileSelection` only.
+
+Groundwork for the Favourites view (24b), and the reason the flag has to live per row rather than
+per screen.
+
+### The investigation's "no `FileEntry` change needed" premise didn't survive
+
+`docs/investigations/SPECIAL_VIEWS_INVESTIGATION.md` §4.1 concluded that a favourite flag on
+`FileEntry` was unnecessary: a screen that lists *only* favourites doesn't need to mark them. True
+for the view, false the moment the flag is drawn on every ordinary row. `FileEntry` gained
+`isFavourite`, which meant the hand-written `operator==` too (C++17, no `<=>`), and one line in
+`nodeToEntry()` — the single `MegaNode` → `FileEntry` mapping point, so `getChildren`, `search` and
+`findChildFiles` all picked it up for free.
+
+### Success does not refetch the folder
+
+Every other mutation here ends in `refreshVisibleListing()`. That is wrong for this one: a heart is
+toggled far more often than a rename, and `setEntries()` resets the model, which relayouts the grid
+and throws the scroll position away — click a heart on row 200 and the view jumps to the top.
+
+So the flag is written straight into the row instead: `FileListModel::setFavourite()`, one row and
+one role via `dataChanged`, the same shape `setThumbnailPath()` already uses for exactly this
+reason. `FolderNavigationController::applyFavouriteChange()` wraps it because the model is not the
+only copy — `mLastFolderEntries` is restored verbatim when a search is cleared, so patching only the
+model makes the heart reappear/vanish on clearing a search.
+
+No toast on success either, and no cross-tab fan-out (`nodesMoved`-style): another tab showing the
+same folder keeps a stale heart until it refreshes. Accepted, and consistent with `renameEntry`,
+which has always been self-tab-only.
+
+### Drift is handled by not asking
+
+The menu samples `favourited` from the model when it opens and sends `!favourited` — it never reads
+the server back first. `MegaApi::setNodeFavourite()` sets or clears an attribute and reports success
+for a value the node already holds, so the idempotence means the user gets the state the row they
+clicked promised them, whichever way the cached flag had drifted. There is no reconciliation code
+because there is nothing to reconcile.
+
+### The bug this exposed: every menu in the app was 200px wide
+
+`Remove from Favourites` came out as `Remove from Favou…`. First guess — the menu latches its width
+at first open — was wrong; so was the second, that `sampleActions()` builds the items before
+`onAboutToShow` supplies the context they read (true, and fixed, but not the cause).
+
+The cause is in the style. `FluentWinUI3/Menu.qml` gives its `ListView` contentItem an
+`implicitHeight: contentHeight` and **no `implicitWidth`**, so the `implicitContentWidth + padding`
+term of its own width expression is permanently 0 and every menu sits at the 200px background
+width (Qt 6.11). `Move to Rubbish bin` happened to be the longest label that fit, which is why this
+went unnoticed — but `Unpin from Quick access` had been silently elided since Phase 11.
+
+`ActionMenu.qml` now measures its items on `aboutToShow` and feeds the result to `implicitWidth`.
+Two details worth keeping:
+
+- It sums `implicitContentWidth + leftPadding + rightPadding` per item rather than reading
+  `implicitWidth`, because `MenuItem` floors that at its own 200px background — using it would
+  widen *every* menu by the Menu's padding instead of only the ones that overflow.
+- The hook is a `Connections { function onAboutToShow() }`, not a declarative `onAboutToShow`: two
+  of the three site wrappers declare one of their own, and a handler in a derived component replaces
+  the base component's outright.
+
+### Smaller things worth keeping
+
+- `EB51`/`EB52` are the reverse of what the MDL2 names suggest — `EB51` draws the *outline* heart
+  and `EB52` the solid one. Both are in Segoe Fluent Icons and Segoe MDL2 Assets at the same code
+  points, but §11's "render it before you commit to it" rule is what caught the swap.
+- The menu row uses the **outline** heart in both directions. The first cut showed a solid one for
+  "add" and the outline for "remove", on the logic that each row draws the state it would produce.
+  On screen that read wrong: every other row in the menu is an outline icon, so the filled heart
+  looked like emphasis rather than like a different action. There is no crossed-out heart to pair
+  with it either (`HeartBroken` is a different idea, not a negation), so the label alone carries the
+  direction — unlike `togglePin`, which does have a real Unpin glyph.
+- The **row marker** stays solid, since there it reports a state rather than offering an action. It
+  sits *inside* the thumbnail frame in the grid, so it inherits both the frame's `clip` and its
+  cut-ghosting opacity — a cut item's heart fades with its thumbnail, which is the wanted reading.
+  It is drawn bare: an opaque disc behind it (the first cut, for legibility over a photo) turned out
+  to draw more attention than the state it was reporting, so the risk of the heart vanishing into a
+  pale image is accepted instead.
+- `ActionArity::SingleOnly` is the entire implementation of "no favourite toggle on a multi-select",
+  the same way it is for Rename. It also removes the question of what a mixed selection's label
+  would say.
+
+### Testing
+
+`MenuActionResolverTest` (membership + arity + stable ID), `FileListModelTest` (the role, the
+in-place update asserting `modelReset` never fires, the `selectedEntry()` key the menu reads),
+`FileOperationServiceTest` (pass-through both ways), `FileMutationControllerTest` (no refetch and no
+toast on success; the right context string on failure; the idempotent double-add),
+`tst_ActionCatalog.qml` (label/icon flip, trigger sends the negation),
+`tst_ToastStack.qml` (the two new error contexts). 533/533 green.
+
+The delegates themselves stay untested, as all of `tests/qml/` does for those two files — they
+reference `clipboardController`, which the bare `QUICK_TEST_MAIN` runner has no way to provide.
+
+### Deliberately not done
+
+Clicking the heart itself to toggle (menu only); the `MenuSite::FolderRow` menus, which would need
+favourite state plumbed into `FolderTreeModel`/`QuickAccessModel`; live cross-tab updates via
+`MegaNode::CHANGE_TYPE_FAVOURITE` (Phase 16's territory); sorting by favourite, since
+`ORDER_FAV_ASC/DESC` group rather than sort and don't fit the existing column→sort-key mapping.

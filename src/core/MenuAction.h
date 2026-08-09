@@ -13,6 +13,9 @@ enum class MenuAction
     // One action, not a Pin/Unpin pair: the resolver sees only counts and a site, so
     // it can't know whether the folder is already pinned. QML picks the label.
     TogglePin,
+    // One action like TogglePin above, and for the same reason: the resolver can't
+    // see the favourite flag, so QML picks between "add" and "remove".
+    ToggleFavourite,
     Cut,
     Copy,
     // FolderBackground only, and unconditional there: an empty clipboard is a greying

@@ -296,6 +296,7 @@ Item {
     FileContextMenu {
         id: contextMenu
         navController: root.navController
+        mutController: root.mutController
         onRenameRequested: root.beginRename()
         onMoveToRubbishRequested: confirmRubbishDialog.confirm()
     }

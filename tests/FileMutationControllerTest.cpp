@@ -77,16 +77,10 @@ protected:
         // count getRootChildren calls, i.e. that the mutation actually caused a
         // re-read that reached the SDK and landed in the model. A fake could
         // only report that some refresh hook was called.
-        controller = makeGuiOwned<FolderNavigationController>(navigationService,
-                                                              searchService,
-                                                              busy,
-                                                              notifications.get());
-        mutations = makeGuiOwned<FileMutationController>(controller,
-                                                        navigationService,
-                                                        fileOps,
-                                                        busy,
-                                                        notifications.get(),
-                                                        clipboard.get());
+        controller = makeGuiOwned<FolderNavigationController>(
+            navigationService, searchService, busy, notifications.get());
+        mutations = makeGuiOwned<FileMutationController>(
+            controller, navigationService, fileOps, busy, notifications.get(), clipboard.get());
 
         QObject::connect(notifications.get(),
                          &NotificationController::operationFinished,
@@ -435,6 +429,71 @@ TEST_F(FileMutationControllerTest, RenameEntryRefetchesOnSuccess)
     EXPECT_EQ(rootFetches - fetchesBefore, 1);
 }
 
+TEST_F(FileMutationControllerTest, SetEntryFavouriteUpdatesTheRowInPlaceWithoutRefetching)
+{
+    givenRootListing({entry("a", 1), entry("b", 2)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, setNodeFavourite(2u, true, _))
+        .WillOnce(InvokeArgument<2>(Result<void>::ok()));
+    const int fetchesBefore = rootFetches;
+
+    mutations->setEntryFavourite(2, true);
+    flush();
+
+    EXPECT_EQ(errorCalls, 0);
+    // No toast on success either -- a heart is toggled often enough that one
+    // would be noise.
+    EXPECT_EQ(operationCalls, 0);
+    // The point of the whole in-place path: a refetch would reset the model.
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
+    EXPECT_TRUE(model()->data(model()->index(1, 0), FileListModel::IsFavouriteRole).toBool());
+}
+
+TEST_F(FileMutationControllerTest, SetEntryFavouriteReportsFailureUnderTheActionsOwnContext)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, setNodeFavourite(1u, false, _))
+        .WillOnce(InvokeArgument<2>(Result<void>::fail("denied", MegaErrorCode::kEAccess)));
+
+    mutations->setEntryFavourite(1, false);
+    flush();
+
+    ASSERT_EQ(errorCalls, 1);
+    // Not a shared "favourite" context: ToastStack.qml words the two directions
+    // differently.
+    EXPECT_EQ(lastErrorContext, QStringLiteral("removeFavourite"));
+    EXPECT_EQ(lastErrorReason, NotificationController::NoPermission);
+    // The model keeps the server's state, not the one the user asked for.
+    EXPECT_FALSE(model()->data(model()->index(0, 0), FileListModel::IsFavouriteRole).toBool());
+}
+
+TEST_F(FileMutationControllerTest, SetEntryFavouriteAppliesTheRequestedValueEvenIfItAlreadyHoldsIt)
+{
+    // The drift case: the listing says "not a favourite" but the server
+    // disagrees. setNodeFavourite is idempotent, so honouring the user's intent
+    // needs no read-back.
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, setNodeFavourite(1u, true, _))
+        .Times(2)
+        .WillRepeatedly(InvokeArgument<2>(Result<void>::ok()));
+
+    mutations->setEntryFavourite(1, true);
+    flush();
+    mutations->setEntryFavourite(1, true);
+    flush();
+
+    EXPECT_EQ(errorCalls, 0);
+    EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsFavouriteRole).toBool());
+}
+
 TEST_F(FileMutationControllerTest, BusyClearsOnlyAfterTheLastCallbackOfABulkOperation)
 {
     givenRootListing({entry("a", 1), entry("b", 2)});
@@ -777,12 +836,10 @@ TEST_F(FileMutationControllerTest, PasteEmitsNodesCopiedOnlyWhenSomethingSucceed
     clipboard->copy(clipboardEntries({entry("a", 1)}), 7, false);
 
     int copiedSignals = 0;
-    QObject::connect(mutations.get(),
-                     &FileMutationController::nodesCopied,
-                     mutations.get(),
-                     [&](quint64, bool) {
-                         ++copiedSignals;
-                     });
+    QObject::connect(
+        mutations.get(), &FileMutationController::nodesCopied, mutations.get(), [&](quint64, bool) {
+            ++copiedSignals;
+        });
 
     EXPECT_CALL(*client, copyNode(_, _, _, _, _))
         .WillOnce(InvokeArgument<4>(Result<void>::fail("gone", MegaErrorCode::kENoEnt)))
@@ -985,8 +1042,7 @@ TEST_F(FileMutationControllerTest, CopyEntriesToRefusesTheWholeDropWhenTheTarget
     EXPECT_EQ(lastErrorContext, QStringLiteral("copy"));
 }
 
-TEST_F(FileMutationControllerTest,
-       CopyEntriesToReportsAnErrorWithoutReadingWhenTheTargetRefuses)
+TEST_F(FileMutationControllerTest, CopyEntriesToReportsAnErrorWithoutReadingWhenTheTargetRefuses)
 {
     givenRootListing({});
     controller->loadRoot();

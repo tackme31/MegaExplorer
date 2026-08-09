@@ -80,7 +80,7 @@ TestCase {
 
     // ---- describeError: context -> clause ---------------------------------
 
-    // The eight contexts that had an errorCode to classify, so the reason gets
+    // The ten contexts that had an errorCode to classify, so the reason gets
     // appended. One row each is enough: the reason half is covered above.
     function test_describeError_classified_data() {
         return [
@@ -108,6 +108,16 @@ TestCase {
                         tag: "createFolder",
                         context: "createFolder",
                         expected: "Failed to create folder — check your connection"
+                    },
+                    {
+                        tag: "addFavourite",
+                        context: "addFavourite",
+                        expected: "Failed to add to Favourites — check your connection"
+                    },
+                    {
+                        tag: "removeFavourite",
+                        context: "removeFavourite",
+                        expected: "Failed to remove from Favourites — check your connection"
                     },
                     {
                         tag: "paste",

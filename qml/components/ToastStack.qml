@@ -214,6 +214,16 @@ Item {
         case "createFolder":
             text = root.describeReason(qsTr("Failed to create folder"), reason, rawMessage);
             break;
+            // Split in two rather than one "favourite" context: the two failures
+            // are opposite actions, and a single wording would have to say
+            // "change" instead of what the user actually pressed.
+        case "addFavourite":
+            text = root.describeReason(qsTr("Failed to add to Favourites"), reason, rawMessage);
+            break;
+        case "removeFavourite":
+            text = root.describeReason(qsTr("Failed to remove from Favourites"), reason,
+                                       rawMessage);
+            break;
             // The whole paste was refused before anything was attempted (a
             // read-only share, a destination that vanished). Per-item failures
             // never come here -- they land in the "copy"/"move" tally above.

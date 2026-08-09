@@ -223,9 +223,10 @@ GridView {
         required property bool hasThumbnail
         required property string thumbnailPath
         required property bool selected
+        required property bool isFavourite
 
-        readonly property bool renaming: viewInput.renamingHandle !== 0
-                                         && viewInput.renamingHandle === gridDelegateItem.handle
+        readonly property bool renaming: viewInput.renamingHandle !== 0 && viewInput.renamingHandle
+                                         === gridDelegateItem.handle
 
         readonly property bool dropTarget: viewDrop.dropRow === gridDelegateItem.index
 
@@ -313,6 +314,20 @@ GridView {
                         isFolder: gridDelegateItem.isFolder
                         size: Theme.iconSize.lg
                     }
+
+                    // Inside the frame, so it inherits both the clip and the
+                    // cut ghosting above -- a cut item's heart fading with its
+                    // thumbnail is the wanted reading.
+                    Label {
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.margins: Theme.spacing.xs
+                        visible: gridDelegateItem.isFavourite
+                        font.family: Theme.font.iconFamily
+                        font.pixelSize: Theme.grid.favouriteGlyph
+                        text: Theme.glyph.favourite
+                        color: Theme.color.accent
+                    }
                 }
 
                 Label {
@@ -348,8 +363,8 @@ GridView {
                             originalName: gridDelegateItem.name
                             isFolder: gridDelegateItem.isFolder
                             onCommitted: newName => viewInput.commitRename(gridDelegateItem.handle,
-                                                                          gridDelegateItem.name,
-                                                                          newName)
+                                                                           gridDelegateItem.name,
+                                                                           newName)
                             onCancelled: Qt.callLater(viewInput.endRename)
                         }
                     }

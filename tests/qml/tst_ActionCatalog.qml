@@ -24,6 +24,7 @@ TestCase {
             "isRoot": false,
             "name": "folder",
             "pinned": false,
+            "favourited": false,
             "canPaste": true,
             "entries": [
                 {
@@ -62,6 +63,11 @@ TestCase {
                         tag: "openInNewTab",
                         id: "openInNewTab",
                         expected: "Open in new tab"
+                    },
+                    {
+                        tag: "toggleFavourite",
+                        id: "toggleFavourite",
+                        expected: "Add to Favourites"
                     },
                     {
                         tag: "cut",
@@ -115,6 +121,16 @@ TestCase {
         compare(ActionCatalog.label("togglePin", ctx), "Unpin from Quick access");
     }
 
+    // Same shape as togglePin above, and the same reason it can't be a
+    // hardcoded pair: the resolver hands over one action ID for both directions.
+    function test_label_toggleFavouriteFollowsFavouritedState() {
+        const ctx = fullCtx();
+        ctx.favourited = false;
+        compare(ActionCatalog.label("toggleFavourite", ctx), "Add to Favourites");
+        ctx.favourited = true;
+        compare(ActionCatalog.label("toggleFavourite", ctx), "Remove from Favourites");
+    }
+
     // ---- icon --------------------------------------------------------------
 
     function test_icon_data() {
@@ -133,6 +149,11 @@ TestCase {
                         tag: "openInNewTab",
                         id: "openInNewTab",
                         expected: Theme.glyph.menu.openInNewTab
+                    },
+                    {
+                        tag: "toggleFavourite",
+                        id: "toggleFavourite",
+                        expected: Theme.glyph.menu.toggleFavourite
                     },
                     {
                         tag: "cut",
@@ -188,9 +209,20 @@ TestCase {
         compare(ActionCatalog.icon("togglePin", ctx), Theme.glyph.menu.unpin);
     }
 
+    // The counterpart of togglePin's icon test, asserting the opposite: this
+    // one deliberately does *not* follow the state, so a later "make it a pair
+    // like togglePin" edit has to delete a test rather than slip through.
+    function test_icon_toggleFavouriteIsTheSameGlyphBothWays() {
+        const ctx = fullCtx();
+        ctx.favourited = false;
+        const off = ActionCatalog.icon("toggleFavourite", ctx);
+        ctx.favourited = true;
+        compare(ActionCatalog.icon("toggleFavourite", ctx), off);
+    }
+
     // ---- isEnabled ---------------------------------------------------------
 
-    // Nine of the eleven entries declare no `enabled` lambda and are always on.
+    // Ten of the twelve entries declare no `enabled` lambda and are always on.
     function test_isEnabled_data() {
         return [
                     {
@@ -204,6 +236,10 @@ TestCase {
                     {
                         tag: "openInNewTab",
                         id: "openInNewTab"
+                    },
+                    {
+                        tag: "toggleFavourite",
+                        id: "toggleFavourite"
                     },
                     {
                         tag: "cut",
@@ -285,7 +321,7 @@ TestCase {
         verify(true);
     }
 
-    // ---- trigger: the six entries that route through ctx --------------------
+    // ---- trigger: the seven entries that route through ctx ------------------
 
     function test_trigger_requestCallbacks_data() {
         return [
@@ -327,6 +363,28 @@ TestCase {
         };
         ActionCatalog.trigger("paste", ctx);
         compare(calls, 1);
+    }
+
+    // Sends the opposite of what was sampled, never a re-read: the whole point
+    // is that the user gets the state the row they clicked promised them.
+    function test_trigger_toggleFavouriteSendsTheOppositeOfTheSampledState() {
+        let received = [];
+        const ctx = fullCtx();
+        ctx.mutations = {
+            "setEntryFavourite": function (handle, favourite) {
+                received.push([handle, favourite]);
+            }
+        };
+
+        ctx.favourited = false;
+        ActionCatalog.trigger("toggleFavourite", ctx);
+        ctx.favourited = true;
+        ActionCatalog.trigger("toggleFavourite", ctx);
+
+        compare(received.length, 2);
+        compare(received[0][0], 42);
+        compare(received[0][1], true);
+        compare(received[1][1], false);
     }
 
     function test_trigger_refreshCallsNavController() {

@@ -524,6 +524,7 @@ ColumnLayout {
             required property string formattedSize
             required property double modificationTime
             required property bool selected
+            required property bool isFavourite
 
             // Only the name column of the one renamed row turns into an editor.
             readonly property bool renaming: viewInput.renamingHandle !== 0
@@ -631,6 +632,18 @@ ColumnLayout {
                         return "";
                     }
                 }
+
+                // Right edge of the name column, since the Label above takes
+                // all the slack. No disc behind it, unlike the grid's badge:
+                // the backdrop here is a flat row, not a photograph.
+                Label {
+                    visible: cell.column === 0 && cell.isFavourite
+                    font.family: Theme.font.iconFamily
+                    font.pixelSize: Theme.font.caption
+                    color: Theme.color.accent
+                    verticalAlignment: Text.AlignVCenter
+                    text: Theme.glyph.favourite
+                }
             }
 
             // The Component is declared inline rather than shared at root level
@@ -647,7 +660,7 @@ ColumnLayout {
                         originalName: cell.name
                         isFolder: cell.isFolder
                         onCommitted: newName => viewInput.commitRename(cell.handle, cell.name,
-                                                                      newName)
+                                                                       newName)
                         onCancelled: Qt.callLater(viewInput.endRename)
                     }
                 }

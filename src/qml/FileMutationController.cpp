@@ -68,6 +68,31 @@ void FileMutationController::renameEntry(quint64 handle, const QString& newName)
         });
 }
 
+void FileMutationController::setEntryFavourite(quint64 handle, bool favourite)
+{
+    mBusy->begin();
+    mFileOps->setFavourite(
+        static_cast<std::uint64_t>(handle),
+        favourite,
+        [this, self = shared_from_this(), handle, favourite](Result<void> result) {
+            invokeOnGuiThread(this, [this, handle, favourite, result = std::move(result)]() {
+                mBusy->end();
+                if (!result.success)
+                {
+                    qCWarning(lcFileOps)
+                        << "setFavourite failed:" << QString::fromStdString(result.errorMessage)
+                        << "code=" << result.errorCode;
+                    mNotifications->notifyError(favourite ? QStringLiteral("addFavourite")
+                                                          : QStringLiteral("removeFavourite"),
+                                                result.errorCode,
+                                                QString::fromStdString(result.errorMessage));
+                    return;
+                }
+                mNavigation->applyFavouriteChange(handle, favourite);
+            });
+        });
+}
+
 void FileMutationController::createFolder(const QString& name)
 {
     mBusy->begin();

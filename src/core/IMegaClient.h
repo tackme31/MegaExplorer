@@ -221,6 +221,13 @@ public:
                               const std::string& name,
                               std::function<void(Result<void>)> onDone) = 0;
 
+    // Sets or clears the node's "favourite" attribute. Idempotent -- the SDK reports
+    // success for a value the node already has, so a caller whose cached flag has
+    // drifted still ends up with the state it asked for.
+    virtual void setNodeFavourite(std::uint64_t handle,
+                                  bool favourite,
+                                  std::function<void(Result<void>)> onDone) = 0;
+
     // Whether moveNode() with the same arguments would be accepted, as a pure
     // in-memory check -- a drag hovering over a drop target queries it per mouse
     // move. Callers branch on errorCode, never errorMessage (MegaErrorCodes.h):

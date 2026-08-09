@@ -43,6 +43,8 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
             return static_cast<qulonglong>(entry.handle);
         case HasThumbnailRole:
             return entry.hasThumbnail;
+        case IsFavouriteRole:
+            return entry.isFavourite;
         case ThumbnailPathRole:
             return mThumbnailPaths[static_cast<std::size_t>(index.row())];
         case ModificationTimeRole:
@@ -71,6 +73,7 @@ QHash<int, QByteArray> FileListModel::roleNames() const
         {IsFolderRole, "isFolder"},
         {HandleRole, "handle"},
         {HasThumbnailRole, "hasThumbnail"},
+        {IsFavouriteRole, "isFavourite"},
         {ThumbnailPathRole, "thumbnailPath"},
         {ModificationTimeRole, "modificationTime"},
         {FormattedSizeRole, "formattedSize"},
@@ -111,6 +114,20 @@ void FileListModel::setThumbnailPath(quint64 handle, QString path)
     }
     // Row no longer present -- stale async result, same "ignore it" handling
     // as FolderNavigationController::applyResult for other late callbacks.
+}
+
+void FileListModel::setFavourite(quint64 handle, bool favourite)
+{
+    for (std::size_t i = 0; i < mEntries.size(); ++i)
+    {
+        if (mEntries[i].handle == static_cast<std::uint64_t>(handle))
+        {
+            mEntries[i].isFavourite = favourite;
+            const int row = static_cast<int>(i);
+            emit dataChanged(index(row, 0), index(row, columnCount() - 1), {IsFavouriteRole});
+            return;
+        }
+    }
 }
 
 void FileListModel::selectRow(int row, int modifiers)
@@ -212,6 +229,7 @@ QVariantList FileListModel::selectedEntries() const
         map.insert(QStringLiteral("name"), QString::fromStdString(entry.name));
         map.insert(QStringLiteral("sizeBytes"), static_cast<qulonglong>(entry.sizeBytes));
         map.insert(QStringLiteral("isFolder"), entry.isFolder);
+        map.insert(QStringLiteral("isFavourite"), entry.isFavourite);
         result.append(map);
     }
     return result;
@@ -232,6 +250,7 @@ QVariantMap FileListModel::selectedEntry() const
     map.insert(QStringLiteral("name"), QString::fromStdString(entry.name));
     map.insert(QStringLiteral("sizeBytes"), static_cast<qulonglong>(entry.sizeBytes));
     map.insert(QStringLiteral("isFolder"), entry.isFolder);
+    map.insert(QStringLiteral("isFavourite"), entry.isFavourite);
     return map;
 }
 

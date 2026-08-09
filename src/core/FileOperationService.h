@@ -47,6 +47,10 @@ public:
                       const std::string& name,
                       std::function<void(Result<void>)> onDone);
 
+    void setFavourite(std::uint64_t handle,
+                      bool favourite,
+                      std::function<void(Result<void>)> onDone);
+
     // "Would move() be accepted?", answered without an API round-trip so a drag
     // hovering over a drop target can query it continuously. Failures carry a
     // MegaErrorCodes.h code (kENoEnt / kECircular / kEAccess), not just text.

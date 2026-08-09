@@ -70,6 +70,12 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {MenuSite::FileSelection, MenuSite::FolderRow},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
+        // SingleOnly: with a mixed selection there is no one label to show, and the
+        // resolver can't see the flag that would decide it anyway.
+        {MenuAction::ToggleFavourite,
+         {MenuSite::FileSelection},
+         ActionTarget::Any,
+         ActionArity::SingleOnly},
         // Cut before Copy, Windows' own order.
         {MenuAction::Cut, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
         {MenuAction::Copy, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
@@ -128,6 +134,8 @@ const char* menuActionId(MenuAction action)
             return "openInNewTab";
         case MenuAction::TogglePin:
             return "togglePin";
+        case MenuAction::ToggleFavourite:
+            return "toggleFavourite";
         case MenuAction::Cut:
             return "cut";
         case MenuAction::Copy:

@@ -146,6 +146,38 @@ TEST(FileOperationServiceTest, PropagatesAMoveToRubbishFailure)
     EXPECT_EQ(captured.result.errorMessage, "no such node");
 }
 
+TEST(FileOperationServiceTest, SetFavouritePassesBothValuesThrough)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, setNodeFavourite(11u, true, _))
+        .WillOnce(InvokeArgument<2>(Result<void>::ok()));
+    EXPECT_CALL(*client, setNodeFavourite(11u, false, _))
+        .WillOnce(InvokeArgument<2>(Result<void>::ok()));
+    Capture captured;
+
+    service.setFavourite(11, true, captured.sink());
+    service.setFavourite(11, false, captured.sink());
+
+    EXPECT_EQ(captured.calls, 2);
+    EXPECT_TRUE(captured.result.success);
+}
+
+TEST(FileOperationServiceTest, PropagatesASetFavouriteFailure)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, setNodeFavourite(11u, true, _))
+        .WillOnce(InvokeArgument<2>(Result<void>::fail("no such node", MegaErrorCode::kENoEnt)));
+    Capture captured;
+
+    service.setFavourite(11, true, captured.sink());
+
+    ASSERT_EQ(captured.calls, 1);
+    EXPECT_FALSE(captured.result.success);
+    EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kENoEnt);
+}
+
 TEST(FileOperationServiceTest, MovePassesThroughOnceCanMoveAccepts)
 {
     auto client = std::make_shared<MockMegaClient>();

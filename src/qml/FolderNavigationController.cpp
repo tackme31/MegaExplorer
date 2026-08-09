@@ -312,6 +312,19 @@ std::set<std::string> FolderNavigationController::cachedChildNames() const
     return names;
 }
 
+void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favourite)
+{
+    mFileListModel->setFavourite(handle, favourite);
+    for (FileEntry& entry : mLastFolderEntries)
+    {
+        if (entry.handle == static_cast<std::uint64_t>(handle))
+        {
+            entry.isFavourite = favourite;
+            break;
+        }
+    }
+}
+
 void FolderNavigationController::refresh()
 {
     if (!mHasLoadedOnce)

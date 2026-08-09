@@ -107,6 +107,13 @@ void FileOperationService::moveToRubbish(std::uint64_t handle,
     mClient->moveToRubbish(handle, std::move(onDone));
 }
 
+void FileOperationService::setFavourite(std::uint64_t handle,
+                                        bool favourite,
+                                        std::function<void(Result<void>)> onDone)
+{
+    mClient->setNodeFavourite(handle, favourite, std::move(onDone));
+}
+
 void FileOperationService::move(std::uint64_t handle,
                                 std::uint64_t newParentHandle,
                                 bool newParentIsRoot,

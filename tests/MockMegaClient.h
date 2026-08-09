@@ -94,6 +94,10 @@ public:
                 createFolder,
                 (std::uint64_t, bool, const std::string&, std::function<void(Result<void>)>),
                 (override));
+    MOCK_METHOD(void,
+                setNodeFavourite,
+                (std::uint64_t, bool, std::function<void(Result<void>)>),
+                (override));
     MOCK_METHOD(Result<void>, checkMove, (std::uint64_t, std::uint64_t, bool), (const, override));
     MOCK_METHOD(void,
                 upload,

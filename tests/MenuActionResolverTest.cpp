@@ -174,12 +174,13 @@ TEST(MenuActionResolverTest, EmptySelectionYieldsNoActions)
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(1, 0));
-    ASSERT_EQ(result.size(), 5u);
+    ASSERT_EQ(result.size(), 6u);
     EXPECT_EQ(result[0], MenuAction::Download);
-    EXPECT_EQ(result[1], MenuAction::Cut);
-    EXPECT_EQ(result[2], MenuAction::Copy);
-    EXPECT_EQ(result[3], MenuAction::Rename);
-    EXPECT_EQ(result[4], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[1], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[2], MenuAction::Cut);
+    EXPECT_EQ(result[3], MenuAction::Copy);
+    EXPECT_EQ(result[4], MenuAction::Rename);
+    EXPECT_EQ(result[5], MenuAction::MoveToRubbish);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForMultipleFiles)
@@ -228,13 +229,14 @@ TEST(MenuActionResolverTest, OpenInNewTabIdIsStable)
 TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(0, 1));
-    ASSERT_EQ(result.size(), 6u);
+    ASSERT_EQ(result.size(), 7u);
     EXPECT_EQ(result[0], MenuAction::OpenInNewTab);
     EXPECT_EQ(result[1], MenuAction::TogglePin);
-    EXPECT_EQ(result[2], MenuAction::Cut);
-    EXPECT_EQ(result[3], MenuAction::Copy);
-    EXPECT_EQ(result[4], MenuAction::Rename);
-    EXPECT_EQ(result[5], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[2], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[3], MenuAction::Cut);
+    EXPECT_EQ(result[4], MenuAction::Copy);
+    EXPECT_EQ(result[5], MenuAction::Rename);
+    EXPECT_EQ(result[6], MenuAction::MoveToRubbish);
 }
 
 TEST(MenuActionResolverTest, TogglePinIdIsStable)
@@ -258,6 +260,34 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersTogglePinForASingleFile)
 TEST(MenuActionResolverTest, DefaultTableNeverOffersTogglePinForAMixedSelection)
 {
     EXPECT_FALSE(contains(resolveMenuActions(fileSelection(1, 1)), MenuAction::TogglePin));
+}
+
+TEST(MenuActionResolverTest, ToggleFavouriteIdIsStable)
+{
+    EXPECT_STREQ(menuActionId(MenuAction::ToggleFavourite), "toggleFavourite");
+}
+
+TEST(MenuActionResolverTest, DefaultTableOffersToggleFavouriteForASingleFileOrFolder)
+{
+    EXPECT_TRUE(contains(resolveMenuActions(fileSelection(1, 0)), MenuAction::ToggleFavourite));
+    EXPECT_TRUE(contains(resolveMenuActions(fileSelection(0, 1)), MenuAction::ToggleFavourite));
+}
+
+TEST(MenuActionResolverTest, DefaultTableNeverOffersToggleFavouriteForMultipleItems)
+{
+    // Not a target restriction but an arity one: with a mixed selection there is
+    // no single "add"/"remove" label to show.
+    EXPECT_FALSE(contains(resolveMenuActions(fileSelection(2, 0)), MenuAction::ToggleFavourite));
+    EXPECT_FALSE(contains(resolveMenuActions(fileSelection(0, 2)), MenuAction::ToggleFavourite));
+    EXPECT_FALSE(contains(resolveMenuActions(fileSelection(1, 1)), MenuAction::ToggleFavourite));
+}
+
+TEST(MenuActionResolverTest, DefaultTableNeverOffersToggleFavouriteOnFixedTargetSites)
+{
+    EXPECT_FALSE(contains(resolveMenuActions(folderTargetContext(MenuSite::FolderBackground)),
+                          MenuAction::ToggleFavourite));
+    EXPECT_FALSE(contains(resolveMenuActions(folderTargetContext(MenuSite::FolderRow)),
+                          MenuAction::ToggleFavourite));
 }
 
 TEST(MenuActionResolverTest, DefaultTableNeverOffersOpenInNewTabForMultipleFolders)

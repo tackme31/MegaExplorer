@@ -262,12 +262,13 @@ TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
 {
     // Exact lists, in menu order -- this is the contract FileContextMenu.qml's
     // Instantiator renders, so ordering matters as much as membership. Rename
-    // drops out of the multi case (ActionArity::SingleOnly).
+    // and toggleFavourite drop out of the multi case (ActionArity::SingleOnly).
     FileListModel modelSingle;
     modelSingle.setEntries(makeEntries(3));
     modelSingle.selectRow(0, 0);
-    EXPECT_EQ(modelSingle.availableActions(),
-              (QStringList{"download", "cut", "copy", "rename", "moveToRubbish"}));
+    EXPECT_EQ(
+        modelSingle.availableActions(),
+        (QStringList{"download", "toggleFavourite", "cut", "copy", "rename", "moveToRubbish"}));
 
     FileListModel modelMulti;
     modelMulti.setEntries(makeEntries(3));
@@ -536,4 +537,71 @@ TEST(FileListModelTest, SelectedEntryCarriesSizeBytesUnlikeEntryAt)
     EXPECT_EQ(entry.value("sizeBytes").toULongLong(), 1234u);
     EXPECT_FALSE(entry.value("isFolder").toBool());
     EXPECT_FALSE(model.entryAt(0).contains("sizeBytes"));
+}
+
+TEST(FileListModelTest, IsFavouriteRoleReportsTheEntryFlag)
+{
+    FileListModel model;
+    model.setEntries({FileEntry{"a", 1, 0, false, 0, false, true},
+                      FileEntry{"b", 2, 0, false, 0, false, false}});
+
+    EXPECT_TRUE(model.data(model.index(0, 0), FileListModel::IsFavouriteRole).toBool());
+    EXPECT_FALSE(model.data(model.index(1, 0), FileListModel::IsFavouriteRole).toBool());
+}
+
+TEST(FileListModelTest, SetFavouriteUpdatesOneRowWithoutResettingTheModel)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(5));
+
+    int resets = 0;
+    int changedRow = -1;
+    QVector<int> changedRoles;
+    QObject::connect(&model, &FileListModel::modelReset, [&]() {
+        ++resets;
+    });
+    QObject::connect(
+        &model,
+        &FileListModel::dataChanged,
+        [&](const QModelIndex& topLeft, const QModelIndex&, const QVector<int>& roles) {
+            changedRow = topLeft.row();
+            changedRoles = roles;
+        });
+
+    model.setFavourite(3, true);
+
+    // A reset here would relayout the grid and drop the scroll position, which
+    // is the whole reason this isn't routed through setEntries().
+    EXPECT_EQ(resets, 0);
+    EXPECT_EQ(changedRow, 3);
+    EXPECT_EQ(changedRoles, QVector<int>{FileListModel::IsFavouriteRole});
+    EXPECT_TRUE(model.data(model.index(3, 0), FileListModel::IsFavouriteRole).toBool());
+}
+
+TEST(FileListModelTest, SetFavouriteIgnoresAHandleThatIsNoLongerListed)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(3));
+
+    int changes = 0;
+    QObject::connect(&model, &FileListModel::dataChanged, [&]() {
+        ++changes;
+    });
+
+    model.setFavourite(999, true);
+
+    EXPECT_EQ(changes, 0);
+}
+
+TEST(FileListModelTest, SelectedEntryCarriesIsFavouriteForTheContextMenu)
+{
+    FileListModel model;
+    // FileContextMenu.qml reads this key to pick between "Add to Favourites"
+    // and "Remove from Favourites".
+    model.setEntries({FileEntry{"pinned.txt", 7, 0, false, 0, false, true}});
+
+    model.selectRow(0, Qt::NoModifier);
+
+    EXPECT_TRUE(model.selectedEntry().value("isFavourite").toBool());
+    EXPECT_TRUE(model.selectedEntries().first().toMap().value("isFavourite").toBool());
 }

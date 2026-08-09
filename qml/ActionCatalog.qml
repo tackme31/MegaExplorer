@@ -86,6 +86,22 @@ QtObject {
                                                     quickAccessModel.pin(ctx.handle, ctx.name);
                                             }
                                         },
+                                        // ctx: handle, favourited, mutations
+                                        "toggleFavourite": {
+                                            // One glyph either way, unlike togglePin -- see
+                                            // Theme.glyph.menu.toggleFavourite for why.
+                                            "icon": ctx => Theme.glyph.menu.toggleFavourite,
+                                            "label": ctx => ctx.favourited ? qsTr(
+                                                                                 "Remove from Favourites") :
+                                                                             qsTr("Add to Favourites"),
+                                            // No pre-check against ctx.favourited: it was sampled
+                                            // when the menu opened, so if it has drifted from the
+                                            // server the user still gets the state the row they
+                                            // read promised them. The attribute write is
+                                            // idempotent (IMegaClient::setNodeFavourite).
+                                            "trigger": ctx => ctx.mutations.setEntryFavourite(
+                                                                  ctx.handle, !ctx.favourited)
+                                        },
                                         // ctx: entries, navController
                                         "cut": {
                                             "icon": ctx => Theme.glyph.menu.cut,

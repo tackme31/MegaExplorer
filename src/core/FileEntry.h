@@ -10,6 +10,7 @@ struct FileEntry
     bool isFolder = false;
     std::int64_t modificationTime = 0;
     bool hasThumbnail = false;
+    bool isFavourite = false;
 
     // Field-by-field, not <=>-defaulted: this project builds at C++17, and gmock
     // builds an Eq() matcher over vectors of these.
@@ -17,6 +18,6 @@ struct FileEntry
     {
         return name == other.name && handle == other.handle && sizeBytes == other.sizeBytes &&
                isFolder == other.isFolder && modificationTime == other.modificationTime &&
-               hasThumbnail == other.hasThumbnail;
+               hasThumbnail == other.hasThumbnail && isFavourite == other.isFavourite;
     }
 };

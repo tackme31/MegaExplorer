@@ -122,13 +122,18 @@ public:
     // syncing once per showing tab would be that many pointless round-trips.
     Q_INVOKABLE void refreshIfShowing(quint64 handle, bool isRoot);
 
-    // The three below are FileMutationController's view of this one -- public rather
+    // The four below are FileMutationController's view of this one -- public rather
     // than Q_INVOKABLE on purpose, so nothing in QML binds to them.
 
     // Re-fetches whatever the user is looking at: the folder listing, or the active
     // search's results plus the cached listing behind them. Mutations go through
     // this so they never silently drop the user out of a search.
     void refreshVisibleListing();
+
+    // Writes one node's new favourite flag into both the model and the cached
+    // listing, instead of re-reading the folder -- see FileListModel::setFavourite.
+    // The cache matters: without it, clearing a search restores the pre-toggle flag.
+    void applyFavouriteChange(quint64 handle, bool favourite);
 
     // What the mutation half gates paste on: before the first load there is no
     // folder for it to target.
