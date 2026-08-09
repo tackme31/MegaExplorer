@@ -3,6 +3,7 @@
 #include "app/Logging.h"
 #include "GuiThread.h"
 #include "NotificationController.h"
+#include "ViewKindEnum.h"
 
 #include <QDebug>
 #include <QString>
@@ -72,6 +73,13 @@ quint64 FolderNavigationController::currentHandle() const
     if (mBreadcrumb.isEmpty())
         return 0;
     return mBreadcrumb.last().toMap().value(QStringLiteral("handle")).toULongLong();
+}
+
+int FolderNavigationController::viewKind() const
+{
+    if (mBreadcrumb.isEmpty())
+        return ViewKindEnum::CloudDrive;
+    return mBreadcrumb.last().toMap().value(QStringLiteral("kind")).toInt();
 }
 
 void FolderNavigationController::loadRoot()
@@ -168,6 +176,7 @@ void FolderNavigationController::refreshBreadcrumb()
                     entry.insert(QStringLiteral("name"), QString::fromStdString(segment.name));
                     entry.insert(QStringLiteral("handle"), static_cast<qulonglong>(segment.handle));
                     entry.insert(QStringLiteral("isRoot"), segment.isRoot);
+                    entry.insert(QStringLiteral("kind"), static_cast<int>(segment.kind));
                     breadcrumb.append(entry);
                 }
 

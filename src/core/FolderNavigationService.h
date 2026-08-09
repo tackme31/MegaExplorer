@@ -62,6 +62,7 @@ public:
     // "wherever the user currently is".
     struct CurrentLocation
     {
+        ViewKind kind;
         bool isRoot;
         std::uint64_t handle;
     };
@@ -76,8 +77,11 @@ public:
     void syncWithServer(std::function<void(Result<void>)> onDone);
 
 private:
+    // isRoot/handle are meaningless unless kind is CloudDrive, the same kind of
+    // sentinel nesting as isRoot already making handle meaningless.
     struct Location
     {
+        ViewKind kind = ViewKind::CloudDrive;
         bool isRoot = true;
         std::uint64_t handle = 0;
     };

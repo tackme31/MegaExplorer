@@ -171,6 +171,21 @@ void openFavourites(SortOrder, std::function<void(Result<std::vector<FileEntry>>
 **「戻るで帰る」を要件から外せばこの節はまるごと消え、種別はコントローラ内で完結する。**
 そうしないと決めたので、以下はその前提。
 
+**F1 実装時に確定した 3 点（2026-08-09）**:
+
+- QML 側の名前は `src/qml/ViewKindEnum.h`（`QML_NAMED_ELEMENT(ViewKind)` + `QML_UNCREATABLE` +
+  unscoped `enum Kind` + `Q_ENUM`）。`src/core` は Qt 非依存なので `Q_ENUM` を enum 本体の隣に
+  置けない。値の一致は `static_assert` 2 本で担保。QML からは `ViewKind.Favourites` と読む
+- `FolderNavigationController::viewKind` は**サービスではなく `mBreadcrumb.last()` から導出**し、
+  NOTIFY は既存 4 プロパティ（`canGoUp`/`currentFolderName`/`atRoot`/`currentHandle`）と同じ
+  `breadcrumbChanged` を共有する。種別と一覧内容が必ず同じタイミングで切り替わり、emit 箇所を
+  手で管理せずに済む。**代償として `PathSegment::kind` は §3.3 のクリック抑止用ではなく F1 時点で
+  必須**になり、`refreshBreadcrumb()` の `QVariantMap` にも `"kind"` キーが 1 つ増える
+- `kind` の位置は `Location` / `CurrentLocation` では**先頭**、`PathSegment` では**末尾**。前者は
+  `enum class` が `bool` から暗黙変換されないので既存の位置指定初期化 2 箇所が必ずコンパイル
+  エラーになる（silent に壊れない）。後者を末尾にしたのは、テストの集約初期化 `{"", 0, true}` を
+  無改修で通すため
+
 ### 3.2 履歴の意味論
 
 タブは「お気に入り専用」にはならず、履歴の途中で種別が切り替わる。トレース:

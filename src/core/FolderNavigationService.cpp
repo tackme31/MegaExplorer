@@ -51,7 +51,7 @@ void FolderNavigationService::navigateTo(std::uint64_t handle,
         },
         [this, handle, isRoot] {
             mBackStack.push_back(mCurrent);
-            mCurrent = Location{isRoot, handle};
+            mCurrent = Location{ViewKind::CloudDrive, isRoot, handle};
         },
         std::move(onDone));
 }
@@ -114,7 +114,7 @@ void FolderNavigationService::resetToRoot()
 
 FolderNavigationService::CurrentLocation FolderNavigationService::currentLocation() const
 {
-    return CurrentLocation{mCurrent.isRoot, mCurrent.handle};
+    return CurrentLocation{mCurrent.kind, mCurrent.isRoot, mCurrent.handle};
 }
 
 void FolderNavigationService::resolveCurrentPath(

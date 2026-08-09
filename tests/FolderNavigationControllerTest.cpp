@@ -5,6 +5,7 @@
 #include "qml/BusyState.h"
 #include "qml/GuiThread.h"
 #include "qml/NotificationController.h"
+#include "qml/ViewKindEnum.h"
 #include "TestApp.h"
 
 #include <QEventLoop>
@@ -153,6 +154,23 @@ protected:
 };
 
 } // namespace
+
+TEST_F(FolderNavigationControllerTest, ViewKindIsCloudDriveWhetherOrNotTheBreadcrumbResolved)
+{
+    givenRootListing({entry("a", 1)});
+    // The fixture's default resolves to an empty path; this one exercises the
+    // other branch of viewKind(), where a real segment supplies the kind.
+    EXPECT_CALL(*client, getPath(_, _, _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{{"", 0, true}})));
+
+    EXPECT_EQ(controller->viewKind(), ViewKindEnum::CloudDrive);
+
+    controller->loadRoot();
+    flush();
+
+    EXPECT_EQ(controller->viewKind(), ViewKindEnum::CloudDrive);
+}
 
 TEST_F(FolderNavigationControllerTest, RefreshRefetchesTheCurrentFolder)
 {

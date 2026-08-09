@@ -36,7 +36,7 @@ class FolderNavigationController : public QObject,
     Q_PROPERTY(bool canGoBack READ canGoBack NOTIFY canGoBackChanged)
     // Derived from mBreadcrumb like atRoot below, hence the shared NOTIFY.
     Q_PROPERTY(bool canGoUp READ canGoUp NOTIFY breadcrumbChanged)
-    // QVariantMap{"name", "handle", "isRoot"} elements, root-first. QML composes
+    // QVariantMap{"name", "handle", "isRoot", "kind"} elements, root-first. QML composes
     // the display labels (e.g. the root's "Cloud Drive"); C++ supplies fields only.
     Q_PROPERTY(QVariantList breadcrumb READ breadcrumb NOTIFY breadcrumbChanged)
     // Both derived from mBreadcrumb's last element. atRoot is true (and the name
@@ -47,6 +47,9 @@ class FolderNavigationController : public QObject,
     // Same derivation; 0 when the breadcrumb hasn't resolved yet or the location is
     // the root (handle meaningless there, as everywhere).
     Q_PROPERTY(quint64 currentHandle READ currentHandle NOTIFY breadcrumbChanged)
+    // Same derivation again. int rather than ViewKindEnum::Kind so this header keeps
+    // its Qt-free core includes; QML compares against ViewKind.CloudDrive either way.
+    Q_PROPERTY(int viewKind READ viewKind NOTIFY breadcrumbChanged)
     // True while this tab has a mutating operation or a server sync in flight.
     // Deliberately NOT set by listing/search/breadcrumb fetches -- those are
     // synchronous in-memory reads and finish before anything could repaint. Nor by
@@ -82,6 +85,7 @@ public:
     QString currentFolderName() const;
     bool atRoot() const;
     quint64 currentHandle() const;
+    int viewKind() const;
 
     // Not Q_INVOKABLE: QML reaches the root load through
     // TabsController::loadRootAll(), never this per-tab entry point.

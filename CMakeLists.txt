@@ -81,6 +81,7 @@ add_library(MegaExplorerCore STATIC
     src/core/Result.h
     src/core/SortOrder.h
     src/core/PathSegment.h
+    src/core/ViewKind.h
     src/core/AccountInfo.h
     src/core/AccountPlan.h
     src/core/UserAttribute.h
@@ -247,6 +248,7 @@ qt_add_qml_module(MegaExplorerQml
         src/qml/NotificationController.cpp
         src/qml/PreviewController.h
         src/qml/PreviewController.cpp
+        src/qml/ViewKindEnum.h
         src/qml/WindowAgentForeign.h
     RESOURCES
         ${MEGAEXPLORER_LICENSE_RESOURCES}
