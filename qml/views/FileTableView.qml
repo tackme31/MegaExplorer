@@ -444,7 +444,7 @@ ColumnLayout {
         // Neither axis had one. Vertical: nothing indicated a folder had more
         // rows than fit; the wheel still scrolls it whether or not the bar is
         // showing, so the default fade-in-when-active behaviour is fine.
-        ScrollBar.vertical: ScrollBar {}
+        ScrollBar.vertical: ViewScrollBar {}
         // Horizontal is not the same case: the wheel only scrolls vertically
         // and drag-panning is off (acceptedButtons above), so this bar is the
         // *only* way to reach a column past the right edge -- and a bar that
@@ -452,7 +452,7 @@ ColumnLayout {
         // that starts the movement. Pinned on whenever the columns overflow,
         // which S6a made an ordinary state rather than an edge case (they no
         // longer shrink to fit). Explorer 11 shows a persistent bar here too.
-        ScrollBar.horizontal: ScrollBar {
+        ScrollBar.horizontal: ViewScrollBar {
             policy: tableView.contentWidth > tableView.width ? ScrollBar.AlwaysOn :
                                                                ScrollBar.AlwaysOff
         }

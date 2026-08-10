@@ -58,7 +58,7 @@ GridView {
     bottomMargin: Theme.grid.gap / 2
     // An overlay, so it takes nothing off root.width and the arrowColumns
     // binding below stays right.
-    ScrollBar.vertical: ScrollBar {
+    ScrollBar.vertical: ViewScrollBar {
         policy: ScrollBar.AsNeeded
     }
     // Same rationale as FileTableView.qml's TableView: Flickable defaults to
