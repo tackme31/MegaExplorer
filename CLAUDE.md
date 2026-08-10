@@ -10,6 +10,7 @@ session lives in companion docs, linked from the relevant section below rather t
   `docs/MEMO.md`'s former roadmap section moved here (2026-07-28, to end dual-tracking drift between
   the two files). The roadmap covers only phases **not yet done**; a shipped phase's original plan
   sits at the top of its own log entry as a `> **Planned as.**` block (2026-08-07, same reason).
+- `docs/FEATURE_IDEAS.md` — candidate features and ideas for future implementation.
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
   and the per-stage log for S0–S11 (S0–S10 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
   the four C++ changes it caused are cross-linked from both.
@@ -45,6 +46,17 @@ session lives in companion docs, linked from the relevant section below rather t
   - `PREVIEW_PANE_INVESTIGATION.md` — feeds Phase 15 (in-app preview pane). Conclusion: the
     server-side 1000×1000 preview JPEG covers image/video/PDF in one code path; video *playback*
     and PDF paging are out, since `USE_LIBUV` is off in this build and Qt PDF isn't installed.
+  - `FOLDER_LOAD_ASYNC_INVESTIGATION.md` — making folder navigation stop blocking the GUI thread.
+    No phase attached; overlaps Phase 16. Conclusion: the call chain is already callback-shaped and
+    the tab spinner already exists, so the work is breaking `IMegaClient`'s documented
+    "answers synchronously on the calling thread" contract for `getChildren` alone — and measuring
+    first, since the post-fetch model reset can't leave the GUI thread either way.
+
+  - `VIEW_HIT_TEST_OFFSET_INVESTIGATION.md` — why hover/click/band selection in both file views
+    land on a row *below* the pointer once the view is scrolled. A bug report, not a phase.
+    Conclusion, measured on Qt 6.11.1: `parent: <a Flickable>` on a pointer handler silently
+    installs it on that Flickable's `contentItem`, so `point.position` already carries `contentY`
+    and the views' `mapFromItem()` adds it a second time.
 
   New studies go in this folder, not in `docs/` directly.
 

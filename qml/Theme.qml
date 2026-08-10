@@ -283,6 +283,16 @@ QtObject {
         readonly property color subtlePressed: root.isLight ? Qt.rgba(0, 0, 0, 0.02) : Qt.rgba(1, 1,
                                                                                                1, 0.04)
 
+        // Scroll-bar thumb (ViewScrollBar.qml), as WinUI's ControlStrongFill
+        // steps. Deliberately not derived from subtleHover above: that pair is
+        // a wash over a surface, this one has to read as a solid object on it.
+        readonly property color scrollThumb: root.isLight ? Qt.rgba(0, 0, 0, 0.28) : Qt.rgba(1, 1, 1,
+                                                                                             0.27)
+        readonly property color scrollThumbHover: root.isLight ? Qt.rgba(0, 0, 0, 0.31) : Qt.rgba(1,
+                                                                                                  1, 1, 0.36)
+        readonly property color scrollThumbPressed: root.isLight ? Qt.rgba(0, 0, 0, 0.38) : Qt.rgba(1,
+                                                                                                    1, 1, 0.43)
+
         // Windows-mandated close-button colours. Kept out of the theme-following
         // group deliberately: these must not track light/dark.
         readonly property color closeHover: "#e81123"

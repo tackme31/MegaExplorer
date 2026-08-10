@@ -230,6 +230,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/StatusBar.qml
         qml/components/TabStrip.qml
         qml/components/ToastStack.qml
+        qml/components/ViewScrollBar.qml
         qml/views/FileGridView.qml
         qml/views/FileTableView.qml
         qml/views/LoginView.qml
