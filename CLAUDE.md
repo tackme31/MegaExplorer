@@ -186,8 +186,18 @@ submodules, so `--recursive` is mandatory, not just tidy — see `docs/BUILD.md`
 
 `CMakePresets.json`'s `msvc-debug` preset pins the full configure (generator, vcpkg toolchain,
 `VCPKG_*` variables) — prefer it over hand-entering variables in Qt Creator (see `docs/BUILD.md`
-for why). From the CLI: `cmake --preset msvc-debug` / `cmake --build --preset msvc-debug`. Manual
-equivalent, which also documents each variable:
+for why). **Always invoke CMake as `C:/Qt/Tools/CMake_64/bin/cmake.exe`, never bare `cmake`** — the
+`cmake` on `PATH` is Strawberry Perl's 3.29, which is too old to know this MSVC and fails configure
+with `target_compile_features no known features for CXX compiler "MSVC"`, *after* overwriting
+`CMakeCache.txt`; re-run the preset with the full path to recover. `CMAKE_COMMAND:INTERNAL` in that
+cache tells you which copy last configured the tree. So, from the CLI:
+
+```
+C:/Qt/Tools/CMake_64/bin/cmake.exe --preset msvc-debug
+C:/Qt/Tools/CMake_64/bin/cmake.exe --build --preset msvc-debug
+```
+
+Manual equivalent of the configure, which also documents each variable (same full path):
 
 ```
 cmake -S . -B build/msvc-debug -G "Visual Studio 17 2022" -A x64 ^
@@ -230,11 +240,9 @@ running, see `docs/BUILD.md` for setup). CLI fallback:
 C:/Qt/Tools/CMake_64/bin/cmake.exe --build build/msvc-debug --config Debug --target appMegaExplorer 2>&1 | grep -i "warning C" | grep -v "third_party"
 ```
 
-Full path to `cmake.exe` is required — the `cmake` on `PATH` resolves to Strawberry Perl's copy,
-which is unrelated and wrong for this project.
-
 After adding/removing a `.qml` file from `qt_add_qml_module`'s `QML_FILES`, **or moving the module
-to a different target**, **reconfigure** (`cmake --preset msvc-debug`) before rebuilding — an
+to a different target**, **reconfigure** (`--preset msvc-debug`, full path as above) before
+rebuilding — an
 incremental `cmake --build` alone leaves the AOT `qmlcache_loader.cpp` aggregator stale and the
 link fails with unresolved `QmlCacheGeneratedCode::...` symbols. The aggregator's symbol names
 embed the target name, which is why a target move triggers it too (`QML_FILES` case hit during
