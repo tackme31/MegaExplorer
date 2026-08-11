@@ -3,14 +3,15 @@ name: evolve
 description: >-
   Run one autonomous development cycle on MegaExplorer: pick the top item off
   docs/ROADMAP.md, implement it, verify it with scripts/loop_verify.sh, review
-  it, and land it on an evolve/NNN branch. Invoked on a timer as
+  it, land it on an evolve/NNN branch, and merge that into master. Invoked on a timer as
   `/loop 2h /evolve`, or by hand for a single cycle. Use only when asked to run
   a cycle -- ordinary feature work does not go through this skill.
 ---
 
 # /evolve — 1 サイクル
 
-**1 サイクル = ROADMAP から 1 件 → 実装 → 検証 → レビュー → `evolve/NNN` に 1 コミット → push → 報告。**
+**1 サイクル = ROADMAP から 1 件 → 実装 → 検証 → レビュー → `evolve/NNN` に 1 コミット → push →
+`master` へマージ → 報告。**
 
 無人で回る前提なので、**迷ったら最も妥当な案を選んで進める**。選んだ内容は
 `docs/roadmap-done.md` のメモ欄に 1 行、理由はコミット本文に残す。実機で見て違っていれば人間が
@@ -56,6 +57,16 @@ bash scripts/git_unlock.sh && git switch -c "evolve/$next" master
 ```
 
 3 桁完全一致なので、`about-this-app` のような既存のローカルブランチには当たらない。
+
+**枝を切る前に、未マージの `evolve/NNN` が残っていないか見る:**
+
+```
+git branch --list 'evolve/[0-9][0-9][0-9]' --no-merged master
+```
+
+**出力が空でなければ中止**し、そのブランチ名を報告して通知する。6-2 のマージが衝突して止まった痕跡
+なので、勝手に解決しない。放置したまま次を回すと、古い `master` から枝を切って**完了済みの項目を
+もう一度選ぶ**——`evolve/003` で実際に起きた。
 
 **起点は必ず `master`。** 長命なブランチは master だけで、人間が受信箱に書くのもそこ
 （`CLAUDE.md` の「Loop engineering」）。`master` が期待と違う位置にあると感じても勝手に別の
@@ -174,7 +185,8 @@ bash scripts/git_unlock.sh && git stash
 ```
 
 → その項目を `docs/ROADMAP.md` で `blocked` にし、メモ欄に失敗の原因を書く → **その 1 行の変更
-だけを** commit して 7. の報告へ進む。
+だけを** commit し、**6-2 で master へマージまで済ませてから** 7. の報告へ進む。マージを飛ばすと
+`blocked` が `master` に届かず、次の周が同じ項目でまた落ちる。
 
 ### GUI の確認（QML を触った周のみ）
 
@@ -260,7 +272,7 @@ PYTHONIOENCODING=utf-8 python "$lint" <変更したファイル>
 ユーザー向けの機能が増減したときだけ `CLAUDE.md` の該当箇所を触る。
 **`docs/PROGRESS.md` / `docs/DESIGN_IMPROVEMENT.md` / `docs/investigations/` には書かない。**
 
-## 6. commit & push
+## 6. commit → push → master へマージ
 
 **1 サイクル = 1 コミット。** メッセージは**英語**、件名 1 行（命令形、72 文字目安）。`(Phase 24b F7b)`
 のようなフェーズタグは付けない——ループのサイクルにフェーズ番号は無い。件名だけで説明が足りない
@@ -279,8 +291,41 @@ bash scripts/git_unlock.sh && git push -u origin HEAD
 
 **すべての git ライトの前に `scripts/git_unlock.sh` を挟む**（このリポは stale な `index.lock` を
 断続的に残す。`CLAUDE.md` の「Git」節）。`git add -A` / `git add .` は使わず名指しで。
-**master への push と `--force` は禁止。** master への取り込みは人間が行う（`--ff-only`、それが
-拒否されたら通常マージ。`CLAUDE.md` の「Loop engineering」）。
+
+### 6-2. master へ取り込む
+
+**マージまでがサイクル。** `master` は「十分に検証してから入れる幹」ではなく、**人間がビルド物を
+触って確かめる場所**——不具合や期待と違う動きは、触った人間が `docs/REQUESTS.md` に起票して次の周で
+直る。ループ側の担保は 3. の単体テストと GUI 確認まで、と割り切る。
+
+```
+bash scripts/git_unlock.sh && git switch master
+bash scripts/git_unlock.sh && git merge --ff-only "evolve/$next" \
+    || { bash scripts/git_unlock.sh && git merge --no-edit "evolve/$next"; }
+```
+
+`--ff-only` が拒否されるのは、その周が走っている間に人間が `docs/REQUESTS.md` を commit したとき
+だけ。通常マージすれば済む。**そのときだけ `bash scripts/loop_verify.sh` をもう一度回す**——合成
+された木はまだ一度もビルドされていないため。`--ff-only` が通ったなら 3. で検証した木そのものなので
+再検証は要らない。
+
+通ったら push する:
+
+```
+bash scripts/git_unlock.sh && git push origin master
+```
+
+**`evolve/NNN` は消さない。** revert の入口であり、次の周の番号計算もブランチ名から行うため。
+
+**衝突したら自力で解決しない**（マージは機械的でも、解決は設計判断になる）:
+
+```
+bash scripts/git_unlock.sh && git merge --abort
+```
+
+→ `evolve/NNN` は push 済みのまま残す → 7. の報告に「衝突したので master へ入っていない」と衝突
+ファイル名を書く → 通知は**優先度 4**。次の周は 0-2 で止まるので、人間が解決するまで待つ形になる。
+**マージ・push とも `--force` は禁止。**
 
 ## 7. 報告
 
@@ -289,6 +334,8 @@ bash scripts/git_unlock.sh && git push -u origin HEAD
 - **受信箱** — 取り込んだ件数と、それぞれどのセクションへ何のサイズで入れたか。`[削除]` は消した
   行をそのまま引用。解釈できなかった行があればその文面も
 - **やったこと** — 選んだ項目、ブランチ名、コミットの件名
+- **マージ** — `master` に入ったか（ff / 通常マージ、通常マージなら再検証の結果）、push できたか。
+  衝突して入らなかったなら衝突ファイル名と、次の周が 0-2 で止まること
 - **判断したこと** — 選択肢があった箇所、選んだ案とその理由（`roadmap-done.md` のメモと対応させる）
 - **検証結果** — `loop_verify.sh` の成否（ビルド / 警告 / テスト件数）
 - **レビュー結果** — 3 分類ごとの件数と、ROADMAP へ回した行
@@ -310,7 +357,9 @@ bash scripts/ntfy-send.sh "<1〜2 行の要約>" "evolve/<NNN>" 3
 
 ## 禁止事項
 
-- **master 上で作業しない / master に push しない / `--force` しない。**
+- **master 上で実装しない。** 作業は `evolve/NNN` で行い、`master` に触れるのは 6-2 のマージと
+  push だけ。**`--force` はどこでも禁止。**
+- **マージ衝突を自力で解決しない。** `--abort` して報告し、次の周は 0-2 で止める。
 - **`docs/PROGRESS.md`・`docs/DESIGN_IMPROVEMENT.md`・`docs/investigations/` に書かない。**
 - **out of scope（undo / 双方向同期 / タブの切り離し）を実装しない。提案もしない。**
 - **本番 MEGA アカウントで操作しない**（0-4 が通らなければ中止）。
