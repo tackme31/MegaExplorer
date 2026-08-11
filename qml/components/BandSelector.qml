@@ -67,7 +67,8 @@ Item {
         if (!root.tracking)
             return;
         root.tracking = false;
-        autoScroller.release();
+        verticalScroller.release();
+        horizontalScroller.release();
         if (canceled)
             root.bandCanceled();
         else
@@ -93,8 +94,7 @@ Item {
                 return;
             }
 
-            const press = root.view.mapFromItem(bandDrag.parent,
-                                                bandDrag.centroid.pressPosition);
+            const press = root.view.mapFromItem(bandDrag.parent, bandDrag.centroid.pressPosition);
             if (root.suppressed || root.isOnItem(press))
                 return; // not a band gesture; stay inert for its duration
 
@@ -110,17 +110,36 @@ Item {
         onActiveTranslationChanged: {
             if (!root.tracking)
                 return;
-            root.pointerView = root.view.mapFromItem(bandDrag.parent,
-                                                     bandDrag.centroid.position);
-            autoScroller.track(root.pointerView.y);
+            root.pointerView = root.view.mapFromItem(bandDrag.parent, bandDrag.centroid.position);
+            verticalScroller.track(root.pointerView.y);
+            horizontalScroller.track(root.pointerView.x);
         }
 
         onCanceled: root.finish(true)
     }
 
+    // One per axis rather than one two-axis scroller: a band drag is the only
+    // caller needing both at once, and DragAutoScroller already no-ops on an
+    // axis with nothing to scroll, so the horizontal one costs nothing in the
+    // grid.
     DragAutoScroller {
-        id: autoScroller
+        id: verticalScroller
         flickable: root.view
+    }
+
+    DragAutoScroller {
+        id: horizontalScroller
+        flickable: root.view
+        horizontal: true
+    }
+
+    // Enabled only while a band is live, so it cannot shadow Escape anywhere
+    // else -- notably InlineRenameField's, which cannot be open at the same
+    // time (this component is suppressed during a rename).
+    Shortcut {
+        sequence: "Escape"
+        enabled: root.tracking
+        onActivated: root.finish(true)
     }
 
     Rectangle {
