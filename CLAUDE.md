@@ -223,13 +223,23 @@ with `[編集]` — don't rewrite the branch, the loop computes its next number 
   mouse and keyboard, so a `PreToolUse` hook **asks** before every run. An **expiring** flag file
   under `%LOCALAPPDATA%\MegaExplorerLoop\`, written by the desktop shortcuts (`drive ON 6h/8h/12h`,
   `drive OFF`), waives that prompt. It means **"nobody is here to answer"**, not "permission": an
-  interactive session can always use `drive` by approving it, flag or no flag. What keeps an
+  interactive session can always use `drive` by approving it, flag or no flag — and **one approval
+  covers the whole session**, recorded by the hook's `PostToolUse` half (which only fires when the
+  tool actually ran). Without that, every step re-asks: a hook's `ask` overrides Claude Code's own
+  don't-ask-again, and each `drive` step is a different command string anyway. A session approval
+  deliberately does **not** satisfy `/evolve` — only the expiring flag does, because the expiry is
+  what stops a cycle grabbing the mouse days after someone said yes once. What keeps an
   unattended cycle from stalling on a prompt is `/evolve` reading the same flag itself and skipping
   without calling `drive` when it is absent — a permission dialog has no expiry, so reaching one
   would hang the loop until someone returns. Don't lock the workstation while the flag is set:
   `SendInput` goes to the secure desktop and never reaches the app.
 - `scripts/ntfy-send.sh` — how the loop reaches a phone. Claude Code's built-in push reports success
-  and mostly doesn't deliver, so it isn't used.
+  and mostly doesn't deliver, so it isn't used. Two callers: Claude, at the end of a cycle, and a
+  **`Notification` hook** in `.claude/settings.local.json` that fires the moment a permission prompt
+  goes up. The second exists because Claude is blocked at that point and cannot notify anyone
+  itself — so a prompt raised after you walked away (the drive flag forgotten, say) still reaches
+  your phone instead of silently holding the session. That file is gitignored, so a fresh clone has
+  to re-add the hook.
 
 Secrets: `MEGAEXPLORER_TEST_ACCOUNT` and `NTFY_TOPIC` live in the gitignored
 `.claude/settings.local.json` `env` block; `MEGAEXPLORER_TEST_PASSWORD` is a Windows user

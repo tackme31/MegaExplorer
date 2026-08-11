@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Sends a push to the ntfy mobile app. Claude Code's own mobile push reports
 # success but mostly never delivers (claude-code issues #85168 / #84488), so
-# notifications go through here instead. Not registered as a hook: Claude calls
-# it when it judges a push is warranted.
+# notifications go through here instead. Two callers: Claude, when it judges a
+# push is warranted, and the Notification hook in .claude/settings.local.json,
+# which fires the moment a permission prompt goes up -- the only path that can
+# reach anyone while Claude itself sits blocked waiting for the answer.
 #
 # NTFY_TOPIC is the channel's only secret -- anyone knowing it can read these
 # messages or forge them -- so it lives in the gitignored
