@@ -3,11 +3,15 @@
 Guidance for Claude Code when working in this repo. Kept compact — detail that isn't needed every
 session lives in companion docs, linked from the relevant section below rather than inlined:
 
+- `docs/REQUESTS.md` — **the inbox: where requests, new features and bugs get written, in free
+  prose.** Each cycle folds it into `ROADMAP.md` and empties it, so nobody has to decide size or
+  placement while writing. Labels (`[バグ]` `[最優先]` `[高]`/`[中]`/`[低]` `[削除]` `[編集]`) are
+  optional; without `[最優先]` the loop only ever appends, so priority stays a human call.
 - `docs/ROADMAP.md` — **the backlog, and the single source of truth for what gets built next.** The
-  `/evolve` loop reads it first every cycle and picks one item off the top; new bugs and requests
-  are written straight into it (no GitHub issues). Sized S/M/L, and an **L is never implemented
-  as-is** — a cycle that hits one only splits it. Its "見送り (blocked)" section is what the loop
-  must not touch.
+  `/evolve` loop reads it every cycle and picks one item off the top. Sized S/M/L, and an **L is
+  never implemented as-is** — a cycle that hits one only splits it. Its "見送り (blocked)" section
+  is what the loop must not touch. Written by the loop, not by hand: keeping the human out of this
+  file is what stops an edit racing a cycle's own removal of the row it just finished.
 - `docs/roadmap-done.md` — one line per finished ROADMAP item, and the only log the loop writes to.
   Its メモ column is where "still needs checking on a real run" gets recorded.
 - `docs/PROGRESS.md` — the phase-by-phase implementation log (what was built, why, gotchas), plus a
@@ -167,7 +171,8 @@ each decision is in that skill file, not here.
 
 | Document | Loop | Human |
 | --- | --- | --- |
-| `docs/ROADMAP.md` | takes items off, adds rows for things it noticed, splits `L`s | writes bugs and requests straight in |
+| `docs/REQUESTS.md` | reads it first every cycle, folds entries into ROADMAP, deletes them | **the inbox — free prose, this is where requests and bugs go** |
+| `docs/ROADMAP.md` | takes items off, adds rows from the inbox, splits `L`s | rarely — the inbox is the front door |
 | `docs/roadmap-done.md` | **one line per cycle — the only log it writes** | reads it; ticks off the 実機確認 column |
 | `docs/PROGRESS.md` | never | 100-line entries, for human-cut phases only |
 | `docs/DESIGN_IMPROVEMENT.md` | never (visual work needs eyes) | `/ui-style` sessions |
