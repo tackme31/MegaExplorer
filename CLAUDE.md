@@ -179,6 +179,11 @@ each decision is in that skill file, not here.
 | `docs/investigations/` | reads; never creates | new STUDY / SPEC / BUG |
 | `CLAUDE.md` | only when the user-facing feature set changed | anything |
 
+**Writing a request** is the only routine thing done by hand, and it goes on **`master`** — the
+trunk the loop branches from. Append to `docs/REQUESTS.md` and **commit it**: an uncommitted change
+aborts the next cycle at its clean-tree check (safe, but the slot is wasted). Nothing else needs a
+branch; `master` is the only long-lived one besides the `evolve/NNN` the loop creates.
+
 **Taking a cycle's work into `master`** (human side, at the desk):
 
 ```
@@ -187,8 +192,20 @@ git diff master...evolve/NNN             # and the diff, since nothing else revi
 bash scripts/git_unlock.sh && git merge --ff-only evolve/NNN
 ```
 
-If it turns out wrong after merging, `git revert` it and write the reason into `docs/ROADMAP.md` —
-don't rewrite the branch, the loop computes its next number from the existing `evolve/NNN` names.
+`--ff-only` refuses whenever `master` moved after the branch was cut — in practice, when a request
+was committed while that cycle was running. That is not a problem, just do an ordinary merge:
+
+```
+bash scripts/git_unlock.sh && git merge --no-edit evolve/NNN
+```
+
+`ROADMAP.md` cannot conflict (the loop is its only writer) and `REQUESTS.md` rarely does, since the
+two sides touch different lines — a request appended versus consumed ones deleted. `--ff-only` stays
+the default only because a refusal is a useful signal that something else moved.
+
+If it turns out wrong after merging, `git revert` it and write the reason into `docs/REQUESTS.md`
+with `[編集]` — don't rewrite the branch, the loop computes its next number from the existing
+`evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
 
 **Supporting pieces**, all of which exist for the loop but are useful by hand too:
 
