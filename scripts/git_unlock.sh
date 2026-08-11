@@ -39,7 +39,18 @@ fi
 # started a moment ago and hasn't appeared in tasklist yet. The manual steps
 # had a human deciding that, having just watched a command fail; this runs
 # unattended before every commit, so it waits instead of guessing.
-age=$(($(date +%s) - $(stat -c %Y "$lock")))
+#
+# stat can still fail here: the lock may be released between the check above
+# and this line, which is common when this runs immediately after another git
+# command. Treat that as "nothing to do" -- without the guard, the arithmetic
+# below gets an empty operand and, under set -u, the script dies and takes the
+# `&&` chain with it, so the git write it was protecting silently never runs.
+lock_mtime=$(stat -c %Y "$lock" 2>/dev/null) || {
+    echo "git_unlock: lock released while checking"
+    exit 0
+}
+
+age=$(($(date +%s) - lock_mtime))
 if [ "$age" -lt 10 ]; then
     echo "git_unlock: lock is ${age}s old -- too fresh to call stale, retry shortly"
     exit 1
