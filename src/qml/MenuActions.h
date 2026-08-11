@@ -32,7 +32,11 @@ public:
 
     explicit MenuActions(QObject* parent = nullptr);
 
-    // An unrecognized site yields an empty list rather than asserting: an empty menu
-    // is a visible bug, a crash isn't recoverable.
-    Q_INVOKABLE QStringList forSite(Site site) const;
+    // kind is a ViewKind, passed as int for the same reason
+    // FolderNavigationController::viewKind is one. No default: forgetting it is how a
+    // favourites listing would end up offering "New folder".
+    //
+    // An unrecognized site or kind yields an empty list rather than asserting: an
+    // empty menu is a visible bug, a crash isn't recoverable.
+    Q_INVOKABLE QStringList forSite(Site site, int kind) const;
 };

@@ -36,7 +36,7 @@ class FolderNavigationController : public QObject,
     Q_PROPERTY(bool canGoBack READ canGoBack NOTIFY canGoBackChanged)
     // Derived from mBreadcrumb like atRoot below, hence the shared NOTIFY.
     Q_PROPERTY(bool canGoUp READ canGoUp NOTIFY breadcrumbChanged)
-    // QVariantMap{"name", "handle", "isRoot"} elements, root-first. QML composes
+    // QVariantMap{"name", "handle", "isRoot", "kind"} elements, root-first. QML composes
     // the display labels (e.g. the root's "Cloud Drive"); C++ supplies fields only.
     Q_PROPERTY(QVariantList breadcrumb READ breadcrumb NOTIFY breadcrumbChanged)
     // Both derived from mBreadcrumb's last element. atRoot is true (and the name
@@ -47,6 +47,13 @@ class FolderNavigationController : public QObject,
     // Same derivation; 0 when the breadcrumb hasn't resolved yet or the location is
     // the root (handle meaningless there, as everywhere).
     Q_PROPERTY(quint64 currentHandle READ currentHandle NOTIFY breadcrumbChanged)
+    // Same derivation again. int rather than ViewKindEnum::Kind so this header keeps
+    // its Qt-free core includes; QML compares against ViewKind.CloudDrive either way.
+    Q_PROPERTY(int viewKind READ viewKind NOTIFY breadcrumbChanged)
+    // Whether a search query is narrowing what the model holds, so an empty listing
+    // can say which kind of empty it is. Its own NOTIFY: the query changes without
+    // the location doing so.
+    Q_PROPERTY(bool searchActive READ searchActive NOTIFY searchActiveChanged)
     // True while this tab has a mutating operation or a server sync in flight.
     // Deliberately NOT set by listing/search/breadcrumb fetches -- those are
     // synchronous in-memory reads and finish before anything could repaint. Nor by
@@ -82,6 +89,8 @@ public:
     QString currentFolderName() const;
     bool atRoot() const;
     quint64 currentHandle() const;
+    int viewKind() const;
+    bool searchActive() const;
 
     // Not Q_INVOKABLE: QML reaches the root load through
     // TabsController::loadRootAll(), never this per-tab entry point.
@@ -95,6 +104,17 @@ public:
     Q_INVOKABLE void goUp();
 
     Q_INVOKABLE void navigateTo(quint64 handle, bool isRoot);
+
+    // Switches this tab to the favourites listing; the side panel's Favourites row
+    // is the caller. Safe to call while already there -- the service re-fetches
+    // without pushing, so repeated clicks don't stack the same screen on the back
+    // stack.
+    Q_INVOKABLE void openFavourites();
+
+    // Whether this tab's screen allows the action with that stable ID right now, for
+    // the keyboard shortcuts that stand in for a menu row. The menu itself doesn't
+    // need it -- its rows already come from the same resolver.
+    Q_INVOKABLE bool canPerform(const QString& actionId) const;
 
     // Empty query restores the cached folder listing, no round-trip. A non-empty one
     // searches recursively under the open folder; results replace the list but leave
@@ -122,6 +142,20 @@ public:
     // syncing once per showing tab would be that many pointless round-trips.
     Q_INVOKABLE void refreshIfShowing(quint64 handle, bool isRoot);
 
+    // The two below are TabsController's view of this one, and plain public for
+    // the same reason as the four further down: nothing in QML calls them.
+
+    // A favourite toggled in another tab. Not applyFavouriteChange(): that one is
+    // this tab's own toggle, which the user is watching, so a favourites listing
+    // re-queries at once. Reached from the background, it only marks itself.
+    void applyRemoteFavouriteChange(quint64 handle, bool favourite);
+
+    // Re-reads if a fan-out marked this tab stale while it wasn't the one on
+    // screen; no-op otherwise. Called when the tab becomes current -- deferring
+    // the re-read is what keeps one moved node from costing every favourites tab
+    // a full-drive search (FAVOURITES_VIEW_SPEC.md 5.3).
+    void refreshIfStale();
+
     // The four below are FileMutationController's view of this one -- public rather
     // than Q_INVOKABLE on purpose, so nothing in QML binds to them.
 
@@ -133,6 +167,8 @@ public:
     // Writes one node's new favourite flag into both the model and the cached
     // listing, instead of re-reading the folder -- see FileListModel::setFavourite.
     // The cache matters: without it, clearing a search restores the pre-toggle flag.
+    // In a favourites listing there is nothing to write: un-favouriting removes the
+    // row, so that screen re-fetches instead (FAVOURITES_VIEW_SPEC.md 4.4).
     void applyFavouriteChange(quint64 handle, bool favourite);
 
     // What the mutation half gates paste on: before the first load there is no
@@ -147,20 +183,40 @@ signals:
     void canGoBackChanged();
     void breadcrumbChanged();
     void busyChanged();
+    void searchActiveChanged();
 
 private:
     void applyResult(Result<std::vector<FileEntry>> result);
     void applySearchResult(Result<std::vector<FileEntry>> result);
+
+    // Re-runs mLastSearchQuery against whatever this tab is showing. In a favourites
+    // listing the search box narrows the favourites rather than searching a folder,
+    // so SearchService -- which is defined as "recursive search under the current
+    // folder" -- is bypassed instead of taught about view kinds.
+    void runVisibleSearch();
+
     void refreshCurrentFolder();
 
     // refreshVisibleListing() behind the mHasLoadedOnce guard.
     void refreshListingIfLoaded();
+
+    // Writes one node's flag into the model and the cached listing. The folder
+    // half of both favourite entry points.
+    void writeFavouriteFlag(quint64 handle, bool favourite);
+
+    // Records that what this tab shows no longer matches the account, for
+    // refreshIfStale() to act on later.
+    void markStale();
 
     // Resolves the current location's ancestor chain, so the breadcrumb tracks the
     // folder hierarchy rather than navigation history. Emits breadcrumbChanged only
     // when the resolved path differs, so a sort-order change doesn't rebuild the
     // Breadcrumb Repeater.
     void refreshBreadcrumb();
+
+    // Copies the breadcrumb-derived view kind into the model, which needs it to
+    // resolve availableActions. Called from the only two places mBreadcrumb changes.
+    void publishViewKind();
 
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<SearchService> mSearchService;
@@ -173,6 +229,8 @@ private:
     // QML's Component.onCompleted restores the persisted sort before login has ever
     // run; this guards that startup setSortOrder() from re-fetching and erroring.
     bool mHasLoadedOnce = false;
+    // Set by a fan-out this tab couldn't apply in place; cleared by the re-read.
+    bool mStale = false;
     // Publishes busy() and owns the delay before a spinner appears. Shared because
     // the mutation half writes it too.
     std::shared_ptr<BusyState> mBusy;

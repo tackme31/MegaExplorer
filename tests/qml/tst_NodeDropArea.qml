@@ -119,12 +119,14 @@ TestCase {
         return proxy;
     }
 
-    function makeArea(proxy, uploads, handle, isRoot) {
+    function makeArea(proxy, uploads, handle, isRoot, kind) {
         const area = createTemporaryObject(areaComponent, testCase, {
                                                "dragProxy": proxy,
                                                "uploads": uploads,
                                                "targetHandle": handle === undefined ? 99 : handle,
-                                               "targetIsRoot": isRoot === undefined ? false : isRoot
+                                               "targetIsRoot": isRoot === undefined ? false : isRoot,
+                                               "targetKind": kind === undefined
+                                                             ? ViewKind.CloudDrive : kind
                                            });
         // A required property left out returns null here, and every later failure
         // would then be an opaque null dereference instead of this line.
@@ -319,6 +321,57 @@ TestCase {
 
         compare(area.accepting, true);
         compare(proxy.canDropCount, 0);
+    }
+
+    // A site on a screen that is not a folder listing -- the tab of a favourites
+    // view, say -- names no node at all: its handle is 0, and both controllers
+    // would refuse it only by kENoEnt accident. Refused up front instead, without
+    // asking either of them, whatever the drag is carrying.
+    function test_targetKind_refusesInternalDrags() {
+        const proxy = makeProxy(true, true);
+        const area = makeArea(proxy, makeUploads(true), 0, false, ViewKind.Favourites);
+
+        area.evaluateEntry(makeDrag(false));
+
+        compare(area.accepting, false);
+        compare(proxy.canDropCount, 0);
+    }
+
+    function test_targetKind_refusesExternalDrops() {
+        const uploads = makeUploads(true);
+        const area = makeArea(makeProxy(false, false), uploads, 0, false, ViewKind.Favourites);
+        const drag = makeDrag(true, ["file:///a.txt"]);
+
+        area.evaluateEntry(drag);
+
+        compare(area.accepting, false);
+        compare(drag.accepted, false);
+        compare(uploads.canUploadCount, 0);
+    }
+
+    // Ctrl going down mid-hover re-asks the move question, and the re-ask must not
+    // talk itself into a target the enter already refused.
+    function test_targetKind_survivesCopyModeReask() {
+        const proxy = makeProxy(true, true);
+        const area = makeArea(proxy, makeUploads(true), 0, false, ViewKind.Favourites);
+        area.evaluateEntry(makeDrag(false));
+
+        area.syncCopyMode(true);
+
+        compare(area.accepting, false);
+        compare(proxy.canDropCount, 0);
+    }
+
+    function test_targetKind_dropsNothing() {
+        const proxy = makeProxy(true, true);
+        const uploads = makeUploads(true);
+        const area = makeArea(proxy, uploads, 0, false, ViewKind.Favourites);
+        area.evaluateEntry(makeDrag(false));
+
+        area.performDrop(makeDrag(false));
+
+        compare(proxy.dropOnCount, 0);
+        compare(uploads.dropUrlsCount, 0);
     }
 
     // The wire itself cannot be observed without a live drag (containsDrag is

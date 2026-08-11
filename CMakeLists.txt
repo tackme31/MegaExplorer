@@ -81,6 +81,7 @@ add_library(MegaExplorerCore STATIC
     src/core/Result.h
     src/core/SortOrder.h
     src/core/PathSegment.h
+    src/core/ViewKind.h
     src/core/AccountInfo.h
     src/core/AccountPlan.h
     src/core/UserAttribute.h
@@ -181,7 +182,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/licenses/licenses.cmake)
 # pragma Singleton alone does not put a `singleton` line in the generated
 # qmldir -- this property does, and it has to be set before the module is
 # created.
-set_source_files_properties(qml/Theme.qml qml/ActionCatalog.qml
+set_source_files_properties(qml/Theme.qml qml/ActionCatalog.qml qml/ViewLabels.qml
                             PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(MegaExplorerQml
@@ -197,6 +198,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/Main.qml
         qml/ActionCatalog.qml
         qml/Theme.qml
+        qml/ViewLabels.qml
         qml/components/AboutDialog.qml
         qml/components/AccountMenuHeader.qml
         qml/components/ActionMenu.qml
@@ -207,6 +209,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/ConfirmRubbishDialog.qml
         qml/components/DragAutoScroller.qml
         qml/components/DragProxy.qml
+        qml/components/EmptyListingNotice.qml
         qml/components/FileContextMenu.qml
         qml/components/FileIcon.qml
         qml/components/FileViewDropArea.qml
@@ -226,6 +229,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/QuickAccessSection.qml
         qml/components/SidePanel.qml
         qml/components/SignOutDialog.qml
+        qml/components/SpecialViewsSection.qml
         qml/components/StatusBar.qml
         qml/components/TabStrip.qml
         qml/components/ToastStack.qml
@@ -248,6 +252,7 @@ qt_add_qml_module(MegaExplorerQml
         src/qml/NotificationController.cpp
         src/qml/PreviewController.h
         src/qml/PreviewController.cpp
+        src/qml/ViewKindEnum.h
         src/qml/WindowAgentForeign.h
     RESOURCES
         ${MEGAEXPLORER_LICENSE_RESOURCES}

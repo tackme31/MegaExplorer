@@ -17,7 +17,7 @@ ActionMenu {
     // its result signals.
     signal newFolderRequested
 
-    actionIds: MenuActions.forSite(MenuActions.FolderBackground)
+    actionIds: MenuActions.forSite(MenuActions.FolderBackground, root.navController.viewKind)
 
     onAboutToShow: {
         root.context = {

@@ -42,6 +42,11 @@ Item {
     // for why), so it must be nulled by both finish() and cancel().
     property var sourceMutations: null
 
+    // The ViewKind the gesture started in. Which screen the nodes came from is not
+    // recoverable from the payload -- a favourites listing holds rows scattered
+    // across the drive -- so it travels alongside sourceMutations.
+    property int sourceKind: ViewKind.CloudDrive
+
     property string label: ""
 
     readonly property bool active: root.Drag.active
@@ -58,6 +63,15 @@ Item {
     // the pointer is still -- which is exactly when "I've arrived, now make it
     // a copy" happens. Hence KeyboardState plus the Timer below.
     property bool copyMode: false
+
+    // Refused by every target it could reach, decided without knowing which one is
+    // under the pointer -- the favourites listing forbids moves outright. That is
+    // what lets the ghost show the refusal: it never has to ask a drop target, so
+    // the entered/exited ordering trap FAVOURITES_VIEW_SPEC.md 7.2 warns about
+    // doesn't arise. Refusals that do depend on the target stay unlit, as before.
+    // Spelled as one kind rather than "anything but CloudDrive": that is this
+    // screen's policy, not a fact a later special view would inherit.
+    readonly property bool refusedGesture: root.sourceKind === ViewKind.Favourites && !root.copyMode
 
     function sampleCopyMode() {
         const mods = KeyboardState.modifiers();
@@ -103,7 +117,9 @@ Item {
         radius: 4
         color: Qt.rgba(sysPalette.highlight.r, sysPalette.highlight.g, sysPalette.highlight.b, 0.85)
         border.color: sysPalette.highlight
-        opacity: 0.9
+        // Faded rather than badged: Theme.glyph has no prohibition sign, and
+        // adding one costs the cmap-plus-repaint check Theme.qml documents.
+        opacity: root.active && root.refusedGesture ? 0.4 : 0.9
 
         Label {
             id: ghostLabel
@@ -143,8 +159,9 @@ Item {
         root.y = local.y + 12;
     }
 
-    function begin(mutations, draggedEntries, text, scenePos) {
+    function begin(mutations, draggedEntries, text, scenePos, kind) {
         root.sourceMutations = mutations;
+        root.sourceKind = kind;
         root.entries = draggedEntries;
         root.label = text;
         // Before Drag.active, like sourceMutations: the source view's own DragEnter is
@@ -183,6 +200,11 @@ Item {
     function canDropOn(handle, isRoot) {
         if (!root.sourceMutations)
             return false;
+        // The favourites list forbids moves but not the gesture: copy-vs-move is
+        // only decided by the modifier held at drop time, so the refusal lives here
+        // rather than at drag start (FAVOURITES_VIEW_SPEC.md 4.3).
+        if (root.refusedGesture)
+            return false;
         return root.copyMode ? root.sourceMutations.canCopyEntriesOn(root.entries, handle, isRoot) :
                                root.sourceMutations.canDropHandlesOn(root.handles, handle, isRoot);
     }
@@ -212,6 +234,7 @@ Item {
         root.Drag.active = false;
         root.entries = [];
         root.sourceMutations = null;
+        root.sourceKind = ViewKind.CloudDrive;
         root.label = "";
         root.copyMode = false;
     }
@@ -223,6 +246,7 @@ Item {
         root.Drag.cancel();
         root.entries = [];
         root.sourceMutations = null;
+        root.sourceKind = ViewKind.CloudDrive;
         root.label = "";
         root.copyMode = false;
     }

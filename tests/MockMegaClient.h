@@ -47,6 +47,12 @@ public:
                  std::function<void(Result<std::vector<FileEntry>>)>),
                 (override));
     MOCK_METHOD(void,
+                listFavourites,
+                (SortOrder,
+                 const std::string&,
+                 std::function<void(Result<std::vector<FileEntry>>)>),
+                (override));
+    MOCK_METHOD(void,
                 download,
                 (std::uint64_t,
                  const std::string&,

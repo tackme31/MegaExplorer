@@ -329,6 +329,35 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
     onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
 }
 
+void MegaSdkClient::listFavourites(SortOrder order,
+                                   const std::string& nameFilter,
+                                   std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> root = resolveNode(0, true);
+    if (!root)
+    {
+        onDone(Result<std::vector<FileEntry>>::fail(
+            "No root node (not logged in / nodes not fetched)", MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    std::unique_ptr<mega::MegaSearchFilter> filter(mega::MegaSearchFilter::createInstance());
+    filter->byFavourite(mega::MegaSearchFilter::BOOL_FILTER_ONLY_TRUE);
+    filter->byLocationHandle(root->getHandle());
+    // Left unset when empty on purpose: MegaSearchFilter's name predicate is skipped
+    // entirely for an empty pattern, so byName("") would not mean "match nothing".
+    if (!nameFilter.empty())
+        filter->byName(nameFilter.c_str());
+
+    std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get(), toMegaOrder(order)));
+    onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
+}
+
 void MegaSdkClient::download(std::uint64_t handle,
                              const std::string& destinationPath,
                              std::function<void(std::uint64_t, std::uint64_t)> onProgress,

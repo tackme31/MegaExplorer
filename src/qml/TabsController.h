@@ -58,6 +58,7 @@ public:
         MutationsRole,                // FileMutationController* (QObject*)
         ThumbnailsRole,               // ThumbnailController* (QObject*)
         BusyRole,                     // that tab has an operation in flight
+        ViewKindRole,                 // ViewKind of the screen this tab shows
     };
 
     // uploads is app-global and non-owning (the composition root outlives this). It
@@ -81,6 +82,10 @@ public:
     // Opens the tab in the background without switching to it -- middle-click and
     // "Open in new tab" leave the current tab focused, as in Explorer and browsers.
     Q_INVOKABLE void addTabAt(quint64 handle, bool isRoot);
+
+    // Same background-tab semantics, with no handle to take: the favourites
+    // listing is a query, not a folder.
+    Q_INVOKABLE void addFavouritesTab();
 
     // Clamps currentIndex so it keeps pointing at the same tab, or a neighbour if
     // the active one was closed. Emits lastTabClosed() instead of closing the final
@@ -115,6 +120,10 @@ private:
     // Looked up by pointer rather than a captured index: tabs can be inserted or
     // removed after the connection was made, leaving a stale row number behind.
     void emitRowChangedFor(const FolderNavigationController* navigation, const QList<int>& roles);
+
+    // Pays off a stale mark on whichever tab is on screen -- after a fan-out, and
+    // whenever the current tab changes.
+    void refreshCurrentTabIfStale();
 
     std::function<TabContext()> mFactory;
     UploadController* mUploads;

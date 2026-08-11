@@ -29,6 +29,9 @@ DropArea {
     // var, not int: MEGA handles are quint64 and an int would truncate them.
     required property var targetHandle
     required property bool targetIsRoot
+    // Required rather than defaulted to CloudDrive: a site that forgets it should
+    // fail loudly at load, not silently read as an ordinary folder.
+    required property int targetKind
 
     // Recomputed on enter, and again whenever Ctrl toggles the drag between move
     // and copy (the two ask different questions and the answers genuinely differ
@@ -64,11 +67,22 @@ DropArea {
     // Payload read off dragProxy rather than the event's own drag.source: same
     // object (keys let nothing else in), but drag.source is typed QObject and
     // every field access through it would be an unchecked dynamic lookup.
+    // A view that isn't a folder listing names no node, so nothing can land on it
+    // whatever the drag carries. Default-deny, unlike DragProxy's source-side rule:
+    // there the refusal is one screen's policy, here it is the absence of a target.
+    // Not left to canDropOn()/canUploadTo() failing on the zero handle such a site
+    // passes -- that is an accident, not a guarantee (FAVOURITES_VIEW_SPEC.md 3.3).
+    function targetTakesDrops() {
+        return root.targetKind === ViewKind.CloudDrive;
+    }
+
     function evaluateEntry(drag) {
         if (root.dragProxy.active) {
-            root.accepting = root.dragProxy.canDropOn(root.targetHandle, root.targetIsRoot);
+            root.accepting = root.targetTakesDrops() && root.dragProxy.canDropOn(root.targetHandle,
+                                                                                 root.targetIsRoot);
         } else if (drag.hasUrls) {
-            root.accepting = root.uploads.canUploadTo(root.targetHandle, root.targetIsRoot);
+            root.accepting = root.targetTakesDrops() && root.uploads.canUploadTo(root.targetHandle,
+                                                                                 root.targetIsRoot);
             // Only the external branch touches drag.accepted; the move path relies
             // on implicit acceptance via key matching, and assigning here would
             // break it.
@@ -116,7 +130,8 @@ DropArea {
     // exercise both sides of the guard; the caller below supplies the real one.
     function syncCopyMode(hovering) {
         if (hovering && root.dragProxy.active)
-            root.accepting = root.dragProxy.canDropOn(root.targetHandle, root.targetIsRoot);
+            root.accepting = root.targetTakesDrops() && root.dragProxy.canDropOn(root.targetHandle,
+                                                                                 root.targetIsRoot);
     }
 
     // Ctrl can go down while the pointer sits still, and an internal drag delivers

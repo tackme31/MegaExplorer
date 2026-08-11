@@ -243,6 +243,9 @@ TreeView {
             uploads: uploadController
             targetHandle: treeDelegate.handle
             targetIsRoot: treeDelegate.isRoot
+            // Always Cloud Drive: a tree row names a real folder, whatever the file
+            // view beside it happens to be showing (same as FolderPinMenu.qml).
+            targetKind: ViewKind.CloudDrive
 
             // The drag* signals fire outside NodeDropArea's accept/refuse
             // branches, so edge scrolling works for either verdict.

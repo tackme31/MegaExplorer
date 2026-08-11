@@ -25,6 +25,21 @@ TabsController::TabsController(std::function<TabContext()> factory,
             return;
         emit dataChanged(index(0), index(static_cast<int>(mTabs.size()) - 1), {BusyRole});
     });
+
+    // A tab that was marked stale in the background pays for it the moment it is
+    // looked at. currentTabChanged also fires on close and reorder, where the
+    // current tab may be the same one -- harmless, since a tab that isn't stale
+    // does nothing here.
+    connect(this, &TabsController::currentTabChanged, this, [this]() {
+        refreshCurrentTabIfStale();
+    });
+}
+
+void TabsController::refreshCurrentTabIfStale()
+{
+    if (mCurrentIndex < 0 || mCurrentIndex >= static_cast<int>(mTabs.size()))
+        return;
+    mTabs[static_cast<std::size_t>(mCurrentIndex)].navigation->refreshIfStale();
 }
 
 int TabsController::rowCount(const QModelIndex& parent) const
@@ -61,6 +76,8 @@ QVariant TabsController::data(const QModelIndex& index, int role) const
             // folded in here for whichever tabs show the destination.
             return navigation->busy() ||
                    mUploads->isUploadingTo(navigation->currentHandle(), navigation->atRoot());
+        case ViewKindRole:
+            return navigation->viewKind();
     }
     return QVariant();
 }
@@ -74,6 +91,7 @@ QHash<int, QByteArray> TabsController::roleNames() const
         {MutationsRole, "mutations"},
         {ThumbnailsRole, "thumbnails"},
         {BusyRole, "busy"},
+        {ViewKindRole, "kind"},
     };
 }
 
@@ -129,6 +147,17 @@ void TabsController::addTabAt(quint64 handle, bool isRoot)
         navigation->loadRoot();
     else
         navigation->openFolder(handle);
+}
+
+void TabsController::addFavouritesTab()
+{
+    const int row = static_cast<int>(mTabs.size());
+    beginInsertRows(QModelIndex(), row, row);
+    mTabs.push_back(createTab());
+    endInsertRows();
+    emit countChanged();
+
+    mTabs.back().navigation->openFavourites();
 }
 
 void TabsController::closeTab(int index)
@@ -236,7 +265,7 @@ TabContext TabsController::createTab()
     connect(navigation, &FolderNavigationController::breadcrumbChanged, this, [this, navigation]() {
         // BusyRole too: it depends on where this tab stands, so navigating into or
         // out of an upload destination changes it with no operation of its own.
-        emitRowChangedFor(navigation, {TitleRole, AtRootRole, BusyRole});
+        emitRowChangedFor(navigation, {TitleRole, AtRootRole, BusyRole, ViewKindRole});
     });
     connect(navigation, &FolderNavigationController::busyChanged, this, [this, navigation]() {
         emitRowChangedFor(navigation, {BusyRole});
@@ -258,6 +287,7 @@ TabContext TabsController::createTab()
                     tab.navigation->refreshIfShowing(destination, destinationIsRoot);
                     tab.navigation->refreshIfShowing(source, sourceIsRoot);
                 }
+                refreshCurrentTabIfStale();
             });
 
     // Same fan-out for a paste-copy, but with one end: a copy fills the
@@ -272,6 +302,42 @@ TabContext TabsController::createTab()
                         continue;
                     tab.navigation->refreshIfShowing(destination, destinationIsRoot);
                 }
+                refreshCurrentTabIfStale();
+            });
+
+    // One end again, the folder the nodes left. A favourites listing is fanned out
+    // to as well, since anything moved to the rubbish bin drops out of it -- and
+    // that is the only way a node can leave it, because this app forbids deleting
+    // from the favourites screen (FAVOURITES_VIEW_SPEC.md 5.3).
+    connect(context.mutations.get(),
+            &FileMutationController::nodesRemoved,
+            this,
+            [this, navigation](quint64 source, bool sourceIsRoot) {
+                for (const TabContext& tab : mTabs)
+                {
+                    if (tab.navigation.get() == navigation)
+                        continue;
+                    tab.navigation->refreshIfShowing(source, sourceIsRoot);
+                }
+                refreshCurrentTabIfStale();
+            });
+
+    // The flag has no location, so this one goes to every other tab and each
+    // decides: a folder listing writes it in place if it holds that node, a
+    // favourites listing has to re-query and marks itself instead. Without it,
+    // hearting a file in one tab never shows up in a favourites tab -- Phase 24a
+    // had no cross-tab story for the flag at all.
+    connect(context.mutations.get(),
+            &FileMutationController::favouriteChanged,
+            this,
+            [this, navigation](quint64 handle, bool favourite) {
+                for (const TabContext& tab : mTabs)
+                {
+                    if (tab.navigation.get() == navigation)
+                        continue;
+                    tab.navigation->applyRemoteFavouriteChange(handle, favourite);
+                }
+                refreshCurrentTabIfStale();
             });
 
     return context;

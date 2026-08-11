@@ -34,6 +34,13 @@ public:
                     SortOrder order,
                     std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
+    // Pushes the current location and switches this tab to the favourites listing,
+    // which is a location in its own right rather than a folder. Calling it while
+    // already there re-fetches without pushing, so repeated clicks on the same
+    // side-panel row can't stack the same screen up for Back to walk down again.
+    void openFavourites(SortOrder order,
+                        std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
     // Peeks the most recent back-stack entry and re-fetches it, popping only on
     // success. Fails in-stack when canGoBack() is false.
     void goBack(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
@@ -52,6 +59,13 @@ public:
                         SortOrder order,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
+    // listChildrenOf's counterpart for the favourites listing: reads it without
+    // going there. The name filter is what makes the search box narrow a favourites
+    // listing instead of searching a folder (FAVOURITES_VIEW_SPEC.md 3.5).
+    void listFavourites(SortOrder order,
+                        const std::string& nameFilter,
+                        std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
     bool canGoBack() const;
 
     // Clears the back-stack without touching IMegaClient, so a login after logout
@@ -62,6 +76,7 @@ public:
     // "wherever the user currently is".
     struct CurrentLocation
     {
+        ViewKind kind;
         bool isRoot;
         std::uint64_t handle;
     };
@@ -76,8 +91,11 @@ public:
     void syncWithServer(std::function<void(Result<void>)> onDone);
 
 private:
+    // isRoot/handle are meaningless unless kind is CloudDrive, the same kind of
+    // sentinel nesting as isRoot already making handle meaningless.
     struct Location
     {
+        ViewKind kind = ViewKind::CloudDrive;
         bool isRoot = true;
         std::uint64_t handle = 0;
     };

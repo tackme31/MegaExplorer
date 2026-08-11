@@ -97,6 +97,13 @@
   スプリングロード（ホバーでタブ切替、Phase 22b）は拒否ターゲットでも作動する設計なので、
   「お気に入りタブにホバーして切り替え、そこから更に別タブへ」は今までどおり効く
 
+**F6 実装時の訂正（2026-08-11）**: この節は 3 点が古い。①タイトルは合成セグメントの `name` からは
+出ない。§3.3 の訂正で `name` は空になったので `TitleRole` は `""` で、ラベルは F5 が足した
+`ViewKindRole` 経由の `ViewLabels.label()` が出す。②`TabStrip.qml` の `atRoot ? "Cloud Drive" : title`
+という三項演算子はもう無く、同じく `ViewLabels.label()` を呼ぶ（結論「F6 に作業なし」は別の理由で
+成り立つ）。③タブへのドロップの明示化は **F4 で完了済み**（`targetKind: navigation.viewKind`）。
+結果として F6 に残ったのは `addFavouritesTab()` とサイドパネルの導線だけだった。
+
 ### 2.3 ビュー本体
 
 `TabContentPane` は**無改修**。`FileTableView` / `FileGridView` / `PreviewPane` / `StatusBar` /
@@ -171,6 +178,21 @@ void openFavourites(SortOrder, std::function<void(Result<std::vector<FileEntry>>
 **「戻るで帰る」を要件から外せばこの節はまるごと消え、種別はコントローラ内で完結する。**
 そうしないと決めたので、以下はその前提。
 
+**F1 実装時に確定した 3 点（2026-08-09）**:
+
+- QML 側の名前は `src/qml/ViewKindEnum.h`（`QML_NAMED_ELEMENT(ViewKind)` + `QML_UNCREATABLE` +
+  unscoped `enum Kind` + `Q_ENUM`）。`src/core` は Qt 非依存なので `Q_ENUM` を enum 本体の隣に
+  置けない。値の一致は `static_assert` 2 本で担保。QML からは `ViewKind.Favourites` と読む
+- `FolderNavigationController::viewKind` は**サービスではなく `mBreadcrumb.last()` から導出**し、
+  NOTIFY は既存 4 プロパティ（`canGoUp`/`currentFolderName`/`atRoot`/`currentHandle`）と同じ
+  `breadcrumbChanged` を共有する。種別と一覧内容が必ず同じタイミングで切り替わり、emit 箇所を
+  手で管理せずに済む。**代償として `PathSegment::kind` は §3.3 のクリック抑止用ではなく F1 時点で
+  必須**になり、`refreshBreadcrumb()` の `QVariantMap` にも `"kind"` キーが 1 つ増える
+- `kind` の位置は `Location` / `CurrentLocation` では**先頭**、`PathSegment` では**末尾**。前者は
+  `enum class` が `bool` から暗黙変換されないので既存の位置指定初期化 2 箇所が必ずコンパイル
+  エラーになる（silent に壊れない）。後者を末尾にしたのは、テストの集約初期化 `{"", 0, true}` を
+  無改修で通すため
+
 ### 3.2 履歴の意味論
 
 タブは「お気に入り専用」にはならず、履歴の途中で種別が切り替わる。トレース:
@@ -192,7 +214,9 @@ Cloud Drive/写真                       stack=[]                          curre
 
 - **既にお気に入り一覧のときに Favourites をもう一度クリック**したら、積まずに何もしない
   （または更新扱い）。素通しにすると `[…, {Favourites}]` が積み上がり、戻るを連打すると
-  同じ画面が何度も出る。`openFavourites()` の先頭 1 行のガード
+  同じ画面が何度も出る。`openFavourites()` の先頭 1 行のガード。
+  **F5 で「更新扱い」に確定（2026-08-11）**: push せず `listFavourites` を撃って `onDone` を
+  呼ぶ。完全な no-op にすると fire-and-forget の `onDone` が握り潰される経路が 1 つ増える
 - **「上へ」は戻らない。** 一覧から `旅行/` を開いた後の「上へ」は**実の親フォルダ**へ行く
   （パンくずが実ノードの祖先チェーンだから）。お気に入り一覧に帰るのは「戻る」だけ。
   Explorer の検索結果と同じ非対称で、意図どおり
@@ -211,16 +235,31 @@ Cloud Drive/写真                       stack=[]                          curre
 `resolveCurrentPath()` は `mCurrent.kind == Favourites` のとき SDK を呼ばず、
 
 ```
-PathSegment{ name: "Favourites", handle: 0, isRoot: false, kind: Favourites }
+PathSegment{ name: "", handle: 0, isRoot: false, kind: Favourites }
 ```
 
-を 1 つだけ返す。これで `currentFolderName()`（タブタイトル）、`atRoot()`、`canGoUp()`、
-`currentHandle()` の 4 つが**無改修で正しい答えを返す**。
+を 1 つだけ返す。これで `atRoot()`、`canGoUp()`、`currentHandle()` の 3 つが**無改修で正しい
+答えを返す**。
+
+**F5 実装時の訂正（2026-08-11）**: `name` は当初 `"Favourites"` と書いていたが、**空にした**。
+置き場所である `FolderNavigationService` は `src/core` = Qt 非依存層で `qsTr()` が使えず、
+ゴミ箱・アルバム・最近の更新まで含めた 4 つの UI 文字列が翻訳不能なまま core に固定される。
+root のラベル（`qsTr("Cloud Drive")`）が既に QML 側にある前例にも反し、「合成ロケーションの
+ラベルはどこか」が 2 層に割れる。代わりに `qml/ViewLabels.qml`（シングルトン）の
+`label(kind, isRoot, name)` が全ロケーションのラベルを持ち、`Breadcrumb.qml` と `TabStrip.qml`
+がそれを呼ぶ。名前を持つロケーション（フォルダ、将来のアルバム）は C++ の `name` がそのまま
+勝つので、**新しい特殊ビュー 1 種類 = `ViewLabels.qml` に 1 行**で済む。
+タブ名は `TabsController` に `ViewKindRole`（`"kind"`）を足して渡す。
 
 `PathSegment` に `kind` を足すのは、パンくず側で**クリックとドロップを止める**ため。
 `Breadcrumb.qml` は各セグメントに `NodeDropArea` を置き、クリックで `navigateTo(handle, isRoot)`
 を呼ぶ。`handle = 0` のまま放置すると「押しても何も起きない（か、kENoEnt でエラートースト）」
 という挙動になる。**押せないことを明示する**ほうが正しい。
+
+**F6 実装時の補足（2026-08-11）**: ドロップ側は F4 の `targetKind: modelData.kind` で既に済んで
+いたので、F6 で足したのはクリック側の 1 条件だけ（`navigable` に `kind === CloudDrive` を AND）。
+合成セグメントは 1 つしか無く既に最後尾なので**今日の挙動は何も変わらない**。それでも書くのは、
+将来の複数セグメントな特殊ビューがクリック可能性を継承しないようにするため。
 
 > ⚠ `currentHandle()` が 0、`atRoot()` が false になる点は SPECIAL_VIEWS §1.3 が指摘した
 > 「偶然正しく落ちる」状態そのもの。`checkMove` が kENoEnt で弾くので結果的に安全だが、
@@ -252,8 +291,12 @@ mApi->search(filter.get(), toMegaOrder(order));
   ゴミ箱の中のお気に入りも、Vault / 共有フォルダ（inshare）のお気に入りも入らない。
   逆に将来これらを含めたくなったら `byLocation(SEARCH_TARGET_ALL)` になり、
   ゴミ箱だけを弾く除外ロジックを別途書くことになる（今回はやらない）
-- ⚠ **未検証**: 既存コードは `byName` を必ず設定している。`byName` 無しの filter で
-  全件返るかは実装時に確認が要る（返らないなら `byName("")` か `byName("*")` の挙動確認）
+- ✅ **決着（2026-08-11、SDK ソースで静的に確認。実アカウント不要）**: `byName` 無しで全件返る。
+  `NodeSearchFilter::isValidName()`（`third_party/sdk/src/nodemanager.cpp:71`）はパターンが空なら
+  無条件 `true`、sqlite 側の述語（`third_party/sdk/src/db/sqlite.cpp:4605`）も name/description/tag
+  の条件が 0 個なら `result = true`。`MegaApiImpl::search()` に「名前必須」のガードも無い。
+  よって `nameFilter` が空のときは **`byName` を呼ばない**（`byName("")` でも同じ結果だが、
+  「空文字は絞り込み無し」という意図がコードから読めない）
 - 戻りは `nodeListToEntries()` を通るので `isFavourite` は自動で埋まる（全 true）
 
 ### 3.5 `SearchService` との関係
@@ -382,7 +425,11 @@ void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favou
 
 - ハート 1 回につき全ドライブ再検索（§5.1 の同期コスト）。頻度は低い（一覧に来て解除する、
   という明示操作）ので v1 は許容。遅ければ §3.2 のキャッシュ方針と同じ土俵で考える
-- スクロール位置が先頭に戻る
+- スクロール位置が先頭に戻る — **と想定していたが、F7a の実機確認では戻らなかった**。
+  `contentY` を書く箇所はアプリ側に無く、`TableView` はモデルリセット時に既存の `contentY` から
+  左上セルを再計算する（`ListView`/`GridView` のように原点へ戻さない）ため。残るのは数値ひとつで、
+  選択集合とバンド選択セッションは `setEntries()` が必ず捨てるので、古い状態は持ち越さない。
+  想定より安い代償だったというだけで、決定 6 の判断は変わらない
 
 ---
 
@@ -406,6 +453,21 @@ void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favou
   差分だけで維持する。ただし他デバイスからの変更に弱く、決定 6（解除で引き直す）とも噛み合わない
 
 推奨は (A) で出して計測 → 遅ければ (C) → それでも駄目なら (B)。
+
+**計測結果（2026-08-11、F7b）** — (A) のまま出し、開発アカウントで実測:
+
+| 経路 | `MegaApi::search()` | `FileEntry` への変換 |
+| --- | --- | --- |
+| タブを開く／解除で引き直す（フィルタ無し、0〜1 件ヒット） | **19〜21 ms** | < 1 ms |
+
+体感でも引っかかりは無く、**(A) を維持する**。ただし**リスクは閉じていない**: このアカウントは
+ノード数が 2 桁で、`FETCHNODES_PROGRESS_INVESTIGATION.md` の 60 万ノード級は未測定のまま。
+この規模で 20 ms かかっている以上、大半は木の走査ではなく固定費と見られるが、
+それは推測であって測っていない。§5.2 の「引き直しの回数」も、フィルタ付きの引き直しは
+フィルタ有無の 2 回走る（§4.4）ので**この 2 倍**になる。
+
+計測は `MegaSdkClient::listFavourites` に一時的な `QElapsedTimer` + `qCInfo(lcSearch)` を
+入れて行い、数字を得た後に削除した。再測するなら同じ手で足す。
 
 ### 5.2 再取得の頻度
 
@@ -663,20 +725,48 @@ tab.navigation->refreshIfAffectedBy(destination, destinationIsRoot);   // Favour
 
 - 決定 1（カット禁止）と §4.1 のマトリクスを `defaultMenuActions()` の `scopes` に落とす。
   **この時点で Favourites 側の期待値もテストに書ける**（画面はまだ無くてよい）
-- **やらない**: QML 側の呼び出し付け替え（F3）
+- **やらない**: キー経路の付け替え（F3）
 - 完了条件: `MenuActionResolverTest` に Favourites の membership ケース、
   `FileListModelTest` に `availableActions` の種別分岐
+
+**F2 実装時に確定した 3 点（2026-08-09）**:
+
+- `MenuActions::forSite()` の QML 呼び出し側 2 箇所は **F3 ではなく F2 で直した**。C++ 側で
+  シグネチャを変えた時点で 1 引数呼び出しは実行時エラーになり、F2 単体で緑を保つには
+  同時に直すか一時的な既定引数を置くしかない。後者は F3 で剥がす往復になる
+- `canPerform(actionId)` は **FileSelection 文脈と `folderTargetContext(FolderBackground)` の
+  OR**。ショートカットは「ファイルビューが開ける 2 つのメニューのどちらかの行の代替」
+  という意味付けで、どの action がどの site に載るかの知識を QML 側に漏らさずに済む。
+  ID 引き当ては `menuActionAllowed(actionId, ctx)` として resolver 側に置いた
+- `FileListModel` への種別注入は `setEntries()` の引数ではなく `setViewKind()`。前者は
+  テスト側の呼び出しが約 50 箇所ある一方、既定引数を付ければ §6-8 と同じ「渡し忘れが黙って
+  CloudDrive」の罠を作る。コントローラ側は `publishViewKind()` 1 つを `refreshBreadcrumb()` の
+  commit と `reset()` の 2 箇所から呼ぶ（＝ `mBreadcrumb` が変わる場所と同じ）
 
 ### F3 — アクション可否の一本化（QML 経路）
 
 `FileViewInput.handleKey` の Delete / Ctrl+X / Ctrl+V を `canPerform()` 経由にする。
-`MenuActions.forSite()` の呼び出し側（`FolderBackgroundMenu` / `FolderPinMenu`）に種別を渡す。
+（`MenuActions.forSite()` の呼び出し側 2 箇所は F2 で済ませた —— 上記参照）
 
 - **ここが 24b で一番「静かに壊れる」箇所**（§4.2 の表）。resolver に軸を足しただけでは
   キー経路は素通しのまま、という SPECIAL_VIEWS §2.3 の指摘そのもの
 - **ドラッグ開始はガードしない**（§0-4）。触りたくなるが触らない
 - 完了条件: `tst_FileViewInput.qml` に「`CloudDrive` では従来どおり全部通る」ケース。
   Favourites 側は F6 以降に実機で確認
+
+**F3 実装時に確定した 2 点（2026-08-09）**:
+
+- ガードは**分岐の中**に置き、弾いても `event.accepted = true` は立てる（§4.2 の表は「早期 return」と
+  書いていたが、そうしない）。理由は 2 つ。①`canPerform("moveToRubbish")` / `("cut")` は**選択ゼロでも
+  false** になる（`menuActionApplies` が `selection.total() == 0` で落とす）ので、素通しにすると
+  CloudDrive で選択ゼロの Delete / Ctrl+X が `accepted` を立てなくなり、「挙動変化なし」でなくなる。
+  今日そこは `confirm()` / `putOnClipboard()` が自分で bail したうえで true を立てている。
+  ②分岐構造が変わらないので、Shift+Delete が Cut 分岐へ落ちない保証（`StandardKey.Cut` は Windows で
+  Ctrl+X **かつ** Shift+Delete）が現状のまま残る
+- **F2 をガードしない理由は「仕様がそう言っているから」ではない。** `beginRename()` は選択ゼロのとき
+  カーソル行を選んでから始める設計なので、キー到達時点の選択で `canPerform("rename")` を引くと
+  SingleOnly に落ちてこのフローが壊れる。Ctrl+C のほうは copy が両 `ViewKind` に載っている以上
+  純粋に死にコードなので足さなかった（ゴミ箱など copy を禁じる画面が来たらその phase で足す）
 
 ### F4 — D&D の出所・行き先に種別
 
@@ -686,6 +776,24 @@ tab.navigation->refreshIfAffectedBy(destination, destinationIsRoot);   // Favour
 
 - 完了条件: `tst_DragProxy.qml` に `sourceKind` × `copyMode` の 4 通り、
   `tst_NodeDropArea.qml` に `targetKind` の拒否、`tst_FileViewDropArea.qml` にフォールバック抑止
+
+**F4 実装時に確定した 3 点（2026-08-09）**:
+
+- **お気に入り一覧の中のフォルダ行は「通常のフォルダ」のまま。** §4.1 のマトリクスは「移動 Drop は
+  両方向 ❌」と読めるが、そう実装すると*ツリーやピンの上の同じフォルダは移動を受けるのに一覧の上では
+  受けない*という非対称が残る。行は実ノードなので、抑止するのは §4.3 が言うフォールバック
+  （＝行に当たらないときの「現在フォルダへ」）だけとし、行への move / copy / 外部アップロードは
+  素通しにした。禁じられるのは *(a)* 一覧から出る移動と *(b)* 一覧そのもの（`currentHandle == 0`）
+  への投入の 2 つで、要件の「⇄ 移動不可・Ctrl+コピー可」はこの 2 つで満たされる
+- **出所と行き先で判定の綴りを意図的に変えた。** 出所側 `DragProxy.canDropOn()` は
+  `sourceKind === Favourites` で落とす（その画面の**ポリシー**なので、ゴミ箱やアルバムが
+  黙って継承しないよう名指しする）。行き先側 `NodeDropArea.targetTakesDrops()` は
+  `targetKind === CloudDrive` の default-deny（フォルダ一覧でない画面に**投入先が存在しない**という
+  構造的事実なので、未知の種別は拒否が正しい）。同じ enum を見ていても既定の向きが逆になる
+- **`NodeDropArea.targetKind` は仕様書の「既定 `CloudDrive`」ではなく `required`。** F2 が
+  `setViewKind()` を選んだのと同じ §6-8 の罠を避けるため。隣の `targetHandle` / `targetIsRoot` も
+  required で形が揃う。**ただし設定漏れはコンパイルではなく実行時**（デリゲート生成が null を返す）に
+  出るので、F4 の検証には実機起動で 4 設置箇所すべてを描画させる手順が要った
 
 ### F5 — お気に入りの取得
 

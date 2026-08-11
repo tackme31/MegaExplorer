@@ -169,8 +169,13 @@ Item {
             return;
         }
 
+        // The three shortcuts that stand in for a menu row ask the resolver first
+        // (Delete here, Cut and Paste below). Inside the branch rather than around
+        // it: the key stays consumed either way, so a screen that withholds the
+        // action can't have Shift+Delete fall through into the Cut branch below.
         if (event.key === Qt.Key_Delete) {
-            confirmRubbishDialog.confirm();
+            if (root.navController.canPerform("moveToRubbish"))
+                confirmRubbishDialog.confirm();
             event.accepted = true;
             return;
         }
@@ -192,13 +197,15 @@ Item {
         }
 
         if (event.matches(StandardKey.Cut)) {
-            root.putOnClipboard(true);
+            if (root.navController.canPerform("cut"))
+                root.putOnClipboard(true);
             event.accepted = true;
             return;
         }
 
         if (event.matches(StandardKey.Paste)) {
-            root.mutController.paste();
+            if (root.navController.canPerform("paste"))
+                root.mutController.paste();
             event.accepted = true;
             return;
         }

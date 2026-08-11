@@ -71,7 +71,16 @@ DropArea {
         if (entries.length === 0)
             return;
         const label = entries.length === 1 ? entries[0].name : qsTr("%1 items").arg(entries.length);
-        root.dragProxy.begin(root.mutController, entries, label, scenePos);
+        root.dragProxy.begin(root.mutController, entries, label, scenePos,
+                             root.navController.viewKind);
+    }
+
+    // Whether the "no row under the pointer -> the folder this view is showing"
+    // fallback both branches below take has a folder to fall back to. A favourites
+    // listing has none: it is a query, and its currentHandle is 0. Only its folder
+    // rows can be dropped on (FAVOURITES_VIEW_SPEC.md 4.3).
+    function hasCurrentFolderTarget() {
+        return root.navController.viewKind === ViewKind.CloudDrive;
     }
 
     function clearDropTarget() {
@@ -101,8 +110,8 @@ DropArea {
         // already live there and a Ctrl+drag copy accepts, since that duplicates
         // them under "... - Copy".
         root.dropRow = -1;
-        root.dropOnCurrentFolder = root.dragProxy.canDropOn(root.navController.currentHandle,
-                                                            root.navController.atRoot);
+        root.dropOnCurrentFolder = root.hasCurrentFolderTarget() && root.dragProxy.canDropOn(
+                    root.navController.currentHandle, root.navController.atRoot);
     }
 
     function updateDropTarget(drag) {
@@ -142,8 +151,8 @@ DropArea {
             // drag has no "already lives there" case -- so the viewport frame
             // stays lit for most of the gesture. That's Explorer's behavior,
             // not a bug.
-            root.dropOnCurrentFolder = root.uploads.canUploadTo(root.navController.currentHandle,
-                                                                root.navController.atRoot);
+            root.dropOnCurrentFolder = root.hasCurrentFolderTarget() && root.uploads.canUploadTo(
+                        root.navController.currentHandle, root.navController.atRoot);
         }
         // Only the external branch touches drag.accepted: the move path relies
         // on implicit acceptance by key match.

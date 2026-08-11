@@ -451,6 +451,44 @@ TEST_F(FileMutationControllerTest, SetEntryFavouriteUpdatesTheRowInPlaceWithoutR
     EXPECT_TRUE(model()->data(model()->index(1, 0), FileListModel::IsFavouriteRole).toBool());
 }
 
+TEST_F(FileMutationControllerTest, SetEntryFavouriteAnnouncesItselfOnlyOnSuccess)
+{
+    // The other tabs learn about the flag from this signal alone -- a favourites
+    // listing elsewhere would otherwise never notice (spec 5.3). Reporting an
+    // attempt that failed would make those tabs show a state the account is not in.
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    int reported = 0;
+    quint64 reportedHandle = 0;
+    bool reportedValue = false;
+    QObject::connect(mutations.get(),
+                     &FileMutationController::favouriteChanged,
+                     mutations.get(),
+                     [&](quint64 handle, bool favourite) {
+                         ++reported;
+                         reportedHandle = handle;
+                         reportedValue = favourite;
+                     });
+
+    EXPECT_CALL(*client, setNodeFavourite(1u, true, _))
+        .WillOnce(InvokeArgument<2>(Result<void>::ok()));
+    mutations->setEntryFavourite(1, true);
+    flush();
+
+    ASSERT_EQ(reported, 1);
+    EXPECT_EQ(reportedHandle, 1u);
+    EXPECT_TRUE(reportedValue);
+
+    EXPECT_CALL(*client, setNodeFavourite(1u, false, _))
+        .WillOnce(InvokeArgument<2>(Result<void>::fail("denied", MegaErrorCode::kEAccess)));
+    mutations->setEntryFavourite(1, false);
+    flush();
+
+    EXPECT_EQ(reported, 1);
+}
+
 TEST_F(FileMutationControllerTest, SetEntryFavouriteReportsFailureUnderTheActionsOwnContext)
 {
     givenRootListing({entry("a", 1)});

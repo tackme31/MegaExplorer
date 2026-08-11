@@ -10,6 +10,11 @@ bool siteMatches(const std::vector<MenuSite>& sites, MenuSite site)
     return std::find(sites.begin(), sites.end(), site) != sites.end();
 }
 
+bool scopeMatches(const std::vector<ViewKind>& scopes, ViewKind kind)
+{
+    return std::find(scopes.begin(), scopes.end(), kind) != scopes.end();
+}
+
 bool targetMatches(ActionTarget target, const SelectionSummary& selection)
 {
     switch (target)
@@ -45,6 +50,9 @@ bool menuActionApplies(const MenuActionSpec& spec, const MenuContext& ctx)
     if (!siteMatches(spec.sites, ctx.site))
         return false;
 
+    if (!scopeMatches(spec.scopes, ctx.kind))
+        return false;
+
     if (ctx.selection.total() == 0)
         return false;
 
@@ -53,48 +61,76 @@ bool menuActionApplies(const MenuActionSpec& spec, const MenuContext& ctx)
 
 const std::vector<MenuActionSpec>& defaultMenuActions()
 {
+    // The four actions a favourites listing withholds -- NewFolder, Cut, Paste,
+    // MoveToRubbish -- are exactly the ones needing a destination folder, which a
+    // flat cross-drive listing has none of (FAVOURITES_VIEW_SPEC.md 4.1; Cut is a
+    // deferred move, hence its decision 1).
     static const std::vector<MenuActionSpec> actions = {
         {MenuAction::NewFolder,
          {MenuSite::FolderBackground},
+         {ViewKind::CloudDrive},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         {MenuAction::Download,
          {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites},
          ActionTarget::FilesOnly,
          ActionArity::Any},
         {MenuAction::OpenInNewTab,
          {MenuSite::FileSelection, MenuSite::FolderRow},
+         {ViewKind::CloudDrive, ViewKind::Favourites},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         {MenuAction::TogglePin,
          {MenuSite::FileSelection, MenuSite::FolderRow},
+         {ViewKind::CloudDrive, ViewKind::Favourites},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         // SingleOnly: with a mixed selection there is no one label to show, and the
         // resolver can't see the flag that would decide it anyway.
         {MenuAction::ToggleFavourite,
          {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites},
          ActionTarget::Any,
          ActionArity::SingleOnly},
         // Cut before Copy, Windows' own order.
-        {MenuAction::Cut, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
-        {MenuAction::Copy, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
+        {MenuAction::Cut,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive},
+         ActionTarget::Any,
+         ActionArity::Any},
+        {MenuAction::Copy,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites},
+         ActionTarget::Any,
+         ActionArity::Any},
         // FoldersOnly/SingleOnly like NewFolder, satisfied the same way:
         // folderTargetContext() synthesizes exactly that selection.
         {MenuAction::Paste,
          {MenuSite::FolderBackground},
+         {ViewKind::CloudDrive},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         // SingleOnly is the whole implementation of "no rename while multiple items
         // are selected".
-        {MenuAction::Rename, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::SingleOnly},
-        {MenuAction::MoveToRubbish, {MenuSite::FileSelection}, ActionTarget::Any, ActionArity::Any},
+        {MenuAction::Rename,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites},
+         ActionTarget::Any,
+         ActionArity::SingleOnly},
+        {MenuAction::MoveToRubbish,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive},
+         ActionTarget::Any,
+         ActionArity::Any},
         {MenuAction::SelectAll,
          {MenuSite::FolderBackground},
+         {ViewKind::CloudDrive, ViewKind::Favourites},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         {MenuAction::Refresh,
          {MenuSite::FolderBackground},
+         {ViewKind::CloudDrive, ViewKind::Favourites},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
     };
@@ -113,9 +149,21 @@ std::vector<MenuAction> resolveMenuActions(const MenuContext& ctx,
     return result;
 }
 
-MenuContext folderTargetContext(MenuSite site)
+bool menuActionAllowed(std::string_view actionId, const MenuContext& ctx)
+{
+    for (const MenuActionSpec& spec : defaultMenuActions())
+    {
+        // One spec per action, so the first match settles it.
+        if (menuActionId(spec.action) == actionId)
+            return menuActionApplies(spec, ctx);
+    }
+    return false;
+}
+
+MenuContext folderTargetContext(MenuSite site, ViewKind kind)
 {
     MenuContext ctx;
+    ctx.kind = kind;
     ctx.site = site;
     ctx.selection.fileCount = 0;
     ctx.selection.folderCount = 1;

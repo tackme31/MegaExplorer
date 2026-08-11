@@ -6,7 +6,7 @@ import QtQuick.Controls.FluentWinUI3
 
 // Windows-Explorer-style breadcrumb trail. model is
 // FolderNavigationController::breadcrumb -- a QVariantList of
-// {name, handle, isRoot}, root-first, current folder last. Each delegate is
+// {name, handle, isRoot, kind}, root-first, current folder last. Each delegate is
 // a segment (clickable, navigates there) plus its own independent chevron
 // separator -- kept separate now so a later phase can attach a
 // TapHandler/Menu to just the separator (subfolder dropdown) without
@@ -111,7 +111,14 @@ Item {
                 // The last segment is the current folder: nothing to navigate
                 // to, so it gets neither the hover pill nor a separator after
                 // it. Same condition the TapHandler below is gated on.
-                readonly property bool navigable: delegateRoot.index < repeater.count - 1
+                //
+                // The kind test is not redundant with it: a synthetic segment
+                // names no node, so navigateTo(0, false) would be a kENoEnt
+                // toast rather than a navigation. Default-deny, like
+                // NodeDropArea's targetKind, so a future multi-segment special
+                // view can't inherit clickability.
+                readonly property bool navigable: delegateRoot.modelData.kind === ViewKind.CloudDrive
+                                                  && delegateRoot.index < repeater.count - 1
 
                 Item {
                     id: segment
@@ -157,13 +164,19 @@ Item {
                         // shared box they top-align and the cloud rides ~2px
                         // high.
                         Label {
-                            visible: delegateRoot.modelData.isRoot
+                            id: segmentIcon
+
+                            readonly property string segmentGlyph: ViewLabels.glyph(
+                                                                       delegateRoot.modelData.kind,
+                                                                       delegateRoot.modelData.isRoot)
+
+                            visible: segmentIcon.segmentGlyph !== ""
                             height: Theme.rowHeight.compact
                             verticalAlignment: Text.AlignVCenter
                             font.family: Theme.font.iconFamily
                             font.pixelSize: Theme.iconSize.sm
                             color: Theme.color.textSecondary
-                            text: Theme.glyph.cloud
+                            text: segmentIcon.segmentGlyph
                         }
 
                         Label {
@@ -173,8 +186,9 @@ Item {
                             // alignment depends on aren't implicit.
                             font.pixelSize: Theme.font.body
                             elide: Text.ElideRight
-                            text: delegateRoot.modelData.isRoot ? qsTr("Cloud Drive") :
-                                                                  delegateRoot.modelData.name
+                            text: ViewLabels.label(delegateRoot.modelData.kind,
+                                                   delegateRoot.modelData.isRoot,
+                                                   delegateRoot.modelData.name)
                         }
                     }
 
@@ -209,6 +223,9 @@ Item {
                         uploads: uploadController
                         targetHandle: delegateRoot.modelData.handle
                         targetIsRoot: delegateRoot.modelData.isRoot
+                        // Per segment, not per trail: a favourites listing's synthetic
+                        // segment names no node, while a real folder's still does.
+                        targetKind: delegateRoot.modelData.kind
                     }
                 }
 

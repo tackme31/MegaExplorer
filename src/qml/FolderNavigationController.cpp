@@ -1,8 +1,10 @@
 #include "FolderNavigationController.h"
 
 #include "app/Logging.h"
+#include "core/MenuActionResolver.h"
 #include "GuiThread.h"
 #include "NotificationController.h"
+#include "ViewKindEnum.h"
 
 #include <QDebug>
 #include <QString>
@@ -74,6 +76,18 @@ quint64 FolderNavigationController::currentHandle() const
     return mBreadcrumb.last().toMap().value(QStringLiteral("handle")).toULongLong();
 }
 
+int FolderNavigationController::viewKind() const
+{
+    if (mBreadcrumb.isEmpty())
+        return ViewKindEnum::CloudDrive;
+    return mBreadcrumb.last().toMap().value(QStringLiteral("kind")).toInt();
+}
+
+bool FolderNavigationController::searchActive() const
+{
+    return !mLastSearchQuery.empty();
+}
+
 void FolderNavigationController::loadRoot()
 {
     mService->openRoot(mSortOrder,
@@ -93,6 +107,18 @@ void FolderNavigationController::openFolder(quint64 handle)
                                  applyResult(std::move(result));
                              });
                          });
+}
+
+void FolderNavigationController::openFavourites()
+{
+    mService->openFavourites(mSortOrder,
+                             [this, self = shared_from_this()](
+                                 Result<std::vector<FileEntry>> result) {
+                                 invokeOnGuiThread(this,
+                                                   [this, result = std::move(result)]() mutable {
+                                                       applyResult(std::move(result));
+                                                   });
+                             });
 }
 
 void FolderNavigationController::goBack()
@@ -168,6 +194,7 @@ void FolderNavigationController::refreshBreadcrumb()
                     entry.insert(QStringLiteral("name"), QString::fromStdString(segment.name));
                     entry.insert(QStringLiteral("handle"), static_cast<qulonglong>(segment.handle));
                     entry.insert(QStringLiteral("isRoot"), segment.isRoot);
+                    entry.insert(QStringLiteral("kind"), static_cast<int>(segment.kind));
                     breadcrumb.append(entry);
                 }
 
@@ -179,14 +206,36 @@ void FolderNavigationController::refreshBreadcrumb()
                 if (breadcrumb == mBreadcrumb)
                     return;
                 mBreadcrumb = std::move(breadcrumb);
+                publishViewKind();
                 emit breadcrumbChanged();
             });
         });
 }
 
+void FolderNavigationController::publishViewKind()
+{
+    mFileListModel->setViewKind(static_cast<ViewKind>(viewKind()));
+}
+
+bool FolderNavigationController::canPerform(const QString& actionId) const
+{
+    const std::string id = actionId.toStdString();
+    const ViewKind kind = static_cast<ViewKind>(viewKind());
+
+    // A shortcut stands in for a row of one of the two menus a file view can open --
+    // the selection's and the background's -- so either offering it is enough.
+    const MenuContext selectionContext{
+        kind, MenuSite::FileSelection, mFileListModel->selectionSummary()};
+    return menuActionAllowed(id, selectionContext) ||
+           menuActionAllowed(id, folderTargetContext(MenuSite::FolderBackground, kind));
+}
+
 void FolderNavigationController::search(QString query)
 {
+    const bool wasActive = searchActive();
     mLastSearchQuery = query.toStdString();
+    if (wasActive != searchActive())
+        emit searchActiveChanged();
 
     if (query.isEmpty())
     {
@@ -194,14 +243,21 @@ void FolderNavigationController::search(QString query)
         return;
     }
 
-    mSearchService->search(
-        mLastSearchQuery,
-        mSortOrder,
-        [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
-                applySearchResult(std::move(result));
-            });
+    runVisibleSearch();
+}
+
+void FolderNavigationController::runVisibleSearch()
+{
+    auto onSearched = [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+        invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+            applySearchResult(std::move(result));
         });
+    };
+
+    if (viewKind() == ViewKindEnum::Favourites)
+        mService->listFavourites(mSortOrder, mLastSearchQuery, std::move(onSearched));
+    else
+        mSearchService->search(mLastSearchQuery, mSortOrder, std::move(onSearched));
 }
 
 void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>> result)
@@ -261,14 +317,7 @@ void FolderNavigationController::refreshVisibleListing()
         // Re-run the visible search, and separately refresh the cached folder
         // listing (not the visible model) so that clearing the search
         // afterwards doesn't show stale contents/ordering.
-        mSearchService->search(
-            mLastSearchQuery,
-            mSortOrder,
-            [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
-                invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
-                    applySearchResult(std::move(result));
-                });
-            });
+        runVisibleSearch();
         mService->refreshCurrent(
             mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                 invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
@@ -314,6 +363,33 @@ std::set<std::string> FolderNavigationController::cachedChildNames() const
 
 void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favourite)
 {
+    if (viewKind() == ViewKindEnum::Favourites)
+    {
+        // Un-favouriting drops the row, and every row after it shifts, so the
+        // scroll position moves whatever we do -- which is what makes a re-fetch
+        // cheaper than a partial-removal path in FileListModel (spec 4.4).
+        refreshVisibleListing();
+        return;
+    }
+
+    writeFavouriteFlag(handle, favourite);
+}
+
+void FolderNavigationController::applyRemoteFavouriteChange(quint64 handle, bool favourite)
+{
+    if (viewKind() == ViewKindEnum::Favourites)
+    {
+        markStale();
+        return;
+    }
+
+    // No membership check: FileListModel::setFavourite ignores a handle it
+    // doesn't hold, which is the common case when the toggle happened elsewhere.
+    writeFavouriteFlag(handle, favourite);
+}
+
+void FolderNavigationController::writeFavouriteFlag(quint64 handle, bool favourite)
+{
     mFileListModel->setFavourite(handle, favourite);
     for (FileEntry& entry : mLastFolderEntries)
     {
@@ -323,6 +399,20 @@ void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favou
             break;
         }
     }
+}
+
+void FolderNavigationController::markStale()
+{
+    if (mHasLoadedOnce)
+        mStale = true;
+}
+
+void FolderNavigationController::refreshIfStale()
+{
+    if (!mStale)
+        return;
+    mStale = false;
+    refreshVisibleListing();
 }
 
 void FolderNavigationController::refresh()
@@ -353,6 +443,16 @@ void FolderNavigationController::refresh()
 
 void FolderNavigationController::refreshIfShowing(quint64 handle, bool isRoot)
 {
+    // A favourites listing shows no folder, so it matches no (handle, isRoot) --
+    // yet being a query over the whole drive, any move or copy can change it.
+    // Marked rather than re-read: this tab may be in the background, and one
+    // full-drive search per moved node is the refresh storm 5.3 warns about.
+    if (viewKind() == ViewKindEnum::Favourites)
+    {
+        markStale();
+        return;
+    }
+
     if (atRoot() != isRoot)
         return;
     if (!isRoot && currentHandle() != handle)
@@ -365,10 +465,15 @@ void FolderNavigationController::reset()
     mService->resetToRoot();
     mFileListModel->setEntries({});
     mLastFolderEntries.clear();
+    const bool wasSearching = searchActive();
     mLastSearchQuery.clear();
     mHasLoadedOnce = false;
+    mStale = false;
     mBreadcrumb.clear();
+    publishViewKind();
     mBusy->abandonAll();
     emit canGoBackChanged();
     emit breadcrumbChanged();
+    if (wasSearching)
+        emit searchActiveChanged();
 }

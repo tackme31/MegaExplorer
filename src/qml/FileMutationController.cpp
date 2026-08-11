@@ -89,6 +89,7 @@ void FileMutationController::setEntryFavourite(quint64 handle, bool favourite)
                     return;
                 }
                 mNavigation->applyFavouriteChange(handle, favourite);
+                emit favouriteChanged(handle, favourite);
             });
         });
 }
@@ -143,7 +144,18 @@ void FileMutationController::moveHandlesToRubbish(const QVariantList& handles)
     if (handles.isEmpty())
         return;
 
-    auto batch = mBulk.start("moveToRubbish", static_cast<int>(handles.size()));
+    // Read now, for the same reason moveHandlesTo does: a refresh mid-batch could
+    // in principle move this tab.
+    const quint64 source = mNavigation->currentHandle();
+    const bool sourceIsRoot = mNavigation->atRoot();
+
+    auto batch = mBulk.start("moveToRubbish",
+                             static_cast<int>(handles.size()),
+                             {},
+                             [this, source, sourceIsRoot](int succeeded, int) {
+                                 if (succeeded > 0)
+                                     emit nodesRemoved(source, sourceIsRoot);
+                             });
 
     for (const QVariant& handle : handles)
     {
