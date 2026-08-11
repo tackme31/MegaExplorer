@@ -184,6 +184,15 @@ GridView {
         onNewFolderRequested: root.newFolderRequested()
     }
 
+    // See FileTableView.qml's copy for why both views listen and why the call is
+    // deferred.
+    Connections {
+        target: root.navController
+        function onRevealRowRequested(row) {
+            Qt.callLater(viewInput.revealRow, row);
+        }
+    }
+
     FileViewDropArea {
         id: viewDrop
         view: root

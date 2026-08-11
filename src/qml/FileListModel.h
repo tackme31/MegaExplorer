@@ -92,6 +92,11 @@ public:
     // re-sort and QML only reads it right after moveCursor().
     Q_INVOKABLE int cursorRow() const;
 
+    // Row of the first entry with this name, or -1. Only sound for a node this
+    // app just created and is about to reveal: MEGA lets siblings share a name,
+    // so a handle is the right key everywhere else.
+    int rowForName(const QString& name) const;
+
     QVariantList selectedHandlesVariant() const;
 
     const std::unordered_set<quint64>& selectedHandleSet() const
