@@ -1,8 +1,9 @@
 # Project Progress Log
 
 Roadmap (what's next, why in this order) + phase-by-phase implementation log (what was built, key
-decisions/gotchas). Single source of truth for the roadmap; `docs/MEMO.md` keeps only non-roadmap
-notes; `CLAUDE.md` has a condensed current-status summary pointing here.
+decisions/gotchas). Single source of truth for the roadmap; `CLAUDE.md` has a condensed
+current-status summary pointing here, and unimplemented feature ideas live in
+`docs/FEATURE_IDEAS.md`.
 
 Two conventions, both there to keep this file from growing faster than it has to:
 
@@ -57,7 +58,6 @@ are post-MVP, sequenced by priority/dependency.
 | 23 | Copy / cut / paste | done (pulled forward) |
 | 15 | In-app preview (right pane, `getPreview` + `startStreaming`) | done |
 | 24a | Favourite toggle (context menu + heart badge) | done (pulled forward) |
-| 16 | Real-time remote-change reflection | future, post-MVP |
 | 24b | Favourites view (a special view) | done (pulled forward) |
 | 24+ | Undecided | undo and full bidirectional local sync both stay out of scope |
 
@@ -77,11 +77,6 @@ copy/cut/paste/undo) and dropped: MEGA has no native undo, so every operation wo
 hand-built inverse (rename↔rename, rubbish→move back, copy→delete, create→delete), a record hook in
 every mutating path, and a policy for when the history has to be thrown away. That is a phase in its
 own right, and with 23 in place the practical need for it is small. Not deferred — out of scope.
-
-### Phase 16 (future) — real-time remote-change reflection
-
-Reflect other devices' changes via the SDK's push-notification mechanism into whatever listing is
-open. Additive on top of phase 6's refresh.
 
 ### Phase 24+ — undecided
 

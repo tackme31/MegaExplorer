@@ -3,13 +3,11 @@
 Guidance for Claude Code when working in this repo. Kept compact — detail that isn't needed every
 session lives in companion docs, linked from the relevant section below rather than inlined:
 
-- `docs/MEMO.md` — non-roadmap project notes: scope, tech stack, feature list, licensing, open
-  technical concerns (Japanese). `README.md` is just a one-line title stub, not documentation.
 - `docs/PROGRESS.md` — the roadmap (what's next and why-in-this-order) plus the full phase-by-phase
-  implementation log (what was built, why, gotchas). Single source of truth for both, now that
-  `docs/MEMO.md`'s former roadmap section moved here (2026-07-28, to end dual-tracking drift between
-  the two files). The roadmap covers only phases **not yet done**; a shipped phase's original plan
-  sits at the top of its own log entry as a `> **Planned as.**` block (2026-08-07, same reason).
+  implementation log (what was built, why, gotchas). Single source of truth for both. The roadmap
+  covers only phases **not yet done**; a shipped phase's original plan sits at the top of its own
+  log entry as a `> **Planned as.**` block (2026-08-07, to keep plan and outcome from drifting).
+  `README.md` is just a one-line title stub, not documentation.
 - `docs/FEATURE_IDEAS.md` — candidate features and ideas for future implementation.
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
   and the per-stage log for S0–S11 (S0–S10 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
@@ -33,7 +31,7 @@ session lives in companion docs, linked from the relevant section below rather t
     Linux/macOS. No phase attached; conclusion is that `WindowsSessionStore` (DPAPI) is the real
     work, not the build files.
   - `RECENTLY_UPDATED_FILE_API.md` — which SDK call backs a "recently updated files" listing.
-    No phase attached; relevant to Phase 16.
+    No phase attached; relevant to the "最近追加された項目" idea.
   - `SPECIAL_VIEWS_INVESTIGATION.md` — the *framework* for special views (Rubbish, Favourites,
     Albums, recently-updated) openable as tabs and pinned in the side panel, not any one of them.
     Conclusion: the "tab = one folder" premise is baked into C++ but barely into QML, and the real
@@ -49,11 +47,15 @@ session lives in companion docs, linked from the relevant section below rather t
     server-side 1000×1000 preview JPEG covers image/video/PDF in one code path; video *playback*
     and PDF paging are out, since `USE_LIBUV` is off in this build and Qt PDF isn't installed.
   - `FOLDER_LOAD_ASYNC_INVESTIGATION.md` — making folder navigation stop blocking the GUI thread.
-    No phase attached; overlaps Phase 16. Conclusion: the call chain is already callback-shaped and
+    No phase attached; overlaps the "リアルタイム反映" idea. Conclusion: the call chain is already callback-shaped and
     the tab spinner already exists, so the work is breaking `IMegaClient`'s documented
     "answers synchronously on the calling thread" contract for `getChildren` alone — and measuring
     first, since the post-fetch model reset can't leave the GUI thread either way.
 
+  - `PREVIEW_CLICK_RESPONSIVENESS.md` — clicks being dropped after Phase 15's preview pane landed.
+    A bug report, fixed. Conclusion: the preview was innocent; rebuilding every context-menu
+    `MenuItem` on each selection change froze the GUI thread for up to 154ms per click. §5 leaves
+    one thing open — what moved `contentY` — and lists the instrumentation to re-add if it returns.
   - `VIEW_HIT_TEST_OFFSET_INVESTIGATION.md` — why hover/click/band selection in both file views
     land on a row *below* the pointer once the view is scrolled. A bug report, not a phase.
     Conclusion, measured on Qt 6.11.1: `parent: <a Flickable>` on a pointer handler silently
@@ -61,6 +63,13 @@ session lives in companion docs, linked from the relevant section below rather t
     and the views' `mapFromItem()` adds it a second time.
 
   New studies go in this folder, not in `docs/` directly.
+
+- `docs/archive/` — retired documents, kept only so old commits and links still resolve. Nothing in
+  here is current: every fact in it either moved to one of the docs above or went stale. Don't read
+  it for answers and don't cite it; a document lands here instead of being deleted purely because
+  the git history around it stays readable that way. `MEMO.md` was the first (2026-08-11 — its
+  scope/feature list and licensing notes had been absorbed by this file and the Phase 20b log, and
+  its stack table still claimed an app key and the SQLite cache that Phase 7b removed).
 
 **Writing into those logs.** `docs/PROGRESS.md`, `docs/DESIGN_IMPROVEMENT.md` and
 `docs/REFACTOR_PLANS.md` are append-only and already large, so a new entry gets **about one screen —
@@ -145,8 +154,9 @@ refresh when a folder is opened, no continuous watching.
   importing one. LibRaw is statically linked under the LGPL, which the published source satisfies;
   the app cannot go closed-source. MEGA SDK is BSD-2-Clause. `meganz/MEGAsync`'s own source is
   under a restrictive Code Review Licence — never copy code from it, reference only for SDK usage
-  patterns.
-- Stack detail (thumbnail/cache libraries etc.) is in `docs/MEMO.md`, not repeated here.
+  patterns. Third-party notices are generated: after bumping any dependency, run
+  `scripts/gen_third_party_notices.py` by hand to regenerate `licenses/` and
+  `THIRD-PARTY-NOTICES.txt` (the reasoning behind each dual-license choice is in the Phase 20b log).
 
 ## Pre-release: refactoring existing code during planning is allowed
 
@@ -160,8 +170,8 @@ go-ahead before proceeding (as part of normal plan review, not a separate approv
 ## Project status
 
 Phases 0–15, 17–23a, 24a and 24b are done — several were pulled forward out of numeric order. The pre-15
-code-tidying pass in `docs/REFACTOR_PLANS.md` finished on 2026-08-08 (all of R1–R7). **Next up:
-phase 16** (real-time remote-change reflection).
+code-tidying pass in `docs/REFACTOR_PLANS.md` finished on 2026-08-08 (all of R1–R7). **No numbered
+phase is queued** — the next one gets picked from `docs/FEATURE_IDEAS.md`.
 
 That one paragraph is deliberately all this file tracks. What a phase actually built, what it
 changed its mind about mid-way, and what it knowingly left open is `docs/PROGRESS.md`: its Roadmap
