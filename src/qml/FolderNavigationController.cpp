@@ -83,6 +83,11 @@ int FolderNavigationController::viewKind() const
     return mBreadcrumb.last().toMap().value(QStringLiteral("kind")).toInt();
 }
 
+bool FolderNavigationController::searchActive() const
+{
+    return !mLastSearchQuery.empty();
+}
+
 void FolderNavigationController::loadRoot()
 {
     mService->openRoot(mSortOrder,
@@ -227,7 +232,10 @@ bool FolderNavigationController::canPerform(const QString& actionId) const
 
 void FolderNavigationController::search(QString query)
 {
+    const bool wasActive = searchActive();
     mLastSearchQuery = query.toStdString();
+    if (wasActive != searchActive())
+        emit searchActiveChanged();
 
     if (query.isEmpty())
     {
@@ -355,6 +363,15 @@ std::set<std::string> FolderNavigationController::cachedChildNames() const
 
 void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favourite)
 {
+    if (viewKind() == ViewKindEnum::Favourites)
+    {
+        // Un-favouriting drops the row, and every row after it shifts, so the
+        // scroll position moves whatever we do -- which is what makes a re-fetch
+        // cheaper than a partial-removal path in FileListModel (spec 4.4).
+        refreshVisibleListing();
+        return;
+    }
+
     mFileListModel->setFavourite(handle, favourite);
     for (FileEntry& entry : mLastFolderEntries)
     {
@@ -406,6 +423,7 @@ void FolderNavigationController::reset()
     mService->resetToRoot();
     mFileListModel->setEntries({});
     mLastFolderEntries.clear();
+    const bool wasSearching = searchActive();
     mLastSearchQuery.clear();
     mHasLoadedOnce = false;
     mBreadcrumb.clear();
@@ -413,4 +431,6 @@ void FolderNavigationController::reset()
     mBusy->abandonAll();
     emit canGoBackChanged();
     emit breadcrumbChanged();
+    if (wasSearching)
+        emit searchActiveChanged();
 }

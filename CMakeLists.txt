@@ -209,6 +209,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/ConfirmRubbishDialog.qml
         qml/components/DragAutoScroller.qml
         qml/components/DragProxy.qml
+        qml/components/EmptyListingNotice.qml
         qml/components/FileContextMenu.qml
         qml/components/FileIcon.qml
         qml/components/FileViewDropArea.qml

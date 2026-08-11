@@ -67,10 +67,8 @@ protected:
         notifications = std::make_unique<NotificationController>();
         // makeGuiOwned like main.cpp -- see TabsControllerTest's note.
         busy = makeGuiOwned<BusyState>();
-        controller = makeGuiOwned<FolderNavigationController>(navigationService,
-                                                             searchService,
-                                                             busy,
-                                                             notifications.get());
+        controller = makeGuiOwned<FolderNavigationController>(
+            navigationService, searchService, busy, notifications.get());
 
         QObject::connect(notifications.get(),
                          &NotificationController::operationFinished,
@@ -500,8 +498,7 @@ TEST_F(FolderNavigationControllerTest, BackFromAFolderOpenedInFavouritesReturnsT
     EXPECT_EQ(controller->viewKind(), ViewKindEnum::Favourites);
     ASSERT_EQ(controller->breadcrumb().size(), 1);
     ASSERT_EQ(model()->rowCount(), 1);
-    EXPECT_EQ(model()->entryAt(0).value(QStringLiteral("name")).toString(),
-              QStringLiteral("trip"));
+    EXPECT_EQ(model()->entryAt(0).value(QStringLiteral("name")).toString(), QStringLiteral("trip"));
 }
 
 TEST_F(FolderNavigationControllerTest, CanPerformWithholdsDestinationActionsInFavourites)
@@ -522,4 +519,99 @@ TEST_F(FolderNavigationControllerTest, CanPerformWithholdsDestinationActionsInFa
     EXPECT_FALSE(controller->canPerform("cut"));
     EXPECT_TRUE(controller->canPerform("copy"));
     EXPECT_TRUE(controller->canPerform("rename"));
+}
+
+TEST_F(FolderNavigationControllerTest, UnfavouritingInFavouritesDropsTheRowByReQuerying)
+{
+    givenFavourites({entry("kept.txt", 5), entry("dropped.txt", 6)});
+    controller->openFavourites();
+    flush();
+    const int fetchesBefore = favouriteFetches;
+
+    // The flag is already off server-side by the time the controller is told, so
+    // the re-query is what makes the row leave -- there is no in-place edit that
+    // could (FAVOURITES_VIEW_SPEC.md 4.4).
+    favouriteListing = {entry("kept.txt", 5)};
+    controller->applyFavouriteChange(6, false);
+    flush();
+
+    EXPECT_EQ(favouriteFetches - fetchesBefore, 1);
+    ASSERT_EQ(model()->rowCount(), 1);
+    EXPECT_EQ(model()->entryAt(0).value(QStringLiteral("name")).toString(),
+              QStringLiteral("kept.txt"));
+}
+
+TEST_F(FolderNavigationControllerTest, UnfavouritingWhileSearchingInFavouritesKeepsTheFilter)
+{
+    givenFavourites({entry("kept.txt", 5), entry("kept-too.txt", 6)});
+    controller->openFavourites();
+    flush();
+
+    int filtered = 0;
+    EXPECT_CALL(*client, listFavourites(_, std::string("kept"), _))
+        .WillRepeatedly(
+            Invoke([&filtered](SortOrder,
+                               const std::string&,
+                               std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                ++filtered;
+                onDone(Result<std::vector<FileEntry>>::ok(
+                    filtered == 1
+                        ? std::vector<FileEntry>{entry("kept.txt", 5), entry("kept-too.txt", 6)}
+                        : std::vector<FileEntry>{entry("kept.txt", 5)}));
+            }));
+    controller->search(QStringLiteral("kept"));
+    flush();
+    ASSERT_EQ(model()->rowCount(), 2);
+
+    controller->applyFavouriteChange(6, false);
+    flush();
+
+    // The narrowed query re-runs, not the unfiltered one: a mutation must not
+    // drop the user out of a search.
+    EXPECT_EQ(filtered, 2);
+    ASSERT_EQ(model()->rowCount(), 1);
+}
+
+TEST_F(FolderNavigationControllerTest, UnfavouritingInAFolderStillUpdatesTheRowInPlace)
+{
+    // The 24a behaviour, now that the call branches: a folder listing keeps its
+    // scroll position because nothing is refetched.
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+    const int fetchesBefore = rootFetches;
+
+    controller->applyFavouriteChange(1, true);
+    flush();
+
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
+    EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsFavouriteRole).toBool());
+}
+
+TEST_F(FolderNavigationControllerTest, SearchActiveFollowsTheQueryAndReportsOnlyRealChanges)
+{
+    givenRootListing({entry("a.txt", 1)});
+    EXPECT_CALL(*client, search(_, _, _, _, _))
+        .WillRepeatedly(InvokeArgument<4>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a.txt", 1)})));
+    controller->loadRoot();
+    flush();
+
+    int changes = 0;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::searchActiveChanged,
+                     controller.get(),
+                     [&changes]() {
+                         ++changes;
+                     });
+
+    EXPECT_FALSE(controller->searchActive());
+    controller->search(QStringLiteral("a"));
+    EXPECT_TRUE(controller->searchActive());
+    controller->search(QStringLiteral("ab")); // still searching -- not a change
+    controller->search(QString());
+    flush();
+
+    EXPECT_FALSE(controller->searchActive());
+    EXPECT_EQ(changes, 2);
 }

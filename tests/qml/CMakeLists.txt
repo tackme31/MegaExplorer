@@ -18,6 +18,7 @@ add_executable(MegaExplorerQmlTests
     tst_ToastStack.qml
     tst_ActionCatalog.qml
     tst_DragProxy.qml
+    tst_EmptyListingNotice.qml
     tst_NodeDropArea.qml
     tst_FileViewDropArea.qml
     tst_FileViewInput.qml
@@ -30,7 +31,8 @@ add_executable(MegaExplorerQmlTests
 # The .qml files are listed above only so they show up in the IDE; they are read
 # from the source tree at run time, not compiled or embedded.
 set_source_files_properties(tst_ToastStack.qml tst_ActionCatalog.qml tst_DragProxy.qml
-                            tst_NodeDropArea.qml tst_FileViewDropArea.qml tst_FileViewInput.qml
+                            tst_EmptyListingNotice.qml tst_NodeDropArea.qml
+                            tst_FileViewDropArea.qml tst_FileViewInput.qml
                             tst_FileViewInputPointer.qml tst_MainDialogs.qml tst_PreviewPane.qml
                             tst_ViewLabels.qml
                             PROPERTIES HEADER_FILE_ONLY TRUE)
@@ -58,8 +60,9 @@ target_compile_definitions(MegaExplorerQmlTests PRIVATE
 # nothing to stdout, so a failing case reaches ctest as a bare exit code and
 # --output-on-failure prints an empty block. The TAP logger has no such branch,
 # and reports the failing .qml file and line.
-foreach(component ToastStack ActionCatalog DragProxy NodeDropArea FileViewDropArea FileViewInput
-                  FileViewInputPointer MainDialogs PreviewPane ViewLabels)
+foreach(component ToastStack ActionCatalog DragProxy EmptyListingNotice NodeDropArea
+                  FileViewDropArea FileViewInput FileViewInputPointer MainDialogs PreviewPane
+                  ViewLabels)
     add_test(NAME QmlTest.${component}
              COMMAND MegaExplorerQmlTests
                      -input ${CMAKE_CURRENT_SOURCE_DIR}/tst_${component}.qml

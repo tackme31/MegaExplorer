@@ -91,8 +91,10 @@ ColumnLayout {
             downloadController.downloadFile(handle, name, sizeBytes);
     }
 
-    StackLayout {
-        id: stackLayout
+    // Plain Item, not the StackLayout itself: a StackLayout treats every Item
+    // child as a page, so the empty-state notice below can only be laid over the
+    // views from outside it.
+    Item {
         Layout.fillWidth: true
         Layout.fillHeight: true
         // Breathing room between the SplitView's rule and the file views, which
@@ -100,53 +102,70 @@ ColumnLayout {
         // Main.qml's SplitView because SplitView is not a QQuickLayout, so
         // Layout.leftMargin on its second child would be ignored.
         Layout.leftMargin: Theme.spacing.md
-        currentIndex: pane.viewMode
 
-        FileTableView {
-            id: fileTableView
-            navController: pane.navController
-            mutController: pane.mutController
-            dragProxy: pane.dragProxy
-            initialSortColumn: pane.initialSortColumn
-            initialSortAscending: pane.initialSortAscending
-            initialColumnWidthName: pane.initialColumnWidthName
-            initialColumnWidthModified: pane.initialColumnWidthModified
-            initialColumnWidthSize: pane.initialColumnWidthSize
-            // StackLayout keeps both children alive and just toggles
-            // visible, and an invisible item can't hold activeFocus -- so
-            // focus has to be handed back explicitly on every switch, or
-            // arrow keys go dead until the view is re-clicked. Qt.callLater
-            // defers past StackLayout's own visibility update, which runs
-            // after this notification fires.
-            StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
-                                                    Qt.callLater(()
-                                                                 => fileTableView.forceActiveFocus(
-                                                                        ))
-            onActivateRequested: (isFolder, handle, name, sizeBytes) => pane.activate(isFolder,
-                                                                                      handle, name,
-                                                                                      sizeBytes)
-            onOpenInNewTabRequested: handle => tabsController.addTabAt(handle, false)
-            onNewFolderRequested: newFolderDialog.prompt()
-            onSortOrderChanged: (column, ascending) => pane.sortOrderWriteBack(column, ascending)
-            onColumnWidthsChanged: (nameWidth, modifiedWidth, sizeWidth)
-                                   => pane.columnWidthsWriteBack(nameWidth, modifiedWidth,
-                                                                 sizeWidth)
+        StackLayout {
+            id: stackLayout
+            anchors.fill: parent
+            currentIndex: pane.viewMode
+
+            FileTableView {
+                id: fileTableView
+                navController: pane.navController
+                mutController: pane.mutController
+                dragProxy: pane.dragProxy
+                initialSortColumn: pane.initialSortColumn
+                initialSortAscending: pane.initialSortAscending
+                initialColumnWidthName: pane.initialColumnWidthName
+                initialColumnWidthModified: pane.initialColumnWidthModified
+                initialColumnWidthSize: pane.initialColumnWidthSize
+                // StackLayout keeps both children alive and just toggles
+                // visible, and an invisible item can't hold activeFocus -- so
+                // focus has to be handed back explicitly on every switch, or
+                // arrow keys go dead until the view is re-clicked. Qt.callLater
+                // defers past StackLayout's own visibility update, which runs
+                // after this notification fires.
+                StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
+                                                        Qt.callLater(()
+                                                                     => fileTableView.forceActiveFocus(
+                                                                            ))
+                onActivateRequested: (isFolder, handle, name, sizeBytes) => pane.activate(isFolder,
+                                                                                          handle, name,
+                                                                                          sizeBytes)
+                onOpenInNewTabRequested: handle => tabsController.addTabAt(handle, false)
+                onNewFolderRequested: newFolderDialog.prompt()
+                onSortOrderChanged: (column, ascending) => pane.sortOrderWriteBack(column,
+                                                                                   ascending)
+                onColumnWidthsChanged: (nameWidth, modifiedWidth, sizeWidth)
+                                       => pane.columnWidthsWriteBack(nameWidth, modifiedWidth,
+                                                                     sizeWidth)
+            }
+
+            FileGridView {
+                id: fileGridView
+                navController: pane.navController
+                mutController: pane.mutController
+                thumbController: pane.thumbController
+                dragProxy: pane.dragProxy
+                StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
+                                                        Qt.callLater(()
+                                                                     => fileGridView.forceActiveFocus(
+                                                                            ))
+                onActivateRequested: (isFolder, handle, name, sizeBytes) => pane.activate(isFolder,
+                                                                                          handle, name,
+                                                                                          sizeBytes)
+                onOpenInNewTabRequested: handle => tabsController.addTabAt(handle, false)
+                onNewFolderRequested: newFolderDialog.prompt()
+            }
         }
 
-        FileGridView {
-            id: fileGridView
+        // After the StackLayout, so it paints over the views rather than under
+        // them.
+        EmptyListingNotice {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: Theme.spacing.xl * 3
+            width: parent.width - 2 * Theme.spacing.xl
             navController: pane.navController
-            mutController: pane.mutController
-            thumbController: pane.thumbController
-            dragProxy: pane.dragProxy
-            StackLayout.onIsCurrentItemChanged: if (StackLayout.isCurrentItem)
-                                                    Qt.callLater(() => fileGridView.forceActiveFocus(
-                                                                           ))
-            onActivateRequested: (isFolder, handle, name, sizeBytes) => pane.activate(isFolder,
-                                                                                      handle, name,
-                                                                                      sizeBytes)
-            onOpenInNewTabRequested: handle => tabsController.addTabAt(handle, false)
-            onNewFolderRequested: newFolderDialog.prompt()
         }
     }
 

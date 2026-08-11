@@ -73,6 +73,12 @@ ColumnLayout {
 
     readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size")]
 
+    // Off in the favourites listing, where every row carries the flag and the
+    // marker would say nothing (FAVOURITES_VIEW_SPEC.md decision 6). Resolved
+    // once here rather than per delegate.
+    readonly property bool showFavouriteMarkers: root.navController?.viewKind
+                                                 !== ViewKind.Favourites
+
     // Row under a point given in tableView (viewport) coordinates, -1 past the
     // last row and -1 anywhere right of the last column: that strip is empty
     // space, not part of the row. Reverses S6a-a, which had clamped x into the
@@ -610,7 +616,7 @@ ColumnLayout {
                 // all the slack. No disc behind it, unlike the grid's badge:
                 // the backdrop here is a flat row, not a photograph.
                 Label {
-                    visible: cell.column === 0 && cell.isFavourite
+                    visible: cell.column === 0 && cell.isFavourite && root.showFavouriteMarkers
                     font.family: Theme.font.iconFamily
                     font.pixelSize: Theme.font.caption
                     color: Theme.color.accent

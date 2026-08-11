@@ -36,6 +36,12 @@ GridView {
     // dialog's own comment).
     signal newFolderRequested
 
+    // Off in the favourites listing, where every row carries the flag and the
+    // marker would say nothing (FAVOURITES_VIEW_SPEC.md decision 6). Resolved
+    // once here rather than per delegate.
+    readonly property bool showFavouriteMarkers: root.navController?.viewKind
+                                                 !== ViewKind.Favourites
+
     // Optional-chained: closing a tab clears the Repeater delegate's model
     // role before the pane is actually deleted, so navController is null for
     // the one binding re-evaluation in between.
@@ -322,7 +328,7 @@ GridView {
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         anchors.margins: Theme.spacing.xs
-                        visible: gridDelegateItem.isFavourite
+                        visible: gridDelegateItem.isFavourite && root.showFavouriteMarkers
                         font.family: Theme.font.iconFamily
                         font.pixelSize: Theme.grid.favouriteGlyph
                         text: Theme.glyph.favourite

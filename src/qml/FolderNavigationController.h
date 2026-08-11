@@ -50,6 +50,10 @@ class FolderNavigationController : public QObject,
     // Same derivation again. int rather than ViewKindEnum::Kind so this header keeps
     // its Qt-free core includes; QML compares against ViewKind.CloudDrive either way.
     Q_PROPERTY(int viewKind READ viewKind NOTIFY breadcrumbChanged)
+    // Whether a search query is narrowing what the model holds, so an empty listing
+    // can say which kind of empty it is. Its own NOTIFY: the query changes without
+    // the location doing so.
+    Q_PROPERTY(bool searchActive READ searchActive NOTIFY searchActiveChanged)
     // True while this tab has a mutating operation or a server sync in flight.
     // Deliberately NOT set by listing/search/breadcrumb fetches -- those are
     // synchronous in-memory reads and finish before anything could repaint. Nor by
@@ -86,6 +90,7 @@ public:
     bool atRoot() const;
     quint64 currentHandle() const;
     int viewKind() const;
+    bool searchActive() const;
 
     // Not Q_INVOKABLE: QML reaches the root load through
     // TabsController::loadRootAll(), never this per-tab entry point.
@@ -148,6 +153,8 @@ public:
     // Writes one node's new favourite flag into both the model and the cached
     // listing, instead of re-reading the folder -- see FileListModel::setFavourite.
     // The cache matters: without it, clearing a search restores the pre-toggle flag.
+    // In a favourites listing there is nothing to write: un-favouriting removes the
+    // row, so that screen re-fetches instead (FAVOURITES_VIEW_SPEC.md 4.4).
     void applyFavouriteChange(quint64 handle, bool favourite);
 
     // What the mutation half gates paste on: before the first load there is no
@@ -162,6 +169,7 @@ signals:
     void canGoBackChanged();
     void breadcrumbChanged();
     void busyChanged();
+    void searchActiveChanged();
 
 private:
     void applyResult(Result<std::vector<FileEntry>> result);
