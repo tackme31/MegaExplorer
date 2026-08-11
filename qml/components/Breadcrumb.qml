@@ -6,7 +6,7 @@ import QtQuick.Controls.FluentWinUI3
 
 // Windows-Explorer-style breadcrumb trail. model is
 // FolderNavigationController::breadcrumb -- a QVariantList of
-// {name, handle, isRoot}, root-first, current folder last. Each delegate is
+// {name, handle, isRoot, kind}, root-first, current folder last. Each delegate is
 // a segment (clickable, navigates there) plus its own independent chevron
 // separator -- kept separate now so a later phase can attach a
 // TapHandler/Menu to just the separator (subfolder dropdown) without
@@ -173,8 +173,9 @@ Item {
                             // alignment depends on aren't implicit.
                             font.pixelSize: Theme.font.body
                             elide: Text.ElideRight
-                            text: delegateRoot.modelData.isRoot ? qsTr("Cloud Drive") :
-                                                                  delegateRoot.modelData.name
+                            text: ViewLabels.label(delegateRoot.modelData.kind,
+                                                   delegateRoot.modelData.isRoot,
+                                                   delegateRoot.modelData.name)
                         }
                     }
 

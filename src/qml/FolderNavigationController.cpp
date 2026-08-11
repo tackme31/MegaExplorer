@@ -104,6 +104,18 @@ void FolderNavigationController::openFolder(quint64 handle)
                          });
 }
 
+void FolderNavigationController::openFavourites()
+{
+    mService->openFavourites(mSortOrder,
+                             [this, self = shared_from_this()](
+                                 Result<std::vector<FileEntry>> result) {
+                                 invokeOnGuiThread(this,
+                                                   [this, result = std::move(result)]() mutable {
+                                                       applyResult(std::move(result));
+                                                   });
+                             });
+}
+
 void FolderNavigationController::goBack()
 {
     if (!canGoBack())
@@ -223,14 +235,21 @@ void FolderNavigationController::search(QString query)
         return;
     }
 
-    mSearchService->search(
-        mLastSearchQuery,
-        mSortOrder,
-        [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
-                applySearchResult(std::move(result));
-            });
+    runVisibleSearch();
+}
+
+void FolderNavigationController::runVisibleSearch()
+{
+    auto onSearched = [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+        invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+            applySearchResult(std::move(result));
         });
+    };
+
+    if (viewKind() == ViewKindEnum::Favourites)
+        mService->listFavourites(mSortOrder, mLastSearchQuery, std::move(onSearched));
+    else
+        mSearchService->search(mLastSearchQuery, mSortOrder, std::move(onSearched));
 }
 
 void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>> result)
@@ -290,14 +309,7 @@ void FolderNavigationController::refreshVisibleListing()
         // Re-run the visible search, and separately refresh the cached folder
         // listing (not the visible model) so that clearing the search
         // afterwards doesn't show stale contents/ordering.
-        mSearchService->search(
-            mLastSearchQuery,
-            mSortOrder,
-            [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
-                invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
-                    applySearchResult(std::move(result));
-                });
-            });
+        runVisibleSearch();
         mService->refreshCurrent(
             mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                 invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {

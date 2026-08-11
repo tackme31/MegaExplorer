@@ -100,6 +100,11 @@ public:
 
     Q_INVOKABLE void navigateTo(quint64 handle, bool isRoot);
 
+    // Switches this tab to the favourites listing. Nothing in QML calls it yet --
+    // the side-panel entry point is a later phase; until then the only caller is
+    // the test suite.
+    Q_INVOKABLE void openFavourites();
+
     // Whether this tab's screen allows the action with that stable ID right now, for
     // the keyboard shortcuts that stand in for a menu row. The menu itself doesn't
     // need it -- its rows already come from the same resolver.
@@ -160,6 +165,13 @@ signals:
 private:
     void applyResult(Result<std::vector<FileEntry>> result);
     void applySearchResult(Result<std::vector<FileEntry>> result);
+
+    // Re-runs mLastSearchQuery against whatever this tab is showing. In a favourites
+    // listing the search box narrows the favourites rather than searching a folder,
+    // so SearchService -- which is defined as "recursive search under the current
+    // folder" -- is bypassed instead of taught about view kinds.
+    void runVisibleSearch();
+
     void refreshCurrentFolder();
 
     // refreshVisibleListing() behind the mHasLoadedOnce guard.

@@ -72,6 +72,10 @@ public:
                 SortOrder order,
                 std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
+    void listFavourites(SortOrder order,
+                        const std::string& nameFilter,
+                        std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
+
     void download(
         std::uint64_t handle,
         const std::string& destinationPath,

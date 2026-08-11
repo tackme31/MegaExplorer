@@ -121,6 +121,24 @@ protected:
                 Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{})));
     }
 
+    // The favourites listing is a query rather than a folder, so every arrival at
+    // it -- opening it, Back returning to it, a refresh -- re-runs the query;
+    // counting the calls is how "re-queried exactly once" gets asserted. Only the
+    // unfiltered form is stubbed here: a test that narrows the listing sets its own
+    // expectation for the filtered one.
+    void givenFavourites(std::vector<FileEntry> entries)
+    {
+        favouriteListing = std::move(entries);
+        EXPECT_CALL(*client, listFavourites(_, std::string(), _))
+            .WillRepeatedly(
+                Invoke([this](SortOrder,
+                              const std::string&,
+                              std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                    ++favouriteFetches;
+                    onDone(Result<std::vector<FileEntry>>::ok(favouriteListing));
+                }));
+    }
+
     // A queued invoke can post another one (the refetch a mutation triggers),
     // so one drain isn't necessarily enough.
     static void flush()
@@ -143,6 +161,8 @@ protected:
 
     std::vector<FileEntry> rootListing;
     int rootFetches = 0;
+    std::vector<FileEntry> favouriteListing;
+    int favouriteFetches = 0;
     int operationCalls = 0;
     int errorCalls = 0;
     QString lastContext;
@@ -330,8 +350,7 @@ TEST_F(FolderNavigationControllerTest, CanPerformAnswersForBothMenusThisViewCoul
 {
     // The keyboard's gate (F3 wires Delete/Ctrl+X/Ctrl+V to it): a shortcut stands
     // in for a row of either the selection menu or the background one. The
-    // Favourites side of the scope axis can't be reached until F5 gives the
-    // controller a way to arrive at that location.
+    // Favourites side of the same axis is the test below this one.
     givenRootListing({entry("a", 1)});
     controller->loadRoot();
     flush();
@@ -347,4 +366,160 @@ TEST_F(FolderNavigationControllerTest, CanPerformAnswersForBothMenusThisViewCoul
     EXPECT_TRUE(controller->canPerform("moveToRubbish"));
     EXPECT_TRUE(controller->canPerform("cut"));
     EXPECT_FALSE(controller->canPerform("noSuchAction"));
+}
+
+// --- Favourites --------------------------------------------------------------
+
+TEST_F(FolderNavigationControllerTest, OpenFavouritesShowsTheFavouriteListing)
+{
+    givenFavourites({entry("kept.txt", 5), entry("trip", 6, true)});
+
+    controller->openFavourites();
+    flush();
+
+    EXPECT_EQ(errorCalls, 0);
+    EXPECT_EQ(favouriteFetches, 1);
+    ASSERT_EQ(model()->rowCount(), 2);
+    EXPECT_EQ(model()->entryAt(0).value(QStringLiteral("name")).toString(),
+              QStringLiteral("kept.txt"));
+}
+
+TEST_F(FolderNavigationControllerTest, FavouritesResolveToOneSyntheticBreadcrumbSegment)
+{
+    givenFavourites({entry("kept.txt", 5)});
+    // The listing has no ancestor chain, so the whole breadcrumb is synthesized
+    // without the SDK -- which is what makes the four properties below derivable
+    // from mBreadcrumb as usual, with no favourites-specific branch in any of them.
+    EXPECT_CALL(*client, getPath(_, _, _)).Times(0);
+
+    controller->openFavourites();
+    flush();
+
+    EXPECT_EQ(controller->viewKind(), ViewKindEnum::Favourites);
+    ASSERT_EQ(controller->breadcrumb().size(), 1);
+    EXPECT_EQ(controller->breadcrumb().first().toMap().value(QStringLiteral("kind")).toInt(),
+              static_cast<int>(ViewKindEnum::Favourites));
+    // One segment means no parent to go up to, and the segment is nameless
+    // because QML owns the label.
+    EXPECT_FALSE(controller->canGoUp());
+    EXPECT_TRUE(controller->currentFolderName().isEmpty());
+    EXPECT_EQ(controller->currentHandle(), 0u);
+}
+
+TEST_F(FolderNavigationControllerTest, SearchInFavouritesNarrowsTheListingWithoutTheSearchService)
+{
+    givenFavourites({entry("kept.txt", 5), entry("other.txt", 6)});
+    controller->openFavourites();
+    flush();
+
+    // SearchService is defined as "recursive search under the current folder",
+    // which a flat cross-drive listing has none of -- so the search box narrows
+    // the favourites query instead of reaching the service at all.
+    EXPECT_CALL(*client, search(_, _, _, _, _)).Times(0);
+    int filtered = 0;
+    EXPECT_CALL(*client, listFavourites(_, std::string("kept"), _))
+        .WillRepeatedly(
+            Invoke([&filtered](SortOrder,
+                               const std::string&,
+                               std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                ++filtered;
+                onDone(Result<std::vector<FileEntry>>::ok({entry("kept.txt", 5)}));
+            }));
+
+    controller->search(QStringLiteral("kept"));
+    flush();
+
+    EXPECT_EQ(filtered, 1);
+    ASSERT_EQ(model()->rowCount(), 1);
+    EXPECT_EQ(model()->entryAt(0).value(QStringLiteral("name")).toString(),
+              QStringLiteral("kept.txt"));
+}
+
+TEST_F(FolderNavigationControllerTest, ClearingTheSearchInFavouritesRestoresTheFullListing)
+{
+    givenFavourites({entry("kept.txt", 5), entry("other.txt", 6)});
+    controller->openFavourites();
+    flush();
+
+    EXPECT_CALL(*client, listFavourites(_, std::string("kept"), _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("kept.txt", 5)})));
+    controller->search(QStringLiteral("kept"));
+    flush();
+    ASSERT_EQ(model()->rowCount(), 1);
+    const int fetchesBefore = favouriteFetches;
+
+    controller->search(QString());
+    flush();
+
+    // Restored from the cached listing, exactly as in a folder: no round-trip.
+    EXPECT_EQ(model()->rowCount(), 2);
+    EXPECT_EQ(favouriteFetches - fetchesBefore, 0);
+}
+
+TEST_F(FolderNavigationControllerTest, RefreshInFavouritesReQueriesTheFavourites)
+{
+    givenFavourites({entry("kept.txt", 5)});
+    controller->openFavourites();
+    flush();
+    const int fetchesBefore = favouriteFetches;
+
+    controller->refresh();
+    flush();
+
+    EXPECT_EQ(errorCalls, 0);
+    EXPECT_EQ(favouriteFetches - fetchesBefore, 1);
+}
+
+TEST_F(FolderNavigationControllerTest, BackFromAFolderOpenedInFavouritesReturnsToTheListing)
+{
+    givenRootListing({entry("photos", 1, true)});
+    givenFavourites({entry("trip", 2, true)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, getChildren(2, _, _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 3)})));
+    EXPECT_CALL(*client, getPath(2, false, _))
+        .WillRepeatedly(InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(
+            std::vector<PathSegment>{{"", 0, true}, {"trip", 2, false}})));
+
+    controller->openFavourites();
+    flush();
+    ASSERT_EQ(controller->viewKind(), ViewKindEnum::Favourites);
+    controller->openFolder(2);
+    flush();
+    ASSERT_EQ(controller->viewKind(), ViewKindEnum::CloudDrive);
+
+    controller->goBack();
+    flush();
+
+    // The breadcrumb follows the back-stack's view kind, so the tab is showing
+    // the listing again rather than the folder that preceded it.
+    EXPECT_EQ(controller->viewKind(), ViewKindEnum::Favourites);
+    ASSERT_EQ(controller->breadcrumb().size(), 1);
+    ASSERT_EQ(model()->rowCount(), 1);
+    EXPECT_EQ(model()->entryAt(0).value(QStringLiteral("name")).toString(),
+              QStringLiteral("trip"));
+}
+
+TEST_F(FolderNavigationControllerTest, CanPerformWithholdsDestinationActionsInFavourites)
+{
+    // The Favourites side of the scope axis, reachable now that the controller can
+    // arrive there: a flat cross-drive listing is no destination, so the four
+    // actions needing one are withheld from the keyboard as well as the menu.
+    givenFavourites({entry("kept.txt", 5)});
+    controller->openFavourites();
+    flush();
+
+    FileListModel* fileModel = qobject_cast<FileListModel*>(controller->fileListModel());
+    ASSERT_NE(fileModel, nullptr);
+    fileModel->selectRow(0, Qt::NoModifier);
+
+    EXPECT_FALSE(controller->canPerform("paste"));
+    EXPECT_FALSE(controller->canPerform("moveToRubbish"));
+    EXPECT_FALSE(controller->canPerform("cut"));
+    EXPECT_TRUE(controller->canPerform("copy"));
+    EXPECT_TRUE(controller->canPerform("rename"));
 }

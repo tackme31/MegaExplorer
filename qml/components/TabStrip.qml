@@ -150,6 +150,7 @@ RowLayout {
                 required property int index
                 required property string title
                 required property bool atRoot
+                required property int kind
                 required property bool busy
                 // FolderNavigationController* for *this* tab, straight off the
                 // model's "navigation" role (TabsController::roleNames) --
@@ -160,7 +161,7 @@ RowLayout {
                 checkable: false
                 checked: tabButton.index === tabsController.currentIndex
                 focusPolicy: Qt.NoFocus
-                text: tabButton.atRoot ? qsTr("Cloud Drive") : tabButton.title
+                text: ViewLabels.label(tabButton.kind, tabButton.atRoot, tabButton.title)
 
                 // Fluent's are 12/12/10/10. The top and bottom come down to 8
                 // so a 20px label lands the tab on 36 (see CaptionBar's height

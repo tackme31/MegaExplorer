@@ -61,6 +61,8 @@ QVariant TabsController::data(const QModelIndex& index, int role) const
             // folded in here for whichever tabs show the destination.
             return navigation->busy() ||
                    mUploads->isUploadingTo(navigation->currentHandle(), navigation->atRoot());
+        case ViewKindRole:
+            return navigation->viewKind();
     }
     return QVariant();
 }
@@ -74,6 +76,7 @@ QHash<int, QByteArray> TabsController::roleNames() const
         {MutationsRole, "mutations"},
         {ThumbnailsRole, "thumbnails"},
         {BusyRole, "busy"},
+        {ViewKindRole, "kind"},
     };
 }
 
@@ -236,7 +239,7 @@ TabContext TabsController::createTab()
     connect(navigation, &FolderNavigationController::breadcrumbChanged, this, [this, navigation]() {
         // BusyRole too: it depends on where this tab stands, so navigating into or
         // out of an upload destination changes it with no operation of its own.
-        emitRowChangedFor(navigation, {TitleRole, AtRootRole, BusyRole});
+        emitRowChangedFor(navigation, {TitleRole, AtRootRole, BusyRole, ViewKindRole});
     });
     connect(navigation, &FolderNavigationController::busyChanged, this, [this, navigation]() {
         emitRowChangedFor(navigation, {BusyRole});

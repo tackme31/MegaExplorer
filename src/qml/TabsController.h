@@ -58,6 +58,7 @@ public:
         MutationsRole,                // FileMutationController* (QObject*)
         ThumbnailsRole,               // ThumbnailController* (QObject*)
         BusyRole,                     // that tab has an operation in flight
+        ViewKindRole,                 // ViewKind of the screen this tab shows
     };
 
     // uploads is app-global and non-owning (the composition root outlives this). It

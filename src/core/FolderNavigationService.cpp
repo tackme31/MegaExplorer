@@ -56,6 +56,26 @@ void FolderNavigationService::navigateTo(std::uint64_t handle,
         std::move(onDone));
 }
 
+void FolderNavigationService::openFavourites(
+    SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    if (mCurrent.kind == ViewKind::Favourites)
+    {
+        mClient->listFavourites(order, "", std::move(onDone));
+        return;
+    }
+
+    runAndCommit(
+        [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
+            mClient->listFavourites(order, "", std::move(onFetched));
+        },
+        [this] {
+            mBackStack.push_back(mCurrent);
+            mCurrent = Location{ViewKind::Favourites, false, 0};
+        },
+        std::move(onDone));
+}
+
 void FolderNavigationService::goBack(SortOrder order,
                                      std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
@@ -68,7 +88,9 @@ void FolderNavigationService::goBack(SortOrder order,
     Location target = mBackStack.back();
     runAndCommit(
         [this, target, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
-            if (target.isRoot)
+            if (target.kind == ViewKind::Favourites)
+                mClient->listFavourites(order, "", std::move(onFetched));
+            else if (target.isRoot)
                 mClient->getRootChildren(order, std::move(onFetched));
             else
                 mClient->getChildren(target.handle, order, std::move(onFetched));
@@ -83,7 +105,9 @@ void FolderNavigationService::goBack(SortOrder order,
 void FolderNavigationService::refreshCurrent(
     SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    if (mCurrent.isRoot)
+    if (mCurrent.kind == ViewKind::Favourites)
+        mClient->listFavourites(order, "", std::move(onDone));
+    else if (mCurrent.isRoot)
         mClient->getRootChildren(order, std::move(onDone));
     else
         mClient->getChildren(mCurrent.handle, order, std::move(onDone));
@@ -99,6 +123,14 @@ void FolderNavigationService::listChildrenOf(
         mClient->getRootChildren(order, std::move(onDone));
     else
         mClient->getChildren(handle, order, std::move(onDone));
+}
+
+void FolderNavigationService::listFavourites(
+    SortOrder order,
+    const std::string& nameFilter,
+    std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    mClient->listFavourites(order, nameFilter, std::move(onDone));
 }
 
 bool FolderNavigationService::canGoBack() const
@@ -120,6 +152,16 @@ FolderNavigationService::CurrentLocation FolderNavigationService::currentLocatio
 void FolderNavigationService::resolveCurrentPath(
     std::function<void(Result<std::vector<PathSegment>>)> onDone)
 {
+    // The favourites listing has no ancestor chain to resolve: it is one synthesized
+    // segment, deliberately nameless so QML owns the label like it does the root's
+    // (FAVOURITES_VIEW_SPEC.md 3.3, amended -- src/core links no Qt, so a literal
+    // here could never be translated).
+    if (mCurrent.kind == ViewKind::Favourites)
+    {
+        onDone(Result<std::vector<PathSegment>>::ok(
+            {PathSegment{"", 0, false, ViewKind::Favourites}}));
+        return;
+    }
     mClient->getPath(mCurrent.handle, mCurrent.isRoot, std::move(onDone));
 }
 

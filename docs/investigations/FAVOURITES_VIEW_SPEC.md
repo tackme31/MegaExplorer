@@ -207,7 +207,9 @@ Cloud Drive/写真                       stack=[]                          curre
 
 - **既にお気に入り一覧のときに Favourites をもう一度クリック**したら、積まずに何もしない
   （または更新扱い）。素通しにすると `[…, {Favourites}]` が積み上がり、戻るを連打すると
-  同じ画面が何度も出る。`openFavourites()` の先頭 1 行のガード
+  同じ画面が何度も出る。`openFavourites()` の先頭 1 行のガード。
+  **F5 で「更新扱い」に確定（2026-08-11）**: push せず `listFavourites` を撃って `onDone` を
+  呼ぶ。完全な no-op にすると fire-and-forget の `onDone` が握り潰される経路が 1 つ増える
 - **「上へ」は戻らない。** 一覧から `旅行/` を開いた後の「上へ」は**実の親フォルダ**へ行く
   （パンくずが実ノードの祖先チェーンだから）。お気に入り一覧に帰るのは「戻る」だけ。
   Explorer の検索結果と同じ非対称で、意図どおり
@@ -226,11 +228,21 @@ Cloud Drive/写真                       stack=[]                          curre
 `resolveCurrentPath()` は `mCurrent.kind == Favourites` のとき SDK を呼ばず、
 
 ```
-PathSegment{ name: "Favourites", handle: 0, isRoot: false, kind: Favourites }
+PathSegment{ name: "", handle: 0, isRoot: false, kind: Favourites }
 ```
 
-を 1 つだけ返す。これで `currentFolderName()`（タブタイトル）、`atRoot()`、`canGoUp()`、
-`currentHandle()` の 4 つが**無改修で正しい答えを返す**。
+を 1 つだけ返す。これで `atRoot()`、`canGoUp()`、`currentHandle()` の 3 つが**無改修で正しい
+答えを返す**。
+
+**F5 実装時の訂正（2026-08-11）**: `name` は当初 `"Favourites"` と書いていたが、**空にした**。
+置き場所である `FolderNavigationService` は `src/core` = Qt 非依存層で `qsTr()` が使えず、
+ゴミ箱・アルバム・最近の更新まで含めた 4 つの UI 文字列が翻訳不能なまま core に固定される。
+root のラベル（`qsTr("Cloud Drive")`）が既に QML 側にある前例にも反し、「合成ロケーションの
+ラベルはどこか」が 2 層に割れる。代わりに `qml/ViewLabels.qml`（シングルトン）の
+`label(kind, isRoot, name)` が全ロケーションのラベルを持ち、`Breadcrumb.qml` と `TabStrip.qml`
+がそれを呼ぶ。名前を持つロケーション（フォルダ、将来のアルバム）は C++ の `name` がそのまま
+勝つので、**新しい特殊ビュー 1 種類 = `ViewLabels.qml` に 1 行**で済む。
+タブ名は `TabsController` に `ViewKindRole`（`"kind"`）を足して渡す。
 
 `PathSegment` に `kind` を足すのは、パンくず側で**クリックとドロップを止める**ため。
 `Breadcrumb.qml` は各セグメントに `NodeDropArea` を置き、クリックで `navigateTo(handle, isRoot)`
@@ -267,8 +279,12 @@ mApi->search(filter.get(), toMegaOrder(order));
   ゴミ箱の中のお気に入りも、Vault / 共有フォルダ（inshare）のお気に入りも入らない。
   逆に将来これらを含めたくなったら `byLocation(SEARCH_TARGET_ALL)` になり、
   ゴミ箱だけを弾く除外ロジックを別途書くことになる（今回はやらない）
-- ⚠ **未検証**: 既存コードは `byName` を必ず設定している。`byName` 無しの filter で
-  全件返るかは実装時に確認が要る（返らないなら `byName("")` か `byName("*")` の挙動確認）
+- ✅ **決着（2026-08-11、SDK ソースで静的に確認。実アカウント不要）**: `byName` 無しで全件返る。
+  `NodeSearchFilter::isValidName()`（`third_party/sdk/src/nodemanager.cpp:71`）はパターンが空なら
+  無条件 `true`、sqlite 側の述語（`third_party/sdk/src/db/sqlite.cpp:4605`）も name/description/tag
+  の条件が 0 個なら `result = true`。`MegaApiImpl::search()` に「名前必須」のガードも無い。
+  よって `nameFilter` が空のときは **`byName` を呼ばない**（`byName("")` でも同じ結果だが、
+  「空文字は絞り込み無し」という意図がコードから読めない）
 - 戻りは `nodeListToEntries()` を通るので `isFavourite` は自動で埋まる（全 true）
 
 ### 3.5 `SearchService` との関係
