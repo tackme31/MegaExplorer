@@ -231,12 +231,14 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   would hang the loop until someone returns. Don't lock the workstation while the flag is set:
   `SendInput` goes to the secure desktop and never reaches the app.
 - `scripts/ntfy-send.sh` — how the loop reaches a phone. Claude Code's built-in push reports success
-  and mostly doesn't deliver, so it isn't used. Two callers: Claude, at the end of a cycle, and a
-  **`Notification` hook** in `.claude/settings.local.json` that fires the moment a permission prompt
-  goes up. The second exists because Claude is blocked at that point and cannot notify anyone
-  itself — so a prompt raised after you walked away (the drive flag forgotten, say) still reaches
-  your phone instead of silently holding the session. That file is gitignored, so a fresh clone has
-  to re-add the hook.
+  and mostly doesn't deliver, so it isn't used. Two callers: Claude, at the end of a cycle, and
+  `scripts/away_notify_hook.sh` — a `Notification` hook that pushes a waiting permission prompt,
+  because Claude is blocked at that point and cannot notify anyone itself. It only fires when
+  **nobody is at the desk**: a `UserPromptSubmit` hook stamps the last time you typed, and anything
+  within 10 minutes of that is treated as "you are looking at the terminal" and stays silent.
+  Without that gate it pushed on every ordinary approval — plan mode, a first-time command — which
+  is noise you are already reading on screen. Both hooks live in the gitignored
+  `.claude/settings.local.json`, so a fresh clone has to re-add them.
 
 Secrets: `MEGAEXPLORER_TEST_ACCOUNT` and `NTFY_TOPIC` live in the gitignored
 `.claude/settings.local.json` `env` block; `MEGAEXPLORER_TEST_PASSWORD` is a Windows user
