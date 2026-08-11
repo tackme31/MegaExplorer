@@ -64,4 +64,9 @@ foreach(component ToastStack ActionCatalog DragProxy NodeDropArea FileViewDropAr
              COMMAND MegaExplorerQmlTests
                      -input ${CMAKE_CURRENT_SOURCE_DIR}/tst_${component}.qml
                      -o -,tap)
+    # Qt Quick Test shows a real QQuickView per file, so a ctest run flashes ten
+    # windows across the desktop. The offscreen platform renders the same scene
+    # without one; synthesized input still reaches it.
+    set_tests_properties(QmlTest.${component} PROPERTIES
+                         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endforeach()
