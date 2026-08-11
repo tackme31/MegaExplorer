@@ -2,13 +2,17 @@
 # PreToolUse(Bash) hook: layer 1 of the guard on ui_shot.py drive, which hijacks
 # the real mouse and keyboard. Wired up in .claude/settings.local.json.
 #
-# Allows drive only while scripts/drive_gate.cmd has left an unexpired flag
-# file. Anything else about the command is none of this hook's business, so it
-# stays silent and lets the normal permission flow decide.
+# The flag file scripts/drive_gate.cmd writes means "nobody is here to answer a
+# prompt", not "permission": with it, drive runs unattended; without it, this
+# hook asks, so someone at the desk can just approve. Anything else about the
+# command is none of this hook's business, so it stays silent and lets the
+# normal permission flow decide.
 #
-# Never answers "ask": a permission prompt is not covered by dialogExpiry, so it
-# would sit open forever and stall an unattended cycle. "deny" lets the loop
-# record a skip and move on.
+# An unattended cycle must therefore never *reach* the prompt -- a permission
+# dialog is not covered by dialogExpiry, so it would sit open forever and stall
+# the loop. /evolve is what keeps that from happening: it reads this same flag
+# itself and skips without calling drive at all when it is absent or expired
+# (see .claude/skills/evolve/SKILL.md).
 set -uo pipefail
 
 payload=$(cat)
@@ -25,19 +29,20 @@ decide() {
     exit 0
 }
 
+ask_hint='drive hijacks the real mouse and keyboard until it finishes. Approve only if you are at the desk and can leave the machine alone -- and do not lock the workstation, or the input goes to the secure desktop instead of the app.'
+
 if [ -z "${LOCALAPPDATA:-}" ]; then
-    decide deny "drive is gated on a flag file under %LOCALAPPDATA%, but LOCALAPPDATA is not set."
+    decide ask "The unattended-run flag lives under %LOCALAPPDATA%, which is not set, so it cannot be checked. $ask_hint"
 fi
 
 flag="${LOCALAPPDATA//\\//}/MegaExplorerLoop/drive-allowed"
-off_hint='Skip the drive step, note it in the report as skipped, and carry on. The user turns it on by double-clicking scripts/drive_on_6h.cmd (or 8h/12h) before leaving the desk.'
 
-[ -f "$flag" ] || decide deny "drive is OFF (no flag file). $off_hint"
+[ -f "$flag" ] || decide ask "No unattended-run flag is set. $ask_hint"
 
 expiry=$(tr -dc '0-9' < "$flag")
 now=$(date +%s)
 if [ -z "$expiry" ] || [ "$now" -ge "$expiry" ]; then
-    decide deny "drive permission expired. $off_hint"
+    decide ask "The unattended-run flag has expired. $ask_hint"
 fi
 
-decide allow "drive allowed for another $(( (expiry - now) / 60 )) min by the flag file."
+decide allow "unattended-run flag is set for another $(( (expiry - now) / 60 )) min."
