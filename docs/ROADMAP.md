@@ -46,7 +46,6 @@
 
 | 状態 | 項目 | サイズ | メモ |
 |---|---|---|---|
-| todo | ドラッグ中のホバーでツリーの行を展開する（スプリングロード） | M | クイックアクセスのオートスクロールも同時に。Phase 14a / 22a の drop 処理へ |
 | todo | ゴミ箱ビュー — 一覧表示と導線 | M | 特殊画面の枠組みは Phase 24b で実装済み。`MegaApi::getRubbishNode()` 配下を listing する。**導線は左ペインのお気に入り一覧の下に置く。** → `docs/investigations/STUDY_SPECIAL_VIEWS_FRAMEWORK.md`、1画面分の仕様の書き方は `SPEC_FAVOURITES_VIEW.md` が実例 |
 | todo | ゴミ箱ビュー — 復元アクション | M | `MegaNode::getRestoreHandle()` が復元先ハンドルを返す。元の親が消えている場合の扱いを決めること。`IMegaClient::moveNode` を再利用 |
 | todo | ゴミ箱ビュー — 完全削除と「ゴミ箱を空にする」 | M | `MegaApi::cleanRubbishBin()` が全消し。個別の完全削除は `IMegaClient` に `remove` 相当が無いので追加が要る（現状 `moveToRubbish` のみ） |

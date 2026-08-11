@@ -94,6 +94,64 @@ TreeView {
         flickable: root
     }
 
+    // Spring-loading: a drag resting on a collapsed row opens it, so a folder
+    // several levels down can be reached without dropping somewhere first.
+    // One timer for the whole tree, like the scroller above -- a per-delegate
+    // Timer would leave one armed on every row the drag crossed.
+    Timer {
+        id: springLoader
+
+        // The delegate and the node it stood for when armed -- deliberately not
+        // its row index. TreeView renumbers rows whenever anything above
+        // expands or the model refreshes, and does so without re-delivering
+        // drag events to the row under the pointer (the same property the
+        // scroller's note above relies on), so an index captured here can name
+        // a different folder by the time this fires.
+        property var pendingItem: null
+        property var pendingHandle: undefined
+
+        // Long enough that merely crossing a row on the way somewhere else
+        // doesn't open it.
+        interval: 700
+
+        onTriggered: {
+            const item = springLoader.pendingItem;
+            const handle = springLoader.pendingHandle;
+            springLoader.clear();
+            // Re-checked rather than trusted: auto-scroll can carry this row out
+            // of view mid-countdown, and TreeView recycles the delegate onto
+            // another node when it does.
+            if (item && item.handle === handle && item.hasChildren && !item.expanded)
+                root.expand(item.row);
+        }
+
+        function arm(item) {
+            // Not restart(): onDragMoved fires continuously while the pointer
+            // sits on a row, and restarting each time means the countdown never
+            // reaches the end.
+            if (springLoader.pendingItem === item && springLoader.running)
+                return;
+            springLoader.pendingItem = item;
+            springLoader.pendingHandle = item.handle;
+            springLoader.restart();
+        }
+
+        // Compares by delegate identity, which cannot go stale, so an exit that
+        // arrives *after* the next row's enter (the order is not guaranteed)
+        // cancels nothing.
+        function disarm(item) {
+            if (springLoader.pendingItem !== item)
+                return;
+            springLoader.clear();
+        }
+
+        function clear() {
+            springLoader.stop();
+            springLoader.pendingItem = null;
+            springLoader.pendingHandle = undefined;
+        }
+    }
+
     delegate: TreeViewDelegate {
         id: treeDelegate
 
@@ -248,11 +306,25 @@ TreeView {
             targetKind: ViewKind.CloudDrive
 
             // The drag* signals fire outside NodeDropArea's accept/refuse
-            // branches, so edge scrolling works for either verdict.
-            onDragEntered: drag => autoScroller.track(root.mapFromItem(dropArea, drag.x, drag.y).y)
-            onDragMoved: drag => autoScroller.track(root.mapFromItem(dropArea, drag.x, drag.y).y)
-            onDragExited: autoScroller.release()
-            onDragDropped: autoScroller.release()
+            // branches, so edge scrolling and spring-loading work for either
+            // verdict -- a folder can be worth opening even when it would
+            // refuse this particular drop.
+            function trackDrag(drag) {
+                autoScroller.track(root.mapFromItem(dropArea, drag.x, drag.y).y);
+                if (treeDelegate.hasChildren && !treeDelegate.expanded)
+                    springLoader.arm(treeDelegate);
+            }
+
+            onDragEntered: drag => dropArea.trackDrag(drag)
+            onDragMoved: drag => dropArea.trackDrag(drag)
+            onDragExited: {
+                autoScroller.release();
+                springLoader.disarm(treeDelegate);
+            }
+            onDragDropped: {
+                autoScroller.release();
+                springLoader.disarm(treeDelegate);
+            }
         }
 
         TapHandler {
