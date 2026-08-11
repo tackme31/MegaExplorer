@@ -22,4 +22,15 @@ TestCase {
     function test_aRealFolderKeepsItsOwnName() {
         compare(ViewLabels.label(ViewKind.CloudDrive, false, "photos"), "photos");
     }
+
+    function test_inventedScreensGetAnIconTheRootAlreadyHad() {
+        compare(ViewLabels.glyph(ViewKind.Favourites, false), Theme.glyph.favouriteOutline);
+        compare(ViewLabels.glyph(ViewKind.CloudDrive, true), Theme.glyph.cloud);
+    }
+
+    function test_aRealFolderHasNoIcon() {
+        // The empty string is the contract: it is what the breadcrumb keys the
+        // icon's visibility off, not a missing-glyph fallback.
+        compare(ViewLabels.glyph(ViewKind.CloudDrive, false), "");
+    }
 }

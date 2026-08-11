@@ -134,6 +134,17 @@ void TabsController::addTabAt(quint64 handle, bool isRoot)
         navigation->openFolder(handle);
 }
 
+void TabsController::addFavouritesTab()
+{
+    const int row = static_cast<int>(mTabs.size());
+    beginInsertRows(QModelIndex(), row, row);
+    mTabs.push_back(createTab());
+    endInsertRows();
+    emit countChanged();
+
+    mTabs.back().navigation->openFavourites();
+}
+
 void TabsController::closeTab(int index)
 {
     if (index < 0 || index >= static_cast<int>(mTabs.size()))

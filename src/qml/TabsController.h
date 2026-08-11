@@ -83,6 +83,10 @@ public:
     // "Open in new tab" leave the current tab focused, as in Explorer and browsers.
     Q_INVOKABLE void addTabAt(quint64 handle, bool isRoot);
 
+    // Same background-tab semantics, with no handle to take: the favourites
+    // listing is a query, not a folder.
+    Q_INVOKABLE void addFavouritesTab();
+
     // Clamps currentIndex so it keeps pointing at the same tab, or a neighbour if
     // the active one was closed. Emits lastTabClosed() instead of closing the final
     // tab -- Main.qml closes the window, this class doesn't own it.

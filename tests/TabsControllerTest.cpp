@@ -12,13 +12,19 @@
 #include "qml/NotificationController.h"
 #include "qml/ThumbnailController.h"
 #include "qml/UploadController.h"
+#include "qml/ViewKindEnum.h"
+#include "TestApp.h"
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-// No assertion here depends on a navigation fetch actually completing --
-// MockMegaClient has no EXPECT_CALL set up, so loadRoot()/openFolder()/reset()
-// below just fire an unanswered mock call and return, same as a real fetch
-// that's still in flight when the test finishes.
+using ::testing::_;
+using ::testing::Invoke;
+
+// Except where a test sets its own expectation, no assertion here depends on a
+// navigation fetch completing -- MockMegaClient has none set up, so
+// loadRoot()/openFolder()/reset() below just fire an unanswered mock call and
+// return, same as a real fetch still in flight when the test finishes.
 namespace
 {
 
@@ -121,6 +127,40 @@ TEST_F(TabsControllerTest, AddTabAtIncreasesCountWithoutSwitchingFocus)
     // leaves currentIndex pointing at the still-focused original tab.
     EXPECT_EQ(tabs->count(), 2);
     EXPECT_EQ(tabs->currentIndex(), 0);
+}
+
+TEST_F(TabsControllerTest, AddFavouritesTabOpensInBackground)
+{
+    auto tabs = makeController();
+
+    tabs->addFavouritesTab();
+
+    EXPECT_EQ(tabs->count(), 2);
+    EXPECT_EQ(tabs->currentIndex(), 0);
+}
+
+TEST_F(TabsControllerTest, AddFavouritesTabSwitchesTheNewTabAndNotTheCurrentOne)
+{
+    EXPECT_CALL(*client, listFavourites(_, _, _))
+        .WillRepeatedly(
+            Invoke([](SortOrder,
+                      const std::string&,
+                      std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                onDone(Result<std::vector<FileEntry>>::ok({}));
+            }));
+    auto tabs = makeController();
+
+    tabs->addFavouritesTab();
+    // Two drains: the listing's queued invoke runs applyResult, which posts the
+    // breadcrumb resolution as a second one -- and the breadcrumb is what
+    // publishes the view kind.
+    flushQueuedEvents();
+    flushQueuedEvents();
+
+    EXPECT_EQ(tabs->data(tabs->index(1), TabsController::ViewKindRole).toInt(),
+              ViewKindEnum::Favourites);
+    EXPECT_EQ(tabs->data(tabs->index(0), TabsController::ViewKindRole).toInt(),
+              ViewKindEnum::CloudDrive);
 }
 
 TEST_F(TabsControllerTest, ClosingTheOnlyTabEmitsLastTabClosed)

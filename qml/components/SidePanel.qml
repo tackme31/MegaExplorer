@@ -7,8 +7,9 @@ import QtQuick.Layouts
 // flags the import as unused. The style still applies -- the files that do use
 // Controls types import it themselves.
 
-// The whole left side panel: Phase 11's quick-access pins stacked above Phase
-// 10's folder tree, matching Explorer's ordering.
+// The whole left side panel: the fixed special-view rows, Phase 11's
+// quick-access pins and Phase 10's folder tree, top to bottom -- Explorer's own
+// ordering.
 //
 // Exists purely as a wrapper so FolderTreePanel.qml can stay a bare TreeView
 // with its Phase 10 design notes intact. Main.qml's SplitView now holds this
@@ -40,11 +41,28 @@ Rectangle {
         anchors.fill: parent
         spacing: 0
 
+        SpecialViewsSection {
+            Layout.fillWidth: true
+            // Replaces the quick-access section's former header: without it the
+            // first row would sit flush against the panel's top edge.
+            Layout.topMargin: Theme.spacing.md
+            navController: root.navController
+        }
+
+        // Conditional where the one below the pins is not: with no pins, the
+        // section between the two rules collapses and they would stack into a
+        // double line one `sm` apart. Same `stroke` reasoning as below.
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: Theme.border.thin
+            Layout.topMargin: Theme.spacing.sm
+            Layout.bottomMargin: Theme.spacing.sm
+            visible: quickAccessModel.count > 0
+            color: Theme.color.stroke
+        }
+
         QuickAccessSection {
             Layout.fillWidth: true
-            // Replaces the section's former "Quick access" header: without it
-            // the first pin row would sit flush against the panel's top edge.
-            Layout.topMargin: Theme.spacing.md
             navController: root.navController
             dragProxy: root.dragProxy
             // This panel's height is set by SplitView, independent of its own
@@ -52,7 +70,8 @@ Rectangle {
             availableHeight: root.height
         }
 
-        // Only drawn when there's a pin section above it to separate from.
+        // Separates the panel's fixed rows from the tree below. Unconditional
+        // now that the special-views section above is permanent.
         // Full `stroke`, despite dividing two sections of one surface rather
         // than two surfaces: measured against surfaceAlt, anything weaker
         // lands under 6/255 and stays as invisible as the SystemPalette.mid
@@ -63,7 +82,6 @@ Rectangle {
             // The tree used to start on the very next row (3-7).
             Layout.topMargin: Theme.spacing.sm
             Layout.bottomMargin: Theme.spacing.sm
-            visible: quickAccessModel.count > 0
             color: Theme.color.stroke
         }
 

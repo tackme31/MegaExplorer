@@ -100,9 +100,10 @@ public:
 
     Q_INVOKABLE void navigateTo(quint64 handle, bool isRoot);
 
-    // Switches this tab to the favourites listing. Nothing in QML calls it yet --
-    // the side-panel entry point is a later phase; until then the only caller is
-    // the test suite.
+    // Switches this tab to the favourites listing; the side panel's Favourites row
+    // is the caller. Safe to call while already there -- the service re-fetches
+    // without pushing, so repeated clicks don't stack the same screen on the back
+    // stack.
     Q_INVOKABLE void openFavourites();
 
     // Whether this tab's screen allows the action with that stable ID right now, for

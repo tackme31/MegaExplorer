@@ -10,7 +10,7 @@ import MegaExplorer
 //
 // Every call site that shows a location's name (the breadcrumb, the tab strip)
 // routes through label(), so a new special view is one line here rather than one
-// branch per site.
+// branch per site. glyph() answers the same question for the icon in front of it.
 QtObject {
     function label(kind, isRoot, name) {
         if (kind === ViewKind.Favourites)
@@ -18,5 +18,15 @@ QtObject {
         if (isRoot)
             return qsTr("Cloud Drive");
         return name;
+    }
+
+    // Empty for an ordinary folder: those are named, not iconified, in the
+    // breadcrumb. Callers key the icon's visibility off that.
+    function glyph(kind, isRoot) {
+        if (kind === ViewKind.Favourites)
+            return Theme.glyph.favouriteOutline;
+        if (isRoot)
+            return Theme.glyph.cloud;
+        return "";
     }
 }

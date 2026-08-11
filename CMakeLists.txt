@@ -228,6 +228,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/QuickAccessSection.qml
         qml/components/SidePanel.qml
         qml/components/SignOutDialog.qml
+        qml/components/SpecialViewsSection.qml
         qml/components/StatusBar.qml
         qml/components/TabStrip.qml
         qml/components/ToastStack.qml

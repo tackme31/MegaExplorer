@@ -111,7 +111,14 @@ Item {
                 // The last segment is the current folder: nothing to navigate
                 // to, so it gets neither the hover pill nor a separator after
                 // it. Same condition the TapHandler below is gated on.
-                readonly property bool navigable: delegateRoot.index < repeater.count - 1
+                //
+                // The kind test is not redundant with it: a synthetic segment
+                // names no node, so navigateTo(0, false) would be a kENoEnt
+                // toast rather than a navigation. Default-deny, like
+                // NodeDropArea's targetKind, so a future multi-segment special
+                // view can't inherit clickability.
+                readonly property bool navigable: delegateRoot.modelData.kind === ViewKind.CloudDrive
+                                                  && delegateRoot.index < repeater.count - 1
 
                 Item {
                     id: segment
@@ -157,13 +164,19 @@ Item {
                         // shared box they top-align and the cloud rides ~2px
                         // high.
                         Label {
-                            visible: delegateRoot.modelData.isRoot
+                            id: segmentIcon
+
+                            readonly property string segmentGlyph: ViewLabels.glyph(
+                                                                       delegateRoot.modelData.kind,
+                                                                       delegateRoot.modelData.isRoot)
+
+                            visible: segmentIcon.segmentGlyph !== ""
                             height: Theme.rowHeight.compact
                             verticalAlignment: Text.AlignVCenter
                             font.family: Theme.font.iconFamily
                             font.pixelSize: Theme.iconSize.sm
                             color: Theme.color.textSecondary
-                            text: Theme.glyph.cloud
+                            text: segmentIcon.segmentGlyph
                         }
 
                         Label {

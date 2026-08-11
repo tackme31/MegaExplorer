@@ -97,6 +97,13 @@
   スプリングロード（ホバーでタブ切替、Phase 22b）は拒否ターゲットでも作動する設計なので、
   「お気に入りタブにホバーして切り替え、そこから更に別タブへ」は今までどおり効く
 
+**F6 実装時の訂正（2026-08-11）**: この節は 3 点が古い。①タイトルは合成セグメントの `name` からは
+出ない。§3.3 の訂正で `name` は空になったので `TitleRole` は `""` で、ラベルは F5 が足した
+`ViewKindRole` 経由の `ViewLabels.label()` が出す。②`TabStrip.qml` の `atRoot ? "Cloud Drive" : title`
+という三項演算子はもう無く、同じく `ViewLabels.label()` を呼ぶ（結論「F6 に作業なし」は別の理由で
+成り立つ）。③タブへのドロップの明示化は **F4 で完了済み**（`targetKind: navigation.viewKind`）。
+結果として F6 に残ったのは `addFavouritesTab()` とサイドパネルの導線だけだった。
+
 ### 2.3 ビュー本体
 
 `TabContentPane` は**無改修**。`FileTableView` / `FileGridView` / `PreviewPane` / `StatusBar` /
@@ -248,6 +255,11 @@ root のラベル（`qsTr("Cloud Drive")`）が既に QML 側にある前例に�
 `Breadcrumb.qml` は各セグメントに `NodeDropArea` を置き、クリックで `navigateTo(handle, isRoot)`
 を呼ぶ。`handle = 0` のまま放置すると「押しても何も起きない（か、kENoEnt でエラートースト）」
 という挙動になる。**押せないことを明示する**ほうが正しい。
+
+**F6 実装時の補足（2026-08-11）**: ドロップ側は F4 の `targetKind: modelData.kind` で既に済んで
+いたので、F6 で足したのはクリック側の 1 条件だけ（`navigable` に `kind === CloudDrive` を AND）。
+合成セグメントは 1 つしか無く既に最後尾なので**今日の挙動は何も変わらない**。それでも書くのは、
+将来の複数セグメントな特殊ビューがクリック可能性を継承しないようにするため。
 
 > ⚠ `currentHandle()` が 0、`atRoot()` が false になる点は SPECIAL_VIEWS §1.3 が指摘した
 > 「偶然正しく落ちる」状態そのもの。`checkMove` が kENoEnt で弾くので結果的に安全だが、
