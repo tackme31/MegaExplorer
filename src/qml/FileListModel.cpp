@@ -392,6 +392,17 @@ int FileListModel::rowForHandle(quint64 handle) const
     return -1;
 }
 
+int FileListModel::rowForName(const QString& name) const
+{
+    const std::string needle = name.toStdString();
+    for (std::size_t i = 0; i < mEntries.size(); ++i)
+    {
+        if (mEntries[i].name == needle)
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
 void FileListModel::notifySelectionChanged()
 {
     emit selectionChanged();

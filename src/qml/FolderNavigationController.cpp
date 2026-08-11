@@ -11,6 +11,7 @@
 #include <QVariantMap>
 
 #include <set>
+#include <utility>
 
 FolderNavigationController::FolderNavigationController(
     std::shared_ptr<FolderNavigationService> navigationService,
@@ -154,7 +155,8 @@ void FolderNavigationController::navigateTo(quint64 handle, bool isRoot)
                          });
 }
 
-void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> result)
+void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> result,
+                                             const QString& revealName)
 {
     if (!result.success)
     {
@@ -169,6 +171,17 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
     mHasLoadedOnce = true;
     mLastFolderEntries = result.value();
     mFileListModel->setEntries(std::move(result.value()));
+    if (!revealName.isEmpty())
+    {
+        // Only against the listing this very request produced -- see
+        // refreshVisibleListing's declaration for why it isn't kept as state.
+        const int row = mFileListModel->rowForName(revealName);
+        if (row >= 0)
+        {
+            mFileListModel->selectRow(row, Qt::NoModifier);
+            emit revealRowRequested(row);
+        }
+    }
     emit canGoBackChanged();
     refreshBreadcrumb();
 }
@@ -274,12 +287,13 @@ void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>
     mFileListModel->setEntries(std::move(result.value()));
 }
 
-void FolderNavigationController::refreshCurrentFolder()
+void FolderNavigationController::refreshCurrentFolder(QString revealName)
 {
     mService->refreshCurrent(
-        mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
-                applyResult(std::move(result));
+        mSortOrder,
+        [this, self = shared_from_this(), revealName](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(this, [this, revealName, result = std::move(result)]() mutable {
+                applyResult(std::move(result), revealName);
             });
         });
 }
@@ -310,10 +324,12 @@ void FolderNavigationController::setSortOrder(int column, bool ascending)
     refreshVisibleListing();
 }
 
-void FolderNavigationController::refreshVisibleListing()
+void FolderNavigationController::refreshVisibleListing(QString revealName)
 {
     if (!mLastSearchQuery.empty())
     {
+        // revealName is dropped here on purpose: the visible model is a search
+        // result, where "the row named X" is not the thing the caller meant.
         // Re-run the visible search, and separately refresh the cached folder
         // listing (not the visible model) so that clearing the search
         // afterwards doesn't show stale contents/ordering.
@@ -338,7 +354,7 @@ void FolderNavigationController::refreshVisibleListing()
         return;
     }
 
-    refreshCurrentFolder();
+    refreshCurrentFolder(std::move(revealName));
 }
 
 void FolderNavigationController::refreshListingIfLoaded()
