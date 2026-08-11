@@ -46,12 +46,11 @@
 
 | 状態 | 項目 | サイズ | メモ |
 |---|---|---|---|
-| todo | フォルダ名の入力中に同名が既にあるかその場でチェックする | S | 現状は確定時にサーバーのエラーを見るだけ（Phase 19 ログ「重複名チェックはサーバーのものが唯一」） |
 | todo | 通常の空フォルダにも空状態の表示を出す | S | 今はお気に入り一覧だけが空状態を持つ（Phase 24b） |
 | todo | 背景の右クリックメニューに「更新」「すべて選択」「貼り付け」を追加 | S | Phase 19 のメニュー解決器へ足す。空白部分の右クリックが2回発火する既知の癖に注意（Phase 19 ログ） |
 | todo | バンド選択の水平方向オートスクロールと、Esc でのキャンセル | S | Phase 21。垂直方向のオートスクロールは実装済み |
 | todo | ドラッグ中のホバーでツリーの行を展開する（スプリングロード） | M | クイックアクセスのオートスクロールも同時に。Phase 14a / 22a の drop 処理へ |
-| todo | ゴミ箱ビュー — 一覧表示と導線 | M | 特殊画面の枠組みは Phase 24b で実装済み。`MegaApi::getRubbishNode()` 配下を listing する。→ `docs/investigations/STUDY_SPECIAL_VIEWS_FRAMEWORK.md`、1画面分の仕様の書き方は `SPEC_FAVOURITES_VIEW.md` が実例 |
+| todo | ゴミ箱ビュー — 一覧表示と導線 | M | 特殊画面の枠組みは Phase 24b で実装済み。`MegaApi::getRubbishNode()` 配下を listing する。**導線は左ペインのお気に入り一覧の下に置く。** → `docs/investigations/STUDY_SPECIAL_VIEWS_FRAMEWORK.md`、1画面分の仕様の書き方は `SPEC_FAVOURITES_VIEW.md` が実例 |
 | todo | ゴミ箱ビュー — 復元アクション | M | `MegaNode::getRestoreHandle()` が復元先ハンドルを返す。元の親が消えている場合の扱いを決めること。`IMegaClient::moveNode` を再利用 |
 | todo | ゴミ箱ビュー — 完全削除と「ゴミ箱を空にする」 | M | `MegaApi::cleanRubbishBin()` が全消し。個別の完全削除は `IMegaClient` に `remove` 相当が無いので追加が要る（現状 `moveToRubbish` のみ） |
 | todo | フォルダのアップロード（再帰） | M | 今はドロップ時に確認ダイアログを出してスキップしている。`startUpload` はディレクトリを受け取れるので SDK 層の追加は不要（Phase 14b ログ）。件数の歯止めは下の「アップロード件数の上限」に切り出した（フォルダ限定の話ではないため）——先にそちらを入れておくと、この機能が青天井にならない |

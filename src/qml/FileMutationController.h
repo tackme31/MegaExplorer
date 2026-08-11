@@ -79,6 +79,13 @@ public:
     // dialog stays open and says so inline; everything else also gets a toast.
     Q_INVOKABLE void createFolder(const QString& name);
 
+    // Advisory only, for warning while the name is still being typed: it reads the
+    // cached listing, which a background refresh or another client can outdate, so
+    // createFolder's kEExist stays the authority (IMegaClient::createFolder). Don't
+    // turn this into a gate on the Ok button -- a stale "taken" would then block a
+    // name the server would have accepted.
+    Q_INVOKABLE bool folderNameTaken(const QString& name) const;
+
     // Drag & drop's move. handles is the snapshot taken when the drag started,
     // passed explicitly because a drop can land on the folder tree or a
     // quick-access pin -- both shared by every tab, so "the selection" is

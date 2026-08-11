@@ -30,6 +30,12 @@ Dialog {
     // composed here.
     property string errorText: ""
 
+    // Advisory, and deliberately not wired to the Ok button: the check reads a
+    // cached listing (see FileMutationController::folderNameTaken), so a stale
+    // "taken" must not block a name the server would accept.
+    readonly property bool nameTaken: nameField.text.trim() !== "" && root.mutController.folderNameTaken(
+                                          nameField.text)
+
     // Single entry point, samples nothing: unlike ConfirmRubbishDialog there
     // is no selection to freeze, only a blank field to start from.
     function prompt() {
@@ -67,15 +73,22 @@ Dialog {
             enabled: !root.busy
             placeholderText: qsTr("Folder name")
             onAccepted: root.submit()
+            // Only the user's own keystrokes, so prompt()'s clear() doesn't
+            // count: a message about the name just rejected outlives the edit
+            // that answered it otherwise.
+            onTextEdited: root.errorText = ""
         }
 
+        // One line for both, since the live warning is the same fact the server
+        // confirms: grey while it is only a guess, danger once kEExist came back.
         Label {
             Layout.fillWidth: true
             Layout.maximumWidth: 320
             wrapMode: Text.Wrap
-            color: Theme.color.danger
-            visible: root.errorText !== ""
-            text: root.errorText
+            color: root.errorText !== "" ? Theme.color.danger : Theme.color.textSecondary
+            visible: text !== ""
+            text: root.errorText !== "" ? root.errorText : root.nameTaken ? qsTr("A folder with this name already exists") :
+                                                                            ""
         }
     }
 

@@ -142,6 +142,11 @@ void FileMutationController::createFolder(const QString& name)
         });
 }
 
+bool FileMutationController::folderNameTaken(const QString& name) const
+{
+    return mNavigation->hasChildFolderNamed(name.toStdString());
+}
+
 void FileMutationController::moveHandlesToRubbish(const QVariantList& handles)
 {
     if (handles.isEmpty())

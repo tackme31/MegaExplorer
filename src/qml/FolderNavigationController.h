@@ -189,6 +189,10 @@ public:
     // fallback when a paste's destination re-read fails.
     std::set<std::string> cachedChildNames() const;
 
+    // Folders only: MEGA lets a file and a folder share a name, so a same-named
+    // file is no conflict for createFolder (IMegaClient::createFolder).
+    bool hasChildFolderNamed(const std::string& name) const;
+
 signals:
     void canGoBackChanged();
     void breadcrumbChanged();
