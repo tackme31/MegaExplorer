@@ -585,6 +585,34 @@ TEST_F(FileMutationControllerTest, BusyClearsWhenAnOperationFails)
     EXPECT_FALSE(controller->busy());
 }
 
+TEST_F(FileMutationControllerTest, FolderNameTakenSeesFoldersOfTheCachedListing)
+{
+    givenRootListing({entry("docs", 1, true), entry("notes.txt", 2)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_TRUE(mutations->folderNameTaken(QStringLiteral("docs")));
+    EXPECT_FALSE(mutations->folderNameTaken(QStringLiteral("photos")));
+}
+
+TEST_F(FileMutationControllerTest, FolderNameTakenIgnoresFilesAndIsCaseSensitive)
+{
+    givenRootListing({entry("notes.txt", 1), entry("Docs", 2, true)});
+    controller->loadRoot();
+    flush();
+
+    // A file of that name is no conflict for createFolder, and MEGA's own check
+    // is byte-wise -- warning about either would be a warning the server
+    // contradicts.
+    EXPECT_FALSE(mutations->folderNameTaken(QStringLiteral("notes.txt")));
+    EXPECT_FALSE(mutations->folderNameTaken(QStringLiteral("docs")));
+}
+
+TEST_F(FileMutationControllerTest, FolderNameTakenIsFalseBeforeTheFirstLoad)
+{
+    EXPECT_FALSE(mutations->folderNameTaken(QStringLiteral("docs")));
+}
+
 TEST_F(FileMutationControllerTest, ResetClearsBusyWithOperationsStillInFlight)
 {
     givenRootListing({entry("a", 1), entry("b", 2)});

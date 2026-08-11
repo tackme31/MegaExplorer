@@ -10,6 +10,7 @@
 #include <QString>
 #include <QVariantMap>
 
+#include <algorithm>
 #include <set>
 #include <utility>
 
@@ -375,6 +376,15 @@ std::set<std::string> FolderNavigationController::cachedChildNames() const
     for (const FileEntry& entry : mLastFolderEntries)
         names.insert(entry.name);
     return names;
+}
+
+bool FolderNavigationController::hasChildFolderNamed(const std::string& name) const
+{
+    return std::any_of(mLastFolderEntries.begin(),
+                       mLastFolderEntries.end(),
+                       [&name](const FileEntry& entry) {
+                           return entry.isFolder && entry.name == name;
+                       });
 }
 
 void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favourite)
