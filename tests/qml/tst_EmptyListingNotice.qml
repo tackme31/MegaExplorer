@@ -61,17 +61,43 @@ TestCase {
         verify(!built.notice.visible);
     }
 
-    function test_staysAwayFromOrdinaryFolders() {
-        // An empty folder is a normal thing to be looking at; v1 speaks only for
-        // the favourites listing.
+    function test_showsOnAnEmptyOrdinaryFolderToo() {
         const built = makeNotice({
                                      "viewKind": ViewKind.CloudDrive
                                  });
-        verify(!built.notice.visible);
+        verify(built.notice.visible);
     }
 
-    function test_searchingSwapsTheWordingAndDropsTheHint() {
-        const built = makeNotice({});
+    function test_wordsAnEmptyFolderDifferentlyFromAnEmptyFavourites() {
+        const favourites = makeNotice({});
+        const folder = makeNotice({
+                                      "viewKind": ViewKind.CloudDrive
+                                  });
+
+        // Both lines: a folder's hint points at "New folder", the favourites
+        // one at "Add to Favourites", so sharing either wording would send the
+        // user to the wrong menu row.
+        verify(favourites.notice.children[0].text !== folder.notice.children[0].text);
+        verify(favourites.notice.children[1].text !== folder.notice.children[1].text);
+    }
+
+    function test_searchingSwapsTheWordingAndDropsTheHint_data() {
+        return [
+                    {
+                        "tag": "favourites",
+                        "kind": ViewKind.Favourites
+                    },
+                    {
+                        "tag": "folder",
+                        "kind": ViewKind.CloudDrive
+                    }
+                ];
+    }
+
+    function test_searchingSwapsTheWordingAndDropsTheHint(data) {
+        const built = makeNotice({
+                                     "viewKind": data.kind
+                                 });
         const unsearched = built.notice.children[0].text;
         const hintVisible = built.notice.children[1].visible;
 
