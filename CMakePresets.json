@@ -28,7 +28,7 @@
       "name": "msvc-debug",
       "configurePreset": "msvc-debug",
       "configuration": "Debug",
-      "targets": ["appMegaExplorer", "MegaExplorerTests", "MegaExplorerQmlTests"]
+      "targets": ["appMegaExplorer", "megatool", "MegaExplorerTests", "MegaExplorerQmlTests"]
     }
   ],
   "testPresets": [

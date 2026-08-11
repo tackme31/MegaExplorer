@@ -3,12 +3,18 @@
 Guidance for Claude Code when working in this repo. Kept compact — detail that isn't needed every
 session lives in companion docs, linked from the relevant section below rather than inlined:
 
-- `docs/PROGRESS.md` — the roadmap (what's next and why-in-this-order) plus the full phase-by-phase
-  implementation log (what was built, why, gotchas). Single source of truth for both. The roadmap
-  covers only phases **not yet done**; a shipped phase's original plan sits at the top of its own
-  log entry as a `> **Planned as.**` block (2026-08-07, to keep plan and outcome from drifting).
-  `README.md` is just a one-line title stub, not documentation.
-- `docs/FEATURE_IDEAS.md` — candidate features and ideas for future implementation.
+- `docs/ROADMAP.md` — **the backlog, and the single source of truth for what gets built next.** The
+  `/evolve` loop reads it first every cycle and picks one item off the top; new bugs and requests
+  are written straight into it (no GitHub issues). Sized S/M/L, and an **L is never implemented
+  as-is** — a cycle that hits one only splits it. Its "見送り (blocked)" section is what the loop
+  must not touch.
+- `docs/roadmap-done.md` — one line per finished ROADMAP item, and the only log the loop writes to.
+  Its メモ column is where "still needs checking on a real run" gets recorded.
+- `docs/PROGRESS.md` — the phase-by-phase implementation log (what was built, why, gotchas), plus a
+  Roadmap section that is now **history only**: the queue moved to `docs/ROADMAP.md`. A shipped
+  phase's original plan sits at the top of its own log entry as a `> **Planned as.**` block
+  (2026-08-07, to keep plan and outcome from drifting). Entries here are for phases a **human**
+  cut — the loop never writes here. `README.md` is just a one-line title stub, not documentation.
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
   and the per-stage log for S0–S11 (S0–S10 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
   the four C++ changes it caused are cross-linked from both.
@@ -134,8 +140,10 @@ go-ahead before proceeding (as part of normal plan review, not a separate approv
 ## Project status
 
 Phases 0–15, 17–23a, 24a and 24b are done — several were pulled forward out of numeric order. The pre-15
-code-tidying pass in `docs/REFACTOR_PLANS.md` finished on 2026-08-08 (all of R1–R7). **No numbered
-phase is queued** — the next one gets picked from `docs/FEATURE_IDEAS.md`.
+code-tidying pass in `docs/REFACTOR_PLANS.md` finished on 2026-08-08 (all of R1–R7). **The numbered
+phases are finished** — work now comes off `docs/ROADMAP.md` one item at a time, usually via the
+`/evolve` loop (see "Loop engineering" below). A new numbered phase only appears if a human decides
+some chunk is big enough to deserve one.
 
 That one paragraph is deliberately all this file tracks. What a phase actually built, what it
 changed its mind about mid-way, and what it knowingly left open is `docs/PROGRESS.md`: its Roadmap
@@ -144,7 +152,61 @@ without the 61k-token file behind it. Likewise the current architecture is `docs
 there is no inventory of classes here to fall out of date.
 
 Permanently out of scope: undo, full bidirectional local sync, and tearing a tab off into its own
-window.
+window. Those three sit in `docs/ROADMAP.md`'s 見送り (blocked) section with their reasons, which is
+where the loop reads them from.
+
+## Loop engineering (`/evolve`)
+
+Development now runs mostly as an unattended loop: `/loop 2h /evolve` fires
+`.claude/skills/evolve/SKILL.md` every two hours, and each cycle takes **one** item off
+`docs/ROADMAP.md`, implements it, verifies it, reviews it, and lands it as a single commit on a
+fresh `evolve/NNN` branch. A cycle never touches `master`. Started 2026-08-11; the reasoning behind
+each decision is in that skill file, not here.
+
+**Which document may be written by whom** — this is the part that goes wrong if it isn't explicit:
+
+| Document | Loop | Human |
+| --- | --- | --- |
+| `docs/ROADMAP.md` | takes items off, adds rows for things it noticed, splits `L`s | writes bugs and requests straight in |
+| `docs/roadmap-done.md` | **one line per cycle — the only log it writes** | reads it; ticks off the 実機確認 column |
+| `docs/PROGRESS.md` | never | 100-line entries, for human-cut phases only |
+| `docs/DESIGN_IMPROVEMENT.md` | never (visual work needs eyes) | `/ui-style` sessions |
+| `docs/investigations/` | reads; never creates | new STUDY / SPEC / BUG |
+| `CLAUDE.md` | only when the user-facing feature set changed | anything |
+
+**Taking a cycle's work into `master`** (human side, at the desk):
+
+```
+git log --oneline master..evolve/NNN     # one commit, read the subject
+git diff master...evolve/NNN             # and the diff, since nothing else reviewed it with eyes
+bash scripts/git_unlock.sh && git merge --ff-only evolve/NNN
+```
+
+If it turns out wrong after merging, `git revert` it and write the reason into `docs/ROADMAP.md` —
+don't rewrite the branch, the loop computes its next number from the existing `evolve/NNN` names.
+
+**Supporting pieces**, all of which exist for the loop but are useful by hand too:
+
+- `scripts/loop_verify.sh` — the single verification entry point (see "Compiler warnings" below).
+- `megatool` — a CLI over `IMegaClient` for setting up fixtures and for `whoami`. It logs in from
+  `MEGAEXPLORER_TEST_ACCOUNT` / `MEGAEXPLORER_TEST_PASSWORD`, **independently of the app's saved
+  session**, so it always sees the test account. Details: `docs/MEGATOOL.md`.
+- **The app is signed in to a test MEGA account, and stays that way.** The loop launches the app,
+  which auto-logs-in from the saved session, so a production session would put real files in front
+  of destructive checks — and in `.screenshots/`. Every cycle aborts unless `megatool whoami`
+  matches `MEGAEXPLORER_TEST_ACCOUNT`.
+- `scripts/drive_gate.cmd` + `scripts/drive_gate_hook.sh` — `ui_shot.py drive` hijacks the real
+  mouse and keyboard, so a `PreToolUse` hook denies it unless an **expiring** flag file under
+  `%LOCALAPPDATA%\MegaExplorerLoop\` says otherwise. The desktop shortcuts (`drive ON 6h/8h/12h`,
+  `drive OFF`) write it. Default is off, and a denial is a skip, not a failure. Don't lock the
+  workstation while it's on: `SendInput` goes to the secure desktop and never reaches the app.
+- `scripts/ntfy-send.sh` — how the loop reaches a phone. Claude Code's built-in push reports success
+  and mostly doesn't deliver, so it isn't used.
+
+Secrets: `MEGAEXPLORER_TEST_ACCOUNT` and `NTFY_TOPIC` live in the gitignored
+`.claude/settings.local.json` `env` block; `MEGAEXPLORER_TEST_PASSWORD` is a Windows user
+environment variable, set by hand, never in any file. A new value there needs a fresh Claude Code
+session before it is visible.
 
 ## Build
 
@@ -203,18 +265,23 @@ and vcpkg's `debug/bin` on `PATH` to run outside Qt Creator:
 set PATH=C:\Qt\6.11.1\msvc2022_64\bin;%CD%\build\msvc-debug\vcpkg_installed\x64-windows-mega\debug\bin;%PATH%
 ```
 
-**Compiler warnings**: all five of our targets — `MegaExplorerCore`, `MegaExplorerQml`,
-`appMegaExplorer`, `MegaExplorerTests`, `MegaExplorerQmlTests` — build at `/W4`, via the
+**Compiler warnings**: all six of our targets — `MegaExplorerCore`, `MegaExplorerQml`,
+`appMegaExplorer`, `megatool`, `MegaExplorerTests`, `MegaExplorerQmlTests` — build at `/W4`, via the
 `MegaExplorerWarnings` interface
 target they each link (`docs/BUILD.md` covers that and the two Qt-header suppressions it carries).
 At the end of any task touching
-`main.cpp`/`src/`, check for new warnings and fix them before considering the task done. Preferred:
-the `qtcreator` MCP server (`mcp__qtcreator__build` / `list_issues` / `list_file_issues` — must be
-running, see `docs/BUILD.md` for setup). CLI fallback:
+`main.cpp`/`src/`, check for new warnings and fix them before considering the task done. The one
+command that does it — and builds and tests as well — is:
 
 ```
-C:/Qt/Tools/CMake_64/bin/cmake.exe --build build/msvc-debug --config Debug --target appMegaExplorer 2>&1 | grep -i "warning C" | grep -v "third_party"
+bash scripts/loop_verify.sh          # add --full to see the generated sources' warnings
 ```
+
+It closes a running `appMegaExplorer.exe` first (otherwise the link dies with `LNK1104`),
+reconfigures when `QML_FILES` changed, **fails on a single warning of ours**, then runs `ctest`, and
+prints only a handful of lines unless something failed. It is what `/evolve` uses, so it must not
+depend on an IDE. The `qtcreator` MCP server (`mcp__qtcreator__build` / `list_issues` /
+`list_file_issues`, see `docs/BUILD.md`) is an optional convenience for interactive sessions only.
 
 After adding/removing a `.qml` file from `qt_add_qml_module`'s `QML_FILES`, **or moving the module
 to a different target**, **reconfigure** (`--preset msvc-debug`, full path as above) before

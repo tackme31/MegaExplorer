@@ -1,6 +1,6 @@
 # 「最近更新されたファイル一覧」を取得する SDK API の調査
 
-> **状態: 対応フェーズなし（未着手）。** `docs/FEATURE_IDEAS.md` の「最近追加された項目」用の
+> **状態: 対応フェーズなし（未着手）。** `docs/ROADMAP.md` の「最近追加された項目のビュー」用の
 > 下調べ。画面としての枠組みは `STUDY_SPECIAL_VIEWS_FRAMEWORK.md` 側。
 
 対象: `third_party/sdk`（pinned `v10.17.0`）。行番号はすべてこのバージョンの
