@@ -491,6 +491,23 @@ ColumnLayout {
             onNewFolderRequested: root.newFolderRequested()
         }
 
+        // Scrolling a row the controller already selected into view -- e.g. a
+        // folder that was just created. Both views of a tab listen, so the
+        // hidden one is positioned too and switching view mode doesn't land
+        // somewhere else. Connections is a QtObject, so this ColumnLayout does
+        // not lay it out.
+        //
+        // callLater, not a direct call: the signal is emitted straight after the
+        // model reset that produced the row, and both views rebuild their item
+        // geometry in a later polish pass -- positioning against the old one can
+        // land short.
+        Connections {
+            target: root.navController
+            function onRevealRowRequested(row) {
+                Qt.callLater(viewInput.revealRow, row);
+            }
+        }
+
         // Rubber-band selection (Phase 21). The strip right of the last column
         // is empty space here as it is everywhere else, so rowAt() alone
         // answers this: it carries no delegate and no DragHandler, leaving a

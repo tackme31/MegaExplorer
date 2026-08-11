@@ -40,6 +40,11 @@ bash scripts/git_unlock.sh && git switch -c "evolve/$next" master
 
 3 桁完全一致なので、`about-this-app` のような既存のローカルブランチには当たらない。
 
+**起点は「取り込み先の trunk」であって、いつでも `master` とは限らない。** ループの基盤自体が
+まだ `master` にマージされていない間は、それが載っているブランチ（`loop-development`）から切る。
+`git log --oneline master..HEAD` が空でなければ trunk は master ではないので、その場合は `HEAD`
+から切り、どこから切ったかを 7. の報告に書く。
+
 ### 0-3. Serena の死活確認
 
 ```
@@ -155,6 +160,8 @@ PYTHONIOENCODING=utf-8 python "$lint" <変更したファイル>
 グロブなのはプラグインのバージョン番号がパスに入るため（`1.6.1/` のように）。`$HOME` ではなく
 `$USERPROFILE` を使う——この Git Bash の `$HOME` は `D:/Windows` を指していて `.claude` が無い。
 **指摘が 1 件でもあると exit 1 になる**ので、それをエラーと読まないこと。
+**ファイル単位で走るので既存行の指摘も混ざる。** `git diff` の変更行と突き合わせ、**今周の行に
+無いものは報告に件数だけ書いて触らない**（触れば差分が項目と無関係に膨らむ）。
 **`PYTHONIOENCODING=utf-8` は必須**——指摘文に em dash が入るのにこのマシンのコンソールは cp932 で、
 付けないと `UnicodeEncodeError` で 1 件も出さずに落ちる。
 

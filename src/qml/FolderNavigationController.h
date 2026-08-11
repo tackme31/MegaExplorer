@@ -162,7 +162,17 @@ public:
     // Re-fetches whatever the user is looking at: the folder listing, or the active
     // search's results plus the cached listing behind them. Mutations go through
     // this so they never silently drop the user out of a search.
-    void refreshVisibleListing();
+    //
+    // revealName, when given, selects the row of that name once *this request's*
+    // listing is in the model and asks the views to scroll to it -- how a
+    // just-created folder gets revealed, since it does not exist in the model
+    // when the caller asks. Carried on the request rather than stored, because
+    // stored it would outlive requests that never produce a listing (a failed
+    // refresh, or the search branch, which drops it) and then fire against an
+    // unrelated folder. It also cannot be guarded by comparing the current
+    // handle: that comes from mBreadcrumb, which this class updates *after*
+    // applying the listing, so it still names the previous folder here.
+    void refreshVisibleListing(QString revealName = QString());
 
     // Writes one node's new favourite flag into both the model and the cached
     // listing, instead of re-reading the folder -- see FileListModel::setFavourite.
@@ -185,8 +195,14 @@ signals:
     void busyChanged();
     void searchActiveChanged();
 
+    // Row is already selected in the model when this fires; the views only have
+    // to scroll. Both of a tab's views listen -- the hidden one positions itself
+    // so switching view mode doesn't land somewhere else.
+    void revealRowRequested(int row);
+
 private:
-    void applyResult(Result<std::vector<FileEntry>> result);
+    void applyResult(Result<std::vector<FileEntry>> result,
+                     const QString& revealName = QString());
     void applySearchResult(Result<std::vector<FileEntry>> result);
 
     // Re-runs mLastSearchQuery against whatever this tab is showing. In a favourites
@@ -195,7 +211,7 @@ private:
     // folder" -- is bypassed instead of taught about view kinds.
     void runVisibleSearch();
 
-    void refreshCurrentFolder();
+    void refreshCurrentFolder(QString revealName = QString());
 
     // refreshVisibleListing() behind the mHasLoadedOnce guard.
     void refreshListingIfLoaded();
@@ -217,6 +233,7 @@ private:
     // Copies the breadcrumb-derived view kind into the model, which needs it to
     // resolve availableActions. Called from the only two places mBreadcrumb changes.
     void publishViewKind();
+
 
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<SearchService> mSearchService;

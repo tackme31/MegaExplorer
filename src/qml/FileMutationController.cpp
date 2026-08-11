@@ -101,15 +101,18 @@ void FileMutationController::createFolder(const QString& name)
         static_cast<std::uint64_t>(mNavigation->currentHandle()),
         mNavigation->atRoot(),
         name.toStdString(),
-        [this, self = shared_from_this()](Result<void> result) {
-            invokeOnGuiThread(this, [this, result = std::move(result)]() {
+        [this, self = shared_from_this(), name](Result<void> result) {
+            invokeOnGuiThread(this, [this, name, result = std::move(result)]() {
                 // Above the four-way branching below on purpose: each of those
                 // outcomes returns, so anything lower would be four chances to
                 // leak the count.
                 mBusy->end();
                 if (result.success)
                 {
-                    mNavigation->refreshVisibleListing();
+                    // The name rides on the re-read, which is the listing the new
+                    // folder will arrive in, so that it can be selected and
+                    // scrolled to once it exists in the model.
+                    mNavigation->refreshVisibleListing(name);
                     mNotifications->notifyOperation(QStringLiteral("createFolder"), 1, 0);
                     emit folderCreated();
                     return;
