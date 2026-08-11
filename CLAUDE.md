@@ -37,12 +37,14 @@ session lives in companion docs, linked from the relevant section below rather t
   - `SPECIAL_VIEWS_INVESTIGATION.md` — the *framework* for special views (Rubbish, Favourites,
     Albums, recently-updated) openable as tabs and pinned in the side panel, not any one of them.
     Conclusion: the "tab = one folder" premise is baked into C++ but barely into QML, and the real
-    trap is that Delete/Ctrl+C/drag-start never consult the menu-action resolver. Feeds the future
-    phase 24b (Favourites view); its §4.1 "no `FileEntry` change needed" call was already overturned
-    by phase 24a, which draws the flag per row.
-  - `FAVOURITES_VIEW_SPEC.md` — the Phase 24b spec proper, built on the framework study above.
-    Its pivot: "Back returns to the Favourites list" forces the view kind into
-    `FolderNavigationService`'s back stack, which rules out a separate controller per screen.
+    trap is that Delete/Ctrl+C/drag-start never consult the menu-action resolver. Fed phase 24b
+    (Favourites view, shipped), so its framework half is now built; its §4.1 "no `FileEntry` change
+    needed" call was overturned by phase 24a, which draws the flag per row. Still the reference for
+    the Rubbish bin and albums.
+  - `FAVOURITES_VIEW_SPEC.md` — the Phase 24b spec proper (shipped), built on the framework study
+    above. Its pivot: "Back returns to the Favourites list" forces the view kind into
+    `FolderNavigationService`'s back stack, which rules out a separate controller per screen. Carries
+    the measured `listFavourites` timings (§5.1) and the corrections the build made to it.
   - `PREVIEW_PANE_INVESTIGATION.md` — feeds Phase 15 (in-app preview pane). Conclusion: the
     server-side 1000×1000 preview JPEG covers image/video/PDF in one code path; video *playback*
     and PDF paging are out, since `USE_LIBUV` is off in this build and Qt PDF isn't installed.
@@ -157,7 +159,7 @@ go-ahead before proceeding (as part of normal plan review, not a separate approv
 
 ## Project status
 
-Phases 0–15, 17–23a and 24a are done — several were pulled forward out of numeric order. The pre-15
+Phases 0–15, 17–23a, 24a and 24b are done — several were pulled forward out of numeric order. The pre-15
 code-tidying pass in `docs/REFACTOR_PLANS.md` finished on 2026-08-08 (all of R1–R7). **Next up:
 phase 16** (real-time remote-change reflection).
 

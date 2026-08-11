@@ -204,6 +204,21 @@ TestCase {
         compare(testCase.lastCall === null, !data.allowed);
     }
 
+    // Same table, read off the property the ghost dims on: the point of pulling
+    // the rule out of canDropOn() is that the two can't drift, so a drag the
+    // targets refuse can never look accepted. (The dimming itself also needs
+    // Drag.active, which this file cannot raise -- see its header.)
+    function test_refusedGesture_matchesWhatTheTargetsWillDo_data() {
+        return test_canDropOn_refusesMovesOutOfFavourites_data();
+    }
+
+    function test_refusedGesture_matchesWhatTheTargetsWillDo(data) {
+        const proxy = makeProxy();
+        proxy.sourceKind = data.sourceKind;
+        proxy.copyMode = data.copyMode;
+        compare(proxy.refusedGesture, !data.allowed);
+    }
+
     // A proxy nobody told otherwise carries an ordinary folder drag, so the guard
     // above is inert until begin() says so.
     function test_sourceKind_defaultsToCloudDrive() {

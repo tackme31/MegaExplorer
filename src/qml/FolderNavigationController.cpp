@@ -372,6 +372,24 @@ void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favou
         return;
     }
 
+    writeFavouriteFlag(handle, favourite);
+}
+
+void FolderNavigationController::applyRemoteFavouriteChange(quint64 handle, bool favourite)
+{
+    if (viewKind() == ViewKindEnum::Favourites)
+    {
+        markStale();
+        return;
+    }
+
+    // No membership check: FileListModel::setFavourite ignores a handle it
+    // doesn't hold, which is the common case when the toggle happened elsewhere.
+    writeFavouriteFlag(handle, favourite);
+}
+
+void FolderNavigationController::writeFavouriteFlag(quint64 handle, bool favourite)
+{
     mFileListModel->setFavourite(handle, favourite);
     for (FileEntry& entry : mLastFolderEntries)
     {
@@ -381,6 +399,20 @@ void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favou
             break;
         }
     }
+}
+
+void FolderNavigationController::markStale()
+{
+    if (mHasLoadedOnce)
+        mStale = true;
+}
+
+void FolderNavigationController::refreshIfStale()
+{
+    if (!mStale)
+        return;
+    mStale = false;
+    refreshVisibleListing();
 }
 
 void FolderNavigationController::refresh()
@@ -411,6 +443,16 @@ void FolderNavigationController::refresh()
 
 void FolderNavigationController::refreshIfShowing(quint64 handle, bool isRoot)
 {
+    // A favourites listing shows no folder, so it matches no (handle, isRoot) --
+    // yet being a query over the whole drive, any move or copy can change it.
+    // Marked rather than re-read: this tab may be in the background, and one
+    // full-drive search per moved node is the refresh storm 5.3 warns about.
+    if (viewKind() == ViewKindEnum::Favourites)
+    {
+        markStale();
+        return;
+    }
+
     if (atRoot() != isRoot)
         return;
     if (!isRoot && currentHandle() != handle)
@@ -426,6 +468,7 @@ void FolderNavigationController::reset()
     const bool wasSearching = searchActive();
     mLastSearchQuery.clear();
     mHasLoadedOnce = false;
+    mStale = false;
     mBreadcrumb.clear();
     publishViewKind();
     mBusy->abandonAll();

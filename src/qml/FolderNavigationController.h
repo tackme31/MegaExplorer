@@ -142,6 +142,20 @@ public:
     // syncing once per showing tab would be that many pointless round-trips.
     Q_INVOKABLE void refreshIfShowing(quint64 handle, bool isRoot);
 
+    // The two below are TabsController's view of this one, and plain public for
+    // the same reason as the four further down: nothing in QML calls them.
+
+    // A favourite toggled in another tab. Not applyFavouriteChange(): that one is
+    // this tab's own toggle, which the user is watching, so a favourites listing
+    // re-queries at once. Reached from the background, it only marks itself.
+    void applyRemoteFavouriteChange(quint64 handle, bool favourite);
+
+    // Re-reads if a fan-out marked this tab stale while it wasn't the one on
+    // screen; no-op otherwise. Called when the tab becomes current -- deferring
+    // the re-read is what keeps one moved node from costing every favourites tab
+    // a full-drive search (FAVOURITES_VIEW_SPEC.md 5.3).
+    void refreshIfStale();
+
     // The four below are FileMutationController's view of this one -- public rather
     // than Q_INVOKABLE on purpose, so nothing in QML binds to them.
 
@@ -186,6 +200,14 @@ private:
     // refreshVisibleListing() behind the mHasLoadedOnce guard.
     void refreshListingIfLoaded();
 
+    // Writes one node's flag into the model and the cached listing. The folder
+    // half of both favourite entry points.
+    void writeFavouriteFlag(quint64 handle, bool favourite);
+
+    // Records that what this tab shows no longer matches the account, for
+    // refreshIfStale() to act on later.
+    void markStale();
+
     // Resolves the current location's ancestor chain, so the breadcrumb tracks the
     // folder hierarchy rather than navigation history. Emits breadcrumbChanged only
     // when the resolved path differs, so a sort-order change doesn't rebuild the
@@ -207,6 +229,8 @@ private:
     // QML's Component.onCompleted restores the persisted sort before login has ever
     // run; this guards that startup setSortOrder() from re-fetching and erroring.
     bool mHasLoadedOnce = false;
+    // Set by a fan-out this tab couldn't apply in place; cleared by the re-read.
+    bool mStale = false;
     // Publishes busy() and owns the delay before a spinner appears. Shared because
     // the mutation half writes it too.
     std::shared_ptr<BusyState> mBusy;

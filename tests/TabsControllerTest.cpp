@@ -20,6 +20,7 @@
 
 using ::testing::_;
 using ::testing::Invoke;
+using ::testing::InvokeArgument;
 
 // Except where a test sets its own expectation, no assertion here depends on a
 // navigation fetch completing -- MockMegaClient has none set up, so
@@ -55,16 +56,10 @@ protected:
         // always takes the plain-delete branch, but the wiring stays the same
         // shape as production.
         auto busy = makeGuiOwned<BusyState>();
-        auto navigation = makeGuiOwned<FolderNavigationController>(navigationService,
-                                                                  searchService,
-                                                                  busy,
-                                                                  &notifications);
-        auto mutations = makeGuiOwned<FileMutationController>(navigation,
-                                                             navigationService,
-                                                             fileOperationService,
-                                                             busy,
-                                                             &notifications,
-                                                             &clipboard);
+        auto navigation = makeGuiOwned<FolderNavigationController>(
+            navigationService, searchService, busy, &notifications);
+        auto mutations = makeGuiOwned<FileMutationController>(
+            navigation, navigationService, fileOperationService, busy, &notifications, &clipboard);
         auto thumbnailService = std::make_shared<ThumbnailService>(client);
         auto thumbnails = makeGuiOwned<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
@@ -84,7 +79,18 @@ protected:
             uploads.get());
     }
 
+    // The tab's own mutation controller, i.e. the one whose signals only reach
+    // the *other* tabs -- which is the half of the fan-out worth asserting on.
+    static FileMutationController* mutationsOf(TabsController& tabs, int row)
+    {
+        return qobject_cast<FileMutationController*>(
+            tabs.data(tabs.index(row), TabsController::MutationsRole).value<QObject*>());
+    }
+
     std::shared_ptr<MockMegaClient> client;
+    // A favourites listing is a query, so counting the calls is how "re-read
+    // exactly once" gets asserted (same device as FolderNavigationControllerTest).
+    int favouriteFetches = 0;
     NotificationController notifications;
     // Shared by every tab, like main.cpp's -- and never filled here, so no
     // assertion below depends on it.
@@ -142,12 +148,11 @@ TEST_F(TabsControllerTest, AddFavouritesTabOpensInBackground)
 TEST_F(TabsControllerTest, AddFavouritesTabSwitchesTheNewTabAndNotTheCurrentOne)
 {
     EXPECT_CALL(*client, listFavourites(_, _, _))
-        .WillRepeatedly(
-            Invoke([](SortOrder,
-                      const std::string&,
-                      std::function<void(Result<std::vector<FileEntry>>)> onDone) {
-                onDone(Result<std::vector<FileEntry>>::ok({}));
-            }));
+        .WillRepeatedly(Invoke([](SortOrder,
+                                  const std::string&,
+                                  std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            onDone(Result<std::vector<FileEntry>>::ok({}));
+        }));
     auto tabs = makeController();
 
     tabs->addFavouritesTab();
@@ -161,6 +166,96 @@ TEST_F(TabsControllerTest, AddFavouritesTabSwitchesTheNewTabAndNotTheCurrentOne)
               ViewKindEnum::Favourites);
     EXPECT_EQ(tabs->data(tabs->index(0), TabsController::ViewKindRole).toInt(),
               ViewKindEnum::CloudDrive);
+}
+
+// The fan-out these three exercise had no coverage at all before F7b: every
+// assertion about a cross-tab refresh lived on the emitting side.
+TEST_F(TabsControllerTest, AFavouriteToggledElsewhereRefreshesTheFavouritesTabWhenItIsLookedAt)
+{
+    EXPECT_CALL(*client, listFavourites(_, _, _))
+        .WillRepeatedly(Invoke([this](SortOrder,
+                                      const std::string&,
+                                      std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            ++favouriteFetches;
+            onDone(Result<std::vector<FileEntry>>::ok({}));
+        }));
+    EXPECT_CALL(*client, setNodeFavourite(9u, true, _))
+        .WillRepeatedly(InvokeArgument<2>(Result<void>::ok()));
+    auto tabs = makeController();
+    tabs->addFavouritesTab();
+    flushQueuedEvents();
+    flushQueuedEvents();
+    ASSERT_EQ(favouriteFetches, 1);
+
+    mutationsOf(*tabs, 0)->setEntryFavourite(9, true);
+    flushQueuedEvents();
+
+    // Deferred on purpose: one full-drive search per toggle, in every favourites
+    // tab open, is the refresh storm the stale mark exists to avoid (spec 5.3).
+    EXPECT_EQ(favouriteFetches, 1);
+
+    tabs->setCurrentIndex(1);
+    flushQueuedEvents();
+
+    EXPECT_EQ(favouriteFetches, 2);
+}
+
+TEST_F(TabsControllerTest, ARubbishMoveElsewhereAlsoLeavesTheFavouritesTabStale)
+{
+    // A favourites listing matches no folder handle, so the ordinary fan-out
+    // passes it by -- yet a node moved to the rubbish bin drops out of it. That
+    // combination is guaranteed to happen: this app forbids deleting from the
+    // favourites screen, so the deletion is always in some other tab.
+    EXPECT_CALL(*client, listFavourites(_, _, _))
+        .WillRepeatedly(Invoke([this](SortOrder,
+                                      const std::string&,
+                                      std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            ++favouriteFetches;
+            onDone(Result<std::vector<FileEntry>>::ok({}));
+        }));
+    auto tabs = makeController();
+    tabs->addFavouritesTab();
+    flushQueuedEvents();
+    flushQueuedEvents();
+    ASSERT_EQ(favouriteFetches, 1);
+
+    // The real path, not a hand-emitted signal: until F7b this batch announced
+    // nothing at all, so the wiring under test starts at moveHandlesToRubbish.
+    EXPECT_CALL(*client, moveToRubbish(7u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
+    mutationsOf(*tabs, 0)->moveHandlesToRubbish(QVariantList{QVariant::fromValue(quint64{7})});
+    flushQueuedEvents();
+    EXPECT_EQ(favouriteFetches, 1);
+
+    tabs->setCurrentIndex(1);
+    flushQueuedEvents();
+
+    EXPECT_EQ(favouriteFetches, 2);
+}
+
+TEST_F(TabsControllerTest, AFavouritesTabAlreadyOnScreenRefreshesWithoutATabSwitch)
+{
+    EXPECT_CALL(*client, listFavourites(_, _, _))
+        .WillRepeatedly(Invoke([this](SortOrder,
+                                      const std::string&,
+                                      std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            ++favouriteFetches;
+            onDone(Result<std::vector<FileEntry>>::ok({}));
+        }));
+    EXPECT_CALL(*client, setNodeFavourite(9u, false, _))
+        .WillRepeatedly(InvokeArgument<2>(Result<void>::ok()));
+    auto tabs = makeController();
+    tabs->addFavouritesTab();
+    tabs->setCurrentIndex(1);
+    flushQueuedEvents();
+    flushQueuedEvents();
+    const int fetchesBefore = favouriteFetches;
+
+    mutationsOf(*tabs, 0)->setEntryFavourite(9, false);
+    flushQueuedEvents();
+
+    // Deferring here would leave a stale listing in front of the user until they
+    // switched away and back.
+    EXPECT_EQ(favouriteFetches - fetchesBefore, 1);
 }
 
 TEST_F(TabsControllerTest, ClosingTheOnlyTabEmitsLastTabClosed)

@@ -64,6 +64,15 @@ Item {
     // a copy" happens. Hence KeyboardState plus the Timer below.
     property bool copyMode: false
 
+    // Refused by every target it could reach, decided without knowing which one is
+    // under the pointer -- the favourites listing forbids moves outright. That is
+    // what lets the ghost show the refusal: it never has to ask a drop target, so
+    // the entered/exited ordering trap FAVOURITES_VIEW_SPEC.md 7.2 warns about
+    // doesn't arise. Refusals that do depend on the target stay unlit, as before.
+    // Spelled as one kind rather than "anything but CloudDrive": that is this
+    // screen's policy, not a fact a later special view would inherit.
+    readonly property bool refusedGesture: root.sourceKind === ViewKind.Favourites && !root.copyMode
+
     function sampleCopyMode() {
         const mods = KeyboardState.modifiers();
         // Shift wins: it is Explorer's explicit "move", and the only way to
@@ -108,7 +117,9 @@ Item {
         radius: 4
         color: Qt.rgba(sysPalette.highlight.r, sysPalette.highlight.g, sysPalette.highlight.b, 0.85)
         border.color: sysPalette.highlight
-        opacity: 0.9
+        // Faded rather than badged: Theme.glyph has no prohibition sign, and
+        // adding one costs the cmap-plus-repaint check Theme.qml documents.
+        opacity: root.active && root.refusedGesture ? 0.4 : 0.9
 
         Label {
             id: ghostLabel
@@ -191,10 +202,8 @@ Item {
             return false;
         // The favourites list forbids moves but not the gesture: copy-vs-move is
         // only decided by the modifier held at drop time, so the refusal lives here
-        // rather than at drag start (FAVOURITES_VIEW_SPEC.md 4.3). Spelled as one
-        // kind rather than "anything but CloudDrive" because it is that screen's
-        // policy, not a structural fact a later special view would inherit.
-        if (root.sourceKind === ViewKind.Favourites && !root.copyMode)
+        // rather than at drag start (FAVOURITES_VIEW_SPEC.md 4.3).
+        if (root.refusedGesture)
             return false;
         return root.copyMode ? root.sourceMutations.canCopyEntriesOn(root.entries, handle, isRoot) :
                                root.sourceMutations.canDropHandlesOn(root.handles, handle, isRoot);

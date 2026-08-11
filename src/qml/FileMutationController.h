@@ -56,10 +56,10 @@ public:
     // tracks per-row names.
     Q_INVOKABLE void renameEntry(quint64 handle, const QString& newName);
 
-    // Reports nothing on success -- no toast, no cross-tab fan-out. A heart is
-    // toggled often enough that a toast per click would be noise, and the flag is
-    // written straight into this tab's model rather than re-read (see
-    // FolderNavigationController::applyFavouriteChange).
+    // No toast on success: a heart is toggled often enough that one per click
+    // would be noise. The flag is written straight into this tab's model rather
+    // than re-read (see FolderNavigationController::applyFavouriteChange), and
+    // announced to the other tabs through favouriteChanged below.
     Q_INVOKABLE void setEntryFavourite(quint64 handle, bool favourite);
 
     // One SDK call per handle, tallied once through
@@ -136,6 +136,17 @@ signals:
 
     // Same purpose as nodesMoved, destination only: a copy leaves the source alone.
     void nodesCopied(quint64 destination, bool destinationIsRoot);
+
+    // Source only, for the opposite reason: the rubbish bin is not a place any tab
+    // can be showing. Until F7b this batch announced nothing at all, so a second
+    // tab on the same folder -- or on the favourites listing, which any rubbished
+    // node drops out of -- kept showing rows that were gone.
+    void nodesRemoved(quint64 source, bool sourceIsRoot);
+
+    // Same purpose again, for the flag rather than the tree. Carries no location
+    // because a favourites listing spans the whole drive and a folder listing
+    // recognises the node by handle alone.
+    void favouriteChanged(quint64 handle, bool favourite);
 
 private:
     // Body of moveHandlesTo, with the source passed in: a cut-paste's source is

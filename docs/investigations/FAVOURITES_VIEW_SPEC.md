@@ -454,6 +454,21 @@ void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favou
 
 推奨は (A) で出して計測 → 遅ければ (C) → それでも駄目なら (B)。
 
+**計測結果（2026-08-11、F7b）** — (A) のまま出し、開発アカウントで実測:
+
+| 経路 | `MegaApi::search()` | `FileEntry` への変換 |
+| --- | --- | --- |
+| タブを開く／解除で引き直す（フィルタ無し、0〜1 件ヒット） | **19〜21 ms** | < 1 ms |
+
+体感でも引っかかりは無く、**(A) を維持する**。ただし**リスクは閉じていない**: このアカウントは
+ノード数が 2 桁で、`FETCHNODES_PROGRESS_INVESTIGATION.md` の 60 万ノード級は未測定のまま。
+この規模で 20 ms かかっている以上、大半は木の走査ではなく固定費と見られるが、
+それは推測であって測っていない。§5.2 の「引き直しの回数」も、フィルタ付きの引き直しは
+フィルタ有無の 2 回走る（§4.4）ので**この 2 倍**になる。
+
+計測は `MegaSdkClient::listFavourites` に一時的な `QElapsedTimer` + `qCInfo(lcSearch)` を
+入れて行い、数字を得た後に削除した。再測するなら同じ手で足す。
+
 ### 5.2 再取得の頻度
 
 `refreshVisibleListing()` は rename 成功後・ソート順変更後・**お気に入り解除後（決定 6）**・

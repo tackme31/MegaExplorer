@@ -58,7 +58,7 @@ are post-MVP, sequenced by priority/dependency.
 | 15 | In-app preview (right pane, `getPreview` + `startStreaming`) | done |
 | 24a | Favourite toggle (context menu + heart badge) | done (pulled forward) |
 | 16 | Real-time remote-change reflection | future, post-MVP |
-| 24b | Favourites view (a special view; needs the 24b prep in the investigation) | future |
+| 24b | Favourites view (a special view) | done (pulled forward) |
 | 24+ | Undecided | undo and full bidirectional local sync both stay out of scope |
 
 ### Phases 20a–23 — the detail pass (all pulled forward, ahead of 15)
@@ -82,15 +82,6 @@ own right, and with 23 in place the practical need for it is small. Not deferred
 
 Reflect other devices' changes via the SDK's push-notification mechanism into whatever listing is
 open. Additive on top of phase 6's refresh.
-
-### Phase 24b (future) — the Favourites view
-
-The listing half of 24a. `MegaSearchFilter::byFavourite(BOOL_FILTER_ONLY_TRUE)` fed to
-`MegaApi::search()` returns real nodes, so the existing table/grid can show it as-is
-(`MegaApi::getFavourites()` is deprecated and hands back bare handles). What it actually needs first
-is the framework work in `docs/investigations/SPECIAL_VIEWS_INVESTIGATION.md` — a location value
-type carrying a view kind, and the "can this action run here" query that Delete/Ctrl+C/drag-start
-currently bypass. Per that study's own ordering, the Rubbish bin is the cheaper first special view.
 
 ### Phase 24+ — undecided
 
@@ -3794,3 +3785,109 @@ Clicking the heart itself to toggle (menu only); the `MenuSite::FolderRow` menus
 favourite state plumbed into `FolderTreeModel`/`QuickAccessModel`; live cross-tab updates via
 `MegaNode::CHANGE_TYPE_FAVOURITE` (Phase 16's territory); sorting by favourite, since
 `ORDER_FAV_ASC/DESC` group rather than sort and don't fit the existing column→sort-key mapping.
+
+## Phase 24b — the Favourites view (done)
+
+> **Planned as.** The listing half of 24a. `MegaSearchFilter::byFavourite(BOOL_FILTER_ONLY_TRUE)`
+> fed to `MegaApi::search()` returns real nodes, so the existing table/grid can show it as-is
+> (`MegaApi::getFavourites()` is deprecated and hands back bare handles). What it actually needs
+> first is the framework work in `docs/investigations/SPECIAL_VIEWS_INVESTIGATION.md` — a location
+> value type carrying a view kind, and the "can this action run here" query that
+> Delete/Ctrl+C/drag-start currently bypass. Per that study's own ordering, the Rubbish bin is the
+> cheaper first special view.
+
+Built to `docs/investigations/FAVOURITES_VIEW_SPEC.md`, in seven steps (F1–F7b) whose per-step
+reasoning is in the commit messages; this entry keeps only what neither those nor the code state.
+
+### One requirement line decided the whole architecture
+
+"Back returns to the Favourites list." The only thing in the app that holds a place to return to is
+`FolderNavigationService::mBackStack`, a stack of `Location`. So the listing had to *be* a
+`Location` — which ruled out the investigation's option C (a controller per screen) before any code
+was written, and meant `ViewKind` had to go into `src/core`. That cost was accepted knowingly, and
+it is a shared one: the same value type carries the Rubbish bin, albums and recently-updated.
+
+### The four invisible phases were the point, not overhead
+
+F1–F4 changed no behaviour at all: every screen still answered `CloudDrive`, so the existing suite
+passing *was* the regression test, and the Favourites answers were decidable and testable before
+the screen existed. What that ordering bought is visible in F3: routing Delete/Ctrl+X/Ctrl+V
+through the resolver turned out to need care about branch *structure*, not just a guard —
+`StandardKey.Cut` is Shift+Delete as well as Ctrl+X on Windows, so a Delete branch that fell
+through on a refusal would silently become a cut. Discovering that on a screen with no users was
+the whole idea.
+
+### Un-favouriting re-queries; the partial-removal path was never built
+
+24a writes the flag into the row in place, deliberately, because a refetch resets the model and
+loses the scroll position. In this listing the row *leaves*, so there is nothing to write. The
+first plan was `FileListModel::removeHandle()` with `beginRemoveRows`; it was dropped because the
+rows after the removed one shift no matter what, so the view moves either way — and `setEntries()`
+already does the three cleanups (selection set, cursor row, band-selection anchor) that a partial
+path would have had to repeat. One fewer way to break.
+
+The measurement contradicted the premise, though: the scroll position does **not** jump. Nothing in
+the app writes `contentY`, and `TableView` recomputes its top-left cell from the existing offset on
+a model reset rather than returning to the origin the way `ListView`/`GridView` do. So the accepted
+cost turned out not to be charged. Recorded in the spec's §4.4 rather than left as folklore.
+
+### The refusal is drawn from the source, not the target
+
+The spec's preferred design for "you can't drop that here" had each drop target report its verdict
+back to `DragProxy`, and warned that `entered`/`exited` are not ordered between adjacent targets,
+so a token scheme would be needed. All of that disappears once you notice that the one refusal this
+screen introduces — a move out of the favourites listing — is decidable *without knowing the
+target*: it is the first line of `canDropOn()`. `refusedGesture` is that same expression, and the
+ghost dims on it. Target-dependent refusals (dropping a folder into itself) stay unlit, exactly as
+before. The narrower feature has no ordering hazard at all, and the two can't drift apart because
+`canDropOn()` now reads the property instead of restating it.
+
+No 🚫 badge: `Theme.glyph` has no prohibition sign, and adding one costs the cmap-plus-repaint
+check that file documents (E80A and E890 both failed it during S8).
+
+### Moving to the rubbish bin announced nothing, to anyone
+
+Found while verifying F7b's cross-tab fan-out. `moveHandlesToRubbish` only refreshed its own tab —
+unlike move and copy, it emitted no signal, so a second tab showing the same folder kept displaying
+deleted rows. Not a favourites bug at all; it merely surfaced here because the spec forbids
+deleting *from* the favourites screen, which makes "the deletion happened in another tab" the only
+possible case. Fixed with `nodesRemoved(source, sourceIsRoot)` — source only, since the rubbish bin
+is not a place any tab can currently show.
+
+### The fan-out defers, except for the tab you're looking at
+
+A favourites listing matches no `(handle, isRoot)`, so `refreshIfShowing` can't address it, and
+being a whole-drive query, *any* move can change it. Refreshing on each would mean one full-drive
+search per moved node. Instead the tab marks itself stale and pays on activation. The exception is
+the current tab, which refreshes immediately — deferring there would leave a stale listing in front
+of the user until they switched away and back.
+
+`TabsController::currentTabChanged` also fires on close and reorder, where the current tab may be
+the same one; harmless, because a tab that isn't stale does nothing.
+
+### Performance: measured, and the risk is not closed
+
+`listFavourites` is a synchronous whole-drive `MegaApi::search()` on the GUI thread, run when the
+tab opens and on every re-query. Measured at **19–21 ms** (entry conversion under 1 ms) with no
+perceptible stall — but on a two-digit-node account. The 600k-node case from
+`FETCHNODES_PROGRESS_INVESTIGATION.md` is still unmeasured, so option (A) stands on evidence that
+does not cover the case that motivated the question. Numbers and the caveat are in the spec's §5.1.
+
+### Testing
+
+573/573 green. New: the favourites block in `FolderNavigationControllerTest` (open, synthetic
+breadcrumb, search narrowing, back, `canPerform`, un-favourite re-query, in-place folder update,
+`searchActive`), the first coverage of `TabsController`'s cross-tab fan-out at all — it had none
+before F7b — `FileMutationControllerTest` for `favouriteChanged` firing only on success, and
+`tst_EmptyListingNotice.qml` / `tst_DragProxy.qml` / `tst_ViewLabels.qml` on the QML side.
+
+An empty-state QML test needs `TestCase { visible: true }`: `Item.visible` reads back the
+*effective* value, so under the default every assertion would have passed on its own emptiness.
+
+### Deliberately not done
+
+A "location" column, so two same-named files in different folders are indistinguishable in this
+flat listing (decision 3 — deferred to a general "where is this node" feature, not solved here);
+the Rubbish bin and albums, which the `ViewKind` groundwork now makes cheap; `TabContentPane`'s
+`Loader` split, unnecessary while every special view is a node listing; and the empty state on
+ordinary empty folders — the component is placed to serve them, but only speaks for favourites.

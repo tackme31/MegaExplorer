@@ -121,6 +121,10 @@ private:
     // removed after the connection was made, leaving a stale row number behind.
     void emitRowChangedFor(const FolderNavigationController* navigation, const QList<int>& roles);
 
+    // Pays off a stale mark on whichever tab is on screen -- after a fan-out, and
+    // whenever the current tab changes.
+    void refreshCurrentTabIfStale();
+
     std::function<TabContext()> mFactory;
     UploadController* mUploads;
     std::vector<TabContext> mTabs;
