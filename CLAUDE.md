@@ -220,10 +220,14 @@ with `[編集]` — don't rewrite the branch, the loop computes its next number 
   of destructive checks — and in `.screenshots/`. Every cycle aborts unless `megatool whoami`
   matches `MEGAEXPLORER_TEST_ACCOUNT`.
 - `scripts/drive_gate.cmd` + `scripts/drive_gate_hook.sh` — `ui_shot.py drive` hijacks the real
-  mouse and keyboard, so a `PreToolUse` hook denies it unless an **expiring** flag file under
-  `%LOCALAPPDATA%\MegaExplorerLoop\` says otherwise. The desktop shortcuts (`drive ON 6h/8h/12h`,
-  `drive OFF`) write it. Default is off, and a denial is a skip, not a failure. Don't lock the
-  workstation while it's on: `SendInput` goes to the secure desktop and never reaches the app.
+  mouse and keyboard, so a `PreToolUse` hook **asks** before every run. An **expiring** flag file
+  under `%LOCALAPPDATA%\MegaExplorerLoop\`, written by the desktop shortcuts (`drive ON 6h/8h/12h`,
+  `drive OFF`), waives that prompt. It means **"nobody is here to answer"**, not "permission": an
+  interactive session can always use `drive` by approving it, flag or no flag. What keeps an
+  unattended cycle from stalling on a prompt is `/evolve` reading the same flag itself and skipping
+  without calling `drive` when it is absent — a permission dialog has no expiry, so reaching one
+  would hang the loop until someone returns. Don't lock the workstation while the flag is set:
+  `SendInput` goes to the secure desktop and never reaches the app.
 - `scripts/ntfy-send.sh` — how the loop reaches a phone. Claude Code's built-in push reports success
   and mostly doesn't deliver, so it isn't used.
 
