@@ -166,8 +166,9 @@ where the loop reads them from.
 Development now runs mostly as an unattended loop: `/loop 2h /evolve` fires
 `.claude/skills/evolve/SKILL.md` every two hours, and each cycle takes **one** item off
 `docs/ROADMAP.md`, implements it, verifies it, reviews it, and lands it as a single commit on a
-fresh `evolve/NNN` branch. A cycle never touches `master`. Started 2026-08-11; the reasoning behind
-each decision is in that skill file, not here.
+fresh `evolve/NNN` branch, then merges that into `master` and pushes. Implementation only ever
+happens on the branch — `master` is touched by nothing but that merge. Started 2026-08-11; the
+reasoning behind each decision is in that skill file, not here.
 
 **Which document may be written by whom** — this is the part that goes wrong if it isn't explicit:
 
@@ -186,28 +187,24 @@ trunk the loop branches from. Append to `docs/REQUESTS.md` and **commit it**: an
 aborts the next cycle at its clean-tree check (safe, but the slot is wasted). Nothing else needs a
 branch; `master` is the only long-lived one besides the `evolve/NNN` the loop creates.
 
-**Taking a cycle's work into `master`** (human side, at the desk):
+**The loop merges its own work into `master` and pushes it** (skill step 6-2, since 2026-08-12).
+`master` is therefore not a trunk holding only reviewed work — it is **the build you pick up and
+try**. Nothing reads the diff with eyes before it lands; the machine guarantee stops at the unit
+tests and the launch-and-screenshot check, and the rest of the verification is you using the app and
+filing what you notice. So the human loop is: run the build, spot something wrong or surprising,
+write it in `docs/REQUESTS.md`, and the next cycle picks it up.
 
-```
-git log --oneline master..evolve/NNN     # one commit, read the subject
-git diff master...evolve/NNN             # and the diff, since nothing else reviewed it with eyes
-bash scripts/git_unlock.sh && git merge --ff-only evolve/NNN
-```
+`--ff-only` first, ordinary merge as the fallback — it only refuses when a request was committed
+while that cycle was running, and after an ordinary merge the cycle re-runs `loop_verify.sh` because
+the combined tree was never built. A conflict is the one case the loop will not touch: it aborts the
+merge, leaves `evolve/NNN` pushed, notifies at priority 4, and the **next cycle refuses to start**
+until the branch is merged by hand — otherwise it would branch from a stale `master` and re-pick a
+finished item.
 
-`--ff-only` refuses whenever `master` moved after the branch was cut — in practice, when a request
-was committed while that cycle was running. That is not a problem, just do an ordinary merge:
-
-```
-bash scripts/git_unlock.sh && git merge --no-edit evolve/NNN
-```
-
-`ROADMAP.md` cannot conflict (the loop is its only writer) and `REQUESTS.md` rarely does, since the
-two sides touch different lines — a request appended versus consumed ones deleted. `--ff-only` stays
-the default only because a refusal is a useful signal that something else moved.
-
-If it turns out wrong after merging, `git revert` it and write the reason into `docs/REQUESTS.md`
-with `[編集]` — don't rewrite the branch, the loop computes its next number from the existing
-`evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
+If something turns out wrong after it landed, the normal answer is a `[バグ]` line in
+`docs/REQUESTS.md`. For something worth pulling straight back out, `git revert` it and write the
+reason into `docs/REQUESTS.md` with `[編集]` — don't rewrite the branch, the loop computes its next
+number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
 
 **Supporting pieces**, all of which exist for the loop but are useful by hand too:
 
