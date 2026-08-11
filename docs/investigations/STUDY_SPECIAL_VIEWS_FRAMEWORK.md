@@ -1,5 +1,10 @@
 # 特殊画面（ゴミ箱・お気に入り・アルバム・最近の更新）— 実装前調査
 
+> **状態: 枠組みの部分は Phase 24b（お気に入り一覧）で実装済み。ゴミ箱・アルバム・最近の更新は
+> 未着手で、その参照先は引き続き本書。** ただし §4.1 の「`FileEntry` は変えなくてよい」は
+> Phase 24a に覆された（行ごとにフラグを描くので変更が要る）。1 画面ぶんの仕様への落とし込み方は
+> `SPEC_FAVOURITES_VIEW.md` が実例。
+
 2026-08-09。個々の特殊画面の仕様ではなく、**「特殊画面という枠組み」を今のコードに載せられるか**
 だけを見た机上調査。実装・計測は行っていない。
 
@@ -37,7 +42,7 @@
 5. **UI の共通化は「ノード行を持つ画面」までで線を引くのが良い。** ゴミ箱とお気に入りは既存の
    テーブル/グリッドがそのまま使える。一方「最近の更新」は SDK の戻り値が
    `MegaRecentActionBucketList`（ユーザー×親フォルダ×6時間窓のバケット）であって
-   `vector<FileEntry>` ですらなく（`RECENTLY_UPDATED_FILE_API.md`）、日付セクション表示も
+   `vector<FileEntry>` ですらなく（`STUDY_RECENTLY_UPDATED_FILES_SDK_API.md`）、日付セクション表示も
    `TableView`/`GridView` には `section` 相当が無いので**別ビューを書くしかない**。
    → 無理に 1 ビューへ寄せず、**モデル層は共有・ビュー層は自由**の 2 層に割る（§5 案D）。
 
@@ -216,7 +221,7 @@ Ctrl+C が効く」が残る**。しかもこれらは静かに壊れる（メ�
 | お気に入り一覧 | **足りる** | フラットなノード一覧 |
 | アルバム（中身） | ほぼ足りる | サムネイル前提なのでグリッド寄り。タイル寸法など見た目の調整は要る |
 | アルバム（一覧） | **足りない** | 行がノードではない（アルバムそのもの）。`FileListModel` を持たない画面になる |
-| 最近の更新 | **足りない** | ①日付セクションが要るが `TableView`/`GridView` に `section` 相当が無い（`ListView` にしかない）②SDK の戻り値が `MegaRecentActionBucketList` でバケット構造（`RECENTLY_UPDATED_FILE_API.md`）。`vector<FileEntry>` に潰すと「誰が・どのフォルダで」の情報が落ちる |
+| 最近の更新 | **足りない** | ①日付セクションが要るが `TableView`/`GridView` に `section` 相当が無い（`ListView` にしかない）②SDK の戻り値が `MegaRecentActionBucketList` でバケット構造（`STUDY_RECENTLY_UPDATED_FILES_SDK_API.md`）。`vector<FileEntry>` に潰すと「誰が・どのフォルダで」の情報が落ちる |
 
 そして `TabContentPane.qml` は `StackLayout { FileTableView; FileGridView }` を**ハードコード**して
 `currentIndex: viewMode` で切り替えている。ここが「タブごとにビュー構成を変えられない」唯一の
@@ -329,7 +334,7 @@ Ctrl+C が効く」が残る**。しかもこれらは静かに壊れる（メ�
 ## 8. この調査で確認していないこと
 
 - 各特殊画面を実際に取得する SDK API（ゴミ箱ルート、お気に入りフラグ、アルバム API）。
-  「最近の更新」だけは `RECENTLY_UPDATED_FILE_API.md` に既出。
+  「最近の更新」だけは `STUDY_RECENTLY_UPDATED_FILES_SDK_API.md` に既出。
 - アルバムに MEGA 側の書き込み API（追加/除外）があるか、あるならその同期/非同期の別。
   §3.2 の「ホバー判定は同期でなければならない」制約に直接効く。
 - 特殊画面での検索（`SearchService`）と並び替え（`SortOrder`）をどう扱うか。現状の検索は

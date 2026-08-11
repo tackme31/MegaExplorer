@@ -1701,7 +1701,7 @@ hazard seen from the other end of the gesture.
 > **Planned as.** Run ahead of 15/16 — same "self-contained, doesn't need the phases before it"
 > reasoning that pulled 13a/13b/14a forward. It touches only window chrome (QML plus one CMake
 > dependency), shares nothing with preview or remote-change reflection, and the investigation memo
-> it implements (`docs/investigations/TITLEBAR_TABS_INVESTIGATION.md`) was already written and
+> it implements (`docs/investigations/STUDY_TITLEBAR_TABS.md`) was already written and
 > decided. Split into 17a (frameless window + own caption row, tabs left where they were) and 17b
 > (tab strip moved onto that caption row), so the shared cost landed and stabilised before the risky
 > part. See also Phase 17b's entry below.
@@ -1711,7 +1711,7 @@ Nothing else moved — the tab strip stayed below in `Main.qml`'s header, which 
 split: 17a is a like-for-like replacement whose success looks like *no visible change*, so the
 frameless plumbing could be shaken out before 17b started rearranging things on top of it.
 
-Path 3 of `docs/investigations/TITLEBAR_TABS_INVESTIGATION.md` (vendor QWindowKit) rather than a DIY
+Path 3 of `docs/investigations/STUDY_TITLEBAR_TABS.md` (vendor QWindowKit) rather than a DIY
 `FramelessWindowHint`, because everything a hand-rolled version silently loses — the Snap Layout
 flyout, DWM minimise/restore animation, drop shadow, Win11 rounded corners, 8-direction resize — is
 exactly what QWindowKit's `WM_NCCALCSIZE`/`WM_NCHITTEST` handling keeps. No `#ifdef Q_OS_WIN`
@@ -1921,7 +1921,7 @@ nothing new: `selectedHandles` was already a `Q_PROPERTY` with `NOTIFY selection
 > auth path plus one composition-root line, shares nothing with preview or remote-change reflection.
 >
 > Design, measurements and the reasoning behind every decision below live in
-> `docs/investigations/FETCHNODES_PROGRESS_INVESTIGATION.md` (read 追記2 first — it supersedes the
+> `docs/investigations/STUDY_FETCHNODES_PROGRESS_UI.md` (read 追記2 first — it supersedes the
 > earlier predictions). Do not re-derive them here.
 >
 > - [x] **`basePath` を `AppLocalDataLocation` に固定** (`main.cpp` / `MegaSdkClient.h`, was
@@ -1955,7 +1955,7 @@ nothing new: `selectedHandles` was already a `Q_PROPERTY` with `NOTIFY selection
 Two independent changes that happen to share a screen: the SDK state-cache DB now lives at a fixed
 path (which removes most of the wait), and the wait that remains is explained instead of shown as a
 blank panel. The measurements behind every decision are in
-`docs/investigations/FETCHNODES_PROGRESS_INVESTIGATION.md`; only what was actually built is here.
+`docs/investigations/STUDY_FETCHNODES_PROGRESS_UI.md`; only what was actually built is here.
 
 ### `basePath` — the change that matters most
 
@@ -2828,7 +2828,7 @@ press/release primitive, so there's no way to hold a drag open across a screensh
 > hit-test-visible with QWindowKit, so a drag starting on a tab shouldn't reach the window-move path
 > — to be confirmed first. Tearing a tab off into a new window stays out of scope.
 >
-> Confirmed, and so was the bigger unknown: `docs/investigations/CROSS_TAB_DND_INVESTIGATION.md`'s
+> Confirmed, and so was the bigger unknown: `docs/investigations/STUDY_CROSS_TAB_DRAG_MOVE.md`'s
 > one open risk (a tab switch cancelling the source `DragHandler`'s grab) did not happen, so the
 > `StackLayout` rework it had lined up as the fix was never needed.
 
@@ -2838,7 +2838,7 @@ to switch to it or drop straight into what it is showing. Both take over pointer
 
 ### The investigation's one open risk didn't fire
 
-`docs/investigations/CROSS_TAB_DND_INVESTIGATION.md` called exactly one thing unproven: switching tabs mid-drag
+`docs/investigations/STUDY_CROSS_TAB_DRAG_MOVE.md` called exactly one thing unproven: switching tabs mid-drag
 makes the source pane `visible: false`, and Qt takes the pointer grab away from items that go
 invisible — which would cancel the `DragHandler` holding the drag and make the whole gesture
 evaporate the instant a spring-loaded tab fires. It lined up a fix (replace `Main.qml`'s
@@ -3518,7 +3518,7 @@ so the two numbers are always comparable.
 ## Phase 15 — in-app preview pane (done)
 
 > **Planned as.** Right-hand `SplitView` pane toggled from the status bar, showing the selected
-> file. Scope fixed at A+B+C of `docs/investigations/PREVIEW_PANE_INVESTIGATION.md` section 7: the
+> file. Scope fixed at A+B+C of `docs/investigations/STUDY_PREVIEW_PANE.md` section 7: the
 > pane shell and its ON/OFF, the server-side preview JPEG (which covers image, video and PDF in one
 > code path), and text files of 50 KB or less read whole. Video playback and PDF paging are out —
 > both need a build-configuration change (`USE_LIBUV`, Qt PDF). Preview content is never cached;
@@ -3667,7 +3667,7 @@ global mutex in `resolveNode()`, `mkpath()` per selection, the temp-JPEG read+de
 `mipmap: true` texture teardown inside `publish(Loading)`, and — the one the pre-phase study named
 as its prime suspect — the delegate `DragHandler` cancelling the view-level pending tap. All five
 measured under 2ms or never fired at all. The tap was always delivered and `selectRow()` always
-ran; what moved was the view. `docs/investigations/PREVIEW_CLICK_RESPONSIVENESS.md` has the
+ran; what moved was the view. `docs/investigations/BUG_CLICK_DROPPED_ON_SELECTION_CHANGE.md` has the
 numbers, the grid-geometry arithmetic that proved `contentY` had shifted ~72px, and the one thing
 still unexplained: *what* scrolled it. With the freeze gone the view repaints immediately, so the
 symptom is gone either way; that study lists the exact probes to re-add if it ever comes back.
@@ -3688,7 +3688,7 @@ per screen.
 
 ### The investigation's "no `FileEntry` change needed" premise didn't survive
 
-`docs/investigations/SPECIAL_VIEWS_INVESTIGATION.md` §4.1 concluded that a favourite flag on
+`docs/investigations/STUDY_SPECIAL_VIEWS_FRAMEWORK.md` §4.1 concluded that a favourite flag on
 `FileEntry` was unnecessary: a screen that lists *only* favourites doesn't need to mark them. True
 for the view, false the moment the flag is drawn on every ordinary row. `FileEntry` gained
 `isFavourite`, which meant the hand-written `operator==` too (C++17, no `<=>`), and one line in
@@ -3786,12 +3786,12 @@ favourite state plumbed into `FolderTreeModel`/`QuickAccessModel`; live cross-ta
 > **Planned as.** The listing half of 24a. `MegaSearchFilter::byFavourite(BOOL_FILTER_ONLY_TRUE)`
 > fed to `MegaApi::search()` returns real nodes, so the existing table/grid can show it as-is
 > (`MegaApi::getFavourites()` is deprecated and hands back bare handles). What it actually needs
-> first is the framework work in `docs/investigations/SPECIAL_VIEWS_INVESTIGATION.md` — a location
+> first is the framework work in `docs/investigations/STUDY_SPECIAL_VIEWS_FRAMEWORK.md` — a location
 > value type carrying a view kind, and the "can this action run here" query that
 > Delete/Ctrl+C/drag-start currently bypass. Per that study's own ordering, the Rubbish bin is the
 > cheaper first special view.
 
-Built to `docs/investigations/FAVOURITES_VIEW_SPEC.md`, in seven steps (F1–F7b) whose per-step
+Built to `docs/investigations/SPEC_FAVOURITES_VIEW.md`, in seven steps (F1–F7b) whose per-step
 reasoning is in the commit messages; this entry keeps only what neither those nor the code state.
 
 ### One requirement line decided the whole architecture
@@ -3865,7 +3865,7 @@ the same one; harmless, because a tab that isn't stale does nothing.
 `listFavourites` is a synchronous whole-drive `MegaApi::search()` on the GUI thread, run when the
 tab opens and on every re-query. Measured at **19–21 ms** (entry conversion under 1 ms) with no
 perceptible stall — but on a two-digit-node account. The 600k-node case from
-`FETCHNODES_PROGRESS_INVESTIGATION.md` is still unmeasured, so option (A) stands on evidence that
+`STUDY_FETCHNODES_PROGRESS_UI.md` is still unmeasured, so option (A) stands on evidence that
 does not cover the case that motivated the question. Numbers and the caveat are in the spec's §5.1.
 
 ### Testing

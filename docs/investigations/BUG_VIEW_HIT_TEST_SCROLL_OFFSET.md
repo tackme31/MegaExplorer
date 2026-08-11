@@ -1,5 +1,7 @@
 # ビューのヒットテストがスクロール量だけ下にずれる件 — 調査と修正方針
 
+> **状態: 修正済み。** §5 の方針どおり実装し、§6 のリグレッションテストを追加した。
+
 作成: 2026-08-10 / 対象: `qml/components/FileViewInput.qml`, `qml/components/BandSelector.qml`
 
 ## 結論（先に）

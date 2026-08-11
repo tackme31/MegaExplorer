@@ -19,51 +19,15 @@ session lives in companion docs, linked from the relevant section below rather t
 - `docs/ARCHITECTURE.md` — directory layout detail + the ports-and-adapters/DI design.
 - `docs/BUILD.md` — rationale behind each build gotcha below (why VS generator, why
   `CMakePresets.json`, the FFmpeg link fix, etc.).
-- `docs/investigations/` — standing feasibility studies, written before the phase they feed and
-  kept afterwards (Japanese). Read the relevant one *before* planning that phase; each states its
-  own conclusion up front, so the outline + first section is usually enough:
-  - `TITLEBAR_TABS_INVESTIGATION.md` — fed Phase 17 (frameless window + caption-row tabs).
-  - `FETCHNODES_PROGRESS_INVESTIGATION.md` — fed Phase 18; carries the measured 600k-node timings
-    and the reason the decrypt phase can't show progress.
-  - `CROSS_TAB_DND_INVESTIGATION.md` — spring-loaded tabs, i.e. the drop-onto-tab half of
-    Phase 22b, which shipped. Its one open risk did not materialize; see the Phase 22b log.
-  - `CROSS_PLATFORM_INVESTIGATION.md` — whether the MSVC/vcpkg-only build could go
-    Linux/macOS. No phase attached; conclusion is that `WindowsSessionStore` (DPAPI) is the real
-    work, not the build files.
-  - `RECENTLY_UPDATED_FILE_API.md` — which SDK call backs a "recently updated files" listing.
-    No phase attached; relevant to the "最近追加された項目" idea.
-  - `SPECIAL_VIEWS_INVESTIGATION.md` — the *framework* for special views (Rubbish, Favourites,
-    Albums, recently-updated) openable as tabs and pinned in the side panel, not any one of them.
-    Conclusion: the "tab = one folder" premise is baked into C++ but barely into QML, and the real
-    trap is that Delete/Ctrl+C/drag-start never consult the menu-action resolver. Fed phase 24b
-    (Favourites view, shipped), so its framework half is now built; its §4.1 "no `FileEntry` change
-    needed" call was overturned by phase 24a, which draws the flag per row. Still the reference for
-    the Rubbish bin and albums.
-  - `FAVOURITES_VIEW_SPEC.md` — the Phase 24b spec proper (shipped), built on the framework study
-    above. Its pivot: "Back returns to the Favourites list" forces the view kind into
-    `FolderNavigationService`'s back stack, which rules out a separate controller per screen. Carries
-    the measured `listFavourites` timings (§5.1) and the corrections the build made to it.
-  - `PREVIEW_PANE_INVESTIGATION.md` — feeds Phase 15 (in-app preview pane). Conclusion: the
-    server-side 1000×1000 preview JPEG covers image/video/PDF in one code path; video *playback*
-    and PDF paging are out, since `USE_LIBUV` is off in this build and Qt PDF isn't installed.
-  - `FOLDER_LOAD_ASYNC_INVESTIGATION.md` — making folder navigation stop blocking the GUI thread.
-    No phase attached; overlaps the "リアルタイム反映" idea. Conclusion: the call chain is already callback-shaped and
-    the tab spinner already exists, so the work is breaking `IMegaClient`'s documented
-    "answers synchronously on the calling thread" contract for `getChildren` alone — and measuring
-    first, since the post-fetch model reset can't leave the GUI thread either way.
-
-  - `PREVIEW_CLICK_RESPONSIVENESS.md` — clicks being dropped after Phase 15's preview pane landed.
-    A bug report, fixed. Conclusion: the preview was innocent; rebuilding every context-menu
-    `MenuItem` on each selection change froze the GUI thread for up to 154ms per click. §5 leaves
-    one thing open — what moved `contentY` — and lists the instrumentation to re-add if it returns.
-  - `VIEW_HIT_TEST_OFFSET_INVESTIGATION.md` — why hover/click/band selection in both file views
-    land on a row *below* the pointer once the view is scrolled. A bug report, not a phase.
-    Conclusion, measured on Qt 6.11.1: `parent: <a Flickable>` on a pointer handler silently
-    installs it on that Flickable's `contentItem`, so `point.position` already carries `contentY`
-    and the views' `mapFromItem()` adds it a second time.
-
-  New studies go in this folder, not in `docs/` directly.
-
+- `docs/investigations/` — one document per investigation (Japanese), kept after the work it fed
+  lands. **There is no index file: the filename is the index**, so each is named `<KIND>_<TOPIC>.md`
+  with `STUDY_` = feasibility study written before the phase it feeds, `SPEC_` = the spec for one
+  screen's worth of behaviour, `BUG_` = a diagnosed defect. Every file states its own conclusion and
+  status — which phase it fed, whether that shipped, what it left open — within its first ~10 lines,
+  so `ls docs/investigations/` plus the head of one file answers most questions; `ast-outline` gets
+  you the rest. Read the relevant `STUDY_`/`SPEC_` *before* planning that area; a `BUG_` is the
+  record of a fix already made. New investigations go here, not in `docs/` directly, and take the
+  same naming — no index entry to update.
 - `docs/archive/` — retired documents, kept only so old commits and links still resolve. Nothing in
   here is current: every fact in it either moved to one of the docs above or went stale. Don't read
   it for answers and don't cite it; a document lands here instead of being deleted purely because

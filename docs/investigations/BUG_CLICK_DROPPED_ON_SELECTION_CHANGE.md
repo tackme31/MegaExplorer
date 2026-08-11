@@ -27,7 +27,7 @@
 - **一時 JPEG の読み+削除**。read 6〜11ms / remove 0ms。無視できる。棄却。
 - **`mipmap: true` の 1000×1000 テクスチャ破棄**（`publish(Loading)` の中）。
   計測点を `publish` を含む位置に動かして再測定したが 2ms 未満。棄却。
-- **デリゲートの `DragHandler` が閾値超えでタップを潰している**。調査書 `PREVIEW_PANE_INVESTIGATION.md`
+- **デリゲートの `DragHandler` が閾値超えでタップを潰している**。調査書 `STUDY_PREVIEW_PANE.md`
   時点での本命だったが、**不具合発生時の `DragHandler` 発火は 0 回**。バンド選択も 0 回。
   そもそも「タップが届いていない」という前提が誤りで、タップは毎回届き `selectRow` も呼ばれていた。
 - **`dataChanged`（全行）が重い**。`emit selectionChanged()` と分けて測ったら 0ms。棄却。

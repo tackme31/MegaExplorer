@@ -1,5 +1,8 @@
 # 「最近更新されたファイル一覧」を取得する SDK API の調査
 
+> **状態: 対応フェーズなし（未着手）。** `docs/FEATURE_IDEAS.md` の「最近追加された項目」用の
+> 下調べ。画面としての枠組みは `STUDY_SPECIAL_VIEWS_FRAMEWORK.md` 側。
+
 対象: `third_party/sdk`（pinned `v10.17.0`）。行番号はすべてこのバージョンの
 `third_party/sdk/include/megaapi.h` のもの。
 
@@ -106,6 +109,6 @@ v10.17.0 で入っているフラット・カーソルページング前提の�
 - 1 と 2 は取れる情報の粒度が違う。「誰が」「追加か更新か」が UI に要るなら 1、単に更新日時降順の
   ファイル一覧でいいなら 2。両方を `IMegaClient` に生やす必要は今のところ無さそう。
 - どの系統を採っても `fetchnodes` 完了が前提なので、Phase 18 の fetchnodes 進捗まわりの制約が
-  そのまま効く（`docs/investigations/FETCHNODES_PROGRESS_INVESTIGATION.md`）。
+  そのまま効く（`docs/investigations/STUDY_FETCHNODES_PROGRESS_UI.md`）。
 - Phase 16（リモート変更のリアルタイム反映）とは目的が別。あちらは `onNodesUpdate` 起点で、
   ここで挙げた API はスナップショット取得用。

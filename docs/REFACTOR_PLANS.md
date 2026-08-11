@@ -2072,7 +2072,7 @@ R3-9 の承認は着手前に取った（`実施手順` 3 の「製品挙動が�
   3. **サニタイザ構成** — MSVC は `/fsanitize=address` を持つが、**ThreadSanitizer は無い**
      （clang-cl でも Windows 版 TSan は未サポート）。つまり本命のデータ競合検出器は
      この toolchain では使えない。ASan で取れるのは UAF（R2-5 の系列）まで。
-     `docs/investigations/CROSS_PLATFORM_INVESTIGATION.md` の結論（Linux 化の障害は `WindowsSessionStore` だけ）と
+     `docs/investigations/STUDY_CROSS_PLATFORM_BUILD.md` の結論（Linux 化の障害は `WindowsSessionStore` だけ）と
      合わせると、「TSan のためだけに Linux ビルドを起こす」は R4 の範囲を超える。**3 は見送りを
      推奨**し、ASan 付きプリセットの追加だけを Release プリセット整備（節 5 の持ち越し）と
      一緒に扱う。
@@ -2652,7 +2652,7 @@ R4-6  スレッドモデルの検証（段階 1 →判断→段階 2）         
     `unsigned long` になる環境では metatype が `ULongLong` → `ULong` に変わる。QML 側は
     `cutHandles.indexOf(cell.handle)`（`FileGridView.qml:573` / `FileTableView.qml:860`）で
     JS の厳密比較に晒しているので、**ゴーストが黙って効かなくなる**類の壊れ方をする。
-    `CROSS_PLATFORM_INVESTIGATION.md` の射程に入る話なので、キャストの理由をコード側に書いた。
+    `STUDY_CROSS_PLATFORM_BUILD.md` の射程に入る話なので、キャストの理由をコード側に書いた。
   - **決定表の「変換は実質 1 箇所」は当たっていた**が、消えたのは
     `FolderNavigationController.cpp:680` の `entry.name.toStdString()` **1 行だけ**で、代わりに
     上のキャスト 2 箇所が増えている。正味の行数はほぼ横ばいで、得たのはヘッダ依存 1 本と
@@ -3295,7 +3295,7 @@ R5-7  MegaSdkClient のリスナ切り出し            … ✅済。見送り�
   （`view` に渡す `TableView` ではなく `ColumnLayout` root）を渡す。
 - **[R6] `TabStrip.qml` の spring-load 間隔がコメント・調査文書と食い違う** — 実装は
   `dwellTimer.interval: 300`（`TabStrip.qml:372`）だが、すぐ上のコメント 2 箇所は「600ms after
-  entering」と書き、`docs/investigations/CROSS_TAB_DND_INVESTIGATION.md:72` も 600。
+  entering」と書き、`docs/investigations/STUDY_CROSS_TAB_DRAG_MOVE.md:72` も 600。
   `docs/PROGRESS.md` の Phase 22b ログに 300 へ変えた記述は無い。どちらが正かは挙動の話なので R6 の
   範囲外だが、R6-1 でこのコメントごと移動させるので、そのとき決めるのが自然。
 - **[R7 持ち越し] コメントの重複はコードの重複に完全に従属している** — 6 箇所のドロップ受けは

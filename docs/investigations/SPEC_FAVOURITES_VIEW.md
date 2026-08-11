@@ -1,6 +1,8 @@
 # お気に入り一覧画面（Phase 24b）— 仕様書
 
-2026-08-09。`docs/investigations/SPECIAL_VIEWS_INVESTIGATION.md`（特殊画面の枠組み調査）を
+> **状態: Phase 24b として実装済み。** 実装中に本書へ入れた訂正は本文に取り込み済み。
+
+2026-08-09。`docs/investigations/STUDY_SPECIAL_VIEWS_FRAMEWORK.md`（特殊画面の枠組み調査）を
 前提に、**お気に入り一覧という 1 画面ぶん**の仕様に落としたもの。コードは読んだが実装・計測は
 していない。フレームワーク側の一般論はあちらに、ここは「この画面をこう作る」だけを書く。
 
@@ -442,7 +444,7 @@ void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favou
 お気に入り一覧はこれを**ドライブ全体**に撃つ。既存の検索も同じ構造だが、あちらは
 ユーザーが Enter を押した明示操作で、こちらは**タブを開いた瞬間**に走る。
 
-`FETCHNODES_PROGRESS_INVESTIGATION.md` の 60 万ノード級アカウントで所要が体感に乗るなら、選択肢は:
+`STUDY_FETCHNODES_PROGRESS_UI.md` の 60 万ノード級アカウントで所要が体感に乗るなら、選択肢は:
 
 - **(A) そのまま同期**。`BusyState` は既に per-tab のスピナーを持っているが、同期呼び出しの
   間は UI ごと止まるのでスピナーは回らない。**まず計測してから決める**のが正しい順序
@@ -461,7 +463,7 @@ void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favou
 | タブを開く／解除で引き直す（フィルタ無し、0〜1 件ヒット） | **19〜21 ms** | < 1 ms |
 
 体感でも引っかかりは無く、**(A) を維持する**。ただし**リスクは閉じていない**: このアカウントは
-ノード数が 2 桁で、`FETCHNODES_PROGRESS_INVESTIGATION.md` の 60 万ノード級は未測定のまま。
+ノード数が 2 桁で、`STUDY_FETCHNODES_PROGRESS_UI.md` の 60 万ノード級は未測定のまま。
 この規模で 20 ms かかっている以上、大半は木の走査ではなく固定費と見られるが、
 それは推測であって測っていない。§5.2 の「引き直しの回数」も、フィルタ付きの引き直しは
 フィルタ有無の 2 回走る（§4.4）ので**この 2 倍**になる。
@@ -681,7 +683,7 @@ tab.navigation->refreshIfAffectedBy(destination, destinationIsRoot);   // Favour
 
 ### 共通ルール
 
-- **読むのはその節だけ。** フェーズ冒頭で `ast-outline show docs/investigations/FAVOURITES_VIEW_SPEC.md
+- **読むのはその節だけ。** フェーズ冒頭で `ast-outline show docs/investigations/SPEC_FAVOURITES_VIEW.md
   '<該当節の見出し>'` で必要な節だけ引く。この仕様書は既に ~6k トークンあり、全文読みを毎回
   やると分割した意味が消える
 - **完了条件は 3 つ共通**: ①該当テストが緑（`ctest --preset msvc-debug`）②既存テストが 1 つも
