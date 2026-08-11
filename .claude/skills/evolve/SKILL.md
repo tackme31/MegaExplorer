@@ -40,10 +40,9 @@ bash scripts/git_unlock.sh && git switch -c "evolve/$next" master
 
 3 桁完全一致なので、`about-this-app` のような既存のローカルブランチには当たらない。
 
-**起点は「取り込み先の trunk」であって、いつでも `master` とは限らない。** ループの基盤自体が
-まだ `master` にマージされていない間は、それが載っているブランチ（`loop-development`）から切る。
-`git log --oneline master..HEAD` が空でなければ trunk は master ではないので、その場合は `HEAD`
-から切り、どこから切ったかを 7. の報告に書く。
+**起点は必ず `master`。** 長命なブランチは master だけで、人間が受信箱に書くのもそこ
+（`CLAUDE.md` の「Loop engineering」）。`master` が期待と違う位置にあると感じても勝手に別の
+ブランチを起点にせず、そのまま切って 7. の報告に書く。
 
 ### 0-3. Serena の死活確認
 
@@ -247,7 +246,8 @@ bash scripts/git_unlock.sh && git push -u origin HEAD
 
 **すべての git ライトの前に `scripts/git_unlock.sh` を挟む**（このリポは stale な `index.lock` を
 断続的に残す。`CLAUDE.md` の「Git」節）。`git add -A` / `git add .` は使わず名指しで。
-**master への push と `--force` は禁止。** master への取り込みは人間が `git merge --ff-only` で行う。
+**master への push と `--force` は禁止。** master への取り込みは人間が行う（`--ff-only`、それが
+拒否されたら通常マージ。`CLAUDE.md` の「Loop engineering」）。
 
 ## 7. 報告
 
