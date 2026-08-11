@@ -320,6 +320,31 @@ target_link_libraries(appMegaExplorer
     PRIVATE MegaExplorerWarnings
 )
 
+# Console CLI over IMegaClient, for MEGA-side fixtures and for the /evolve loop's
+# "is the app signed in to the test account?" check (CLAUDE.md, docs/MEGATOOL.md).
+# Recompiles src/mega and src/platform rather than linking them: they belong to
+# appMegaExplorer, and pulling them into a shared library just for this would
+# make the app's own layering harder to read for one extra consumer.
+add_executable(megatool
+    tools/megatool.cpp
+    src/app/Logging.h
+    src/app/Logging.cpp
+    src/mega/MegaSdkClient.h
+    src/mega/MegaSdkClient.cpp
+    src/mega/MegaSdkListeners.h
+    src/mega/MegaSdkLogger.h
+    src/mega/MegaSdkLogger.cpp
+    src/platform/WindowsSessionStore.h
+    src/platform/WindowsSessionStore.cpp
+)
+target_link_libraries(megatool
+    PRIVATE Qt6::Core
+    PRIVATE MEGA::SDKlib
+    PRIVATE MegaExplorerCore
+    PRIVATE crypt32
+    PRIVATE MegaExplorerWarnings
+)
+
 # After MegaExplorerQml, which tests/CMakeLists.txt links: CMake would resolve
 # the name either way, but the dependency is easier to follow in source order.
 enable_testing()

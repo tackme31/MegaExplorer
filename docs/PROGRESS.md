@@ -1,9 +1,14 @@
 # Project Progress Log
 
-Roadmap (what's next, why in this order) + phase-by-phase implementation log (what was built, key
-decisions/gotchas). Single source of truth for the roadmap; `CLAUDE.md` has a condensed
-current-status summary pointing here, and unimplemented feature ideas live in
-`docs/FEATURE_IDEAS.md`.
+**過去のフェーズの記録。今後の予定はここにはない。** 次に何を実装するかの単一情報源は
+`docs/ROADMAP.md`（`/evolve` ループの実行キュー）へ移った。下の Roadmap 節は、どのフェーズが
+どういう順序で積まれたかの履歴として残してある。
+
+`docs/PROGRESS.md` に 100 行のエントリが立つのは、**人間が「フェーズ」として切った作業だけ**。
+`/evolve` ループはここに書かず、`docs/roadmap-done.md` に 1 行だけ書く（`CLAUDE.md` の
+「ループエンジニアリング」節）。ループのサイクルがたまたま大きな設計判断を含んだときは、
+その旨を `roadmap-done.md` のメモに残し、フェーズとしてまとめ直すか `docs/investigations/` の
+STUDY にするかを人間が後から決める。
 
 Two conventions, both there to keep this file from growing faster than it has to:
 
@@ -18,7 +23,7 @@ Two conventions, both there to keep this file from growing faster than it has to
   goes in its own `docs/investigations/` study, with the entry linking to it — as Phases 17, 18 and
   22b did.
 
-## Roadmap
+## Roadmap（履歴。今後の予定は `docs/ROADMAP.md`）
 
 Bottom-up: each phase independently verifiable before the next starts. MVP = phases 0–6; phases 7+
 are post-MVP, sequenced by priority/dependency.
@@ -78,10 +83,14 @@ hand-built inverse (rename↔rename, rubbish→move back, copy→delete, create�
 every mutating path, and a policy for when the history has to be thrown away. That is a phase in its
 own right, and with 23 in place the practical need for it is small. Not deferred — out of scope.
 
-### Phase 24+ — undecided
+### Phase 24+ 以降 — 番号付きフェーズは打ち止め
+
+24b を最後に、番号付きフェーズのキューは空になった。以降の作業は `docs/ROADMAP.md` から
+1 件ずつ選んで進む（`/evolve` ループ、2026-08-11 導入）。人間が改めて大きな塊を「フェーズ」として
+切ったときだけ、この番号体系とこのファイルへのログが再開する。
 
 Undo (see the 20a–23 preamble) and full bidirectional local sync both stay out of scope for the
-foreseeable future.
+foreseeable future — `docs/ROADMAP.md` の「見送り (blocked)」節に理由付きで載せてある。
 
 ## Phase 0 — SDK build & CLI login (done)
 
