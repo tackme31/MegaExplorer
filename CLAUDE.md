@@ -13,7 +13,9 @@ session lives in companion docs, linked from the relevant section below rather t
   is what the loop must not touch. Written by the loop, not by hand: keeping the human out of this
   file is what stops an edit racing a cycle's own removal of the row it just finished.
 - `docs/roadmap-done.md` — one line per finished ROADMAP item, and the only log the loop writes to.
-  Its メモ column is where "still needs checking on a real run" gets recorded.
+  Its メモ column is where "still needs checking on a real run" gets recorded, plus the judgement
+  calls that cycle made — the loop decides rather than stopping, so this column is where a decision
+  you disagree with surfaces (reasons go in the commit body). Push back via `docs/REQUESTS.md`.
 - `docs/PROGRESS.md` — the phase-by-phase implementation log (what was built, why, gotchas), plus a
   Roadmap section that is now **history only**: the queue moved to `docs/ROADMAP.md`. A shipped
   phase's original plan sits at the top of its own log entry as a `> **Planned as.**` block
