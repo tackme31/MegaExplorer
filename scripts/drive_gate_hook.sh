@@ -19,10 +19,14 @@
 # "no" usually means "not right now", and /evolve is told to stop calling drive
 # for the rest of the cycle once it sees one (see .claude/skills/evolve/SKILL.md).
 #
-# An unattended cycle must never *reach* the prompt -- a permission dialog is
-# not covered by dialogExpiry, so it would sit open forever and stall the loop.
-# /evolve reads drive-allowed itself and skips without calling drive at all when
-# it is absent or expired.
+# Asking is the default whenever a human is at the desk -- that is the whole
+# point of the prompt. What must never happen is *asking nobody*: a permission
+# dialog is not covered by dialogExpiry, so an unattended cycle that reached one
+# would sit there until someone came back, and the next cron fire never lands
+# either. So with no flag and no session approval, presence decides between ask
+# and deny, read off the same last-user-prompt stamp and 10-minute window as
+# scripts/away_notify_hook.sh. /evolve makes the same check before calling drive
+# at all; this is the half that covers walking away in between.
 set -uo pipefail
 
 payload=$(cat)
@@ -70,13 +74,25 @@ fi
 
 [ -n "$session" ] && [ -f "$marker" ] && decide allow "already approved for this session."
 
+# Ask while someone is there to answer; refuse once the chair is empty, so the
+# call comes back immediately instead of parking on a dialog nobody will see.
+ask_or_deny() {
+    if [ -f "$dir/last-user-prompt" ]; then
+        last=$(tr -dc '0-9' < "$dir/last-user-prompt")
+        if [ -n "$last" ] && [ "$(( $(date +%s) - last ))" -lt 600 ]; then
+            decide ask "$1 $ask_hint"
+        fi
+    fi
+    decide deny "$1 Nobody has typed here for 10+ minutes, so this is treated as an unattended run and drive is refused rather than left waiting on a dialog. Skip it and hand what you wanted to check to the human. To run it unattended, use the 'drive ON' desktop shortcut."
+}
+
 if [ -f "$flag" ]; then
     expiry=$(tr -dc '0-9' < "$flag")
     now=$(date +%s)
     if [ -n "$expiry" ] && [ "$now" -lt "$expiry" ]; then
         decide allow "unattended-run flag is set for another $(( (expiry - now) / 60 )) min."
     fi
-    decide ask "The unattended-run flag has expired. $ask_hint"
+    ask_or_deny "The unattended-run flag has expired."
 fi
 
-decide ask "No unattended-run flag is set, and this session has not approved drive yet. $ask_hint"
+ask_or_deny "No unattended-run flag is set, and this session has not approved drive yet."

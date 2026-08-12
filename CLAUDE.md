@@ -223,12 +223,15 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   interactive session can always use `drive` by approving it, flag or no flag — and **one approval
   covers the whole session**, recorded by the hook's `PostToolUse` half (which only fires when the
   tool actually ran). Without that, every step re-asks: a hook's `ask` overrides Claude Code's own
-  don't-ask-again, and each `drive` step is a different command string anyway. A session approval
-  deliberately does **not** satisfy `/evolve` — only the expiring flag does, because the expiry is
-  what stops a cycle grabbing the mouse days after someone said yes once. What keeps an
-  unattended cycle from stalling on a prompt is `/evolve` reading the same flag itself and skipping
-  without calling `drive` when it is absent — a permission dialog has no expiry, so reaching one
-  would hang the loop until someone returns. Don't lock the workstation while the flag is set:
+  don't-ask-again, and each `drive` step is a different command string anyway. **`/evolve` follows
+  the same rule** — a cycle a human is watching asks and proceeds on approval; the flag is only
+  needed when nobody is there to answer. What must never happen is asking nobody: a permission
+  dialog has no expiry, so an unattended cycle that reached one would hang the loop until someone
+  returns. So with no flag and no session approval, **presence decides between asking and
+  refusing**, read off the `last-user-prompt` stamp and 10-minute window that
+  `scripts/away_notify_hook.sh` already maintains — the hook denies instead of asking, and
+  `/evolve` makes the same check before calling `drive` at all. Don't lock the workstation while
+  the flag is set:
   `SendInput` goes to the secure desktop and never reaches the app.
 - `scripts/ntfy-send.sh` — how the loop reaches a phone. Claude Code's built-in push reports success
   and mostly doesn't deliver, so it isn't used. Two callers: Claude, at the end of a cycle, and
