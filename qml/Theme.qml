@@ -219,6 +219,7 @@ QtObject {
             readonly property string paste: "\uE77F"         // Paste
             readonly property string rename: "\uE8AC"        // Rename
             readonly property string moveToRubbish: "\uE74D" // Delete
+            readonly property string restore: "\uE7A7"       // Undo
             readonly property string selectAll: "\uE8B3"     // SelectAll
             readonly property string refresh: glyphSet.refresh
             readonly property string about: "\uE946"         // Info

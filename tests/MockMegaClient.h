@@ -56,6 +56,7 @@ public:
                 getRubbishChildren,
                 (SortOrder, std::function<void(Result<std::vector<FileEntry>>)>),
                 (override));
+    MOCK_METHOD(Result<RestoreTarget>, getRestoreTarget, (std::uint64_t), (const, override));
     MOCK_METHOD(void,
                 download,
                 (std::uint64_t,

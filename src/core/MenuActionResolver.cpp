@@ -123,6 +123,11 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive},
          ActionTarget::Any,
          ActionArity::Any},
+        {MenuAction::Restore,
+         {MenuSite::FileSelection},
+         {ViewKind::Rubbish},
+         ActionTarget::Any,
+         ActionArity::Any},
         {MenuAction::SelectAll,
          {MenuSite::FolderBackground},
          {ViewKind::CloudDrive, ViewKind::Favourites},
@@ -194,6 +199,8 @@ const char* menuActionId(MenuAction action)
             return "rename";
         case MenuAction::MoveToRubbish:
             return "moveToRubbish";
+        case MenuAction::Restore:
+            return "restore";
         case MenuAction::SelectAll:
             return "selectAll";
         case MenuAction::Refresh:

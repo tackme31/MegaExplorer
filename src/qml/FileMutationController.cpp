@@ -12,6 +12,9 @@
 #include <QString>
 #include <QVariantMap>
 
+#include <algorithm>
+#include <vector>
+
 namespace
 {
 // Both destination reads below pull only child *names* out of the listing, so the
@@ -173,6 +176,67 @@ void FileMutationController::moveHandlesToRubbish(const QVariantList& handles)
                                         batch->settle(result);
                                     });
                                 });
+    }
+}
+
+void FileMutationController::restoreHandles(const QVariantList& handles)
+{
+    if (handles.isEmpty())
+        return;
+
+    // Resolved up front, before any move lands: restoring the parent folder of
+    // another selected node would otherwise change where that node's target
+    // resolves to mid-batch.
+    struct Restore
+    {
+        std::uint64_t handle;
+        RestoreTarget target;
+    };
+    std::vector<Restore> restores;
+    int unresolvable = 0;
+    for (const QVariant& handle : handles)
+    {
+        const auto raw = static_cast<std::uint64_t>(handle.toULongLong());
+        Result<RestoreTarget> target = mFileOps->restoreTargetFor(raw);
+        if (target.success)
+            restores.push_back({raw, target.value()});
+        else
+            ++unresolvable;
+    }
+
+    if (restores.empty())
+    {
+        mNotifications->notifyOperation(QStringLiteral("restore"), 0, unresolvable);
+        return;
+    }
+
+    const bool anyFellBackToRoot =
+        std::any_of(restores.begin(),
+                    restores.end(),
+                    [](const Restore& restore) {
+                        return restore.target.fellBackToRoot;
+                    });
+
+    // The whole selection, not just the resolvable part: the ones that could not be
+    // resolved are settled as failures below so the tally still adds up to what the
+    // user asked for. Only this tab is refreshed -- the destinations are per node
+    // and a restore is rare enough not to justify a fan-out to the other tabs.
+    auto batch = mBulk.start(anyFellBackToRoot ? "restoreToRoot" : "restore",
+                             static_cast<int>(handles.size()));
+
+    for (int i = 0; i < unresolvable; ++i)
+        batch->settle(Result<void>::fail("node is gone", MegaErrorCode::kENoEnt));
+
+    for (const Restore& restore : restores)
+    {
+        mFileOps->move(restore.handle,
+                       restore.target.handle,
+                       restore.target.isRoot,
+                       [this, self = shared_from_this(), batch](Result<void> result) {
+                           invokeOnGuiThread(this, [batch, result = std::move(result)]() {
+                               batch->settle(result);
+                           });
+                       });
     }
 }
 

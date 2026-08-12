@@ -129,6 +129,28 @@ Item {
                 text = qsTr("Moved %1 item(s) to the Rubbish bin, %2 failed").arg(succeeded).arg(
                             failed);
             break;
+        case "restore":
+            if (failed === 0)
+                text = qsTr("Restored %1 item(s)").arg(succeeded);
+            else if (succeeded === 0)
+                text = qsTr("Failed to restore %1 item(s)").arg(failed);
+            else
+                text = qsTr("Restored %1 item(s), %2 failed").arg(succeeded).arg(failed);
+            break;
+            // Same operation, worded apart because at least one item's original
+            // folder is gone: saying only "restored" would leave the user looking
+            // for it where it used to be.
+        case "restoreToRoot":
+            if (failed === 0)
+                text = qsTr(
+                            "Restored %1 item(s); some to Cloud Drive, as their original folder is gone").arg(
+                            succeeded);
+            else if (succeeded === 0)
+                text = qsTr("Failed to restore %1 item(s)").arg(failed);
+            else
+                text = qsTr("Restored %1 item(s) (some to Cloud Drive), %2 failed").arg(
+                            succeeded).arg(failed);
+            break;
         case "upload":
             if (failed === 0)
                 text = qsTr("Uploaded %1 file(s)").arg(succeeded);
