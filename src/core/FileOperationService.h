@@ -24,6 +24,11 @@ public:
 
     void moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone);
 
+    // moveToRubbish's inverse, in two halves because the caller has to word the
+    // outcome: this answers *where* the node would go (and whether that is a
+    // fallback), and the move itself then goes through move() like any other.
+    Result<RestoreTarget> restoreTargetFor(std::uint64_t handle) const;
+
     // Gated on canMove(), so a caller that skipped the hover-time pre-check still
     // can't issue a move the SDK would only refuse later.
     void move(std::uint64_t handle,

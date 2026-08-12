@@ -274,6 +274,90 @@ TEST_F(FileMutationControllerTest, MoveHandlesToRubbishDoesNothingWithAnEmptySel
     EXPECT_EQ(rootFetches - fetchesBefore, 0);
 }
 
+TEST_F(FileMutationControllerTest, RestoreSendsEachNodeToItsRecordedFolder)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, getRestoreTarget(5u))
+        .WillRepeatedly(Return(Result<RestoreTarget>::ok(RestoreTarget{40, false, false})));
+    EXPECT_CALL(*client, getRestoreTarget(6u))
+        .WillRepeatedly(Return(Result<RestoreTarget>::ok(RestoreTarget{41, false, false})));
+    EXPECT_CALL(*client, moveNode(5u, 40u, false, _))
+        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(6u, 41u, false, _))
+        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+
+    mutations->restoreHandles(QVariantList{QVariant(quint64(5)), QVariant(quint64(6))});
+    flush();
+
+    EXPECT_EQ(lastContext, QStringLiteral("restore"));
+    EXPECT_EQ(lastSucceeded, 2);
+    EXPECT_EQ(lastFailed, 0);
+}
+
+TEST_F(FileMutationControllerTest, RestoreFallsBackToTheRootAndSaysSoWhenTheFolderIsGone)
+{
+    // The wording is the whole point of carrying fellBackToRoot up: the node lands
+    // somewhere other than where it was binned from, and silently is the one way
+    // that must not happen.
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, getRestoreTarget(5u))
+        .WillRepeatedly(Return(Result<RestoreTarget>::ok(RestoreTarget{0, true, true})));
+    EXPECT_CALL(*client, moveNode(5u, 0u, true, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
+
+    mutations->restoreHandles(QVariantList{QVariant(quint64(5))});
+    flush();
+
+    EXPECT_EQ(lastContext, QStringLiteral("restoreToRoot"));
+    EXPECT_EQ(lastSucceeded, 1);
+}
+
+TEST_F(FileMutationControllerTest, RestoreCountsAnUnresolvableNodeAsFailedWithoutLosingTheTally)
+{
+    // A handle that no longer resolves never reaches the SDK, so it would drop out
+    // of the batch entirely and the tally would report fewer items than the user
+    // selected.
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, getRestoreTarget(5u))
+        .WillRepeatedly(Return(Result<RestoreTarget>::ok(RestoreTarget{40, false, false})));
+    EXPECT_CALL(*client, getRestoreTarget(9u))
+        .WillRepeatedly(Return(Result<RestoreTarget>::fail("gone", MegaErrorCode::kENoEnt)));
+    EXPECT_CALL(*client, moveNode(5u, 40u, false, _))
+        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(9u, _, _, _)).Times(0);
+
+    mutations->restoreHandles(QVariantList{QVariant(quint64(5)), QVariant(quint64(9))});
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(lastFailed, 1);
+}
+
+TEST_F(FileMutationControllerTest, RestoreReportsWithoutCallingTheSdkWhenNothingResolves)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, getRestoreTarget(_))
+        .WillRepeatedly(Return(Result<RestoreTarget>::fail("gone", MegaErrorCode::kENoEnt)));
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+
+    mutations->restoreHandles(QVariantList{QVariant(quint64(9))});
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 0);
+    EXPECT_EQ(lastFailed, 1);
+}
+
 TEST_F(FileMutationControllerTest, MoveHandlesToReportsOneTallyForTheWholeDrop)
 {
     givenRootListing({entry("a", 1), entry("b", 2), entry("c", 3)});

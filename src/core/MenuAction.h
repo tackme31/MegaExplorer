@@ -26,6 +26,9 @@ enum class MenuAction
     // "Delete" to the user; named after what it does, since MEGA's delete is a move
     // to the Rubbish bin.
     MoveToRubbish,
+    // Rubbish bin only, and MoveToRubbish's inverse. Where each node goes is the
+    // SDK's answer, not a choice offered here (IMegaClient::getRestoreTarget).
+    Restore,
     // Keyboard shortcuts the view already handles (Ctrl+A, F5); the menu entries call
     // the same thing.
     SelectAll,

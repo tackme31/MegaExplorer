@@ -107,6 +107,11 @@ void FileOperationService::moveToRubbish(std::uint64_t handle,
     mClient->moveToRubbish(handle, std::move(onDone));
 }
 
+Result<RestoreTarget> FileOperationService::restoreTargetFor(std::uint64_t handle) const
+{
+    return mClient->getRestoreTarget(handle);
+}
+
 void FileOperationService::setFavourite(std::uint64_t handle,
                                         bool favourite,
                                         std::function<void(Result<void>)> onDone)

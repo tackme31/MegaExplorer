@@ -79,6 +79,8 @@ public:
     void getRubbishChildren(SortOrder order,
                             std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
+    Result<RestoreTarget> getRestoreTarget(std::uint64_t handle) const override;
+
     void download(
         std::uint64_t handle,
         const std::string& destinationPath,

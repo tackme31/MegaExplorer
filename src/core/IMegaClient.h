@@ -4,6 +4,7 @@
 #include "FileEntry.h"
 #include "NodeInfo.h"
 #include "PathSegment.h"
+#include "RestoreTarget.h"
 #include "Result.h"
 #include "SortOrder.h"
 #include "UploadOutcome.h"
@@ -115,6 +116,15 @@ public:
     virtual void
     getRubbishChildren(SortOrder order,
                        std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
+
+    // Where restoring a binned node would put it: the folder it was in when it was
+    // binned (MegaNode::getRestoreHandle). Synchronous, like the other in-memory
+    // queries. isRoot follows the usual convention, and is the answer whenever the
+    // original parent is gone or was never recorded -- MEGA's own clients fall back
+    // to the Cloud Drive root rather than refusing, and refusing here would strand
+    // the node with no other way out of the bin. Fails only when the node itself is
+    // gone.
+    virtual Result<RestoreTarget> getRestoreTarget(std::uint64_t handle) const = 0;
 
     // Downloads to the exact local path destinationPath -- the caller resolves it,
     // since IMegaClient has no filesystem access of its own.

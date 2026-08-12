@@ -140,6 +140,17 @@ QtObject {
                                             "label": ctx => qsTr("Move to Rubbish bin"),
                                             "trigger": ctx => ctx.requestMoveToRubbish()
                                         },
+                                        // ctx: entries, mutations. Straight to the
+                                        // controller, unlike moveToRubbish's
+                                        // request*(): there is no confirmation to
+                                        // route through a dialog, since restoring
+                                        // destroys nothing.
+                                        "restore": {
+                                            "icon": ctx => Theme.glyph.menu.restore,
+                                            "label": ctx => qsTr("Restore"),
+                                            "trigger": ctx => ctx.mutations.restoreHandles(
+                                                                  ctx.entries.map(e => e.handle))
+                                        },
                                         // ctx: navController
                                         "selectAll": {
                                             "icon": ctx => Theme.glyph.menu.selectAll,

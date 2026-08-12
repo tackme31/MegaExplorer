@@ -301,6 +301,34 @@ void MegaSdkClient::getRubbishChildren(SortOrder order,
                  std::move(onDone));
 }
 
+Result<RestoreTarget> MegaSdkClient::getRestoreTarget(std::uint64_t handle) const
+{
+    if (mShuttingDown)
+        return Result<RestoreTarget>::fail(kShutDownMessage, kClientShutDownCode);
+
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+        return Result<RestoreTarget>::fail("No node with the given handle",
+                                           MegaErrorCode::kENoEnt);
+
+    const mega::MegaHandle restore = node->getRestoreHandle();
+    if (restore != mega::INVALID_HANDLE)
+    {
+        // Recorded when the node was binned, so it can name a folder that has since
+        // been deleted itself -- resolving it is the only way to tell.
+        std::unique_ptr<mega::MegaNode> parent(mApi->getNodeByHandle(restore));
+        if (parent)
+        {
+            std::unique_ptr<mega::MegaNode> root(mApi->getRootNode());
+            const bool isRoot = root && restore == root->getHandle();
+            return Result<RestoreTarget>::ok(
+                RestoreTarget{isRoot ? 0u : static_cast<std::uint64_t>(restore), isRoot, false});
+        }
+    }
+
+    return Result<RestoreTarget>::ok(RestoreTarget{0, true, true});
+}
+
 void MegaSdkClient::getChildren(std::uint64_t handle,
                                 SortOrder order,
                                 std::function<void(Result<std::vector<FileEntry>>)> onDone)

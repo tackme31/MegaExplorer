@@ -70,6 +70,12 @@ public:
     // prune the selection while that dialog is open.
     Q_INVOKABLE void moveHandlesToRubbish(const QVariantList& handles);
 
+    // moveHandlesToRubbish' inverse, for the Rubbish bin screen. Each node goes back
+    // to the folder it was binned from; one whose original folder is gone lands in
+    // the Cloud Drive root instead, and the toast says so rather than leaving the
+    // user to find it (IMegaClient::getRestoreTarget).
+    Q_INVOKABLE void restoreHandles(const QVariantList& handles);
+
     // Creates a folder inside the one this tab is showing; the parent is read off
     // the navigation half, since this action can only target the view it opened
     // from.
