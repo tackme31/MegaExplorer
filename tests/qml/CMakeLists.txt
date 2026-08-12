@@ -26,6 +26,7 @@ add_executable(MegaExplorerQmlTests
     tst_MainDialogs.qml
     tst_PreviewPane.qml
     tst_ViewLabels.qml
+    tst_FileTypeIcons.qml
 )
 
 # The .qml files are listed above only so they show up in the IDE; they are read
@@ -34,7 +35,7 @@ set_source_files_properties(tst_ToastStack.qml tst_ActionCatalog.qml tst_DragPro
                             tst_EmptyListingNotice.qml tst_NodeDropArea.qml
                             tst_FileViewDropArea.qml tst_FileViewInput.qml
                             tst_FileViewInputPointer.qml tst_MainDialogs.qml tst_PreviewPane.qml
-                            tst_ViewLabels.qml
+                            tst_ViewLabels.qml tst_FileTypeIcons.qml
                             PROPERTIES HEADER_FILE_ONLY TRUE)
 
 target_link_libraries(MegaExplorerQmlTests PRIVATE
@@ -62,7 +63,7 @@ target_compile_definitions(MegaExplorerQmlTests PRIVATE
 # and reports the failing .qml file and line.
 foreach(component ToastStack ActionCatalog DragProxy EmptyListingNotice NodeDropArea
                   FileViewDropArea FileViewInput FileViewInputPointer MainDialogs PreviewPane
-                  ViewLabels)
+                  ViewLabels FileTypeIcons)
     add_test(NAME QmlTest.${component}
              COMMAND MegaExplorerQmlTests
                      -input ${CMAKE_CURRENT_SOURCE_DIR}/tst_${component}.qml

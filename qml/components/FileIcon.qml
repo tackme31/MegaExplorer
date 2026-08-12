@@ -3,8 +3,9 @@ import QtQuick.Controls.FluentWinUI3
 
 // The one place that decides what a folder and a file look like, so the list,
 // the grid, the tree, the pins and the tabs cannot drift apart (S4). D6 stops
-// this phase at two kinds; the extension-to-type mapping that replaces the
-// glyph choice lands here and nowhere else.
+// this phase at two kinds; which glyph a file gets is FileTypeIcons.qml's
+// whitelist, and a caller that leaves fileName empty (the tree, the pins, the
+// tabs -- all folders) never reaches it.
 //
 // An Item wrapping the Label rather than a Label itself: Text-derived types
 // declare implicitWidth/implicitHeight read-only, and a square box is the
@@ -14,7 +15,10 @@ Item {
     id: root
 
     required property bool isFolder
+    property string fileName: ""
     property int size: Theme.iconSize.sm
+
+    readonly property var typeIcon: root.isFolder ? null : FileTypeIcons.forFileName(root.fileName)
 
     implicitWidth: root.size
     implicitHeight: root.size
@@ -24,9 +28,9 @@ Item {
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
 
-        font.family: Theme.font.iconFamily
+        font.family: root.isFolder ? Theme.font.iconFamily : root.typeIcon.family
         font.pixelSize: root.size
         color: root.isFolder ? Theme.color.accentFolder : Theme.color.textSecondary
-        text: root.isFolder ? Theme.glyph.folder : Theme.glyph.file
+        text: root.isFolder ? Theme.glyph.folder : root.typeIcon.glyph
     }
 }
