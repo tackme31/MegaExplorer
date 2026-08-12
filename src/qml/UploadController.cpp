@@ -224,12 +224,44 @@ void UploadController::uploadFiles(const QStringList& localPaths, quint64 target
     if (localPaths.isEmpty())
         return;
 
+    const int fileCount = expandedFileCount(localPaths);
+    if (fileCount > kMaxFilesPerUpload)
+    {
+        mNotifications->notifyError(QStringLiteral("uploadTooManyFiles"));
+        return;
+    }
+
+    // A single file is what dragging one item onto a folder means, so confirming it
+    // would put a click in front of every upload.
+    if (fileCount > 1)
+    {
+        emit uploadRequiresConfirmation(localPaths, fileCount, target, targetIsRoot);
+        return;
+    }
+
+    askAboutConflicts(localPaths, target, targetIsRoot);
+}
+
+void UploadController::uploadConfirmed(const QStringList& localPaths,
+                                       quint64 target,
+                                       bool targetIsRoot)
+{
+    if (localPaths.isEmpty())
+        return;
+
     if (expandedFileCount(localPaths) > kMaxFilesPerUpload)
     {
         mNotifications->notifyError(QStringLiteral("uploadTooManyFiles"));
         return;
     }
 
+    askAboutConflicts(localPaths, target, targetIsRoot);
+}
+
+void UploadController::askAboutConflicts(const QStringList& localPaths,
+                                         quint64 target,
+                                         bool targetIsRoot)
+{
     std::map<QString, quint64> hits = collisionsFor(localPaths, target, targetIsRoot);
     if (hits.empty())
     {

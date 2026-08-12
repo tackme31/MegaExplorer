@@ -76,6 +76,14 @@ protected:
                              lastErrorReason = reason;
                              lastErrorRaw = rawMessage;
                          });
+        QObject::connect(controller.get(),
+                         &UploadController::uploadRequiresConfirmation,
+                         controller.get(),
+                         [this](QStringList filePaths, int fileCount, quint64, bool) {
+                             ++confirmAsks;
+                             askedUploadPaths = filePaths;
+                             askedUploadCount = fileCount;
+                         });
         QObject::connect(
             controller.get(),
             &UploadController::nameConflictRequiresConfirmation,
@@ -126,6 +134,18 @@ protected:
         return path;
     }
 
+    // A drop of more than one file now stops at "upload N files?". Tests below are
+    // about what happens *after* that, so they answer it straight away. A no-op when
+    // no question was asked -- a single file, or a drop the cap already refused --
+    // which is what lets every dropUrls() call route through here.
+    void dropAndConfirm(const QList<QUrl>& urls, quint64 target, bool targetIsRoot)
+    {
+        const int asksBefore = confirmAsks;
+        controller->dropUrls(urls, target, targetIsRoot);
+        if (confirmAsks > asksBefore)
+            controller->uploadConfirmed(askedUploadPaths, target, targetIsRoot);
+    }
+
     QTemporaryDir dir;
     std::shared_ptr<MockMegaClient> client;
     std::shared_ptr<UploadService> service;
@@ -137,6 +157,9 @@ protected:
     QString lastOperationContext;
     int lastSucceeded = 0;
     int lastFailed = 0;
+    int confirmAsks = 0;
+    QStringList askedUploadPaths;
+    int askedUploadCount = 0;
     int errorCalls = 0;
     QString lastErrorContext;
     NotificationController::ErrorReason lastErrorReason = NotificationController::Unknown;
@@ -155,12 +178,92 @@ TEST_F(UploadControllerTest, DropWithoutFoldersEnqueuesEveryFileDirectly)
     EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
 
     // Act
-    controller->dropUrls(
+    dropAndConfirm(
         {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
 
     // Assert: both queued (only the first started), no question asked
     EXPECT_EQ(conflictAsks, 0);
     EXPECT_EQ(controller->pendingCount(), 2);
+}
+
+TEST_F(UploadControllerTest, MoreThanOneFileIsConfirmedBeforeAnythingIsEnqueued)
+{
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+
+    controller->dropUrls(
+        {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
+
+    EXPECT_EQ(confirmAsks, 1);
+    EXPECT_EQ(askedUploadCount, 2);
+    EXPECT_EQ(askedUploadPaths.size(), 2);
+    EXPECT_EQ(controller->pendingCount(), 0);
+}
+
+TEST_F(UploadControllerTest, ASingleFileIsNotConfirmed)
+{
+    // Otherwise every drag of one item onto a folder would cost a click.
+    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+
+    controller->dropUrls({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
+
+    EXPECT_EQ(confirmAsks, 0);
+    EXPECT_EQ(controller->pendingCount(), 1);
+}
+
+TEST_F(UploadControllerTest, TheConfirmedCountIsWhatIsInsideADroppedFolder)
+{
+    // One dropped item, three files: the question has to name what actually goes
+    // up, which is the same rule the cap counts by.
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+
+    controller->dropUrls({QUrl::fromLocalFile(makeTree("sub", 3))}, 7, false);
+
+    EXPECT_EQ(confirmAsks, 1);
+    EXPECT_EQ(askedUploadCount, 3);
+    EXPECT_EQ(askedUploadPaths.size(), 1); // still one job
+}
+
+TEST_F(UploadControllerTest, TheCapRefusesWithoutAskingToConfirm)
+{
+    // The cap is a refusal, not a question. Stacking the confirmation on top would
+    // ask about an upload that is not going to happen either way.
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+
+    controller->dropUrls(
+        {QUrl::fromLocalFile(makeTree("sub", UploadController::kMaxFilesPerUpload + 1))}, 7, false);
+
+    EXPECT_EQ(confirmAsks, 0);
+    EXPECT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("uploadTooManyFiles"));
+}
+
+TEST_F(UploadControllerTest, DecliningTheConfirmationUploadsNothing)
+{
+    // "Declining" is simply never answering: the dialog closes and the paths are
+    // dropped, so nothing in the controller is left holding them.
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+
+    controller->dropUrls(
+        {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
+
+    EXPECT_EQ(controller->pendingCount(), 0);
+    EXPECT_EQ(conflictAsks, 0);
+}
+
+TEST_F(UploadControllerTest, ConfirmingStillStopsAtTheSameNameQuestion)
+{
+    // The two questions are ordered, not exclusive.
+    EXPECT_CALL(*client, findChildFiles(7, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+
+    controller->dropUrls(
+        {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
+    ASSERT_EQ(confirmAsks, 1);
+    controller->uploadConfirmed(askedUploadPaths, 7, false);
+
+    EXPECT_EQ(conflictAsks, 1);
+    EXPECT_EQ(controller->pendingCount(), 0);
 }
 
 TEST_F(UploadControllerTest, DroppedFolderIsEnqueuedWholeAlongsideLooseFiles)
@@ -170,7 +273,7 @@ TEST_F(UploadControllerTest, DroppedFolderIsEnqueuedWholeAlongsideLooseFiles)
     EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
 
     // Act
-    controller->dropUrls(
+    dropAndConfirm(
         {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeTree("sub", 2))},
         7,
         false);
@@ -185,7 +288,7 @@ TEST_F(UploadControllerTest, DropOfAFolderOnlyIsUploaded)
     EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
 
     // Act
-    controller->dropUrls({QUrl::fromLocalFile(makeTree("sub", 3))}, 7, false);
+    dropAndConfirm({QUrl::fromLocalFile(makeTree("sub", 3))}, 7, false);
 
     // Assert
     EXPECT_EQ(errorCalls, 0);
@@ -201,7 +304,7 @@ TEST_F(UploadControllerTest, AFolderIsNeverOfferedAsAReplacementTarget)
     EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
 
     // Act
-    controller->dropUrls({QUrl::fromLocalFile(makeTree("sub", 1))}, 7, false);
+    dropAndConfirm({QUrl::fromLocalFile(makeTree("sub", 1))}, 7, false);
 
     // Assert: no question, and the folder went straight to the queue
     EXPECT_EQ(conflictAsks, 0);
@@ -211,7 +314,7 @@ TEST_F(UploadControllerTest, AFolderIsNeverOfferedAsAReplacementTarget)
 TEST_F(UploadControllerTest, NonLocalUrlsAreIgnored)
 {
     // Act: e.g. an image dragged straight out of a browser
-    controller->dropUrls({QUrl(QStringLiteral("https://example.com/a.png"))}, 7, false);
+    dropAndConfirm({QUrl(QStringLiteral("https://example.com/a.png"))}, 7, false);
 
     // Assert
     ASSERT_EQ(errorCalls, 1);
@@ -228,8 +331,11 @@ TEST_F(UploadControllerTest, UploadOfExactlyTheCapIsStillAccepted)
     for (int i = 0; i < UploadController::kMaxFilesPerUpload; ++i)
         paths.append(QStringLiteral("C:\\tmp\\f%1.txt").arg(i));
 
-    // Act
+    // Act: the cap lets it through, then the confirmation asks about it -- this
+    // test is about the former, so answer the latter.
     controller->uploadFiles(paths, 7, false);
+    ASSERT_EQ(confirmAsks, 1);
+    controller->uploadConfirmed(paths, 7, false);
 
     // Assert
     EXPECT_EQ(errorCalls, 0);
@@ -279,7 +385,7 @@ TEST_F(UploadControllerTest, TheCapCountsWhatIsInsideADroppedFolder)
     EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
 
     // Act
-    controller->dropUrls(
+    dropAndConfirm(
         {QUrl::fromLocalFile(makeTree("sub", UploadController::kMaxFilesPerUpload + 1))}, 7, false);
 
     // Assert
@@ -295,7 +401,7 @@ TEST_F(UploadControllerTest, LooseFilesAndAFolderShareOneCap)
     EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
 
     // Act
-    controller->dropUrls(
+    dropAndConfirm(
         {QUrl::fromLocalFile(makeFile("a.txt")),
          QUrl::fromLocalFile(makeTree("sub", UploadController::kMaxFilesPerUpload))},
         7,
@@ -315,7 +421,7 @@ TEST_F(UploadControllerTest, EnqueuedPathsUseNativeSeparators)
     EXPECT_CALL(*client, upload(_, _, _, _, _)).WillOnce(SaveArg<0>(&captured));
 
     // Act
-    controller->dropUrls({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
+    dropAndConfirm({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
 
     // Assert
     ASSERT_FALSE(captured.empty());
@@ -338,7 +444,7 @@ TEST_F(UploadControllerTest, NameCollisionAsksBeforeEnqueueingAnything)
     EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
 
     // Act
-    controller->dropUrls(
+    dropAndConfirm(
         {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
 
     // Assert: filePaths carries the whole set (the answer re-derives which is
@@ -428,7 +534,7 @@ TEST_F(UploadControllerTest, BatchReportsOnceAndAnnouncesTheDestinationAfterTheQ
         .WillRepeatedly(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{1})));
 
     // Act
-    controller->dropUrls(
+    dropAndConfirm(
         {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
     flushQueuedEvents(); // the finished notifications are queued onto the GUI thread
 
@@ -448,7 +554,7 @@ TEST_F(UploadControllerTest, WholeBatchLostToAMissingDestinationGetsItsOwnMessag
     EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
 
     // Act
-    controller->dropUrls({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
+    dropAndConfirm({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
     flushQueuedEvents();
 
     // Assert: no destinationChanged -- nothing about that folder changed
@@ -465,7 +571,7 @@ TEST_F(UploadControllerTest, IsUploadingToCoversTheDestinationFromEnqueueUntilTh
         .WillRepeatedly(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{1})));
 
     // Act: the finished notifications are still queued at this point
-    controller->dropUrls(
+    dropAndConfirm(
         {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
 
     // Assert: busy for this destination only
@@ -482,7 +588,7 @@ TEST_F(UploadControllerTest, IsUploadingToClearsEvenWhenEveryJobFails)
     EXPECT_CALL(*client, checkUpload(7, false))
         .WillRepeatedly(Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
 
-    controller->dropUrls({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
+    dropAndConfirm({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
     flushQueuedEvents();
 
     EXPECT_FALSE(controller->isUploadingTo(7, false));
