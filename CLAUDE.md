@@ -18,11 +18,11 @@ session lives in companion docs, linked from the relevant section below rather t
   you disagree with surfaces (reasons go in the commit body). Push back via `docs/REQUESTS.md`.
 - `docs/PROGRESS.md` — the phase-by-phase implementation log (what was built, why, gotchas), plus a
   Roadmap section that is now **history only**: the queue moved to `docs/ROADMAP.md`. A shipped
-  phase's original plan sits at the top of its own log entry as a `> **Planned as.**` block
-  (2026-08-07, to keep plan and outcome from drifting). Entries here are for phases a **human**
+  phase's original plan sits at the top of its own log entry as a `> **Planned as.**` block, to
+  keep plan and outcome from drifting. Entries here are for phases a **human**
   cut — the loop never writes here. `README.md` is just a one-line title stub, not documentation.
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
-  and the per-stage log for S0–S11 (S0–S10 done, plus the unplanned S6a/S8a/S8b corrections). Visual work goes here, not in `docs/PROGRESS.md`;
+  and the per-stage log for S0–S11. Visual work goes here, not in `docs/PROGRESS.md`;
   the four C++ changes it caused are cross-linked from both.
 - `docs/REFACTOR_PLANS.md` — the pre-Phase-15 code-tidying pass (Japanese): the R1–R7 scope split,
   the per-item findings, and the log of what each fix decided. **All seven scopes are done
@@ -43,9 +43,7 @@ session lives in companion docs, linked from the relevant section below rather t
 - `docs/archive/` — retired documents, kept only so old commits and links still resolve. Nothing in
   here is current: every fact in it either moved to one of the docs above or went stale. Don't read
   it for answers and don't cite it; a document lands here instead of being deleted purely because
-  the git history around it stays readable that way. `MEMO.md` was the first (2026-08-11 — its
-  scope/feature list and licensing notes had been absorbed by this file and the Phase 20b log, and
-  its stack table still claimed an app key and the SQLite cache that Phase 7b removed).
+  the git history around it stays readable that way.
 
 **Writing into those logs.** `docs/PROGRESS.md`, `docs/DESIGN_IMPROVEMENT.md` and
 `docs/REFACTOR_PLANS.md` are append-only and already large, so a new entry gets **about one screen —
@@ -145,9 +143,8 @@ go-ahead before proceeding (as part of normal plan review, not a separate approv
 
 ## Project status
 
-Phases 0–15, 17–23a, 24a and 24b are done — several were pulled forward out of numeric order. The pre-15
-code-tidying pass in `docs/REFACTOR_PLANS.md` finished on 2026-08-08 (all of R1–R7). **The numbered
-phases are finished** — work now comes off `docs/ROADMAP.md` one item at a time, usually via the
+**The numbered phases are finished**, as is the pre-15 code-tidying pass in
+`docs/REFACTOR_PLANS.md` — work now comes off `docs/ROADMAP.md` one item at a time, usually via the
 `/evolve` loop (see "Loop engineering" below). A new numbered phase only appears if a human decides
 some chunk is big enough to deserve one.
 
