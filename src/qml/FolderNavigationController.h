@@ -217,6 +217,10 @@ signals:
     void busyChanged();
     void searchActiveChanged();
 
+    // The tab dropped its query because it navigated. The search box owns its text,
+    // so it has to be told; nothing else can reach it.
+    void searchCleared();
+
     // Row is already selected in the model when this fires; the views only have
     // to scroll. Both of a tab's views listen -- the hidden one positions itself
     // so switching view mode doesn't land somewhere else.
@@ -226,6 +230,12 @@ private:
     void applyResult(Result<std::vector<FileEntry>> result,
                      const QString& revealName = QString());
     void applySearchResult(Result<std::vector<FileEntry>> result);
+
+    // Drops the query because the tab is moving somewhere the results do not
+    // describe. Called by the navigation entry points and by none of the refresh
+    // ones -- a refresh stays inside the search, which is what
+    // refreshVisibleListing() exists to preserve.
+    void dropSearchForNavigation();
 
     // Re-runs mLastSearchQuery against whatever this tab is showing. In a favourites
     // listing the search box narrows the favourites rather than searching a folder,

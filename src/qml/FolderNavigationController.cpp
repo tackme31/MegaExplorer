@@ -92,6 +92,7 @@ bool FolderNavigationController::searchActive() const
 
 void FolderNavigationController::loadRoot()
 {
+    dropSearchForNavigation();
     mService->openRoot(mSortOrder,
                        [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
@@ -102,6 +103,7 @@ void FolderNavigationController::loadRoot()
 
 void FolderNavigationController::openFolder(quint64 handle)
 {
+    dropSearchForNavigation();
     mService->openFolder(static_cast<std::uint64_t>(handle),
                          mSortOrder,
                          [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
@@ -113,6 +115,7 @@ void FolderNavigationController::openFolder(quint64 handle)
 
 void FolderNavigationController::openFavourites()
 {
+    dropSearchForNavigation();
     mService->openFavourites(mSortOrder,
                              [this, self = shared_from_this()](
                                  Result<std::vector<FileEntry>> result) {
@@ -125,6 +128,7 @@ void FolderNavigationController::openFavourites()
 
 void FolderNavigationController::openRubbish()
 {
+    dropSearchForNavigation();
     mService->openRubbish(mSortOrder,
                           [this, self = shared_from_this()](
                               Result<std::vector<FileEntry>> result) {
@@ -139,6 +143,7 @@ void FolderNavigationController::goBack()
 {
     if (!canGoBack())
         return;
+    dropSearchForNavigation();
     mService->goBack(mSortOrder,
                      [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                          invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
@@ -172,6 +177,7 @@ void FolderNavigationController::navigateToKind(quint64 handle,
                                                 ViewKind kind,
                                                 const QString& revealName)
 {
+    dropSearchForNavigation();
     mService->navigateTo(static_cast<std::uint64_t>(handle),
                          isRoot,
                          kind,
@@ -319,6 +325,18 @@ bool FolderNavigationController::canPerform(const QString& actionId) const
                                        searchActive() || kind == ViewKind::Favourites};
     return menuActionAllowed(id, selectionContext) ||
            menuActionAllowed(id, folderTargetContext(MenuSite::FolderBackground, kind));
+}
+
+void FolderNavigationController::dropSearchForNavigation()
+{
+    if (!searchActive())
+        return;
+    // Not mListingFromSearch: the results are still on screen until the navigation
+    // lands, and applyResult() clears that flag when it does. Clearing it here would
+    // claim the rows are one folder's children while they are still hits.
+    mLastSearchQuery.clear();
+    emit searchActiveChanged();
+    emit searchCleared();
 }
 
 void FolderNavigationController::search(QString query)
