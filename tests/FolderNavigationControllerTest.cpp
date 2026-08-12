@@ -215,6 +215,56 @@ TEST_F(FolderNavigationControllerTest, RefreshDoesNothingBeforeTheFirstLoad)
     EXPECT_EQ(rootFetches, 0);
 }
 
+TEST_F(FolderNavigationControllerTest, OpeningAFolderFromResultsDropsTheSearch)
+{
+    // The destination listing does not answer the query, so the box must stop
+    // claiming to be filtering by it.
+    givenRootListing({entry("photos", 1, true)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _))
+        .WillRepeatedly(InvokeArgument<4>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("photos", 1, true)})));
+    controller->search(QStringLiteral("q"));
+    flush();
+    ASSERT_TRUE(controller->searchActive());
+
+    EXPECT_CALL(*client, getChildren(1, _, _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
+    controller->openFolder(1);
+    flush();
+
+    EXPECT_FALSE(controller->searchActive());
+}
+
+TEST_F(FolderNavigationControllerTest, GoingBackDropsTheSearchToo)
+{
+    // Back is a navigation like any other: it lands somewhere the hits do not
+    // describe, so the same rule applies.
+    givenRootListing({entry("photos", 1, true)});
+    controller->loadRoot();
+    flush();
+    EXPECT_CALL(*client, getChildren(1, _, _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
+    controller->openFolder(1);
+    flush();
+
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _))
+        .WillRepeatedly(InvokeArgument<4>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
+    controller->search(QStringLiteral("q"));
+    flush();
+    ASSERT_TRUE(controller->searchActive());
+
+    controller->goBack();
+    flush();
+
+    EXPECT_FALSE(controller->searchActive());
+}
+
 TEST_F(FolderNavigationControllerTest, RefreshReRunsTheActiveSearch)
 {
     givenRootListing({entry("a", 1)});
@@ -552,9 +602,10 @@ TEST_F(FolderNavigationControllerTest, GoToContainingFolderOpensTheParentAndReve
 TEST_F(FolderNavigationControllerTest, GoToFolderStopsBeingOfferedOnceTheListingIsAFolder)
 {
     // The query stays latched after navigating out of a search (search() leaves
-    // navigation state alone on purpose), so the offer has to key off the rows in
-    // the model instead -- otherwise the destination folder keeps offering a row
-    // that would navigate to itself.
+    // The offer keys off the rows in the model, not off the search box, so that the
+    // destination folder cannot keep offering a row that would navigate to itself.
+    // Both now agree here -- navigating drops the query -- but the rows are the
+    // honest source: they are what the row's label talks about.
     givenRootListing({entry("a.jpg", 4)});
     controller->loadRoot();
     flush();
@@ -578,9 +629,7 @@ TEST_F(FolderNavigationControllerTest, GoToFolderStopsBeingOfferedOnceTheListing
     controller->goToContainingFolder(3, QStringLiteral("b.jpg"));
     flush();
 
-    // Still latched, and deliberately so -- which is exactly why the offer cannot
-    // be derived from it.
-    EXPECT_TRUE(controller->searchActive());
+    EXPECT_FALSE(controller->searchActive());
     EXPECT_FALSE(model()->availableActions().contains(QStringLiteral("goToFolder")));
 }
 

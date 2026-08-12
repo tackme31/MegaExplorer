@@ -172,6 +172,17 @@ ToolBar {
                 text = "";
                 tabsController.currentNavigation?.search("");
             }
+
+            // Navigating drops the query C++-side; this field owns its text, so
+            // nothing else can empty it. Assigning text does not re-trigger a
+            // search: the field is live: false and only its two signals call one.
+            Connections {
+                target: tabsController.currentNavigation ?? null
+
+                function onSearchCleared() {
+                    searchField.text = "";
+                }
+            }
         }
 
         ToolbarIconButton {
