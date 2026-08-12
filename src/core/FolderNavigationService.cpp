@@ -33,25 +33,35 @@ void FolderNavigationService::openFolder(std::uint64_t handle,
                                          SortOrder order,
                                          std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    navigateTo(handle, false, order, std::move(onDone));
+    // Stays on whichever screen it was opened from: the bin's contents are ordinary
+    // nodes, so nothing but the kind distinguishes them from live ones, and that
+    // kind is what gates every action here.
+    navigateTo(handle,
+               false,
+               mCurrent.kind == ViewKind::Rubbish ? ViewKind::Rubbish : ViewKind::CloudDrive,
+               order,
+               std::move(onDone));
 }
 
 void FolderNavigationService::navigateTo(std::uint64_t handle,
                                          bool isRoot,
+                                         ViewKind kind,
                                          SortOrder order,
                                          std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     runAndCommit(
-        [this, handle, isRoot, order](
+        [this, handle, isRoot, kind, order](
             std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
-            if (isRoot)
+            if (isRoot && kind == ViewKind::Rubbish)
+                mClient->getRubbishChildren(order, std::move(onFetched));
+            else if (isRoot)
                 mClient->getRootChildren(order, std::move(onFetched));
             else
                 mClient->getChildren(handle, order, std::move(onFetched));
         },
-        [this, handle, isRoot] {
+        [this, handle, isRoot, kind] {
             mBackStack.push_back(mCurrent);
-            mCurrent = Location{ViewKind::CloudDrive, isRoot, handle};
+            mCurrent = Location{kind, isRoot, handle};
         },
         std::move(onDone));
 }
@@ -76,6 +86,28 @@ void FolderNavigationService::openFavourites(
         std::move(onDone));
 }
 
+void FolderNavigationService::openRubbish(
+    SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    // Only the bin's own top counts as "already there": a folder inside it is a
+    // different location, so clicking the side-panel row from there navigates.
+    if (mCurrent.kind == ViewKind::Rubbish && mCurrent.isRoot)
+    {
+        mClient->getRubbishChildren(order, std::move(onDone));
+        return;
+    }
+
+    runAndCommit(
+        [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
+            mClient->getRubbishChildren(order, std::move(onFetched));
+        },
+        [this] {
+            mBackStack.push_back(mCurrent);
+            mCurrent = Location{ViewKind::Rubbish, true, 0};
+        },
+        std::move(onDone));
+}
+
 void FolderNavigationService::goBack(SortOrder order,
                                      std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
@@ -90,6 +122,8 @@ void FolderNavigationService::goBack(SortOrder order,
         [this, target, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
             if (target.kind == ViewKind::Favourites)
                 mClient->listFavourites(order, "", std::move(onFetched));
+            else if (target.kind == ViewKind::Rubbish && target.isRoot)
+                mClient->getRubbishChildren(order, std::move(onFetched));
             else if (target.isRoot)
                 mClient->getRootChildren(order, std::move(onFetched));
             else
@@ -107,6 +141,8 @@ void FolderNavigationService::refreshCurrent(
 {
     if (mCurrent.kind == ViewKind::Favourites)
         mClient->listFavourites(order, "", std::move(onDone));
+    else if (mCurrent.kind == ViewKind::Rubbish && mCurrent.isRoot)
+        mClient->getRubbishChildren(order, std::move(onDone));
     else if (mCurrent.isRoot)
         mClient->getRootChildren(order, std::move(onDone));
     else
@@ -160,6 +196,15 @@ void FolderNavigationService::resolveCurrentPath(
     {
         onDone(Result<std::vector<PathSegment>>::ok(
             {PathSegment{"", 0, false, ViewKind::Favourites}}));
+        return;
+    }
+    // The bin's own top is synthesized for the same reason, and marked isRoot so
+    // QML can tell it from a folder inside the bin -- which does have an ancestor
+    // chain and resolves normally below.
+    if (mCurrent.kind == ViewKind::Rubbish && mCurrent.isRoot)
+    {
+        onDone(
+            Result<std::vector<PathSegment>>::ok({PathSegment{"", 0, true, ViewKind::Rubbish}}));
         return;
     }
     mClient->getPath(mCurrent.handle, mCurrent.isRoot, std::move(onDone));

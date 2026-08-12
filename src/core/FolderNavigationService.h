@@ -29,8 +29,13 @@ public:
 
     // openFolder generalized to also cover the root, which openRoot deliberately
     // can't: a breadcrumb click is a navigation, so Back returns to where you were.
+    // kind names which screen the target belongs to, and must be supplied rather
+    // than derived: isRoot alone no longer identifies a root now that the Rubbish
+    // bin has a top of its own, so "up" out of a binned folder and a click on the
+    // tree's Cloud Drive row would otherwise be indistinguishable.
     void navigateTo(std::uint64_t handle,
                     bool isRoot,
+                    ViewKind kind,
                     SortOrder order,
                     std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
@@ -40,6 +45,10 @@ public:
     // side-panel row can't stack the same screen up for Back to walk down again.
     void openFavourites(SortOrder order,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
+    // openFavourites' counterpart for the Rubbish bin. Unlike favourites this screen
+    // is a real subtree, so openFolder() from here stays inside it -- see navigateTo.
+    void openRubbish(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     // Peeks the most recent back-stack entry and re-fetches it, popping only on
     // success. Fails in-stack when canGoBack() is false.
@@ -91,8 +100,10 @@ public:
     void syncWithServer(std::function<void(Result<void>)> onDone);
 
 private:
-    // isRoot/handle are meaningless unless kind is CloudDrive, the same kind of
-    // sentinel nesting as isRoot already making handle meaningless.
+    // handle is meaningless while isRoot, the same sentinel nesting isRoot already
+    // has. Both are meaningless for Favourites, which is a flat listing with no
+    // node behind it; for Rubbish, isRoot means the bin's own top level and a
+    // handle names a folder inside it.
     struct Location
     {
         ViewKind kind = ViewKind::CloudDrive;

@@ -109,6 +109,13 @@ public:
                                 const std::string& nameFilter,
                                 std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
+    // The Rubbish bin's own top level, same contract as getRootChildren(). Only the
+    // top needs its own call: everything below it is an ordinary node, so going
+    // deeper is getChildren() with the handle, exactly as in the Cloud Drive.
+    virtual void
+    getRubbishChildren(SortOrder order,
+                       std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
+
     // Downloads to the exact local path destinationPath -- the caller resolves it,
     // since IMegaClient has no filesystem access of its own.
     //

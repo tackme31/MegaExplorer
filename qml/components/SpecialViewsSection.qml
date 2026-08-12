@@ -4,9 +4,8 @@ import QtQuick.Controls.FluentWinUI3
 import QtQuick.Layouts
 
 // The side panel's fixed entry points: screens the app invents, as opposed to
-// folders it found. One row for now; Rubbish and Albums land here as further
-// children, which is why this is a section rather than a row inlined into
-// SidePanel.qml.
+// folders it found. Albums land here as a further row, which is why this is a
+// section rather than rows inlined into SidePanel.qml.
 ColumnLayout {
     id: root
 
@@ -14,8 +13,23 @@ ColumnLayout {
 
     spacing: 0
 
-    ItemDelegate {
-        id: favouritesRow
+    // Inline rather than a file of its own: every metric below is shared with
+    // the pin rows and nothing outside this section instantiates it. What each
+    // row supplies is only its kind, glyph and the two entry points -- the
+    // screens differ by controller call, not by appearance.
+    component SpecialViewRow: ItemDelegate {
+        id: viewRow
+
+        required property int kind
+        required property string glyph
+        // Stated per row rather than derived here: the two screens differ in what
+        // "on it" means. Favourites cannot be navigated into, so its kind alone
+        // settles it; the bin can, and a folder inside it must not light this row
+        // (the tree marks that instead).
+        required property bool current
+        // Called on click (this tab) and middle-click (background tab).
+        required property var openHere
+        required property var openInNewTab
 
         Layout.fillWidth: true
 
@@ -36,23 +50,18 @@ ColumnLayout {
         // deadens the file view's arrow keys until it is re-clicked.
         focusPolicy: Qt.NoFocus
 
-        // Through ViewLabels rather than a second qsTr("Favourites"): the tab
-        // strip and the breadcrumb already name this screen from there.
-        text: ViewLabels.label(ViewKind.Favourites, false, "")
-
-        // Which screen the tab is on, not which handle it holds -- this one has
-        // none, which is also why no pin and no tree row lights up beside it.
-        readonly property bool isCurrent: root.navController ? root.navController.viewKind
-                                                               === ViewKind.Favourites : false
+        // Through ViewLabels rather than a second qsTr() each: the tab strip and
+        // the breadcrumb already name these screens from there. isRoot is true
+        // because these rows name a screen's own top, which is what the Rubbish
+        // branch there keys on.
+        text: ViewLabels.label(viewRow.kind, true, "")
 
         contentItem: RowLayout {
             spacing: Theme.spacing.md
 
-            // Fixed square box, not a bare glyph: the heart's advance width
-            // differs from the folder glyph's, and without it the label would
+            // Fixed square box, not a bare glyph: these glyphs' advance widths
+            // differ from the folder glyph's, and without it the label would
             // start at a different x than the pin rows below (FileIcon.qml).
-            // Outline EB51, not the solid EB52 of the file rows' marker -- this
-            // row names a place, not a node's state (24a).
             Label {
                 Layout.preferredWidth: Theme.iconSize.sm
                 Layout.alignment: Qt.AlignVCenter
@@ -60,13 +69,13 @@ ColumnLayout {
                 font.family: Theme.font.iconFamily
                 font.pixelSize: Theme.iconSize.sm
                 color: Theme.color.textSecondary
-                text: Theme.glyph.favouriteOutline
+                text: viewRow.glyph
             }
 
             Label {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
-                text: favouritesRow.text
+                text: viewRow.text
                 elide: Text.ElideRight
                 // Stated outright rather than inherited, same as the pins' (D1a).
                 font.pixelSize: Theme.font.body
@@ -76,21 +85,41 @@ ColumnLayout {
 
         background: Rectangle {
             radius: Theme.radius.sm
-            color: favouritesRow.isCurrent ? Theme.color.selection : (favouritesRow.hovered
-                                                                      ? Theme.color.subtleHover :
-                                                                        "transparent")
+            color: viewRow.current ? Theme.color.selection : (viewRow.hovered ? Theme.color.subtleHover :
+                                                                                "transparent")
         }
 
-        // No NodeDropArea, deliberately: this row is not a drop target (24b 2.1).
-        // With no DropArea at all there is nothing to refuse.
+        // No NodeDropArea, deliberately: these rows are not drop targets
+        // (24b 2.1). With no DropArea at all there is nothing to refuse.
 
-        onClicked: root.navController?.openFavourites()
+        onClicked: viewRow.openHere()
 
         // AbstractButton takes LeftButton itself, so this never competes with
         // onClicked -- the arrangement FolderTreePanel.qml already relies on.
         TapHandler {
             acceptedButtons: Qt.MiddleButton
-            onTapped: tabsController.addFavouritesTab()
+            onTapped: viewRow.openInNewTab()
         }
+    }
+
+    SpecialViewRow {
+        kind: ViewKind.Favourites
+        // No atRoot term: the favourites screen cannot be navigated into, and its
+        // synthesized breadcrumb segment reports isRoot false anyway.
+        current: root.navController ? root.navController.viewKind === ViewKind.Favourites : false
+        // Outline EB51, not the solid EB52 of the file rows' marker -- this row
+        // names a place, not a node's state (24a).
+        glyph: Theme.glyph.favouriteOutline
+        openHere: () => root.navController?.openFavourites()
+        openInNewTab: () => tabsController.addFavouritesTab()
+    }
+
+    SpecialViewRow {
+        kind: ViewKind.Rubbish
+        current: root.navController ? (root.navController.viewKind === ViewKind.Rubbish
+                                       && root.navController.atRoot) : false
+        glyph: Theme.glyph.menu.moveToRubbish
+        openHere: () => root.navController?.openRubbish()
+        openInNewTab: () => tabsController.addRubbishTab()
     }
 }

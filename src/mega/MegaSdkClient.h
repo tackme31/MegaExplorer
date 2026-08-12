@@ -76,6 +76,9 @@ public:
                         const std::string& nameFilter,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
+    void getRubbishChildren(SortOrder order,
+                            std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
+
     void download(
         std::uint64_t handle,
         const std::string& destinationPath,

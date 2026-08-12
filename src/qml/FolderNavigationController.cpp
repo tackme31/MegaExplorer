@@ -123,6 +123,18 @@ void FolderNavigationController::openFavourites()
                              });
 }
 
+void FolderNavigationController::openRubbish()
+{
+    mService->openRubbish(mSortOrder,
+                          [this, self = shared_from_this()](
+                              Result<std::vector<FileEntry>> result) {
+                              invokeOnGuiThread(this,
+                                                [this, result = std::move(result)]() mutable {
+                                                    applyResult(std::move(result));
+                                                });
+                          });
+}
+
 void FolderNavigationController::goBack()
 {
     if (!canGoBack())
@@ -140,14 +152,26 @@ void FolderNavigationController::goUp()
     if (!canGoUp())
         return;
     const QVariantMap parent = mBreadcrumb.at(mBreadcrumb.size() - 2).toMap();
-    navigateTo(parent.value(QStringLiteral("handle")).toULongLong(),
-               parent.value(QStringLiteral("isRoot")).toBool());
+    // The parent's own kind, not this screen's: going up out of a folder inside the
+    // Rubbish bin has to land on the bin's top, and its segment is the only thing
+    // that says so -- isRoot alone reads as the Cloud Drive root.
+    navigateToKind(parent.value(QStringLiteral("handle")).toULongLong(),
+                   parent.value(QStringLiteral("isRoot")).toBool(),
+                   static_cast<ViewKind>(parent.value(QStringLiteral("kind")).toInt()));
 }
 
 void FolderNavigationController::navigateTo(quint64 handle, bool isRoot)
 {
+    // Every QML caller (the tree, the pins, the breadcrumb) names a Cloud Drive
+    // location: the breadcrumb only makes CloudDrive segments clickable.
+    navigateToKind(handle, isRoot, ViewKind::CloudDrive);
+}
+
+void FolderNavigationController::navigateToKind(quint64 handle, bool isRoot, ViewKind kind)
+{
     mService->navigateTo(static_cast<std::uint64_t>(handle),
                          isRoot,
+                         kind,
                          mSortOrder,
                          [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                              invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
