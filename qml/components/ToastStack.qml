@@ -314,7 +314,7 @@ Item {
             text = qsTr("Couldn't check this folder right now — please try again");
             break;
         case "uploadNothingToUpload":
-            text = qsTr("Nothing to upload — folders and non-file items can't be uploaded");
+            text = qsTr("Nothing to upload — only files and folders on this PC can be uploaded");
             break;
             // Fixed sentence: nothing reached the SDK, the count was rejected
             // here. The cap is named so the user knows how much to trim.

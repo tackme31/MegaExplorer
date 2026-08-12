@@ -33,9 +33,9 @@ class UploadController : public QObject
     Q_PROPERTY(int maxFilesPerUpload READ maxFilesPerUpload CONSTANT)
 
 public:
-    // One drop can name far more files than a person means to send, and each one
-    // becomes a queued job here plus a transfer in the SDK. The cap is on the whole
-    // operation rather than per folder, so plain multi-select is bounded too.
+    // One drop can name far more files than a person means to send -- a dropped
+    // folder especially, since it is counted by what is inside it. The cap is on the
+    // whole operation rather than per folder, so plain multi-select is bounded too.
     static constexpr int kMaxFilesPerUpload = 100;
 
     explicit UploadController(std::shared_ptr<UploadService> service,
@@ -59,13 +59,13 @@ public:
     // the way down to IMegaClient::checkUpload.
     Q_INVOKABLE bool canUploadTo(quint64 target, bool targetIsRoot) const;
 
-    // Every DropArea's entry point for an external (OS) drop. Classifies urls into
-    // uploadable files, folders and non-local items -- which QML can't do -- then
-    // enqueues, asks for the folder-skip confirmation, or reports nothing uploadable.
+    // Every DropArea's entry point for an external (OS) drop. Separates local files
+    // and folders from items that are neither -- which QML can't do -- then hands
+    // the rest on, or reports that nothing was uploadable.
     Q_INVOKABLE void dropUrls(const QList<QUrl>& urls, quint64 target, bool targetIsRoot);
 
-    // Entry point past the folder decision -- from dropUrls when the drop held no
-    // folders, or from the folder-skip dialog. Runs the same-name check next.
+    // The single enqueue path: applies the file cap, then the same-name check.
+    // localPaths may name folders, which go to the SDK whole and upload recursively.
     Q_INVOKABLE void uploadFiles(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
     // Both re-derive the collision set rather than trust handles round-tripped
@@ -85,13 +85,6 @@ signals:
 
     // Membership only -- not emitted per file, since nothing binds to the count.
     void activeDestinationsChanged();
-
-    // filePaths is the uploadable remainder and the destination travels with it, so
-    // no state is kept here while the dialog is open.
-    void folderDropRequiresConfirmation(QStringList filePaths,
-                                        int folderCount,
-                                        quint64 destinationHandle,
-                                        bool destinationIsRoot);
 
     // Some of filePaths name files that already exist in the destination.
     // filePaths is the *whole* set, conflicting or not -- the answer handlers
@@ -130,10 +123,10 @@ private:
         std::map<Destination, int> pendingByDestination;
     };
 
-    // Reports the rejection and returns true when count exceeds the cap. Called
-    // from dropUrls as well as uploadFiles so a drop that is over the cap is
-    // refused before the folder-skip question, not after it.
-    bool rejectIfTooManyFiles(int count) const;
+    // What the cap is measured against: dropped files count as one each, a dropped
+    // folder as everything inside it. Stops counting once past the cap, so a
+    // 200k-file tree costs the same as a 101-file one.
+    int expandedFileCount(const QStringList& localPaths) const;
 
     void enqueueAll(const QStringList& localPaths,
                     const std::map<QString, quint64>& replaceHandleByName,
@@ -141,7 +134,9 @@ private:
                     bool targetIsRoot);
 
     // Empty if the lookup itself failed: that must not block the upload, it only
-    // means no replace/skip question gets asked.
+    // means no replace/skip question gets asked. Folders are left out -- MEGA lets
+    // a file and a folder share a name, so "replace" would delete something the
+    // user never pointed at.
     std::map<QString, quint64>
     collisionsFor(const QStringList& localPaths, quint64 target, bool targetIsRoot) const;
 

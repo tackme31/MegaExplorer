@@ -78,17 +78,6 @@ protected:
                          });
         QObject::connect(
             controller.get(),
-            &UploadController::folderDropRequiresConfirmation,
-            controller.get(),
-            [this](QStringList filePaths, int folderCount, quint64 handle, bool isRoot) {
-                ++folderAsks;
-                askedFilePaths = filePaths;
-                askedFolderCount = folderCount;
-                askedHandle = handle;
-                askedIsRoot = isRoot;
-            });
-        QObject::connect(
-            controller.get(),
             &UploadController::nameConflictRequiresConfirmation,
             controller.get(),
             [this](QStringList filePaths, QStringList conflictNames, quint64 handle, bool) {
@@ -124,6 +113,19 @@ protected:
         return dir.filePath(name);
     }
 
+    // A directory holding fileCount files, to exercise the recursive cap count.
+    QString makeTree(const QString& name, int fileCount) const
+    {
+        QString path = makeDir(name);
+        for (int i = 0; i < fileCount; ++i)
+        {
+            QFile file(QDir(path).filePath(QStringLiteral("f%1.txt").arg(i)));
+            EXPECT_TRUE(file.open(QIODevice::WriteOnly));
+            file.write("x");
+        }
+        return path;
+    }
+
     QTemporaryDir dir;
     std::shared_ptr<MockMegaClient> client;
     std::shared_ptr<UploadService> service;
@@ -139,13 +141,10 @@ protected:
     QString lastErrorContext;
     NotificationController::ErrorReason lastErrorReason = NotificationController::Unknown;
     QString lastErrorRaw;
-    int folderAsks = 0;
     int conflictAsks = 0;
     QStringList askedFilePaths;
     QStringList askedConflictNames;
-    int askedFolderCount = 0;
     quint64 askedHandle = 0;
-    bool askedIsRoot = false;
     int destinationChanges = 0;
     quint64 changedDestination = 0;
 };
@@ -160,40 +159,53 @@ TEST_F(UploadControllerTest, DropWithoutFoldersEnqueuesEveryFileDirectly)
         {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
 
     // Assert: both queued (only the first started), no question asked
-    EXPECT_EQ(folderAsks, 0);
     EXPECT_EQ(conflictAsks, 0);
     EXPECT_EQ(controller->pendingCount(), 2);
 }
 
-TEST_F(UploadControllerTest, DropContainingAFolderAsksBeforeEnqueueingAnything)
+TEST_F(UploadControllerTest, DroppedFolderIsEnqueuedWholeAlongsideLooseFiles)
 {
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    // One job per dropped item: the SDK walks the tree itself, so the two files
+    // inside "sub" never become jobs here.
+    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
 
     // Act
     controller->dropUrls(
-        {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeDir("sub"))}, 7, false);
-
-    // Assert: the destination rides along so it outlives the dialog
-    ASSERT_EQ(folderAsks, 1);
-    EXPECT_EQ(askedFilePaths.size(), 1);
-    EXPECT_EQ(askedFolderCount, 1);
-    EXPECT_EQ(askedHandle, 7u);
-    EXPECT_FALSE(askedIsRoot);
-    EXPECT_EQ(controller->pendingCount(), 0);
-}
-
-TEST_F(UploadControllerTest, DropOfFoldersOnlyReportsNothingToUploadInsteadOfAsking)
-{
-    // "Upload the remaining 0 file(s)?" would be a terrible question, so the
-    // empty check runs before the folder one.
-
-    // Act
-    controller->dropUrls({QUrl::fromLocalFile(makeDir("sub"))}, 7, false);
+        {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeTree("sub", 2))},
+        7,
+        false);
 
     // Assert
-    EXPECT_EQ(folderAsks, 0);
-    ASSERT_EQ(errorCalls, 1);
-    EXPECT_EQ(lastErrorContext, QStringLiteral("uploadNothingToUpload"));
+    EXPECT_EQ(errorCalls, 0);
+    EXPECT_EQ(controller->pendingCount(), 2);
+}
+
+TEST_F(UploadControllerTest, DropOfAFolderOnlyIsUploaded)
+{
+    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+
+    // Act
+    controller->dropUrls({QUrl::fromLocalFile(makeTree("sub", 3))}, 7, false);
+
+    // Assert
+    EXPECT_EQ(errorCalls, 0);
+    EXPECT_EQ(controller->pendingCount(), 1);
+}
+
+TEST_F(UploadControllerTest, AFolderIsNeverOfferedAsAReplacementTarget)
+{
+    // MEGA lets a file and a folder share a name, so a same-named file must not
+    // turn a folder upload into "replace that file".
+    EXPECT_CALL(*client, findChildFiles(7, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("sub", 55)})));
+    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+
+    // Act
+    controller->dropUrls({QUrl::fromLocalFile(makeTree("sub", 1))}, 7, false);
+
+    // Assert: no question, and the folder went straight to the queue
+    EXPECT_EQ(conflictAsks, 0);
+    EXPECT_EQ(controller->pendingCount(), 1);
 }
 
 TEST_F(UploadControllerTest, NonLocalUrlsAreIgnored)
@@ -243,20 +255,53 @@ TEST_F(UploadControllerTest, UploadOverTheCapIsRejectedWholesale)
     EXPECT_EQ(controller->pendingCount(), 0);
 }
 
-TEST_F(UploadControllerTest, DropOverTheCapIsRejectedBeforeTheFolderQuestion)
+TEST_F(UploadControllerTest, SkipKeepsAFolderWhoseNameOnlyCollidedAsAFile)
 {
-    // Otherwise the user answers "skip the folders?" only to be told the drop was
-    // too big anyway.
-    QList<QUrl> urls;
-    for (int i = 0; i <= UploadController::kMaxFilesPerUpload; ++i)
-        urls.append(QUrl::fromLocalFile(makeFile(QStringLiteral("f%1.txt").arg(i))));
-    urls.append(QUrl::fromLocalFile(makeDir(QStringLiteral("sub"))));
+    // The dropped folder and the dropped file share a leaf name, but only the
+    // file was ever part of the question -- skipping it must not drop the folder.
+    EXPECT_CALL(*client, findChildFiles(7, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("report", 55)})));
+    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+    QDir(dir.path()).mkdir(QStringLiteral("other"));
+    const QString file = makeFile(QStringLiteral("report"));
+    const QString folder = makeTree(QStringLiteral("other/report"), 1);
 
     // Act
-    controller->dropUrls(urls, 7, false);
+    controller->uploadSkippingExisting({file, folder}, 7, false);
+
+    // Assert: the folder went up, the file did not
+    EXPECT_EQ(controller->pendingCount(), 1);
+}
+
+TEST_F(UploadControllerTest, TheCapCountsWhatIsInsideADroppedFolder)
+{
+    // One dropped item, so a cap that counted items would let this through.
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+
+    // Act
+    controller->dropUrls(
+        {QUrl::fromLocalFile(makeTree("sub", UploadController::kMaxFilesPerUpload + 1))}, 7, false);
 
     // Assert
-    EXPECT_EQ(folderAsks, 0);
+    ASSERT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("uploadTooManyFiles"));
+    EXPECT_EQ(controller->pendingCount(), 0);
+}
+
+TEST_F(UploadControllerTest, LooseFilesAndAFolderShareOneCap)
+{
+    // The cap is on the operation, so a folder just under it plus one loose file
+    // is over -- neither half is over on its own.
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+
+    // Act
+    controller->dropUrls(
+        {QUrl::fromLocalFile(makeFile("a.txt")),
+         QUrl::fromLocalFile(makeTree("sub", UploadController::kMaxFilesPerUpload))},
+        7,
+        false);
+
+    // Assert
     ASSERT_EQ(errorCalls, 1);
     EXPECT_EQ(lastErrorContext, QStringLiteral("uploadTooManyFiles"));
     EXPECT_EQ(controller->pendingCount(), 0);

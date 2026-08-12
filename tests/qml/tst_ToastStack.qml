@@ -174,7 +174,7 @@ TestCase {
                     {
                         tag: "uploadNothingToUpload",
                         context: "uploadNothingToUpload",
-                        expected: "Nothing to upload — folders and non-file items can't be uploaded"
+                        expected: "Nothing to upload — only files and folders on this PC can be uploaded"
                     },
                     {
                         tag: "uploadReplaceFailed",
