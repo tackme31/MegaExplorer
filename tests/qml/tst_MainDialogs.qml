@@ -28,6 +28,11 @@ TestCase {
     }
 
     Component {
+        id: confirmUploadComponent
+        ConfirmUploadDialog {}
+    }
+
+    Component {
         id: missingPinComponent
         MissingPinDialog {}
     }
@@ -45,7 +50,10 @@ TestCase {
 
             signal nameConflictRequiresConfirmation(var filePaths, var conflictNames,
                                                     var destinationHandle, bool destinationIsRoot)
+            signal uploadRequiresConfirmation(var filePaths, int fileCount,
+                                              var destinationHandle, bool destinationIsRoot)
 
+            property int confirmedCount: 0
             property int uploadFilesCount: 0
             property int replacingCount: 0
             property int skippingCount: 0
@@ -53,6 +61,15 @@ TestCase {
 
             function uploadFiles(paths, handle, isRoot) {
                 fakeUploads.uploadFilesCount += 1;
+                fakeUploads.lastCall = {
+                    "paths": paths,
+                    "handle": handle,
+                    "isRoot": isRoot
+                };
+            }
+
+            function uploadConfirmed(paths, handle, isRoot) {
+                fakeUploads.confirmedCount += 1;
                 fakeUploads.lastCall = {
                     "paths": paths,
                     "handle": handle,
@@ -147,6 +164,57 @@ TestCase {
         compare(dialog.conflictNames, ["a.txt"]);
         compare(dialog.destinationHandle, 0);
         compare(dialog.destinationIsRoot, true);
+    }
+
+    // ---- ConfirmUploadDialog -------------------------------------------
+
+    function test_confirmUpload_signalOpensAndCarriesTheDestination() {
+        failOnWarning(/Connections/);
+        const uploads = makeUploads();
+        const dialog = makeDialog(confirmUploadComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.uploadRequiresConfirmation(["a.txt", "b.txt"], 7, 42, false);
+
+        tryCompare(dialog, "opened", true);
+        // The count is the recursive one, so it is carried rather than derived
+        // from filePaths -- a dropped folder makes the two differ.
+        compare(dialog.fileCount, 7);
+        compare(dialog.filePaths, ["a.txt", "b.txt"]);
+        compare(dialog.destinationHandle, 42);
+        compare(dialog.destinationIsRoot, false);
+    }
+
+    function test_confirmUpload_okConfirmsWithTheSamePathsAndDestination() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(confirmUploadComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.uploadRequiresConfirmation(["a.txt", "b.txt"], 2, 42, false);
+        dialog.accept();
+
+        compare(uploads.confirmedCount, 1);
+        compare(uploads.lastCall.paths, ["a.txt", "b.txt"]);
+        compare(uploads.lastCall.handle, 42);
+        compare(uploads.lastCall.isRoot, false);
+        tryCompare(dialog, "visible", false);
+    }
+
+    function test_confirmUpload_cancelUploadsNothing() {
+        // Cancel is the whole point of the dialog: it must not fall through to
+        // the upload the way a mis-wired reject role would.
+        const uploads = makeUploads();
+        const dialog = makeDialog(confirmUploadComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.uploadRequiresConfirmation(["a.txt", "b.txt"], 2, 42, false);
+        dialog.reject();
+
+        compare(uploads.confirmedCount, 0);
+        tryCompare(dialog, "visible", false);
     }
 
     // This is the destructive one: Replace overwrites what the user has, Skip

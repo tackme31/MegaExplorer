@@ -228,6 +228,10 @@ ApplicationWindow {
         quickAccess: quickAccessModel
     }
 
+    ConfirmUploadDialog {
+        uploads: uploadController
+    }
+
     NameConflictDialog {
         uploads: uploadController
     }

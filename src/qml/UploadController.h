@@ -19,10 +19,11 @@ class NotificationController;
 // because three of the five drop targets (folder tree, quick-access pins,
 // breadcrumb) belong to chrome shared by every tab, so they have no owning tab.
 //
-// Also owns the two decisions a drop can require before anything is enqueued, in
-// this order: skip-the-folders (dropUrls), then replace/skip same-named files
-// (uploadFiles). Both are asked through signals so QML can raise a dialog and
-// answer by calling the matching Q_INVOKABLE.
+// Also owns the decisions a drop can require before anything is enqueued, in this
+// order: the file cap (an outright refusal, not a question), then "upload N
+// files?", then replace/skip same-named files. Each question is asked through a
+// signal so QML can raise a dialog and answer by calling the matching
+// Q_INVOKABLE.
 class UploadController : public QObject
 {
     Q_OBJECT
@@ -64,9 +65,16 @@ public:
     // the rest on, or reports that nothing was uploadable.
     Q_INVOKABLE void dropUrls(const QList<QUrl>& urls, quint64 target, bool targetIsRoot);
 
-    // The single enqueue path: applies the file cap, then the same-name check.
-    // localPaths may name folders, which go to the SDK whole and upload recursively.
+    // The single enqueue path: applies the file cap, then asks to confirm a
+    // multi-file upload, then the same-name check. localPaths may name folders,
+    // which go to the SDK whole and upload recursively.
     Q_INVOKABLE void uploadFiles(const QStringList& localPaths, quint64 target, bool targetIsRoot);
+
+    // "Yes" to uploadRequiresConfirmation. Re-applies the cap rather than trusting
+    // the count that opened the dialog, for the same reason the two below re-derive
+    // their collision set.
+    Q_INVOKABLE void
+    uploadConfirmed(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
     // Both re-derive the collision set rather than trust handles round-tripped
     // through QML, which also picks up destination changes made while the dialog was
@@ -85,6 +93,16 @@ signals:
 
     // Membership only -- not emitted per file, since nothing binds to the count.
     void activeDestinationsChanged();
+
+    // More than one file is about to go up. fileCount is the recursive count -- a
+    // dropped folder is worth what is inside it -- so it can exceed filePaths'
+    // length. Never emitted once the cap has already rejected the drop: that is a
+    // refusal, and stacking a question on top of it would ask about an upload that
+    // is not going to happen either way.
+    void uploadRequiresConfirmation(QStringList filePaths,
+                                    int fileCount,
+                                    quint64 destinationHandle,
+                                    bool destinationIsRoot);
 
     // Some of filePaths name files that already exist in the destination.
     // filePaths is the *whole* set, conflicting or not -- the answer handlers
@@ -127,6 +145,10 @@ private:
     // folder as everything inside it. Stops counting once past the cap, so a
     // 200k-file tree costs the same as a 101-file one.
     int expandedFileCount(const QStringList& localPaths) const;
+
+    // The half of uploadFiles() after the two gates: enqueue, or ask about
+    // same-named files first. Shared with uploadConfirmed().
+    void askAboutConflicts(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
     void enqueueAll(const QStringList& localPaths,
                     const std::map<QString, quint64>& replaceHandleByName,
