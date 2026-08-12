@@ -207,6 +207,61 @@ TEST_F(UploadControllerTest, NonLocalUrlsAreIgnored)
     EXPECT_EQ(controller->pendingCount(), 0);
 }
 
+TEST_F(UploadControllerTest, UploadOfExactlyTheCapIsStillAccepted)
+{
+    // The paths never have to exist: the count is checked before collisionsFor,
+    // and upload() is mocked out.
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(1);
+    QStringList paths;
+    for (int i = 0; i < UploadController::kMaxFilesPerUpload; ++i)
+        paths.append(QStringLiteral("C:\\tmp\\f%1.txt").arg(i));
+
+    // Act
+    controller->uploadFiles(paths, 7, false);
+
+    // Assert
+    EXPECT_EQ(errorCalls, 0);
+    EXPECT_EQ(controller->pendingCount(), UploadController::kMaxFilesPerUpload);
+}
+
+TEST_F(UploadControllerTest, UploadOverTheCapIsRejectedWholesale)
+{
+    // Rejecting the whole operation, not the tail past the cap: a silently
+    // truncated upload is worse than none.
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    QStringList paths;
+    for (int i = 0; i <= UploadController::kMaxFilesPerUpload; ++i)
+        paths.append(QStringLiteral("C:\\tmp\\f%1.txt").arg(i));
+
+    // Act
+    controller->uploadFiles(paths, 7, false);
+
+    // Assert
+    ASSERT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("uploadTooManyFiles"));
+    EXPECT_EQ(conflictAsks, 0);
+    EXPECT_EQ(controller->pendingCount(), 0);
+}
+
+TEST_F(UploadControllerTest, DropOverTheCapIsRejectedBeforeTheFolderQuestion)
+{
+    // Otherwise the user answers "skip the folders?" only to be told the drop was
+    // too big anyway.
+    QList<QUrl> urls;
+    for (int i = 0; i <= UploadController::kMaxFilesPerUpload; ++i)
+        urls.append(QUrl::fromLocalFile(makeFile(QStringLiteral("f%1.txt").arg(i))));
+    urls.append(QUrl::fromLocalFile(makeDir(QStringLiteral("sub"))));
+
+    // Act
+    controller->dropUrls(urls, 7, false);
+
+    // Assert
+    EXPECT_EQ(folderAsks, 0);
+    ASSERT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("uploadTooManyFiles"));
+    EXPECT_EQ(controller->pendingCount(), 0);
+}
+
 TEST_F(UploadControllerTest, EnqueuedPathsUseNativeSeparators)
 {
     // The path crosses into the SDK's own LocalPath, which splits on '\' on

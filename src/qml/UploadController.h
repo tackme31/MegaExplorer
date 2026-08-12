@@ -30,8 +30,14 @@ class UploadController : public QObject
     Q_PROPERTY(QString activeFileName READ activeFileName NOTIFY uploadActiveChanged)
     Q_PROPERTY(qreal activeProgress READ activeProgress NOTIFY uploadActiveChanged)
     Q_PROPERTY(int pendingCount READ pendingCount NOTIFY uploadActiveChanged)
+    Q_PROPERTY(int maxFilesPerUpload READ maxFilesPerUpload CONSTANT)
 
 public:
+    // One drop can name far more files than a person means to send, and each one
+    // becomes a queued job here plus a transfer in the SDK. The cap is on the whole
+    // operation rather than per folder, so plain multi-select is bounded too.
+    static constexpr int kMaxFilesPerUpload = 100;
+
     explicit UploadController(std::shared_ptr<UploadService> service,
                               std::shared_ptr<FileOperationService> fileOperations,
                               NotificationController* notifications,
@@ -44,6 +50,10 @@ public:
 
     // Whole queue length, active job included.
     int pendingCount() const;
+
+    // Read by ToastStack so the rejection message names the same number this
+    // enforces.
+    int maxFilesPerUpload() const;
 
     // What a hovered drop target paints its feedback from, so it is synchronous all
     // the way down to IMegaClient::checkUpload.
@@ -119,6 +129,11 @@ private:
         // spinner has to go up when the work is *enqueued*.
         std::map<Destination, int> pendingByDestination;
     };
+
+    // Reports the rejection and returns true when count exceeds the cap. Called
+    // from dropUrls as well as uploadFiles so a drop that is over the cap is
+    // refused before the folder-skip question, not after it.
+    bool rejectIfTooManyFiles(int count) const;
 
     void enqueueAll(const QStringList& localPaths,
                     const std::map<QString, quint64>& replaceHandleByName,

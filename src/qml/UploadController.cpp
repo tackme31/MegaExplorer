@@ -114,6 +114,11 @@ int UploadController::pendingCount() const
     return static_cast<int>(mService->queueLength());
 }
 
+int UploadController::maxFilesPerUpload() const
+{
+    return kMaxFilesPerUpload;
+}
+
 bool UploadController::isUploadingTo(quint64 handle, bool isRoot) const
 {
     return mBatch.pendingByDestination.find(Destination{handle, isRoot}) !=
@@ -177,6 +182,9 @@ void UploadController::dropUrls(const QList<QUrl>& urls, quint64 target, bool ta
         return;
     }
 
+    if (rejectIfTooManyFiles(static_cast<int>(files.size())))
+        return;
+
     if (folderCount > 0)
     {
         emit folderDropRequiresConfirmation(files, folderCount, target, targetIsRoot);
@@ -186,9 +194,20 @@ void UploadController::dropUrls(const QList<QUrl>& urls, quint64 target, bool ta
     uploadFiles(files, target, targetIsRoot);
 }
 
+bool UploadController::rejectIfTooManyFiles(int count) const
+{
+    if (count <= kMaxFilesPerUpload)
+        return false;
+    mNotifications->notifyError(QStringLiteral("uploadTooManyFiles"));
+    return true;
+}
+
 void UploadController::uploadFiles(const QStringList& localPaths, quint64 target, bool targetIsRoot)
 {
     if (localPaths.isEmpty())
+        return;
+
+    if (rejectIfTooManyFiles(static_cast<int>(localPaths.size())))
         return;
 
     std::map<QString, quint64> hits = collisionsFor(localPaths, target, targetIsRoot);

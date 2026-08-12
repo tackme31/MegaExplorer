@@ -45,6 +45,10 @@ Item {
 
     property int nextSeq: 0
 
+    // Bound to UploadController.maxFilesPerUpload in Main.qml, so the sentence
+    // below can name the cap without a second copy of the number living here.
+    property int maxFilesPerUpload: 0
+
     ListModel {
         id: toastModel
     }
@@ -311,6 +315,12 @@ Item {
             break;
         case "uploadNothingToUpload":
             text = qsTr("Nothing to upload — folders and non-file items can't be uploaded");
+            break;
+            // Fixed sentence: nothing reached the SDK, the count was rejected
+            // here. The cap is named so the user knows how much to trim.
+        case "uploadTooManyFiles":
+            text = qsTr("Too many files — upload at most %1 at a time").arg(
+                        root.maxFilesPerUpload);
             break;
             // The uploads themselves succeeded; what needs saying is that the files
             // they were meant to replace are still there.
