@@ -232,13 +232,19 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   `SendInput` goes to the secure desktop and never reaches the app.
 - `scripts/ntfy-send.sh` — how the loop reaches a phone. Claude Code's built-in push reports success
   and mostly doesn't deliver, so it isn't used. Two callers: Claude, at the end of a cycle, and
-  `scripts/away_notify_hook.sh` — a `Notification` hook that pushes a waiting permission prompt,
-  because Claude is blocked at that point and cannot notify anyone itself. It only fires when
-  **nobody is at the desk**: a `UserPromptSubmit` hook stamps the last time you typed, and anything
-  within 10 minutes of that is treated as "you are looking at the terminal" and stays silent.
-  Without that gate it pushed on every ordinary approval — plan mode, a first-time command — which
-  is noise you are already reading on screen. Both hooks live in the gitignored
-  `.claude/settings.local.json`, so a fresh clone has to re-add them.
+  `scripts/away_notify_hook.sh` — a `Notification` hook that pushes a prompt waiting on a human
+  answer, because Claude is blocked at that point and cannot notify anyone itself. **Two gates, and
+  they live in different places.** The settings entry carries a `matcher` naming the types that
+  actually need answering (`permission_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog`)
+  — `Notification` is not the permission-only event its name suggests, it also fires for
+  `idle_prompt`, `agent_completed` and `auth_success`, and without the matcher a backgrounded
+  subagent finishing pushed an "awaiting approval" notice with nothing waiting on approval. The
+  script holds the other gate, which no matcher can express: it only pushes when **nobody is at the
+  desk**, since a `UserPromptSubmit` hook stamps the last time you typed and anything within 10
+  minutes of that is treated as "you are looking at the terminal". Without *that* gate it pushed on
+  every ordinary approval — plan mode, a first-time command — which is noise you are already reading
+  on screen. Both hooks live in the gitignored `.claude/settings.local.json`, so a fresh clone has to
+  re-add them, matcher included.
 
 Secrets: `MEGAEXPLORER_TEST_ACCOUNT` and `NTFY_TOPIC` live in the gitignored
 `.claude/settings.local.json` `env` block; `MEGAEXPLORER_TEST_PASSWORD` is a Windows user

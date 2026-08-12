@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
-# UserPromptSubmit + Notification hooks: push a waiting permission prompt to the
-# phone, but only when nobody is at the desk to answer it. Wired up in
+# UserPromptSubmit + Notification hooks: push a prompt that is waiting on a human
+# answer to the phone, but only when nobody is at the desk. Wired up in
 # .claude/settings.local.json; one script for both events, dispatched on
 # hook_event_name below.
 #
-# Why an idle test rather than a matcher on the notification type: the prompts
-# worth a push are not a distinguishable kind, they are the ones nobody is
-# watching. The loop runs in auto mode, so almost nothing prompts during a
-# cycle -- but a permission dialog has no expiry, so the rare one that does
-# appear parks the cycle until someone comes back, and the next cron fire never
-# lands either. Meanwhile the same event fires for every ordinary interactive
-# approval (plan mode, a first-time command), which is pure noise while you are
-# sitting there reading them.
+# Two gates, and only the second one is in this file. The settings entry carries
+# a matcher naming the notification types that need a human answer
+# (permission_prompt, agent_needs_input and the two elicitation dialogs), because
+# Notification is not the permission-only event it reads as: it also fires for
+# idle_prompt, agent_completed and auth_success, none of which anyone has to
+# answer. Without that matcher a backgrounded subagent finishing pushed an
+# "awaiting approval" notice to the phone with nothing waiting on approval.
+#
+# This file holds the other gate, which no matcher can express: the loop runs in
+# auto mode, so almost nothing prompts during a cycle -- but a permission dialog
+# has no expiry, so the rare one that does appear parks the cycle until someone
+# comes back, and the next cron fire never lands either. Meanwhile the same
+# types fire for every ordinary interactive approval (plan mode, a first-time
+# command), which is pure noise while you are sitting there reading them. Hence
+# an idle test: what makes a prompt worth a push is that nobody is watching it.
 #
 # UserPromptSubmit stamps the last time the human actually spoke. Within the
 # window below they are present and the terminal is in front of them; past it,
