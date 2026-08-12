@@ -285,6 +285,22 @@ void MegaSdkClient::getRootChildren(SortOrder order,
                  std::move(onDone));
 }
 
+void MegaSdkClient::getRubbishChildren(SortOrder order,
+                                       std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    // Not resolveNode(): its isRoot branch is hardcoded to the Cloud Drive root,
+    // and the bin is a third root alongside it and the Vault.
+    listChildren(std::unique_ptr<mega::MegaNode>(mApi->getRubbishNode()),
+                 "No rubbish node (not logged in / nodes not fetched)",
+                 order,
+                 std::move(onDone));
+}
+
 void MegaSdkClient::getChildren(std::uint64_t handle,
                                 SortOrder order,
                                 std::function<void(Result<std::vector<FileEntry>>)> onDone)
@@ -531,6 +547,20 @@ void MegaSdkClient::getPath(std::uint64_t handle,
     }
 
     std::reverse(segments.begin(), segments.end());
+    // The walk stops at whichever root the node lives under, and the Rubbish bin is
+    // a root alongside the Cloud Drive. Without recording which one it was, the two
+    // collapse into the same "isRoot" segment below and a binned folder reports
+    // itself as living in the Drive.
+    std::unique_ptr<mega::MegaNode> rubbish(mApi->getRubbishNode());
+    if (rubbish && segments.front().handle == static_cast<std::uint64_t>(rubbish->getHandle()))
+    {
+        // Every segment, not just the top one: FolderNavigationController reads the
+        // *last* segment's kind to decide what the screen allows, so tagging only
+        // the root would leave a folder inside the bin claiming to be a Cloud Drive
+        // folder -- and offering "Move to Rubbish" on already-binned nodes.
+        for (PathSegment& segment: segments)
+            segment.kind = ViewKind::Rubbish;
+    }
     segments.front().isRoot = true;
     segments.front().handle = 0;
 

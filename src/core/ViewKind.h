@@ -6,4 +6,5 @@ enum class ViewKind
 {
     CloudDrive,
     Favourites,
+    Rubbish,
 };

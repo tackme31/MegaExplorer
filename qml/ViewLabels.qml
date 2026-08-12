@@ -15,6 +15,10 @@ QtObject {
     function label(kind, isRoot, name) {
         if (kind === ViewKind.Favourites)
             return qsTr("Favourites");
+        // Only the bin's own top is named here; a folder inside it keeps its own
+        // name, which is why this is gated on isRoot and Favourites is not.
+        if (kind === ViewKind.Rubbish && isRoot)
+            return qsTr("Rubbish bin");
         if (isRoot)
             return qsTr("Cloud Drive");
         return name;
@@ -25,6 +29,8 @@ QtObject {
     function glyph(kind, isRoot) {
         if (kind === ViewKind.Favourites)
             return Theme.glyph.favouriteOutline;
+        if (kind === ViewKind.Rubbish && isRoot)
+            return Theme.glyph.menu.moveToRubbish;
         if (isRoot)
             return Theme.glyph.cloud;
         return "";

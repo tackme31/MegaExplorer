@@ -315,7 +315,7 @@ TEST(FolderNavigationServiceTest, NavigateToRootFromFolderUsesGetRootChildrenAnd
 
     // Act
     Captured navigateCaptured;
-    service.navigateTo(0, true, SortOrder{}, onDoneInto(navigateCaptured));
+    service.navigateTo(0, true, ViewKind::CloudDrive, SortOrder{}, onDoneInto(navigateCaptured));
 
     // Assert
     ASSERT_TRUE(navigateCaptured.doneCalled);
@@ -345,7 +345,7 @@ TEST(FolderNavigationServiceTest, NavigateToFolderPushesHistoryLikeOpenFolder)
     Captured captured;
 
     // Act
-    service.navigateTo(1, false, SortOrder{}, onDoneInto(captured));
+    service.navigateTo(1, false, ViewKind::CloudDrive, SortOrder{}, onDoneInto(captured));
 
     // Assert
     ASSERT_TRUE(captured.doneCalled);
@@ -367,7 +367,7 @@ TEST(FolderNavigationServiceTest, NavigateToFailureLeavesStateUnchanged)
     Captured captured;
 
     // Act
-    service.navigateTo(1, false, SortOrder{}, onDoneInto(captured));
+    service.navigateTo(1, false, ViewKind::CloudDrive, SortOrder{}, onDoneInto(captured));
 
     // Assert: runAndCommit only commits on success, so a failed navigateTo
     // must leave canGoBack() (and, transitively, mCurrent) untouched.
@@ -600,6 +600,145 @@ TEST(FolderNavigationServiceTest, OpenFavouritesWhileAlreadyThereRefetchesWithou
     ASSERT_TRUE(back.doneResult.success);
     EXPECT_EQ(service.currentLocation().kind, ViewKind::CloudDrive);
     EXPECT_FALSE(service.canGoBack());
+}
+
+// --- Rubbish bin, a location that IS a folder tree ---------------------------
+
+TEST(FolderNavigationServiceTest, OpenRubbishPushesTheCurrentLocationAndSwitchesKind)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> binned{{"gone.txt", 5, 1, false, 0}};
+
+    EXPECT_CALL(*mockClient, getRubbishChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::ok(binned)));
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    service.openRubbish(SortOrder{}, onDoneInto(captured));
+
+    ASSERT_TRUE(captured.doneCalled);
+    EXPECT_TRUE(captured.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::Rubbish);
+    // isRoot means the bin's own top here, which is what tells it from a folder
+    // inside the bin.
+    EXPECT_TRUE(service.currentLocation().isRoot);
+    EXPECT_TRUE(service.canGoBack());
+}
+
+TEST(FolderNavigationServiceTest, OpenRubbishWhileAtTheBinTopRefetchesWithoutPushing)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, getRubbishChildren(::testing::_, ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<1>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured first, second;
+    service.openRubbish(SortOrder{}, onDoneInto(first));
+    ASSERT_TRUE(first.doneResult.success);
+
+    service.openRubbish(SortOrder{}, onDoneInto(second));
+
+    ASSERT_TRUE(second.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::Rubbish);
+
+    // One Back leaves, so the second click pushed nothing.
+    Captured back;
+    service.goBack(SortOrder{}, onDoneInto(back));
+    ASSERT_TRUE(back.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::CloudDrive);
+    EXPECT_FALSE(service.canGoBack());
+}
+
+TEST(FolderNavigationServiceTest, OpeningAFolderFromInsideTheBinStaysInTheBin)
+{
+    // What separates the bin from the favourites listing: its contents are real
+    // nodes, so opening one must not silently return the tab to the Cloud Drive --
+    // the kind is the only thing gating what may be done to a binned node.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> binned{{"folder", 7, 0, true, 0}};
+
+    EXPECT_CALL(*mockClient, getRubbishChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::ok(binned)));
+    EXPECT_CALL(*mockClient, getChildren(7, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured opened, entered;
+    service.openRubbish(SortOrder{}, onDoneInto(opened));
+    ASSERT_TRUE(opened.doneResult.success);
+
+    service.openFolder(7, SortOrder{}, onDoneInto(entered));
+
+    ASSERT_TRUE(entered.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::Rubbish);
+    EXPECT_FALSE(service.currentLocation().isRoot);
+    EXPECT_EQ(service.currentLocation().handle, 7u);
+}
+
+TEST(FolderNavigationServiceTest, NavigatingUpOutOfABinnedFolderLandsOnTheBinTop)
+{
+    // isRoot alone used to mean "the Cloud Drive root", so "up" from a folder
+    // directly under the bin fetched the Drive instead -- silently leaving the
+    // screen whose kind is the only thing withholding destructive actions.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> binned{{"folder", 7, 0, true, 0}};
+
+    EXPECT_CALL(*mockClient, getRubbishChildren(::testing::_, ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::ok(binned)));
+    EXPECT_CALL(*mockClient, getChildren(7, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    // The bug this guards: the Cloud Drive root must not be read at all.
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_)).Times(0);
+
+    FolderNavigationService service(mockClient);
+    Captured opened, entered, up;
+    service.openRubbish(SortOrder{}, onDoneInto(opened));
+    service.openFolder(7, SortOrder{}, onDoneInto(entered));
+    ASSERT_TRUE(entered.doneResult.success);
+
+    // What goUp() does with the breadcrumb's bin-top segment.
+    service.navigateTo(0, true, ViewKind::Rubbish, SortOrder{}, onDoneInto(up));
+
+    ASSERT_TRUE(up.doneCalled);
+    EXPECT_TRUE(up.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::Rubbish);
+    EXPECT_TRUE(service.currentLocation().isRoot);
+}
+
+TEST(FolderNavigationServiceTest, RefreshingInsideTheBinReadsTheFolderNotTheBinTop)
+{
+    // The bin top and a folder inside it are both kind Rubbish, so refreshCurrent
+    // has to split them on isRoot or a refresh would jump back to the top.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> binned{{"folder", 7, 0, true, 0}};
+
+    EXPECT_CALL(*mockClient, getRubbishChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(Result<std::vector<FileEntry>>::ok(binned)));
+    EXPECT_CALL(*mockClient, getChildren(7, ::testing::_, ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured opened, entered, refreshed;
+    service.openRubbish(SortOrder{}, onDoneInto(opened));
+    service.openFolder(7, SortOrder{}, onDoneInto(entered));
+    ASSERT_TRUE(entered.doneResult.success);
+
+    service.refreshCurrent(SortOrder{}, onDoneInto(refreshed));
+
+    ASSERT_TRUE(refreshed.doneCalled);
+    EXPECT_TRUE(refreshed.doneResult.success);
 }
 
 TEST(FolderNavigationServiceTest, GoBackReturnsToTheFavouritesListingAFolderWasOpenedFrom)

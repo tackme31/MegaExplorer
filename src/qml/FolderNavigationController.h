@@ -105,11 +105,19 @@ public:
 
     Q_INVOKABLE void navigateTo(quint64 handle, bool isRoot);
 
+    // navigateTo with the target screen stated. Not Q_INVOKABLE: the only caller
+    // that needs it is goUp(), which reads the kind off the breadcrumb segment.
+    void navigateToKind(quint64 handle, bool isRoot, ViewKind kind);
+
     // Switches this tab to the favourites listing; the side panel's Favourites row
     // is the caller. Safe to call while already there -- the service re-fetches
     // without pushing, so repeated clicks don't stack the same screen on the back
     // stack.
     Q_INVOKABLE void openFavourites();
+
+    // Same for the Rubbish bin. "Already there" means the bin's own top level only,
+    // so this navigates rather than re-fetches when a folder inside it is open.
+    Q_INVOKABLE void openRubbish();
 
     // Whether this tab's screen allows the action with that stable ID right now, for
     // the keyboard shortcuts that stand in for a menu row. The menu itself doesn't

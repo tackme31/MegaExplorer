@@ -87,6 +87,9 @@ public:
     // listing is a query, not a folder.
     Q_INVOKABLE void addFavouritesTab();
 
+    // Same again for the Rubbish bin.
+    Q_INVOKABLE void addRubbishTab();
+
     // Clamps currentIndex so it keeps pointing at the same tab, or a neighbour if
     // the active one was closed. Emits lastTabClosed() instead of closing the final
     // tab -- Main.qml closes the window, this class doesn't own it.
