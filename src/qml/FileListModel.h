@@ -62,6 +62,12 @@ public:
     // parameter would let a forgotten call site read as Cloud Drive.
     void setViewKind(ViewKind kind);
 
+    // Whether the rows on screen may live outside the location the view is at --
+    // MenuContext::crossFolderListing. Pushed in like setViewKind above, and for the
+    // same reason; the owner is the only thing that can see both the screen and the
+    // search box.
+    void setCrossFolderListing(bool crossFolder);
+
     // Updates one role for one row, rather than resetting the model, so the grid
     // doesn't relayout when a thumbnail arrives. No-op if the row is gone.
     void setThumbnailPath(quint64 handle, QString path);
@@ -178,6 +184,7 @@ private:
         int firstGridRow, int lastGridRow, int columns, int firstColumn, int lastColumn);
 
     ViewKind mViewKind = ViewKind::CloudDrive;
+    bool mCrossFolderListing = false;
     std::vector<FileEntry> mEntries;
     // Parallel to mEntries. Kept out of FileEntry so that stays Qt-free SDK domain
     // data, not a session-local GUI cache.

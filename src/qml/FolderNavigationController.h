@@ -105,9 +105,19 @@ public:
 
     Q_INVOKABLE void navigateTo(quint64 handle, bool isRoot);
 
-    // navigateTo with the target screen stated. Not Q_INVOKABLE: the only caller
-    // that needs it is goUp(), which reads the kind off the breadcrumb segment.
-    void navigateToKind(quint64 handle, bool isRoot, ViewKind kind);
+    // navigateTo with the target screen stated. Not Q_INVOKABLE: its callers are
+    // goUp(), which reads the kind off the breadcrumb segment, and
+    // goToContainingFolder(), which reads it off the resolved path. revealName
+    // selects that row once the listing lands, as in refreshVisibleListing.
+    void navigateToKind(quint64 handle,
+                        bool isRoot,
+                        ViewKind kind,
+                        const QString& revealName = QString());
+
+    // Navigates to the folder the named node lives in and selects it there. The entry
+    // point for the "Go to folder" menu row, which only a cross-folder listing (a
+    // search result, the favourites listing) offers -- see MenuAction::GoToFolder.
+    Q_INVOKABLE void goToContainingFolder(quint64 handle, QString name);
 
     // Switches this tab to the favourites listing; the side panel's Favourites row
     // is the caller. Safe to call while already there -- the service re-fetches
@@ -246,6 +256,10 @@ private:
     // resolve availableActions. Called from the only two places mBreadcrumb changes.
     void publishViewKind();
 
+    // The other half of what availableActions resolves against. Separate from
+    // publishViewKind because the search box moves it without the location changing.
+    void publishCrossFolderListing();
+
 
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<SearchService> mSearchService;
@@ -255,6 +269,10 @@ private:
     std::vector<FileEntry> mLastFolderEntries; // restored when search is cleared
     SortOrder mSortOrder{SortKey::Name, true};
     std::string mLastSearchQuery; // empty == not currently searching
+    // Whether the rows in the model are search hits rather than one folder's
+    // children. Not derivable from mLastSearchQuery: opening a folder from the
+    // results replaces the rows but deliberately leaves the query alone.
+    bool mListingFromSearch = false;
     // QML's Component.onCompleted restores the persisted sort before login has ever
     // run; this guards that startup setSortOrder() from re-fetching and erroring.
     bool mHasLoadedOnce = false;

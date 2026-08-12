@@ -167,6 +167,13 @@ QtObject {
                                             "label": ctx => qsTr("Empty Rubbish bin"),
                                             "trigger": ctx => ctx.requestEmptyRubbish()
                                         },
+                                        // ctx: handle, name, navController
+                                        "goToFolder": {
+                                            "icon": ctx => Theme.glyph.menu.goToFolder,
+                                            "label": ctx => qsTr("Go to folder"),
+                                            "trigger": ctx => ctx.navController.goToContainingFolder(
+                                                                  ctx.handle, ctx.name)
+                                        },
                                         // ctx: navController
                                         "selectAll": {
                                             "icon": ctx => Theme.glyph.menu.selectAll,

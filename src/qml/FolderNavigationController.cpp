@@ -167,17 +167,51 @@ void FolderNavigationController::navigateTo(quint64 handle, bool isRoot)
     navigateToKind(handle, isRoot, ViewKind::CloudDrive);
 }
 
-void FolderNavigationController::navigateToKind(quint64 handle, bool isRoot, ViewKind kind)
+void FolderNavigationController::navigateToKind(quint64 handle,
+                                                bool isRoot,
+                                                ViewKind kind,
+                                                const QString& revealName)
 {
     mService->navigateTo(static_cast<std::uint64_t>(handle),
                          isRoot,
                          kind,
                          mSortOrder,
-                         [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
-                             invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
-                                 applyResult(std::move(result));
-                             });
+                         [this, self = shared_from_this(), revealName](
+                             Result<std::vector<FileEntry>> result) {
+                             invokeOnGuiThread(this,
+                                               [this, result = std::move(result),
+                                                revealName]() mutable {
+                                                   applyResult(std::move(result), revealName);
+                                               });
                          });
+}
+
+void FolderNavigationController::goToContainingFolder(quint64 handle, QString name)
+{
+    mService->resolvePathOf(
+        static_cast<std::uint64_t>(handle),
+        [this, self = shared_from_this(), name](Result<std::vector<PathSegment>> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result), name]() mutable {
+                if (!result.success)
+                {
+                    qCWarning(lcNavigation) << "containing folder lookup failed:"
+                                            << QString::fromStdString(result.errorMessage)
+                                            << "code=" << result.errorCode;
+                    mNotifications->notifyError(QStringLiteral("navigation"),
+                                                result.errorCode,
+                                                QString::fromStdString(result.errorMessage));
+                    return;
+                }
+                // Root-first and ending with the node itself, so the parent is the
+                // one before the end. A chain of one is the node being a root, which
+                // no listing can show.
+                const std::vector<PathSegment>& segments = result.value();
+                if (segments.size() < 2)
+                    return;
+                const PathSegment& parent = segments[segments.size() - 2];
+                navigateToKind(parent.handle, parent.isRoot, parent.kind, name);
+            });
+        });
 }
 
 void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> result,
@@ -195,7 +229,12 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
     }
     mHasLoadedOnce = true;
     mLastFolderEntries = result.value();
+    mListingFromSearch = false;
     mFileListModel->setEntries(std::move(result.value()));
+    // Directly, not just via the refreshBreadcrumb -> publishViewKind path below:
+    // that one runs only when the resolved path *changed*, and going to the folder a
+    // search hit already lives in leaves the breadcrumb exactly as it was.
+    publishCrossFolderListing();
     if (!revealName.isEmpty())
     {
         // Only against the listing this very request produced -- see
@@ -253,6 +292,18 @@ void FolderNavigationController::refreshBreadcrumb()
 void FolderNavigationController::publishViewKind()
 {
     mFileListModel->setViewKind(static_cast<ViewKind>(viewKind()));
+    publishCrossFolderListing();
+}
+
+void FolderNavigationController::publishCrossFolderListing()
+{
+    // Keyed off what the model actually holds, not off searchActive(): a query stays
+    // latched after the user opens a folder from its results (a documented property
+    // of search() -- navigation state is left alone), so asking the box would keep
+    // claiming "these rows come from elsewhere" about a plain folder listing.
+    mFileListModel->setCrossFolderListing(mListingFromSearch ||
+                                          static_cast<ViewKind>(viewKind()) ==
+                                              ViewKind::Favourites);
 }
 
 bool FolderNavigationController::canPerform(const QString& actionId) const
@@ -262,8 +313,10 @@ bool FolderNavigationController::canPerform(const QString& actionId) const
 
     // A shortcut stands in for a row of one of the two menus a file view can open --
     // the selection's and the background's -- so either offering it is enough.
-    const MenuContext selectionContext{
-        kind, MenuSite::FileSelection, mFileListModel->selectionSummary()};
+    const MenuContext selectionContext{kind,
+                                       MenuSite::FileSelection,
+                                       mFileListModel->selectionSummary(),
+                                       searchActive() || kind == ViewKind::Favourites};
     return menuActionAllowed(id, selectionContext) ||
            menuActionAllowed(id, folderTargetContext(MenuSite::FolderBackground, kind));
 }
@@ -277,7 +330,9 @@ void FolderNavigationController::search(QString query)
 
     if (query.isEmpty())
     {
+        mListingFromSearch = false;
         mFileListModel->setEntries(mLastFolderEntries);
+        publishCrossFolderListing();
         return;
     }
 
@@ -309,7 +364,11 @@ void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>
                                     QString::fromStdString(result.errorMessage));
         return;
     }
+    mListingFromSearch = true;
     mFileListModel->setEntries(std::move(result.value()));
+    // No breadcrumb change to ride in on, unlike applyResult: searching does not move
+    // the tab, so this is the only place the flag can be published from.
+    publishCrossFolderListing();
 }
 
 void FolderNavigationController::refreshCurrentFolder(QString revealName)
@@ -517,6 +576,7 @@ void FolderNavigationController::reset()
     mLastFolderEntries.clear();
     const bool wasSearching = searchActive();
     mLastSearchQuery.clear();
+    mListingFromSearch = false;
     mHasLoadedOnce = false;
     mStale = false;
     mBreadcrumb.clear();

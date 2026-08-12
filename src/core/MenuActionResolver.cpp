@@ -56,6 +56,9 @@ bool menuActionApplies(const MenuActionSpec& spec, const MenuContext& ctx)
     if (ctx.selection.total() == 0)
         return false;
 
+    if (spec.crossFolderOnly && !ctx.crossFolderListing)
+        return false;
+
     return targetMatches(spec.target, ctx.selection) && arityMatches(spec.arity, ctx.selection);
 }
 
@@ -140,6 +143,14 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::Rubbish},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
+        // Rubbish is left out on purpose: the bin is flat and its rows' original
+        // parents are gone, which is what Restore exists to answer.
+        {MenuAction::GoToFolder,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites},
+         ActionTarget::Any,
+         ActionArity::SingleOnly,
+         true},
         {MenuAction::SelectAll,
          {MenuSite::FolderBackground},
          {ViewKind::CloudDrive, ViewKind::Favourites},
@@ -217,6 +228,8 @@ const char* menuActionId(MenuAction action)
             return "deletePermanently";
         case MenuAction::EmptyRubbish:
             return "emptyRubbish";
+        case MenuAction::GoToFolder:
+            return "goToFolder";
         case MenuAction::SelectAll:
             return "selectAll";
         case MenuAction::Refresh:
