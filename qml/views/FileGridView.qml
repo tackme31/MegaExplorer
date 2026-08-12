@@ -327,6 +327,7 @@ GridView {
                         anchors.centerIn: parent
                         visible: !gridDelegateItem.hasImage
                         isFolder: gridDelegateItem.isFolder
+                        fileName: gridDelegateItem.name
                         size: Theme.iconSize.lg
                     }
 

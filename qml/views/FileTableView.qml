@@ -601,6 +601,7 @@ ColumnLayout {
                     // the date and size columns keep their full width.
                     visible: cell.column === 0
                     isFolder: cell.isFolder
+                    fileName: cell.name
                 }
 
                 Label {
