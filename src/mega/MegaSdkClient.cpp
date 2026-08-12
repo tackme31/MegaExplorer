@@ -672,6 +672,37 @@ void MegaSdkClient::moveToRubbish(std::uint64_t handle, std::function<void(Resul
     mApi->moveNode(node.get(), rubbish.get(), new megasdk::SimpleResultListener(std::move(onDone)));
 }
 
+void MegaSdkClient::removeNode(std::uint64_t handle, std::function<void(Result<void>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<void>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / node deleted)",
+            MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    mApi->remove(node.get(), new megasdk::SimpleResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::cleanRubbishBin(std::function<void(Result<void>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+
+    // Succeeds on an already-empty bin, so the caller needs no emptiness pre-check.
+    mApi->cleanRubbishBin(new megasdk::SimpleResultListener(std::move(onDone)));
+}
+
 void MegaSdkClient::setNodeFavourite(std::uint64_t handle,
                                      bool favourite,
                                      std::function<void(Result<void>)> onDone)

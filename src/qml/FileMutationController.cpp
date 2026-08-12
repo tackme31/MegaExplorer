@@ -4,6 +4,7 @@
 #include "ClipboardController.h"
 #include "core/MegaErrorCodes.h"
 #include "core/SortOrder.h"
+#include "core/ViewKind.h"
 #include "FolderNavigationController.h"
 #include "GuiThread.h"
 #include "NotificationController.h"
@@ -177,6 +178,45 @@ void FileMutationController::moveHandlesToRubbish(const QVariantList& handles)
                                     });
                                 });
     }
+}
+
+void FileMutationController::deleteHandlesPermanently(const QVariantList& handles)
+{
+    if (handles.isEmpty())
+        return;
+
+    // No nodesRemoved fan-out, matching restoreHandles: the only listing these rows
+    // appear in is the Rubbish bin, and a second tab open on it at the same moment
+    // is rare enough not to justify the signal.
+    auto batch = mBulk.start("deletePermanently", static_cast<int>(handles.size()));
+
+    for (const QVariant& handle : handles)
+    {
+        mFileOps->removeNode(static_cast<std::uint64_t>(handle.toULongLong()),
+                             [this, self = shared_from_this(), batch](Result<void> result) {
+                                 invokeOnGuiThread(this, [batch, result = std::move(result)]() {
+                                     batch->settle(result);
+                                 });
+                             });
+    }
+}
+
+void FileMutationController::emptyRubbishBin()
+{
+    // Re-opening rather than re-reading, and only on a Rubbish tab: this tab may be
+    // showing a folder *inside* the bin, which the emptying destroys -- refreshing
+    // it would re-read a folder that no longer exists. A tab on any other screen has
+    // nothing to re-read, since the bin's contents are not visible from it.
+    auto batch = mBulk.start("emptyRubbish", 1, [this]() {
+        if (mNavigation->viewKind() == static_cast<int>(ViewKind::Rubbish))
+            mNavigation->openRubbish();
+    });
+
+    mFileOps->emptyRubbishBin([this, self = shared_from_this(), batch](Result<void> result) {
+        invokeOnGuiThread(this, [batch, result = std::move(result)]() {
+            batch->settle(result);
+        });
+    });
 }
 
 void FileMutationController::restoreHandles(const QVariantList& handles)

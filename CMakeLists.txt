@@ -206,6 +206,8 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/BandSelector.qml
         qml/components/Breadcrumb.qml
         qml/components/CaptionBar.qml
+        qml/components/ConfirmEmptyRubbishDialog.qml
+        qml/components/ConfirmPermanentDeleteDialog.qml
         qml/components/ConfirmRubbishDialog.qml
         qml/components/DragAutoScroller.qml
         qml/components/DragProxy.qml

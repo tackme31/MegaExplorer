@@ -29,6 +29,14 @@ enum class MenuAction
     // Rubbish bin only, and MoveToRubbish's inverse. Where each node goes is the
     // SDK's answer, not a choice offered here (IMegaClient::getRestoreTarget).
     Restore,
+    // Rubbish bin only. Irreversible, so the scope restriction here is the only
+    // thing keeping it off the Cloud Drive's menus -- IMegaClient::removeNode would
+    // destroy a live node just as readily.
+    DeletePermanently,
+    // Rubbish bin only, and the whole bin regardless of where in it the menu was
+    // opened: the resolver cannot see whether the view is at the bin's top, and the
+    // confirmation names what it will destroy.
+    EmptyRubbish,
     // Keyboard shortcuts the view already handles (Ctrl+A, F5); the menu entries call
     // the same thing.
     SelectAll,
@@ -45,7 +53,10 @@ enum class MenuSite
     FileSelection,
     // A file view's empty space: the folder the view is showing.
     FolderBackground,
-    // A folder-tree row or a quick-access pin row: one folder.
+    // A folder-tree row, a quick-access pin row, or the side panel's Rubbish bin
+    // row: one folder. The first two always ask with ViewKind::CloudDrive -- a row
+    // names a real folder whatever the file view beside it is showing -- so a
+    // Rubbish-scoped entry here reaches only the bin's own row.
     FolderRow,
 };
 

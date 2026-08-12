@@ -321,6 +321,7 @@ Item {
         mutController: root.mutController
         onRenameRequested: root.beginRename()
         onMoveToRubbishRequested: confirmRubbishDialog.confirm()
+        onDeletePermanentlyRequested: confirmPermanentDeleteDialog.confirm()
     }
 
     FolderBackgroundMenu {
@@ -328,11 +329,23 @@ Item {
         navController: root.navController
         mutController: root.mutController
         onNewFolderRequested: root.newFolderRequested()
+        onEmptyRubbishRequested: confirmEmptyRubbishDialog.open()
     }
 
     ConfirmRubbishDialog {
         id: confirmRubbishDialog
         navController: root.navController
+        mutController: root.mutController
+    }
+
+    ConfirmPermanentDeleteDialog {
+        id: confirmPermanentDeleteDialog
+        navController: root.navController
+        mutController: root.mutController
+    }
+
+    ConfirmEmptyRubbishDialog {
+        id: confirmEmptyRubbishDialog
         mutController: root.mutController
     }
 }

@@ -128,6 +128,18 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::Rubbish},
          ActionTarget::Any,
          ActionArity::Any},
+        {MenuAction::DeletePermanently,
+         {MenuSite::FileSelection},
+         {ViewKind::Rubbish},
+         ActionTarget::Any,
+         ActionArity::Any},
+        // FoldersOnly/SingleOnly like NewFolder, and satisfied the same way:
+        // folderTargetContext() synthesizes exactly that selection for both sites.
+        {MenuAction::EmptyRubbish,
+         {MenuSite::FolderBackground, MenuSite::FolderRow},
+         {ViewKind::Rubbish},
+         ActionTarget::FoldersOnly,
+         ActionArity::SingleOnly},
         {MenuAction::SelectAll,
          {MenuSite::FolderBackground},
          {ViewKind::CloudDrive, ViewKind::Favourites},
@@ -201,6 +213,10 @@ const char* menuActionId(MenuAction action)
             return "moveToRubbish";
         case MenuAction::Restore:
             return "restore";
+        case MenuAction::DeletePermanently:
+            return "deletePermanently";
+        case MenuAction::EmptyRubbish:
+            return "emptyRubbish";
         case MenuAction::SelectAll:
             return "selectAll";
         case MenuAction::Refresh:

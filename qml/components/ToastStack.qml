@@ -151,6 +151,21 @@ Item {
                 text = qsTr("Restored %1 item(s) (some to Cloud Drive), %2 failed").arg(
                             succeeded).arg(failed);
             break;
+        case "deletePermanently":
+            if (failed === 0)
+                text = qsTr("Deleted %1 item(s) permanently").arg(succeeded);
+            else if (succeeded === 0)
+                text = qsTr("Failed to delete %1 item(s)").arg(failed);
+            else
+                text = qsTr("Deleted %1 item(s) permanently, %2 failed").arg(succeeded).arg(failed);
+            break;
+            // One request for the whole bin, so the count is always 1 and saying so
+            // would be meaningless -- the only thing worth reporting is which way it
+            // went.
+        case "emptyRubbish":
+            text = failed === 0 ? qsTr("Emptied the Rubbish bin") : qsTr(
+                                      "Failed to empty the Rubbish bin");
+            break;
         case "upload":
             if (failed === 0)
                 text = qsTr("Uploaded %1 file(s)").arg(succeeded);

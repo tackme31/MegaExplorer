@@ -358,6 +358,75 @@ TEST_F(FileMutationControllerTest, RestoreReportsWithoutCallingTheSdkWhenNothing
     EXPECT_EQ(lastFailed, 1);
 }
 
+TEST_F(FileMutationControllerTest, DeletePermanentlyRemovesEveryHandleAndReportsOneTally)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, removeNode(5u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
+    EXPECT_CALL(*client, removeNode(6u, _))
+        .WillOnce(InvokeArgument<1>(Result<void>::fail("nope", MegaErrorCode::kEAccess)));
+
+    mutations->deleteHandlesPermanently(QVariantList{QVariant(quint64(5)), QVariant(quint64(6))});
+    flush();
+
+    EXPECT_EQ(lastContext, QStringLiteral("deletePermanently"));
+    EXPECT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(lastFailed, 1);
+}
+
+TEST_F(FileMutationControllerTest, DeletePermanentlyDoesNothingWithAnEmptySelection)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+    model()->clearSelection();
+
+    EXPECT_CALL(*client, removeNode(_, _)).Times(0);
+
+    mutations->deleteHandlesPermanently(selectedHandles());
+    flush();
+
+    EXPECT_EQ(operationCalls, 0);
+}
+
+TEST_F(FileMutationControllerTest, EmptyRubbishBinIssuesOneRequestForTheWholeBin)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, cleanRubbishBin(_)).WillOnce(InvokeArgument<0>(Result<void>::ok()));
+
+    mutations->emptyRubbishBin();
+    flush();
+
+    EXPECT_EQ(lastContext, QStringLiteral("emptyRubbish"));
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(lastFailed, 0);
+}
+
+TEST_F(FileMutationControllerTest, EmptyRubbishBinLeavesATabThatIsNotShowingTheBinAlone)
+{
+    // The action is reachable from the side panel while any screen is open, so this
+    // tab is on the Cloud Drive here -- re-reading it would be a request for a
+    // listing the emptying cannot have changed.
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, cleanRubbishBin(_)).WillOnce(InvokeArgument<0>(Result<void>::ok()));
+    const int fetchesBefore = rootFetches;
+
+    mutations->emptyRubbishBin();
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
+}
+
 TEST_F(FileMutationControllerTest, MoveHandlesToReportsOneTallyForTheWholeDrop)
 {
     givenRootListing({entry("a", 1), entry("b", 2), entry("c", 3)});

@@ -220,6 +220,12 @@ QtObject {
             readonly property string rename: "\uE8AC"        // Rename
             readonly property string moveToRubbish: "\uE74D" // Delete
             readonly property string restore: "\uE7A7"       // Undo
+            // Both reuse moveToRubbish's wastebasket rather than a glyph of
+            // their own: they are Rubbish-bin-only, so neither can ever share a
+            // menu with it, and an unverified Segoe code point renders as a box.
+            // Giving them a distinct icon is a /ui-style question.
+            readonly property string deletePermanently: moveToRubbish
+            readonly property string emptyRubbish: moveToRubbish
             readonly property string selectAll: "\uE8B3"     // SelectAll
             readonly property string refresh: glyphSet.refresh
             readonly property string about: "\uE946"         // Info

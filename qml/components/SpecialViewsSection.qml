@@ -30,6 +30,10 @@ ColumnLayout {
         // Called on click (this tab) and middle-click (background tab).
         required property var openHere
         required property var openInNewTab
+        // null for a row with nothing to offer. Stated per row rather than derived
+        // from kind, like current above: what a row's menu holds is the row's own
+        // business, and the Favourites screen has no bin-wide action of its own.
+        required property var openContextMenu
 
         Layout.fillWidth: true
 
@@ -100,6 +104,14 @@ ColumnLayout {
             acceptedButtons: Qt.MiddleButton
             onTapped: viewRow.openInNewTab()
         }
+
+        TapHandler {
+            acceptedButtons: Qt.RightButton
+            onTapped: {
+                if (viewRow.openContextMenu)
+                    viewRow.openContextMenu();
+            }
+        }
     }
 
     SpecialViewRow {
@@ -112,6 +124,7 @@ ColumnLayout {
         glyph: Theme.glyph.favouriteOutline
         openHere: () => root.navController?.openFavourites()
         openInNewTab: () => tabsController.addFavouritesTab()
+        openContextMenu: null
     }
 
     SpecialViewRow {
@@ -121,5 +134,29 @@ ColumnLayout {
         glyph: Theme.glyph.menu.moveToRubbish
         openHere: () => root.navController?.openRubbish()
         openInNewTab: () => tabsController.addRubbishTab()
+        openContextMenu: () => rubbishRowMenu.popup()
+    }
+
+    // Asked for with ViewKind.Rubbish, which is what keeps this menu to the bin's
+    // own actions: the tree rows and the pins ask the same site with CloudDrive
+    // (FolderPinMenu.qml), so the two lists never overlap.
+    ActionMenu {
+        id: rubbishRowMenu
+
+        actionIds: MenuActions.forSite(MenuActions.FolderRow, ViewKind.Rubbish)
+
+        // No handle/name/entries: nothing this menu offers addresses a node. It is
+        // assigned rather than bound for the same reason every other site does it --
+        // a menu must not change target while it is open.
+        onAboutToShow: rubbishRowMenu.context = {
+            "requestEmptyRubbish": () => confirmEmptyRubbishDialog.open()
+        }
+    }
+
+    // Reaches the current tab's controller rather than one of its own: emptying the
+    // bin is app-wide, so any tab's controller issues the same single request.
+    ConfirmEmptyRubbishDialog {
+        id: confirmEmptyRubbishDialog
+        mutController: tabsController.currentMutations
     }
 }

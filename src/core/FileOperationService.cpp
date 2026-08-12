@@ -107,6 +107,17 @@ void FileOperationService::moveToRubbish(std::uint64_t handle,
     mClient->moveToRubbish(handle, std::move(onDone));
 }
 
+void FileOperationService::removeNode(std::uint64_t handle,
+                                     std::function<void(Result<void>)> onDone)
+{
+    mClient->removeNode(handle, std::move(onDone));
+}
+
+void FileOperationService::emptyRubbishBin(std::function<void(Result<void>)> onDone)
+{
+    mClient->cleanRubbishBin(std::move(onDone));
+}
+
 Result<RestoreTarget> FileOperationService::restoreTargetFor(std::uint64_t handle) const
 {
     return mClient->getRestoreTarget(handle);

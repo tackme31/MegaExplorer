@@ -118,6 +118,10 @@ public:
 
     void moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone) override;
 
+    void removeNode(std::uint64_t handle, std::function<void(Result<void>)> onDone) override;
+
+    void cleanRubbishBin(std::function<void(Result<void>)> onDone) override;
+
     void moveNode(std::uint64_t handle,
                   std::uint64_t newParentHandle,
                   bool newParentIsRoot,

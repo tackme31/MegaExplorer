@@ -118,6 +118,13 @@ QObject* TabsController::currentNavigation() const
     return mTabs[static_cast<std::size_t>(mCurrentIndex)].navigation.get();
 }
 
+QObject* TabsController::currentMutations() const
+{
+    if (mCurrentIndex < 0 || mCurrentIndex >= static_cast<int>(mTabs.size()))
+        return nullptr;
+    return mTabs[static_cast<std::size_t>(mCurrentIndex)].mutations.get();
+}
+
 int TabsController::count() const
 {
     return static_cast<int>(mTabs.size());
