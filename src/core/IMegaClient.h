@@ -141,12 +141,10 @@ public:
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<DownloadOutcome>)> onDone) = 0;
 
-    // Uploads the local *file* at localPath (caller-resolved, absolute, native
-    // separators) into the folder parentHandle.
-    //
-    // Files only: MegaApi::startUpload also accepts a directory and would upload
-    // it recursively, which this app never exposes -- callers must filter
-    // directories out beforehand.
+    // Uploads the local file or directory at localPath (caller-resolved, absolute,
+    // native separators) into the folder parentHandle. A directory goes up whole,
+    // recursively, as one transfer -- progress and completion are reported for the
+    // tree, not per file inside it.
     //
     // Two-callback shape for the same reason as download().
     virtual void

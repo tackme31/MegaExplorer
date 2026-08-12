@@ -8,7 +8,21 @@
 
 #include <QDebug>
 #include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
+
+namespace
+{
+
+// A Windows .lnk answers isDir() for whatever it points at, but the drop carries
+// the .lnk path and the SDK uploads it as the small file it actually is. Every
+// folder/file decision below has to agree with the SDK, so they all come here.
+bool isFolderUpload(const QFileInfo& info)
+{
+    return info.isDir() && !info.isShortcut();
+}
+
+} // namespace
 
 UploadController::UploadController(std::shared_ptr<UploadService> service,
                                    std::shared_ptr<FileOperationService> fileOperations,
@@ -154,52 +168,55 @@ bool UploadController::canUploadTo(quint64 target, bool targetIsRoot) const
 
 void UploadController::dropUrls(const QList<QUrl>& urls, quint64 target, bool targetIsRoot)
 {
-    QStringList files;
-    int folderCount = 0;
+    QStringList paths;
     for (const QUrl& url : urls)
     {
         if (!url.isLocalFile())
             continue; // e.g. an image dragged straight out of a browser
         QFileInfo info(url.toLocalFile());
-        if (info.isDir())
-        {
-            ++folderCount;
-            continue;
-        }
-        if (!info.isFile())
+        if (!info.exists()) // a broken shortcut, or something already deleted
             continue;
         // The path crosses into the SDK's own LocalPath, which splits on '\'
         // on Windows -- same reason DownloadController::computeDestinationPath
         // converts.
-        files.append(QDir::toNativeSeparators(info.absoluteFilePath()));
+        paths.append(QDir::toNativeSeparators(info.absoluteFilePath()));
     }
 
-    // Checked before the folder question on purpose: "upload 0 files?" is a
-    // terrible thing to ask.
-    if (files.isEmpty())
+    if (paths.isEmpty())
     {
         mNotifications->notifyError(QStringLiteral("uploadNothingToUpload"));
         return;
     }
 
-    if (rejectIfTooManyFiles(static_cast<int>(files.size())))
-        return;
-
-    if (folderCount > 0)
-    {
-        emit folderDropRequiresConfirmation(files, folderCount, target, targetIsRoot);
-        return;
-    }
-
-    uploadFiles(files, target, targetIsRoot);
+    uploadFiles(paths, target, targetIsRoot);
 }
 
-bool UploadController::rejectIfTooManyFiles(int count) const
+int UploadController::expandedFileCount(const QStringList& localPaths) const
 {
-    if (count <= kMaxFilesPerUpload)
-        return false;
-    mNotifications->notifyError(QStringLiteral("uploadTooManyFiles"));
-    return true;
+    int count = 0;
+    for (const QString& path : localPaths)
+    {
+        QFileInfo info(path);
+        if (!isFolderUpload(info))
+        {
+            ++count;
+        }
+        else
+        {
+            // Hidden files are included because startUpload sends them; the
+            // count has to match what actually goes up, not what Explorer shows.
+            QDirIterator walker(
+                path, QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+            while (walker.hasNext() && count <= kMaxFilesPerUpload)
+            {
+                walker.next();
+                ++count;
+            }
+        }
+        if (count > kMaxFilesPerUpload)
+            break;
+    }
+    return count;
 }
 
 void UploadController::uploadFiles(const QStringList& localPaths, quint64 target, bool targetIsRoot)
@@ -207,8 +224,11 @@ void UploadController::uploadFiles(const QStringList& localPaths, quint64 target
     if (localPaths.isEmpty())
         return;
 
-    if (rejectIfTooManyFiles(static_cast<int>(localPaths.size())))
+    if (expandedFileCount(localPaths) > kMaxFilesPerUpload)
+    {
+        mNotifications->notifyError(QStringLiteral("uploadTooManyFiles"));
         return;
+    }
 
     std::map<QString, quint64> hits = collisionsFor(localPaths, target, targetIsRoot);
     if (hits.empty())
@@ -238,7 +258,10 @@ void UploadController::uploadSkippingExisting(const QStringList& localPaths,
     QStringList remaining;
     for (const QString& path : localPaths)
     {
-        if (hits.find(QFileInfo(path).fileName()) == hits.end())
+        QFileInfo info(path);
+        // A folder was never part of the question -- collisionsFor leaves them
+        // out -- so a same-named file's hit must not take it out too.
+        if (isFolderUpload(info) || hits.find(info.fileName()) == hits.end())
             remaining.append(path);
     }
     // Nothing left is the user's own choice, so say nothing.
@@ -253,7 +276,13 @@ std::map<QString, quint64> UploadController::collisionsFor(const QStringList& lo
     std::vector<std::string> names;
     names.reserve(static_cast<std::size_t>(localPaths.size()));
     for (const QString& path : localPaths)
-        names.push_back(QFileInfo(path).fileName().toStdString());
+    {
+        QFileInfo info(path);
+        if (!isFolderUpload(info))
+            names.push_back(info.fileName().toStdString());
+    }
+    if (names.empty())
+        return {};
 
     Result<std::vector<FileEntry>> result =
         mService->findNameCollisions(static_cast<std::uint64_t>(target), targetIsRoot, names);
@@ -289,16 +318,21 @@ void UploadController::enqueueAll(const QStringList& localPaths,
     {
         QFileInfo info(path);
         QString name = info.fileName();
+        const bool isFolder = isFolderUpload(info);
         quint64 replaceHandle = 0;
         auto it = replaceHandleByName.find(name);
-        if (it != replaceHandleByName.end() && claimedReplaceHandles.insert(it->second).second)
+        if (!isFolder && it != replaceHandleByName.end()
+            && claimedReplaceHandles.insert(it->second).second)
             replaceHandle = it->second;
 
+        // A folder has no meaningful size of its own, and 0 is what totalBytes
+        // already means "not known yet" -- the SDK overwrites it once the
+        // recursive transfer reports.
         mService->enqueue(path.toStdString(),
                           name.toStdString(),
                           static_cast<std::uint64_t>(target),
                           targetIsRoot,
-                          static_cast<std::uint64_t>(info.size()),
+                          isFolder ? 0u : static_cast<std::uint64_t>(info.size()),
                           static_cast<std::uint64_t>(replaceHandle));
     }
     refreshActiveJob(); // already on the GUI thread here (called from QML)

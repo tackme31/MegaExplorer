@@ -228,10 +228,6 @@ ApplicationWindow {
         quickAccess: quickAccessModel
     }
 
-    FolderDropDialog {
-        uploads: uploadController
-    }
-
     NameConflictDialog {
         uploads: uploadController
     }

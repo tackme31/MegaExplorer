@@ -2,9 +2,9 @@ import QtQuick
 import QtTest
 import MegaExplorer
 
-// R6-4. The three dialogs Main.qml used to declare inline and now instantiates
-// from qml/components/: FolderDropDialog, NameConflictDialog, MissingPinDialog.
-// All three wire themselves to their controller's signal, so nothing outside
+// R6-4. The dialogs Main.qml used to declare inline and now instantiates
+// from qml/components/: NameConflictDialog, MissingPinDialog. Both
+// wire themselves to their controller's signal, so nothing outside
 // them opens them -- which means every failure mode here is silent. A mistyped
 // handler name makes the dialog simply never appear; Replace and Skip swapped
 // makes the app overwrite the files the user asked to keep. Screenshots cannot
@@ -21,11 +21,6 @@ import MegaExplorer
 TestCase {
     id: testCase
     name: "MainDialogs"
-
-    Component {
-        id: folderDropComponent
-        FolderDropDialog {}
-    }
 
     Component {
         id: nameConflictComponent
@@ -48,8 +43,6 @@ TestCase {
         QtObject {
             id: fakeUploads
 
-            signal folderDropRequiresConfirmation(var filePaths, int folderCount,
-                                                  var destinationHandle, bool destinationIsRoot)
             signal nameConflictRequiresConfirmation(var filePaths, var conflictNames,
                                                     var destinationHandle, bool destinationIsRoot)
 
@@ -136,70 +129,6 @@ TestCase {
                 return box.itemAt(i);
         }
         fail("no button labelled " + label);
-    }
-
-    // ---- FolderDropDialog ----------------------------------------------
-
-    function test_folderDrop_signalOpensAndCarriesTheDestination() {
-        failOnWarning(/Connections/);
-        const uploads = makeUploads();
-        const dialog = makeDialog(folderDropComponent, {
-                                      "uploads": uploads
-                                  });
-
-        // handle 0 is the account root, and it is falsy -- a guard written as
-        // `if (handle)` anywhere on this path would drop the root case.
-        uploads.folderDropRequiresConfirmation(["a.txt", "b.txt"], 3, 0, true);
-
-        // tryCompare, not compare: Popup.opened is set at the *end* of the
-        // enter transition, so it is still false on the line after open().
-        tryCompare(dialog, "opened", true);
-        compare(dialog.filePaths, ["a.txt", "b.txt"]);
-        compare(dialog.folderCount, 3);
-        compare(dialog.destinationHandle, 0);
-        compare(dialog.destinationIsRoot, true);
-    }
-
-    // The two counts are both integers in the same sentence, so swapping them
-    // is invisible in a screenshot and wrong in every case but folderCount ===
-    // filePaths.length.
-    function test_folderDrop_countsAreNotSwapped() {
-        const uploads = makeUploads();
-        const dialog = makeDialog(folderDropComponent, {
-                                      "uploads": uploads
-                                  });
-
-        uploads.folderDropRequiresConfirmation(["a.txt", "b.txt"], 3, 7, false);
-
-        const text = dialog.contentChildren[0].text;
-        compare(text, "3 folder(s) will be skipped. Upload the remaining 2 file(s)?");
-    }
-
-    function test_folderDrop_acceptUploadsWithoutTheFolders() {
-        const uploads = makeUploads();
-        const dialog = makeDialog(folderDropComponent, {
-                                      "uploads": uploads
-                                  });
-
-        uploads.folderDropRequiresConfirmation(["a.txt"], 1, 42, false);
-        dialog.accept();
-
-        compare(uploads.uploadFilesCount, 1);
-        compare(uploads.lastCall.paths, ["a.txt"]);
-        compare(uploads.lastCall.handle, 42);
-        compare(uploads.lastCall.isRoot, false);
-    }
-
-    function test_folderDrop_rejectEnqueuesNothing() {
-        const uploads = makeUploads();
-        const dialog = makeDialog(folderDropComponent, {
-                                      "uploads": uploads
-                                  });
-
-        uploads.folderDropRequiresConfirmation(["a.txt"], 1, 42, false);
-        dialog.reject();
-
-        compare(uploads.uploadFilesCount, 0);
     }
 
     // ---- NameConflictDialog --------------------------------------------
