@@ -95,6 +95,12 @@ public:
     // Read-only: never touches the back-stack or mCurrent.
     void resolveCurrentPath(std::function<void(Result<std::vector<PathSegment>>)> onDone);
 
+    // The ancestor chain of any node, not just the current location: what "go to the
+    // folder this item is in" reads the parent off. Passthrough for the same reason
+    // as syncWithServer below.
+    void resolvePathOf(std::uint64_t handle,
+                       std::function<void(Result<std::vector<PathSegment>>)> onDone);
+
     // Location-agnostic passthrough, here only because this is the one service its
     // controller holds that owns an IMegaClient -- cheaper than a fourth dependency.
     void syncWithServer(std::function<void(Result<void>)> onDone);

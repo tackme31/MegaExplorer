@@ -37,6 +37,11 @@ enum class MenuAction
     // opened: the resolver cannot see whether the view is at the bin's top, and the
     // confirmation names what it will destroy.
     EmptyRubbish,
+    // Jumps to the folder the item lives in. Only offered where the rows on screen
+    // can come from somewhere other than the folder the view is at -- a search
+    // result or the favourites listing -- since anywhere else it would navigate to
+    // the folder already open (crossFolderOnly below).
+    GoToFolder,
     // Keyboard shortcuts the view already handles (Ctrl+A, F5); the menu entries call
     // the same thing.
     SelectAll,
@@ -87,6 +92,9 @@ struct MenuActionSpec
     std::vector<ViewKind> scopes;
     ActionTarget target;
     ActionArity arity;
+    // A bool rather than a third enum axis: unlike target/arity this has no middle
+    // value to name. False for every action but GoToFolder.
+    bool crossFolderOnly = false;
 };
 
 struct SelectionSummary
@@ -110,4 +118,9 @@ struct MenuContext
     // target/arity need no site-specific case: it satisfies FoldersOnly/SingleOnly by
     // construction.
     SelectionSummary selection;
+    // Whether the rows on screen may live somewhere other than the location the view
+    // is at: a favourites listing, or any listing narrowed by a search. Computed by
+    // the caller rather than derived from kind -- a Cloud Drive folder is or isn't
+    // cross-folder depending on the search box, which no ViewKind can express.
+    bool crossFolderListing = false;
 };

@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 namespace
 {
 
@@ -156,6 +158,60 @@ TEST(MenuActionResolverTest, ScopeAdmitsEveryKindItLists)
     MenuActionSpec s = spec(ActionTarget::Any, ActionArity::Any);
     EXPECT_TRUE(menuActionApplies(s, fileSelection(1, 0)));
     EXPECT_TRUE(menuActionApplies(s, fileSelection(1, 0, ViewKind::Favourites)));
+}
+
+TEST(MenuActionResolverTest, CrossFolderOnlyNeedsACrossFolderListing)
+{
+    // The third restriction, and independent of the other two the same way site and
+    // scope are: everything else about this context matches.
+    MenuActionSpec s = spec(ActionTarget::Any, ActionArity::Any);
+    s.crossFolderOnly = true;
+    EXPECT_FALSE(menuActionApplies(s, fileSelection(1, 0)));
+
+    MenuContext ctx = fileSelection(1, 0);
+    ctx.crossFolderListing = true;
+    EXPECT_TRUE(menuActionApplies(s, ctx));
+}
+
+TEST(MenuActionResolverTest, OrdinaryActionsIgnoreTheCrossFolderFlag)
+{
+    // The flag restricts only the specs that ask for it -- a searching listing must
+    // not start offering or withholding anything else.
+    MenuContext ctx = fileSelection(1, 0);
+    ctx.crossFolderListing = true;
+    EXPECT_EQ(resolveMenuActions(fileSelection(1, 0)).size() + 1,
+              resolveMenuActions(ctx).size());
+}
+
+TEST(MenuActionResolverTest, GoToFolderIsOfferedOnlyWhereTheParentDiffers)
+{
+    // A plain folder listing already *is* the containing folder, so the row would
+    // navigate to where the user already stands.
+    const auto offers = [](const MenuContext& ctx) {
+        const std::vector<MenuAction> actions = resolveMenuActions(ctx);
+        return std::find(actions.begin(), actions.end(), MenuAction::GoToFolder) !=
+               actions.end();
+    };
+
+    EXPECT_FALSE(offers(fileSelection(1, 0)));
+
+    MenuContext searching = fileSelection(1, 0);
+    searching.crossFolderListing = true;
+    EXPECT_TRUE(offers(searching));
+
+    MenuContext favourites = fileSelection(1, 0, ViewKind::Favourites);
+    favourites.crossFolderListing = true;
+    EXPECT_TRUE(offers(favourites));
+
+    // Two items have no one containing folder to go to.
+    MenuContext multiple = fileSelection(2, 0);
+    multiple.crossFolderListing = true;
+    EXPECT_FALSE(offers(multiple));
+
+    // The bin is flat and its rows' parents are gone; Restore answers that instead.
+    MenuContext rubbish = fileSelection(1, 0, ViewKind::Rubbish);
+    rubbish.crossFolderListing = true;
+    EXPECT_FALSE(offers(rubbish));
 }
 
 TEST(MenuActionResolverTest, FolderTargetContextCarriesTheViewKind)

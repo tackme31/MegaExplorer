@@ -226,6 +226,9 @@ QtObject {
             // Giving them a distinct icon is a /ui-style question.
             readonly property string deletePermanently: moveToRubbish
             readonly property string emptyRubbish: moveToRubbish
+            // The one glyph in this block that has been through both checks the
+            // note above asks for: present in both fonts, and drawn at 16px.
+            readonly property string goToFolder: "\uE8DE" // MoveToFolder
             readonly property string selectAll: "\uE8B3"     // SelectAll
             readonly property string refresh: glyphSet.refresh
             readonly property string about: "\uE946"         // Info

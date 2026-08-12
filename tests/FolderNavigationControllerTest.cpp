@@ -501,6 +501,89 @@ TEST_F(FolderNavigationControllerTest, BackFromAFolderOpenedInFavouritesReturnsT
     EXPECT_EQ(model()->entryAt(0).value(QStringLiteral("name")).toString(), QStringLiteral("trip"));
 }
 
+TEST_F(FolderNavigationControllerTest, GoToContainingFolderOpensTheParentAndRevealsTheItem)
+{
+    givenRootListing({entry("photos", 1, true)});
+    givenFavourites({entry("b.jpg", 3)});
+    controller->loadRoot();
+    flush();
+    controller->openFavourites();
+    flush();
+    ASSERT_EQ(controller->viewKind(), ViewKindEnum::Favourites);
+
+    // Root-first and ending with the node itself, so "trip" is the parent.
+    EXPECT_CALL(*client, getPath(3, false, _))
+        .WillRepeatedly(InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(
+            std::vector<PathSegment>{{"", 0, true}, {"trip", 2, false}, {"b.jpg", 3, false}})));
+    EXPECT_CALL(*client, getChildren(2, _, _))
+        .WillRepeatedly(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(
+            std::vector<FileEntry>{entry("a.jpg", 4), entry("b.jpg", 3)})));
+    // The destination's own breadcrumb: without it the generic stub answers with an
+    // empty path and the tab never leaves the favourites view kind.
+    EXPECT_CALL(*client, getPath(2, false, _))
+        .WillRepeatedly(InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(
+            std::vector<PathSegment>{{"", 0, true}, {"trip", 2, false}})));
+
+    int revealedRow = -1;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::revealRowRequested,
+                     controller.get(),
+                     [&revealedRow](int row) {
+                         revealedRow = row;
+                     });
+
+    controller->goToContainingFolder(3, QStringLiteral("b.jpg"));
+    // One more hop than an ordinary navigation: the path lookup, then the listing,
+    // then the breadcrumb -- and flush() drains two rounds.
+    flush();
+    flush();
+
+    EXPECT_EQ(controller->viewKind(), ViewKindEnum::CloudDrive);
+    ASSERT_EQ(model()->rowCount(), 2);
+    // Selected *and* scrolled to: a reveal the view can't act on is the failure
+    // this asserts against, since the row is otherwise indistinguishable.
+    EXPECT_EQ(revealedRow, 1);
+    const QVariantList selected = model()->selectedEntries();
+    ASSERT_EQ(selected.size(), 1);
+    EXPECT_EQ(selected.at(0).toMap().value(QStringLiteral("name")).toString(),
+              QStringLiteral("b.jpg"));
+}
+
+TEST_F(FolderNavigationControllerTest, GoToFolderStopsBeingOfferedOnceTheListingIsAFolder)
+{
+    // The query stays latched after navigating out of a search (search() leaves
+    // navigation state alone on purpose), so the offer has to key off the rows in
+    // the model instead -- otherwise the destination folder keeps offering a row
+    // that would navigate to itself.
+    givenRootListing({entry("a.jpg", 4)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, search(_, _, std::string("b"), _, _))
+        .WillRepeatedly(InvokeArgument<4>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 3)})));
+    controller->search(QStringLiteral("b"));
+    flush();
+    ASSERT_TRUE(controller->searchActive());
+    model()->selectRow(0, Qt::NoModifier);
+    ASSERT_TRUE(model()->availableActions().contains(QStringLiteral("goToFolder")));
+
+    EXPECT_CALL(*client, getPath(3, false, _))
+        .WillRepeatedly(InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(
+            std::vector<PathSegment>{{"", 0, true}, {"trip", 2, false}, {"b.jpg", 3, false}})));
+    EXPECT_CALL(*client, getChildren(2, _, _))
+        .WillRepeatedly(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(
+            std::vector<FileEntry>{entry("b.jpg", 3)})));
+
+    controller->goToContainingFolder(3, QStringLiteral("b.jpg"));
+    flush();
+
+    // Still latched, and deliberately so -- which is exactly why the offer cannot
+    // be derived from it.
+    EXPECT_TRUE(controller->searchActive());
+    EXPECT_FALSE(model()->availableActions().contains(QStringLiteral("goToFolder")));
+}
+
 TEST_F(FolderNavigationControllerTest, CanPerformWithholdsDestinationActionsInFavourites)
 {
     // The Favourites side of the scope axis, reachable now that the controller can

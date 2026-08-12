@@ -108,6 +108,14 @@ void FileListModel::setViewKind(ViewKind kind)
     emit selectionChanged(); // availableActions' NOTIFY: the kind is one of its inputs
 }
 
+void FileListModel::setCrossFolderListing(bool crossFolder)
+{
+    if (mCrossFolderListing == crossFolder)
+        return;
+    mCrossFolderListing = crossFolder;
+    emit selectionChanged(); // availableActions' NOTIFY, as in setViewKind above
+}
+
 void FileListModel::setThumbnailPath(quint64 handle, QString path)
 {
     for (std::size_t i = 0; i < mEntries.size(); ++i)
@@ -219,7 +227,10 @@ SelectionSummary FileListModel::selectionSummary() const
 QStringList FileListModel::availableActions() const
 {
     QStringList actions;
-    const MenuContext context{mViewKind, MenuSite::FileSelection, selectionSummary()};
+    const MenuContext context{mViewKind,
+                              MenuSite::FileSelection,
+                              selectionSummary(),
+                              mCrossFolderListing};
     for (MenuAction action : resolveMenuActions(context))
         actions.append(QString::fromLatin1(menuActionId(action)));
     return actions;

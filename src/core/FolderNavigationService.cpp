@@ -210,6 +210,14 @@ void FolderNavigationService::resolveCurrentPath(
     mClient->getPath(mCurrent.handle, mCurrent.isRoot, std::move(onDone));
 }
 
+void FolderNavigationService::resolvePathOf(
+    std::uint64_t handle, std::function<void(Result<std::vector<PathSegment>>)> onDone)
+{
+    // isRoot false unconditionally: a caller here names a node it saw in a listing,
+    // and no listing contains a root.
+    mClient->getPath(handle, false, std::move(onDone));
+}
+
 void FolderNavigationService::syncWithServer(std::function<void(Result<void>)> onDone)
 {
     mClient->syncPendingChanges(std::move(onDone));
