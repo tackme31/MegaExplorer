@@ -28,6 +28,8 @@ std::optional<ViewKind> toViewKind(int kind)
         return ViewKind::CloudDrive;
     if (kind == static_cast<int>(ViewKind::Favourites))
         return ViewKind::Favourites;
+    if (kind == static_cast<int>(ViewKind::Rubbish))
+        return ViewKind::Rubbish;
     return std::nullopt;
 }
 

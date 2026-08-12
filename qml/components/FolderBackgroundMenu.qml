@@ -17,6 +17,10 @@ ActionMenu {
     // its result signals.
     signal newFolderRequested
 
+    // Delegated for the same reason: the confirmation is a dialog the owning view
+    // holds, not something a singleton catalog entry can reach.
+    signal emptyRubbishRequested
+
     actionIds: MenuActions.forSite(MenuActions.FolderBackground, root.navController.viewKind)
 
     onAboutToShow: {
@@ -31,7 +35,8 @@ ActionMenu {
             // Sampled, not bound: a menu must not grey or un-grey a row while
             // it is open (see ActionMenu.qml).
             "canPaste": root.mutController.canPaste(),
-            "requestNewFolder": () => root.newFolderRequested()
+            "requestNewFolder": () => root.newFolderRequested(),
+            "requestEmptyRubbish": () => root.emptyRubbishRequested()
         };
     }
 }

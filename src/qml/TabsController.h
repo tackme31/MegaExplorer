@@ -47,6 +47,10 @@ class TabsController : public QAbstractListModel
     // What the header (Back button, breadcrumb, search field) binds through. Null
     // only in the empty-tabs state, which closeTab makes unreachable in practice.
     Q_PROPERTY(QObject* currentNavigation READ currentNavigation NOTIFY currentTabChanged)
+    // The side panel's counterpart to the above: its Rubbish bin row offers "Empty
+    // Rubbish bin", which needs a mutation controller, and the panel sits outside
+    // every tab's own subtree. Same null case.
+    Q_PROPERTY(QObject* currentMutations READ currentMutations NOTIFY currentTabChanged)
     Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:
@@ -75,6 +79,7 @@ public:
     int currentIndex() const;
     void setCurrentIndex(int index);
     QObject* currentNavigation() const;
+    QObject* currentMutations() const;
     int count() const;
 
     Q_INVOKABLE void addTab();

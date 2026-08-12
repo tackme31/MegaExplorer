@@ -214,8 +214,19 @@ public:
                             std::function<void(Result<void>)> onDone) = 0;
 
     // "Delete" in MEGA terms: moves the node to the Rubbish bin rather than
-    // destroying it. The permanent MegaApi::remove() is deliberately not exposed.
+    // destroying it. The permanent form is removeNode() below.
     virtual void moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone) = 0;
+
+    // Destroys the node outright (MegaApi::remove). Irreversible -- MEGA keeps no
+    // second bin behind the bin -- so every caller must confirm first. The SDK will
+    // happily remove a node that is not in the bin, so the restriction to the bin
+    // lives in MenuActionResolver rather than here.
+    virtual void removeNode(std::uint64_t handle, std::function<void(Result<void>)> onDone) = 0;
+
+    // Empties the Rubbish bin in one request (MegaApi::cleanRubbishBin) rather than
+    // a removeNode() per child: it is server-side, so it neither enumerates the bin
+    // nor leaves it half-emptied if the app quits mid-way. Irreversible.
+    virtual void cleanRubbishBin(std::function<void(Result<void>)> onDone) = 0;
 
     virtual void moveNode(std::uint64_t handle,
                           std::uint64_t newParentHandle,

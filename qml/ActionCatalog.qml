@@ -151,6 +151,22 @@ QtObject {
                                             "trigger": ctx => ctx.mutations.restoreHandles(
                                                                   ctx.entries.map(e => e.handle))
                                         },
+                                        // ctx: requestDeletePermanently(). Through a
+                                        // request*() rather than straight to the
+                                        // controller like restore above, and for the
+                                        // opposite reason: this one destroys, so it
+                                        // is routed via the view's confirmation.
+                                        "deletePermanently": {
+                                            "icon": ctx => Theme.glyph.menu.deletePermanently,
+                                            "label": ctx => qsTr("Delete permanently"),
+                                            "trigger": ctx => ctx.requestDeletePermanently()
+                                        },
+                                        // ctx: requestEmptyRubbish()
+                                        "emptyRubbish": {
+                                            "icon": ctx => Theme.glyph.menu.emptyRubbish,
+                                            "label": ctx => qsTr("Empty Rubbish bin"),
+                                            "trigger": ctx => ctx.requestEmptyRubbish()
+                                        },
                                         // ctx: navController
                                         "selectAll": {
                                             "icon": ctx => Theme.glyph.menu.selectAll,

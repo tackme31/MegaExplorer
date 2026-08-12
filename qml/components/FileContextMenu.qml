@@ -22,6 +22,7 @@ ActionMenu {
     // instance, which a singleton can't reach.
     signal renameRequested
     signal moveToRubbishRequested
+    signal deletePermanentlyRequested
 
     // Sampled by sampleActions() below, never bound to availableActions: that
     // property is notified by selectionChanged, and the Instantiator behind
@@ -70,7 +71,8 @@ ActionMenu {
             "navController": root.navController,
             "mutations": root.mutController,
             "requestRename": () => root.renameRequested(),
-            "requestMoveToRubbish": () => root.moveToRubbishRequested()
+            "requestMoveToRubbish": () => root.moveToRubbishRequested(),
+            "requestDeletePermanently": () => root.deletePermanentlyRequested()
         };
     }
 }

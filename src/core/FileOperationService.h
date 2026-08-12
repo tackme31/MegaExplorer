@@ -24,6 +24,13 @@ public:
 
     void moveToRubbish(std::uint64_t handle, std::function<void(Result<void>)> onDone);
 
+    // The two irreversible ones, for the Rubbish bin screen. Ungated here on
+    // purpose: whether the caller is allowed to offer them is MenuActionResolver's
+    // answer, and a second check against a stale view would only disagree with it.
+    void removeNode(std::uint64_t handle, std::function<void(Result<void>)> onDone);
+
+    void emptyRubbishBin(std::function<void(Result<void>)> onDone);
+
     // moveToRubbish's inverse, in two halves because the caller has to word the
     // outcome: this answers *where* the node would go (and whether that is a
     // fallback), and the move itself then goes through move() like any other.

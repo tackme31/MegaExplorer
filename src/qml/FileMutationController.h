@@ -76,6 +76,16 @@ public:
     // user to find it (IMegaClient::getRestoreTarget).
     Q_INVOKABLE void restoreHandles(const QVariantList& handles);
 
+    // Destroys the nodes outright, for the Rubbish bin screen. Irreversible, so the
+    // caller confirms first; same handles-not-selection contract as
+    // moveHandlesToRubbish above, and for the same reason.
+    Q_INVOKABLE void deleteHandlesPermanently(const QVariantList& handles);
+
+    // Destroys the whole bin in one request, whatever this tab is showing -- the
+    // action is offered from the side panel too, where there is no listing to read a
+    // selection from.
+    Q_INVOKABLE void emptyRubbishBin();
+
     // Creates a folder inside the one this tab is showing; the parent is read off
     // the navigation half, since this action can only target the view it opened
     // from.
