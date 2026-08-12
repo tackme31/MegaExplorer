@@ -438,6 +438,7 @@ ApplicationWindow {
     // the file views. Modal dialogs still cover it -- they are on the overlay.
     ToastStack {
         id: toastStack
+        maxFilesPerUpload: uploadController.maxFilesPerUpload
     }
 
     Connections {

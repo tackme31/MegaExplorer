@@ -192,6 +192,17 @@ TestCase {
                 data.expected);
     }
 
+    // Fixed too, but the sentence carries the cap, which is injected rather than
+    // written here -- the number has one home, UploadController::kMaxFilesPerUpload.
+    function test_describeError_tooManyFilesNamesTheInjectedCap() {
+        const toast = makeToast();
+        toast.maxFilesPerUpload = 100;
+        compare(toast.describeError("uploadTooManyFiles", NotificationController.Unknown, ""),
+                "Too many files — upload at most 100 at a time");
+        compare(toast.describeError("uploadTooManyFiles", NotificationController.NotFound,
+                                    "ignored"), "Too many files — upload at most 100 at a time");
+    }
+
     // A context C++ emits that nothing here handles. R3-5 turned this from
     // "print the raw English" into "warn and say something generic"; the warning
     // is the half that makes the gap findable, so it is part of the contract.
