@@ -217,6 +217,55 @@ TestCase {
         tryCompare(dialog, "visible", false);
     }
 
+    function test_confirmUpload_aSecondDropWaitsInsteadOfReplacingTheFirst() {
+        // A drop still reaches the app while this dialog is up, and open() does
+        // nothing on a visible Popup -- so without a queue the first question's
+        // files would be dropped on the floor with no error at all.
+        const uploads = makeUploads();
+        const dialog = makeDialog(confirmUploadComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.uploadRequiresConfirmation(["a.txt"], 5, 42, false);
+        uploads.uploadRequiresConfirmation(["b.txt"], 2, 7, false);
+
+        // Still the first question, with its own destination.
+        tryCompare(dialog, "opened", true);
+        compare(dialog.fileCount, 5);
+        compare(dialog.destinationHandle, 42);
+
+        dialog.accept();
+        compare(uploads.confirmedCount, 1);
+        compare(uploads.lastCall.handle, 42);
+
+        // ...and only now does the second one get asked.
+        tryVerify(() => dialog.fileCount === 2);
+        compare(dialog.destinationHandle, 7);
+        dialog.accept();
+        compare(uploads.confirmedCount, 2);
+        compare(uploads.lastCall.handle, 7);
+    }
+
+    function test_confirmUpload_cancellingTheFirstStillAsksTheSecond() {
+        // Cancel answers one question, not the queue behind it.
+        const uploads = makeUploads();
+        const dialog = makeDialog(confirmUploadComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.uploadRequiresConfirmation(["a.txt"], 5, 42, false);
+        uploads.uploadRequiresConfirmation(["b.txt"], 2, 7, false);
+
+        tryCompare(dialog, "opened", true);
+        dialog.reject();
+
+        tryVerify(() => dialog.fileCount === 2);
+        compare(uploads.confirmedCount, 0);
+        dialog.accept();
+        compare(uploads.confirmedCount, 1);
+        compare(uploads.lastCall.handle, 7);
+    }
+
     // This is the destructive one: Replace overwrites what the user has, Skip
     // keeps it. Swapping them loses data with no error and no visible symptom.
     function test_nameConflict_replaceReplacesAndOnlyReplaces() {
@@ -295,6 +344,29 @@ TestCase {
         const text = dialog.contentChildren[0].text;
         compare(text.indexOf(data.shown) !== -1, true);
         compare(text.indexOf("…") !== -1, data.ellipsis);
+    }
+
+    function test_nameConflict_aSecondDropWaitsInsteadOfReplacingTheFirst() {
+        // Same queue as ConfirmUploadDialog, and it matters more here: the
+        // question being replaced is the one guarding an overwrite.
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 42, false);
+        uploads.nameConflictRequiresConfirmation(["b.txt"], ["b.txt"], 7, false);
+
+        tryCompare(dialog, "opened", true);
+        compare(dialog.destinationHandle, 42);
+        buttonNamed(dialog, "Skip").clicked();
+        compare(uploads.skippingCount, 1);
+        compare(uploads.lastCall.handle, 42);
+
+        tryVerify(() => dialog.destinationHandle === 7);
+        buttonNamed(dialog, "Replace").clicked();
+        compare(uploads.replacingCount, 1);
+        compare(uploads.lastCall.handle, 7);
     }
 
     // ---- MissingPinDialog ----------------------------------------------
