@@ -9,6 +9,7 @@
 #include <QStringList>
 #include <QVariantList>
 
+#include <cstdint>
 #include <memory>
 #include <set>
 #include <string>
@@ -115,8 +116,10 @@ public:
     // source folder, so the folder the nodes were cut from refreshes even when the
     // paste happened in another tab. A copy is two-stage: re-read the
     // destination's names, then copy each entry under a name nothing there uses
-    // (IMegaClient::copyNode says why a colliding one is not merely untidy). A
-    // file whose name is already taken stops the batch at copyNameConflict.
+    // (IMegaClient::copyNode says why a colliding one is not merely untidy). An
+    // entry whose name is already taken stops the batch at copyNameConflict --
+    // unless it is being pasted back into the folder it already lives in, which
+    // is a duplication rather than a collision and asks nothing.
     //
     // Silent when there is nothing to do -- canPaste() already greys those out.
     Q_INVOKABLE void paste();
@@ -147,18 +150,17 @@ public:
     Q_INVOKABLE bool
     canCopyEntriesOn(const QVariantList& entries, quint64 target, bool targetIsRoot) const;
 
-    // The three answers to copyNameConflict, all taking the batch back rather than
+    // The two answers to copyNameConflict, both taking the batch back rather than
     // reading state kept here: the question rides on the dialog, as the upload
-    // ones do. Cancel calls none of them.
+    // ones do. Cancel calls neither.
     //
     // Replacing means copying under the source's own name, which the SDK turns
     // into a new *version* of the existing file (IMegaClient::copyNode) -- the
-    // closest thing MEGA has to an overwrite. Renaming is what a paste did
-    // unconditionally before the dialog existed.
+    // closest thing MEGA has to an overwrite. It reaches files only: copyNode
+    // cannot merge into an existing folder, so a colliding folder is skipped
+    // under either answer.
     Q_INVOKABLE void
     copyReplacingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
-    Q_INVOKABLE void
-    copyRenamingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
     Q_INVOKABLE void
     copySkippingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
 
@@ -178,11 +180,14 @@ signals:
     void nodesCopied(quint64 destination, bool destinationIsRoot);
 
     // A copy would land on names the destination already uses, so nothing has been
-    // issued yet -- one of the three copy*Existing() calls above (or nothing, for
-    // Cancel) decides what happens. Only *files* are counted: two same-named
-    // folders coexist on MEGA with nothing overwritten.
+    // issued yet -- one of the two copy*Existing() calls above (or nothing, for
+    // Cancel) decides what happens. Files and folders are reported apart because
+    // only a file can be replaced: the dialog offers Replace exactly when
+    // conflictingFiles is non-empty, and a colliding folder is skipped whatever
+    // the answer (docs/investigations/SPEC_NAME_CONFLICT_RESOLUTION.md 3-1).
     void copyNameConflict(QVariantList entries,
-                          QStringList conflictNames,
+                          QStringList conflictingFiles,
+                          QStringList conflictingFolders,
                           quint64 destination,
                           bool destinationIsRoot);
 
@@ -212,7 +217,9 @@ private:
     Result<void> clipboardCopyAllowedHere() const;
 
     // What to do with an entry whose name the destination already holds. Ask is
-    // the entry points' value; the other three are what the dialog answers with.
+    // the entry points' value; Replace and Skip are the dialog's two answers.
+    // Rename is not offered any more, but stays as the engine every non-colliding
+    // copy runs through -- and as the whole answer for a same-folder paste.
     enum class CopyConflict
     {
         Ask,
@@ -221,19 +228,31 @@ private:
         Skip
     };
 
-    // Second stage of a copy, on the GUI thread. taken is every name the
-    // destination already uses (what a generated name must avoid); existingFiles
-    // is the *file* half of it (what a copy could land over, and so the only
-    // thing worth asking about). How either was arrived at is the caller's
-    // problem, since the callers answer a failed destination read differently
-    // (paste() falls back to the cached listing, the other two refuse). A stale
-    // set would let a copy land as a new *version* of an existing file rather
-    // than beside it.
+    // The destination's listing, reduced to what a copy needs. taken is every name
+    // already there (what a generated name must dodge); files and folders are the
+    // halves a copy could land on, kept apart because only a file can be versioned
+    // over; handles is who already lives there, so an entry pasted back into its
+    // own folder is recognised as a duplication rather than a collision
+    // (docs/investigations/SPEC_NAME_CONFLICT_RESOLUTION.md 3-2).
+    struct DestinationSnapshot
+    {
+        std::set<std::string> taken;
+        std::set<std::string> files;
+        std::set<std::string> folders;
+        std::set<std::uint64_t> handles;
+
+        static DestinationSnapshot of(const std::vector<FileEntry>& children);
+    };
+
+    // Second stage of a copy, on the GUI thread. How the snapshot was arrived at
+    // is the caller's problem, since the callers answer a failed destination read
+    // differently (paste() falls back to the cached listing, the other two
+    // refuse). A stale one would let a copy land as a new *version* of an existing
+    // file rather than beside it.
     void startCopyBatch(const std::vector<NodeRef>& entries,
                         quint64 target,
                         bool targetIsRoot,
-                        std::set<std::string> taken,
-                        std::set<std::string> existingFiles,
+                        DestinationSnapshot destination,
                         CopyConflict onConflict);
 
     // Body of the three copy*Existing() answers: re-reads the destination and

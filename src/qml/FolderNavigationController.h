@@ -203,11 +203,11 @@ public:
     // folder for it to target.
     bool isLoaded() const;
 
-    // Child names from the cached listing, not the server: the mutation half's
-    // fallback when a paste's destination re-read fails. filesOnly narrows it to
-    // the names a copy could actually land *over* -- a folder of that name cannot
-    // be overwritten, only duplicated (IMegaClient::copyNode).
-    std::set<std::string> cachedChildNames(bool filesOnly) const;
+    // The cached listing, not the server: the mutation half's fallback when a
+    // paste's destination re-read fails. Whole entries rather than names because
+    // a copy also has to recognise its own sources among them -- pasting into the
+    // folder they already live in duplicates rather than collides.
+    const std::vector<FileEntry>& cachedChildren() const;
 
     // Folders only: MEGA lets a file and a folder share a name, so a same-named
     // file is no conflict for createFolder (IMegaClient::createFolder).

@@ -18,24 +18,23 @@
 
 namespace
 {
-// Both destination reads below pull only child *names* out of the listing, so the
-// order is inert and fixed here rather than threaded through from the navigation
-// half's current sort.
+// Both destination reads below pull only child names and handles out of the
+// listing, so the order is inert and fixed here rather than threaded through
+// from the navigation half's current sort.
 constexpr SortOrder kNameOrder{SortKey::Name, true};
-
-// filesOnly picks out the names a copy could land *over*: copyNode versions a
-// same-named file, while two same-named folders simply coexist.
-std::set<std::string> namesOf(const std::vector<FileEntry>& entries, bool filesOnly)
-{
-    std::set<std::string> names;
-    for (const FileEntry& entry : entries)
-    {
-        if (filesOnly && entry.isFolder)
-            continue;
-        names.insert(entry.name);
-    }
-    return names;
 }
+
+FileMutationController::DestinationSnapshot
+FileMutationController::DestinationSnapshot::of(const std::vector<FileEntry>& children)
+{
+    DestinationSnapshot snapshot;
+    for (const FileEntry& child : children)
+    {
+        snapshot.taken.insert(child.name);
+        (child.isFolder ? snapshot.folders : snapshot.files).insert(child.name);
+        snapshot.handles.insert(child.handle);
+    }
+    return snapshot;
 } // namespace
 
 FileMutationController::FileMutationController(
@@ -441,23 +440,12 @@ void FileMutationController::paste()
 
                                   // A failed read is no reason to refuse: the destination *is*
                                   // this tab's folder, so its cached listing is the best answer.
-                                  std::set<std::string> taken;
-                                  std::set<std::string> existingFiles;
-                                  if (result.success)
-                                  {
-                                      taken = namesOf(result.value(), false);
-                                      existingFiles = namesOf(result.value(), true);
-                                  }
-                                  else
-                                  {
-                                      taken = mNavigation->cachedChildNames(false);
-                                      existingFiles = mNavigation->cachedChildNames(true);
-                                  }
                                   startCopyBatch(entries,
                                                  target,
                                                  targetIsRoot,
-                                                 std::move(taken),
-                                                 std::move(existingFiles),
+                                                 DestinationSnapshot::of(
+                                                     result.success ? result.value()
+                                                                    : mNavigation->cachedChildren()),
                                                  CopyConflict::Ask);
                               });
         });
@@ -513,8 +501,7 @@ void FileMutationController::copyEntriesTo(const QVariantList& entries,
                     startCopyBatch(copied,
                                    target,
                                    targetIsRoot,
-                                   namesOf(result.value(), false),
-                                   namesOf(result.value(), true),
+                                   DestinationSnapshot::of(result.value()),
                                    CopyConflict::Ask);
                 });
         });
@@ -523,34 +510,44 @@ void FileMutationController::copyEntriesTo(const QVariantList& entries,
 void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
                                             quint64 target,
                                             bool targetIsRoot,
-                                            std::set<std::string> taken,
-                                            std::set<std::string> existingFiles,
+                                            DestinationSnapshot destination,
                                             CopyConflict onConflict)
 {
     if (entries.empty())
         return;
 
-    // existingFiles is deliberately the *destination's* file names and nothing
-    // else: a name this batch itself just claimed (below) is not a collision, and
-    // treating it as one would silently drop an entry under Skip. Folders are out
-    // on both sides -- a same-named folder is duplicated, never overwritten, so
-    // there is nothing there to ask about.
-    const auto collides = [&existingFiles](const NodeRef& entry) {
-        return !entry.isFolder && existingFiles.count(entry.name) > 0;
+    // The snapshot is deliberately the *destination's* names and nothing else: a
+    // name this batch itself just claimed (below) is not a collision, and treating
+    // it as one would silently drop an entry under Skip. Matched by kind, so a
+    // file and a folder sharing a name are no collision -- neither can land on the
+    // other, and uniqueCopyName still keeps the new one distinguishable.
+    const auto collides = [&destination](const NodeRef& entry) {
+        // Its own node is what it would collide with: this is a paste back into
+        // the folder it already lives in, which duplicates rather than overwrites
+        // (SPEC_NAME_CONFLICT_RESOLUTION 3-2).
+        if (destination.handles.count(entry.handle) > 0)
+            return false;
+        const std::set<std::string>& sameKind =
+            entry.isFolder ? destination.folders : destination.files;
+        return sameKind.count(entry.name) > 0;
     };
 
     if (onConflict == CopyConflict::Ask)
     {
-        QStringList conflicts;
+        QStringList conflictingFiles;
+        QStringList conflictingFolders;
         for (const NodeRef& entry : entries)
         {
-            if (collides(entry))
-                conflicts.append(QString::fromStdString(entry.name));
+            if (!collides(entry))
+                continue;
+            (entry.isFolder ? conflictingFolders : conflictingFiles)
+                .append(QString::fromStdString(entry.name));
         }
-        if (!conflicts.isEmpty())
+        if (!conflictingFiles.isEmpty() || !conflictingFolders.isEmpty())
         {
             emit copyNameConflict(ClipboardController::toVariantList(entries),
-                                  conflicts,
+                                  conflictingFiles,
+                                  conflictingFolders,
                                   target,
                                   targetIsRoot);
             return;
@@ -570,7 +567,11 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
     for (const NodeRef& entry : entries)
     {
         const bool colliding = collides(entry);
-        if (colliding && onConflict == CopyConflict::Skip)
+        // A folder is dropped under Replace too: copyNode copies a subtree in one
+        // request and cannot merge into an existing folder, so the only "replace"
+        // available would be binning the destination folder whole -- taking files
+        // the source never had with it.
+        if (colliding && (onConflict == CopyConflict::Skip || entry.isFolder))
             continue;
         if (colliding && onConflict == CopyConflict::Replace)
         {
@@ -581,10 +582,10 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
         }
 
         const std::string chosen =
-            FileOperationService::uniqueCopyName(entry.name, entry.isFolder, taken);
+            FileOperationService::uniqueCopyName(entry.name, entry.isFolder, destination.taken);
         // Claimed right away: MEGA allows duplicate siblings, so two clipboard
         // entries can share a name and must not be handed the same new one.
-        taken.insert(chosen);
+        destination.taken.insert(chosen);
         plan.push_back({entry.handle, chosen == entry.name ? std::string() : chosen});
     }
 
@@ -624,13 +625,6 @@ void FileMutationController::copyReplacingExisting(const QVariantList& entries,
                                                    bool targetIsRoot)
 {
     answerCopyConflict(entries, target, targetIsRoot, CopyConflict::Replace);
-}
-
-void FileMutationController::copyRenamingExisting(const QVariantList& entries,
-                                                  quint64 target,
-                                                  bool targetIsRoot)
-{
-    answerCopyConflict(entries, target, targetIsRoot, CopyConflict::Rename);
 }
 
 void FileMutationController::copySkippingExisting(const QVariantList& entries,
@@ -690,8 +684,7 @@ void FileMutationController::answerCopyConflict(const QVariantList& entries,
                     startCopyBatch(chosen,
                                    target,
                                    targetIsRoot,
-                                   namesOf(result.value(), false),
-                                   namesOf(result.value(), true),
+                                   DestinationSnapshot::of(result.value()),
                                    resolution);
                 });
         });

@@ -107,12 +107,14 @@ protected:
                          &FileMutationController::copyNameConflict,
                          mutations.get(),
                          [this](QVariantList entries,
-                                QStringList names,
+                                QStringList files,
+                                QStringList folders,
                                 quint64 destination,
                                 bool destinationIsRoot) {
                              ++conflictCalls;
                              lastConflictEntries = entries;
-                             lastConflictNames = names;
+                             lastConflictFiles = files;
+                             lastConflictFolders = folders;
                              lastConflictDestination = destination;
                              lastConflictDestinationIsRoot = destinationIsRoot;
                          });
@@ -203,7 +205,8 @@ protected:
     int lastFailed = 0;
     int conflictCalls = 0;
     QVariantList lastConflictEntries;
-    QStringList lastConflictNames;
+    QStringList lastConflictFiles;
+    QStringList lastConflictFolders;
     quint64 lastConflictDestination = 0;
     bool lastConflictDestinationIsRoot = false;
 };
@@ -928,10 +931,11 @@ TEST_F(FileMutationControllerTest, PasteKeepsANonCollidingNameUnchanged)
     EXPECT_EQ(lastSucceeded, 1);
 }
 
-// A file whose name the destination already holds stops the paste at the
+// An entry whose name the destination already holds stops the paste at the
 // question below instead of being renamed on the spot, which is what it used to
-// do unconditionally. Folders never reach it: two same-named folders coexist on
-// MEGA, so there is nothing there to overwrite.
+// do unconditionally. Files and folders are reported apart because only a file
+// can be replaced (SPEC_NAME_CONFLICT_RESOLUTION 3-1), and the match is by kind:
+// a file and a folder sharing a name can neither merge nor overwrite.
 
 TEST_F(FileMutationControllerTest, PasteAsksBeforeCopyingOntoAnExistingFile)
 {
@@ -947,7 +951,8 @@ TEST_F(FileMutationControllerTest, PasteAsksBeforeCopyingOntoAnExistingFile)
     flush();
 
     ASSERT_EQ(conflictCalls, 1);
-    EXPECT_EQ(lastConflictNames, QStringList{QStringLiteral("a.txt")});
+    EXPECT_EQ(lastConflictFiles, QStringList{QStringLiteral("a.txt")});
+    EXPECT_TRUE(lastConflictFolders.isEmpty());
     // The whole batch comes back out, not just the colliding part: the answer
     // decides what happens to every entry.
     EXPECT_EQ(lastConflictEntries.size(), 2);
@@ -955,14 +960,66 @@ TEST_F(FileMutationControllerTest, PasteAsksBeforeCopyingOntoAnExistingFile)
     EXPECT_EQ(operationCalls, 0);
 }
 
-TEST_F(FileMutationControllerTest, PasteDoesNotAskAboutAFolderWhoseNameIsTaken)
+TEST_F(FileMutationControllerTest, PasteAsksAboutAFolderWhoseNameIsTaken)
 {
+    // Reported under folders, not files: the dialog hides Replace on this one,
+    // because copyNode cannot merge a subtree into an existing folder.
     givenRootListing({entry("shared", 1, true)});
     controller->loadRoot();
     flush();
     clipboard->copy(clipboardEntries({entry("shared", 5, true)}), 7, false);
 
-    EXPECT_CALL(*client, copyNode(5u, _, _, std::string("shared - Copy"), _))
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+
+    mutations->paste();
+    flush();
+    flush();
+
+    ASSERT_EQ(conflictCalls, 1);
+    EXPECT_TRUE(lastConflictFiles.isEmpty());
+    EXPECT_EQ(lastConflictFolders, QStringList{QStringLiteral("shared")});
+}
+
+TEST_F(FileMutationControllerTest, CopyReplacingExistingStillSkipsACollidingFolder)
+{
+    givenRootListing({entry("a.txt", 1), entry("shared", 2, true)});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("shared", 6, true)}), 7, false);
+
+    mutations->paste();
+    flush();
+    flush();
+    ASSERT_EQ(conflictCalls, 1);
+
+    // Replacing the folder would mean binning the destination's copy whole,
+    // taking files the source never had with it -- so only the file is issued.
+    EXPECT_CALL(*client, copyNode(5u, _, _, std::string(), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(6u, _, _, _, _)).Times(0);
+
+    mutations->copyReplacingExisting(lastConflictEntries,
+                                     lastConflictDestination,
+                                     lastConflictDestinationIsRoot);
+    flush();
+    flush();
+
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastSucceeded, 1);
+}
+
+TEST_F(FileMutationControllerTest, PasteIntoTheFolderTheEntriesLiveInDuplicatesWithoutAsking)
+{
+    // Same-folder paste is a duplication, not a collision: the entry's own node
+    // is the thing its name clashes with (SPEC_NAME_CONFLICT_RESOLUTION 3-2).
+    givenRootListing({entry("a.txt", 5), entry("shared", 6, true)});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("shared", 6, true)}), 7, false);
+
+    EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(6u, _, _, std::string("shared - Copy"), _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
     mutations->paste();
@@ -970,7 +1027,29 @@ TEST_F(FileMutationControllerTest, PasteDoesNotAskAboutAFolderWhoseNameIsTaken)
     flush();
 
     EXPECT_EQ(conflictCalls, 0);
-    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(lastSucceeded, 2);
+}
+
+TEST_F(FileMutationControllerTest, PasteDoesNotHandOutTheSameGeneratedNameTwice)
+{
+    // MEGA allows duplicate siblings, so two clipboard entries really can share
+    // a name -- and neither may be given the name the other just claimed.
+    givenRootListing({entry("a.txt", 5), entry("a.txt", 6)});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("a.txt", 6)}), 7, false);
+
+    EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(6u, _, _, std::string("a - Copy (2).txt"), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->paste();
+    flush();
+    flush();
+
+    EXPECT_EQ(conflictCalls, 0);
+    EXPECT_EQ(lastSucceeded, 2);
 }
 
 TEST_F(FileMutationControllerTest, PasteDoesNotAskWhenOnlyAFolderHoldsTheName)
@@ -992,32 +1071,6 @@ TEST_F(FileMutationControllerTest, PasteDoesNotAskWhenOnlyAFolderHoldsTheName)
 
     EXPECT_EQ(conflictCalls, 0);
     EXPECT_EQ(lastSucceeded, 1);
-}
-
-TEST_F(FileMutationControllerTest, CopyRenamingExistingAutoRenamesOnlyTheCollidingEntry)
-{
-    givenRootListing({entry("a.txt", 1)});
-    controller->loadRoot();
-    flush();
-    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("b.txt", 6)}), 7, false);
-
-    mutations->paste();
-    flush();
-    flush();
-    ASSERT_EQ(conflictCalls, 1);
-
-    EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-    EXPECT_CALL(*client, copyNode(6u, _, _, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-
-    mutations->copyRenamingExisting(lastConflictEntries,
-                                    lastConflictDestination,
-                                    lastConflictDestinationIsRoot);
-    flush();
-    flush();
-
-    EXPECT_EQ(lastSucceeded, 2);
 }
 
 TEST_F(FileMutationControllerTest, CopyReplacingExistingKeepsTheCollidingSourceName)
@@ -1129,34 +1182,6 @@ TEST_F(FileMutationControllerTest, CopyAnswerRefusesWhenTheDestinationCannotBeRe
     EXPECT_EQ(lastErrorContext, QStringLiteral("copy"));
 }
 
-TEST_F(FileMutationControllerTest, CopyRenamingExistingDoesNotHandOutTheSameGeneratedNameTwice)
-{
-    // MEGA allows duplicate siblings, so two clipboard entries really can share
-    // a name -- and neither may be given the name the other just claimed.
-    givenRootListing({entry("a.txt", 1)});
-    controller->loadRoot();
-    flush();
-    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("a.txt", 6)}), 7, false);
-
-    mutations->paste();
-    flush();
-    flush();
-    ASSERT_EQ(conflictCalls, 1);
-
-    EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-    EXPECT_CALL(*client, copyNode(6u, _, _, std::string("a - Copy (2).txt"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-
-    mutations->copyRenamingExisting(lastConflictEntries,
-                                    lastConflictDestination,
-                                    lastConflictDestinationIsRoot);
-    flush();
-    flush();
-
-    EXPECT_EQ(lastSucceeded, 2);
-}
-
 TEST_F(FileMutationControllerTest, PasteFallsBackToTheCachedListingWhenTheDestinationReadFails)
 {
     givenRootListing({entry("a.txt", 1)});
@@ -1177,7 +1202,7 @@ TEST_F(FileMutationControllerTest, PasteFallsBackToTheCachedListingWhenTheDestin
     flush();
 
     ASSERT_EQ(conflictCalls, 1);
-    EXPECT_EQ(lastConflictNames, QStringList{QStringLiteral("a.txt")});
+    EXPECT_EQ(lastConflictFiles, QStringList{QStringLiteral("a.txt")});
 }
 
 TEST_F(FileMutationControllerTest, PasteMovesInsteadOfCopyingWhenTheClipboardHoldsACut)
@@ -1450,30 +1475,26 @@ TEST_F(FileMutationControllerTest, CopyEntriesToAsksAgainstTheDropTargetsNames)
     EXPECT_FALSE(lastConflictDestinationIsRoot);
 }
 
-TEST_F(FileMutationControllerTest, CopyRenamingExistingAutoRenamesAgainstTheDropTargetsNames)
+TEST_F(FileMutationControllerTest, CopyEntriesToOntoTheirOwnFolderDuplicatesWithoutAsking)
 {
+    // Ctrl+dropping a selection back onto the folder it came from: its own node
+    // is what the name clashes with, so it duplicates rather than asks.
     givenRootListing({});
     controller->loadRoot();
     flush();
 
     EXPECT_CALL(*client, getChildren(7u, _, _))
         .WillRepeatedly(InvokeArgument<2>(
-            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a.txt", 90)})));
-
-    mutations->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);
-    flush();
-    flush();
-    ASSERT_EQ(conflictCalls, 1);
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a.txt", 1)})));
 
     EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string("a - Copy.txt"), _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
-    mutations->copyRenamingExisting(lastConflictEntries,
-                                    lastConflictDestination,
-                                    lastConflictDestinationIsRoot);
+    mutations->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);
     flush();
     flush();
 
+    EXPECT_EQ(conflictCalls, 0);
     EXPECT_EQ(operationCalls, 1);
 }
 
