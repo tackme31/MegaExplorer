@@ -6,6 +6,7 @@
 #include "core/NodeRef.h"
 
 #include <QObject>
+#include <QStringList>
 #include <QVariantList>
 
 #include <memory>
@@ -114,7 +115,8 @@ public:
     // source folder, so the folder the nodes were cut from refreshes even when the
     // paste happened in another tab. A copy is two-stage: re-read the
     // destination's names, then copy each entry under a name nothing there uses
-    // (IMegaClient::copyNode says why a colliding one is not merely untidy).
+    // (IMegaClient::copyNode says why a colliding one is not merely untidy). A
+    // file whose name is already taken stops the batch at copyNameConflict.
     //
     // Silent when there is nothing to do -- canPaste() already greys those out.
     Q_INVOKABLE void paste();
@@ -145,6 +147,21 @@ public:
     Q_INVOKABLE bool
     canCopyEntriesOn(const QVariantList& entries, quint64 target, bool targetIsRoot) const;
 
+    // The three answers to copyNameConflict, all taking the batch back rather than
+    // reading state kept here: the question rides on the dialog, as the upload
+    // ones do. Cancel calls none of them.
+    //
+    // Replacing means copying under the source's own name, which the SDK turns
+    // into a new *version* of the existing file (IMegaClient::copyNode) -- the
+    // closest thing MEGA has to an overwrite. Renaming is what a paste did
+    // unconditionally before the dialog existed.
+    Q_INVOKABLE void
+    copyReplacingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
+    Q_INVOKABLE void
+    copyRenamingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
+    Q_INVOKABLE void
+    copySkippingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
+
 signals:
     void folderCreated();
     // reason is a structured selector, not a message: "exists", "invalidName" or
@@ -159,6 +176,15 @@ signals:
 
     // Same purpose as nodesMoved, destination only: a copy leaves the source alone.
     void nodesCopied(quint64 destination, bool destinationIsRoot);
+
+    // A copy would land on names the destination already uses, so nothing has been
+    // issued yet -- one of the three copy*Existing() calls above (or nothing, for
+    // Cancel) decides what happens. Only *files* are counted: two same-named
+    // folders coexist on MEGA with nothing overwritten.
+    void copyNameConflict(QVariantList entries,
+                          QStringList conflictNames,
+                          quint64 destination,
+                          bool destinationIsRoot);
 
     // Source only, for the opposite reason: the rubbish bin is not a place any tab
     // can be showing. Until F7b this batch announced nothing at all, so a second
@@ -185,15 +211,39 @@ private:
     // reason, not just the verdict.
     Result<void> clipboardCopyAllowedHere() const;
 
-    // Second stage of a copy, on the GUI thread. taken is the set of names the
-    // destination already uses; how it was arrived at is the caller's problem,
-    // since the two callers answer a failed destination read differently (paste()
-    // falls back to the cached listing, copyEntriesTo() refuses). A stale set would
-    // let a copy land as a new *version* of an existing file rather than beside it.
+    // What to do with an entry whose name the destination already holds. Ask is
+    // the entry points' value; the other three are what the dialog answers with.
+    enum class CopyConflict
+    {
+        Ask,
+        Rename,
+        Replace,
+        Skip
+    };
+
+    // Second stage of a copy, on the GUI thread. taken is every name the
+    // destination already uses (what a generated name must avoid); existingFiles
+    // is the *file* half of it (what a copy could land over, and so the only
+    // thing worth asking about). How either was arrived at is the caller's
+    // problem, since the callers answer a failed destination read differently
+    // (paste() falls back to the cached listing, the other two refuse). A stale
+    // set would let a copy land as a new *version* of an existing file rather
+    // than beside it.
     void startCopyBatch(const std::vector<NodeRef>& entries,
                         quint64 target,
                         bool targetIsRoot,
-                        std::set<std::string> taken);
+                        std::set<std::string> taken,
+                        std::set<std::string> existingFiles,
+                        CopyConflict onConflict);
+
+    // Body of the three copy*Existing() answers: re-reads the destination and
+    // resumes the batch under the chosen resolution. Re-read rather than carried
+    // through the dialog so the answer sees anything that changed while the
+    // question was open, which also means a failed read has to end the copy.
+    void answerCopyConflict(const QVariantList& entries,
+                            quint64 target,
+                            bool targetIsRoot,
+                            CopyConflict resolution);
 
     std::shared_ptr<FolderNavigationController> mNavigation;
     std::shared_ptr<FolderNavigationService> mService;

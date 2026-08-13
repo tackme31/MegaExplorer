@@ -28,6 +28,21 @@ std::vector<NodeRef> ClipboardController::toNodeRefs(const QVariantList& entries
     return converted;
 }
 
+QVariantList ClipboardController::toVariantList(const std::vector<NodeRef>& entries)
+{
+    QVariantList list;
+    list.reserve(static_cast<qsizetype>(entries.size()));
+    for (const NodeRef& entry : entries)
+    {
+        QVariantMap map;
+        map[QStringLiteral("handle")] = static_cast<quint64>(entry.handle);
+        map[QStringLiteral("name")] = QString::fromStdString(entry.name);
+        map[QStringLiteral("isFolder")] = entry.isFolder;
+        list.append(map);
+    }
+    return list;
+}
+
 void ClipboardController::take(const QVariantList& entries,
                                bool cut,
                                quint64 sourceHandle,
