@@ -27,10 +27,19 @@ Dialog {
     property var destinationHandle: 0
     property bool destinationIsRoot: false
 
+    // Questions that arrived while one was already being asked -- same hazard and
+    // same fix as ConfirmUploadDialog.qml: a drop still reaches the app while this
+    // is up, and open() does nothing on a visible Popup.
+    property var pendingRequests: []
+
     parent: Overlay.overlay
     anchors.centerIn: Overlay.overlay
     modal: true
     title: qsTr("Files with the same name already exist")
+
+    // Every one of the three buttons closes, so this is the one place the next
+    // question can start from.
+    onClosed: root.showNextRequest()
 
     Label {
         width: 360
@@ -66,15 +75,31 @@ Dialog {
         }
     }
 
+    // Reassigned rather than push()ed, as in ConfirmUploadDialog.qml.
+    function showNextRequest() {
+        if (root.pendingRequests.length === 0)
+            return;
+        const next = root.pendingRequests[0];
+        root.pendingRequests = root.pendingRequests.slice(1);
+        root.filePaths = next.filePaths;
+        root.conflictNames = next.conflictNames;
+        root.destinationHandle = next.destinationHandle;
+        root.destinationIsRoot = next.destinationIsRoot;
+        root.open();
+    }
+
     Connections {
         target: root.uploads
         function onNameConflictRequiresConfirmation(filePaths, conflictNames, destinationHandle,
                                                     destinationIsRoot) {
-            root.filePaths = filePaths;
-            root.conflictNames = conflictNames;
-            root.destinationHandle = destinationHandle;
-            root.destinationIsRoot = destinationIsRoot;
-            root.open();
+            root.pendingRequests = root.pendingRequests.concat([{
+                                                                   "filePaths": filePaths,
+                                                                   "conflictNames": conflictNames,
+                                                                   "destinationHandle": destinationHandle,
+                                                                   "destinationIsRoot": destinationIsRoot
+                                                               }]);
+            if (!root.visible)
+                root.showNextRequest();
         }
     }
 }
