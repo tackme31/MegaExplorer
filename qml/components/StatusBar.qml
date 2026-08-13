@@ -96,6 +96,15 @@ ToolBar {
             to: 1
             value: downloadController.activeProgress
         }
+        // Stops the whole download queue, not just the file named to its left --
+        // the row has no per-job list to hang a narrower cancel off, and a serial
+        // queue would only start the next file anyway.
+        StatusIconButton {
+            text: Theme.glyph.close
+            ToolTip.text: qsTr("Cancel downloads")
+            visible: downloadController.downloadActive
+            onClicked: downloadController.cancelDownloads()
+        }
 
         // Uploads run on their own serial queue alongside downloads, so both
         // pairs can be showing at once. "n remaining" is the only progress cue a
@@ -119,6 +128,12 @@ ToolBar {
             from: 0
             to: 1
             value: uploadController.activeProgress
+        }
+        StatusIconButton {
+            text: Theme.glyph.close
+            ToolTip.text: qsTr("Cancel uploads")
+            visible: uploadController.uploadActive
+            onClicked: uploadController.cancelUploads()
         }
 
         // Keeps the view-mode buttons right-aligned when the transfer groups

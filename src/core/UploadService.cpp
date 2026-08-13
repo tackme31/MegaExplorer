@@ -1,5 +1,7 @@
 #include "UploadService.h"
 
+#include "MegaErrorCodes.h"
+
 UploadService::UploadService(std::shared_ptr<IMegaClient> client) : mClient(std::move(client)) {}
 
 std::uint64_t UploadService::enqueue(const std::string& localPath,
@@ -50,6 +52,31 @@ std::size_t UploadService::queueLength() const
     return mPending.size() + (mActive ? 1 : 0);
 }
 
+void UploadService::cancelAll()
+{
+    std::deque<UploadJob> dropped;
+    std::function<void(UploadJob)> onJobFinished;
+    bool hadActive = false;
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        ++mCancelGeneration;
+        dropped.swap(mPending);
+        hadActive = mActive.has_value();
+        onJobFinished = mOnJobFinished;
+    }
+
+    if (hadActive)
+        mClient->cancelUpload();
+
+    if (!onJobFinished)
+        return;
+    for (UploadJob& job : dropped)
+    {
+        job.state = UploadState::Cancelled;
+        onJobFinished(job);
+    }
+}
+
 Result<void> UploadService::canUploadTo(std::uint64_t parentHandle, bool parentIsRoot) const
 {
     return mClient->checkUpload(parentHandle, parentIsRoot);
@@ -96,6 +123,7 @@ void UploadService::startNextIfIdle()
         std::string localPath;
         std::uint64_t parentHandle;
         bool parentIsRoot;
+        std::uint64_t generationAtStart;
         {
             std::lock_guard<std::mutex> lock(mMutex);
             mAdvanceRequested = false;
@@ -111,6 +139,7 @@ void UploadService::startNextIfIdle()
             localPath = mActive->localPath;
             parentHandle = mActive->parentHandle;
             parentIsRoot = mActive->parentIsRoot;
+            generationAtStart = mCancelGeneration;
         }
 
         // The destination may have been deleted between the drop and this
@@ -171,7 +200,11 @@ void UploadService::startNextIfIdle()
                     std::lock_guard<std::mutex> lock(mMutex);
                     if (!mActive || mActive->id != id)
                         return; // same as onProgress above
-                    mActive->state = result.success ? UploadState::Completed : UploadState::Failed;
+                    // Same kEIncomplete rule as DownloadService -- see the comment there.
+                    mActive->state = result.success ? UploadState::Completed
+                                     : result.errorCode == MegaErrorCode::kEIncomplete
+                                         ? UploadState::Cancelled
+                                         : UploadState::Failed;
                     if (result.success)
                     {
                         mActive->nodeHandle = result.value().nodeHandle;
@@ -196,11 +229,22 @@ void UploadService::startNextIfIdle()
         // the flag clear and this call ends. Both branches must share one lock:
         // splitting them lets a completion land in between, set the flag, and
         // find nobody left to act on it.
-        std::lock_guard<std::mutex> lock(mMutex);
-        if (!mAdvanceRequested)
+        bool cancelRaced = false;
+        bool finished = false;
         {
-            mAdvancing = false;
-            return;
+            std::lock_guard<std::mutex> lock(mMutex);
+            // Same re-assert as DownloadService, and the window is wider here: the
+            // blocking checkUpload() above sits inside it too.
+            cancelRaced = mActive.has_value() && mCancelGeneration != generationAtStart;
+            if (!mAdvanceRequested)
+            {
+                mAdvancing = false;
+                finished = true;
+            }
         }
+        if (cancelRaced)
+            mClient->cancelUpload();
+        if (finished)
+            return;
     }
 }

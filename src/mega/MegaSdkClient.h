@@ -4,11 +4,13 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 
 // forward declarations; only files under src/mega need <megaapi.h>
 namespace mega
 {
 class MegaApi;
+class MegaCancelToken;
 class MegaNode;
 } // namespace mega
 
@@ -93,6 +95,9 @@ public:
            bool parentIsRoot,
            std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
            std::function<void(Result<UploadOutcome>)> onDone) override;
+
+    void cancelDownload() override;
+    void cancelUpload() override;
 
     void getThumbnail(std::uint64_t handle,
                       const std::string& destinationPath,
@@ -186,4 +191,22 @@ private:
     // callbacks holding its own sdkMutex, which our synchronous methods take from the
     // GUI thread, so any lock wrapping both sides inverts the order and deadlocks.
     std::atomic<bool> mShuttingDown{false};
+
+    // The token handed to the transfer that startDownload/startUpload most recently
+    // began, kept so cancelDownload()/cancelUpload() have something to set. Owned
+    // here rather than by the listener because the listener deletes itself on the SDK
+    // thread the moment its transfer ends -- a pointer to it could not be held
+    // safely. Keeping a *finished* transfer's token instead is harmless: startDownload
+    // copies the token by value and MegaCancelToken is a shared handle, so cancelling
+    // a token nothing is watching does nothing.
+    //
+    // A mutex is usable here, unlike around mShuttingDown, only because nothing
+    // under it re-enters the SDK: MegaCancelToken::cancel() just writes a shared
+    // flag (mega/types.h's CancelToken) and takes no lock, so this one is a leaf and
+    // cannot invert against sdkMutex. Keep it that way -- download() deliberately
+    // calls startDownload *outside* the guard, and it can arrive on the SDK's own
+    // callback thread with sdkMutex already held.
+    std::mutex mCancelTokenMutex;
+    std::unique_ptr<mega::MegaCancelToken> mDownloadCancelToken;
+    std::unique_ptr<mega::MegaCancelToken> mUploadCancelToken;
 };

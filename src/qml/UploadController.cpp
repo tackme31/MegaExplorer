@@ -41,6 +41,18 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
             --mBatch.pendingJobs;
             const Destination destination{static_cast<quint64>(job.parentHandle), job.parentIsRoot};
             bool replaceStarted = false;
+            if (job.state == UploadState::Cancelled)
+            {
+                // Counted as neither succeeded nor failed, which is what keeps the
+                // batch flush below silent about it -- cancelUploads() has already
+                // reported the stop for the whole queue. A cancelled job's
+                // replaceHandle is left alone on purpose: nothing was uploaded, so
+                // binning the old file would delete the only copy.
+                releaseDestination(destination);
+                refreshActiveJob();
+                flushBatchIfDone();
+                return;
+            }
             if (job.state == UploadState::Completed)
             {
                 ++mBatch.succeeded;
@@ -133,6 +145,16 @@ int UploadController::maxFilesPerUpload() const
     return kMaxFilesPerUpload;
 }
 
+void UploadController::cancelUploads()
+{
+    const int queued = pendingCount();
+    if (queued == 0)
+        return;
+    mService->cancelAll();
+    mNotifications->notifyOperation(QStringLiteral("uploadCancelled"), queued, 0);
+    refreshActiveJob(); // pending jobs are gone already; the active one clears later
+}
+
 bool UploadController::isUploadingTo(quint64 handle, bool isRoot) const
 {
     return mBatch.pendingByDestination.find(Destination{handle, isRoot}) !=
@@ -205,8 +227,7 @@ int UploadController::expandedFileCount(const QStringList& localPaths) const
         {
             // Hidden files are included because startUpload sends them; the
             // count has to match what actually goes up, not what Explorer shows.
-            QDirIterator walker(
-                path, QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+            QDirIterator walker(path, QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
             while (walker.hasNext() && count <= kMaxFilesPerUpload)
             {
                 walker.next();
@@ -353,8 +374,8 @@ void UploadController::enqueueAll(const QStringList& localPaths,
         const bool isFolder = isFolderUpload(info);
         quint64 replaceHandle = 0;
         auto it = replaceHandleByName.find(name);
-        if (!isFolder && it != replaceHandleByName.end()
-            && claimedReplaceHandles.insert(it->second).second)
+        if (!isFolder && it != replaceHandleByName.end() &&
+            claimedReplaceHandles.insert(it->second).second)
             replaceHandle = it->second;
 
         // A folder has no meaningful size of its own, and 0 is what totalBytes

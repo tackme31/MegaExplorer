@@ -32,6 +32,8 @@ static_assert(MegaErrorCode::kEAccess == mega::MegaError::API_EACCESS,
               "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kEExist == mega::MegaError::API_EEXIST,
               "MegaErrorCodes.h out of sync");
+static_assert(MegaErrorCode::kEIncomplete == mega::MegaError::API_EINCOMPLETE,
+              "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kESid == mega::MegaError::API_ESID, "MegaErrorCodes.h out of sync");
 static_assert(MegaErrorCode::kEBlocked == mega::MegaError::API_EBLOCKED,
               "MegaErrorCodes.h out of sync");
@@ -308,8 +310,7 @@ Result<RestoreTarget> MegaSdkClient::getRestoreTarget(std::uint64_t handle) cons
 
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
-        return Result<RestoreTarget>::fail("No node with the given handle",
-                                           MegaErrorCode::kENoEnt);
+        return Result<RestoreTarget>::fail("No node with the given handle", MegaErrorCode::kENoEnt);
 
     const mega::MegaHandle restore = node->getRestoreHandle();
     if (restore != mega::INVALID_HANDLE)
@@ -421,10 +422,14 @@ void MegaSdkClient::download(std::uint64_t handle,
         return;
     }
 
-    std::unique_ptr<mega::MegaCancelToken> cancelToken(mega::MegaCancelToken::createInstance());
-    mega::MegaCancelToken* cancelTokenRaw = cancelToken.get(); // extract before moving below
-    auto* listener = new megasdk::DownloadListener(
-        std::move(onProgress), std::move(onDone), std::move(cancelToken));
+    auto* listener = new megasdk::DownloadListener(std::move(onProgress), std::move(onDone));
+
+    mega::MegaCancelToken* cancelTokenRaw = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(mCancelTokenMutex);
+        mDownloadCancelToken.reset(mega::MegaCancelToken::createInstance());
+        cancelTokenRaw = mDownloadCancelToken.get();
+    }
 
     mApi->startDownload(node.get(),
                         destinationPath.c_str(),
@@ -458,14 +463,34 @@ void MegaSdkClient::upload(const std::string& localPath,
         return;
     }
 
-    std::unique_ptr<mega::MegaCancelToken> cancelToken(mega::MegaCancelToken::createInstance());
-    mega::MegaCancelToken* cancelTokenRaw = cancelToken.get(); // extract before moving below
-    auto* listener = new megasdk::UploadListener(
-        std::move(onProgress), std::move(onDone), std::move(cancelToken));
+    auto* listener = new megasdk::UploadListener(std::move(onProgress), std::move(onDone));
+
+    mega::MegaCancelToken* cancelTokenRaw = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(mCancelTokenMutex);
+        mUploadCancelToken.reset(mega::MegaCancelToken::createInstance());
+        cancelTokenRaw = mUploadCancelToken.get();
+    }
 
     // options == nullptr means all defaults; megaapi.cpp only copies the struct when
     // it is non-null, so there is nothing to construct here.
     mApi->startUpload(localPath, parent.get(), cancelTokenRaw, /*options*/ nullptr, listener);
+}
+
+void MegaSdkClient::cancelDownload()
+{
+    std::lock_guard<std::mutex> lock(mCancelTokenMutex);
+    if (mDownloadCancelToken)
+        mDownloadCancelToken->cancel();
+}
+
+void MegaSdkClient::cancelUpload()
+{
+    // No mShuttingDown guard on either: the token is ours, not the SDK's, so setting
+    // it never re-enters mApi.
+    std::lock_guard<std::mutex> lock(mCancelTokenMutex);
+    if (mUploadCancelToken)
+        mUploadCancelToken->cancel();
 }
 
 void MegaSdkClient::getThumbnail(std::uint64_t handle,
@@ -517,8 +542,8 @@ void MegaSdkClient::getPreview(std::uint64_t handle,
 }
 
 void MegaSdkClient::readFileContent(std::uint64_t handle,
-                                   std::uint64_t maxBytes,
-                                   std::function<void(Result<std::vector<char>>)> onDone)
+                                    std::uint64_t maxBytes,
+                                    std::function<void(Result<std::vector<char>>)> onDone)
 {
     if (mShuttingDown)
     {
@@ -586,7 +611,7 @@ void MegaSdkClient::getPath(std::uint64_t handle,
         // *last* segment's kind to decide what the screen allows, so tagging only
         // the root would leave a folder inside the bin claiming to be a Cloud Drive
         // folder -- and offering "Move to Rubbish" on already-binned nodes.
-        for (PathSegment& segment: segments)
+        for (PathSegment& segment : segments)
             segment.kind = ViewKind::Rubbish;
     }
     segments.front().isRoot = true;

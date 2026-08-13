@@ -13,6 +13,10 @@ enum class DownloadState
     Active,
     Completed,
     Failed,
+    // User-initiated stop, not an error: either the transfer was aborted mid-flight
+    // or the job never started. Kept apart from Failed so consumers can stay silent
+    // about an outcome the user asked for.
+    Cancelled,
 };
 
 struct DownloadJob
@@ -83,6 +87,15 @@ public:
     // The full live queue: active job first, then pending ones in enqueue order.
     std::vector<DownloadJob> jobs() const;
 
+    // Empties the queue: pending jobs are dropped without ever starting and the
+    // active transfer is aborted through IMegaClient::cancelDownload. Every dropped
+    // job still reports through onJobFinished exactly once, with state Cancelled --
+    // callers counting jobs in flight must not have to special-case this.
+    //
+    // The active job's Cancelled arrives later, from the SDK thread, since only the
+    // SDK can say when its transfer actually stopped.
+    void cancelAll();
+
     // The already-queued guard, without jobs()'s whole-queue copy -- that would be
     // O(N^2) when a caller loops it once per handle to bulk-enqueue a selection.
     bool hasJobForHandle(std::uint64_t handle) const;
@@ -103,8 +116,8 @@ private:
     std::shared_ptr<IMegaClient> mClient;
     mutable std::mutex mMutex;
     std::uint64_t mNextId = 1;
-    std::optional<DownloadJob> mActive;  // the one in-flight job, if any
-    std::deque<DownloadJob> mPending;    // not yet started, in enqueue order
+    std::optional<DownloadJob> mActive; // the one in-flight job, if any
+    std::deque<DownloadJob> mPending;   // not yet started, in enqueue order
     std::function<void(DownloadJob)> mOnProgress;
     std::function<void(DownloadJob)> mOnJobFinished;
 
@@ -115,4 +128,11 @@ private:
     // round again. Both flags live under mMutex.
     bool mAdvancing = false;
     bool mAdvanceRequested = false;
+
+    // Bumped by cancelAll(). Read to answer "did a cancel arrive while this job was
+    // still starting?", which the has-an-active-job test cannot answer on its own:
+    // a job becomes mActive before IMegaClient::download() has created the SDK-side
+    // cancel token, so a cancel landing in that window reaches the *previous*
+    // transfer's token and the new transfer would run on regardless.
+    std::uint64_t mCancelGeneration = 0;
 };

@@ -113,9 +113,8 @@ public:
     // The Rubbish bin's own top level, same contract as getRootChildren(). Only the
     // top needs its own call: everything below it is an ordinary node, so going
     // deeper is getChildren() with the handle, exactly as in the Cloud Drive.
-    virtual void
-    getRubbishChildren(SortOrder order,
-                       std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
+    virtual void getRubbishChildren(SortOrder order,
+                                    std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
     // Where restoring a binned node would put it: the folder it was in when it was
     // binned (MegaNode::getRestoreHandle). Synchronous, like the other in-memory
@@ -153,6 +152,20 @@ public:
            bool parentIsRoot,
            std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
            std::function<void(Result<UploadOutcome>)> onDone) = 0;
+
+    // Abort whatever download/upload is in flight. Callable from any thread and a
+    // no-op when nothing is transferring, so a caller never has to check first.
+    //
+    // Asynchronous like everything else here: the abort is only requested, and it is
+    // the transfer's own onDone that reports it -- failing with
+    // MegaErrorCode::kEIncomplete, the code the SDK reserves for a cancelled
+    // transfer. Callers still get exactly one completion per transfer.
+    //
+    // Deliberately whole-direction rather than per-transfer: only one transfer of
+    // each direction is ever in flight (DownloadService/UploadService serialize
+    // them), so a handle to cancel would name something the caller already knows.
+    virtual void cancelDownload() = 0;
+    virtual void cancelUpload() = 0;
 
     // Fetches the server-side thumbnail into the exact local path destinationPath,
     // which must not end with a path separator: the SDK would then treat it as a

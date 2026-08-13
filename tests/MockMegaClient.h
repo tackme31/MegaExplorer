@@ -120,6 +120,8 @@ public:
                  std::function<void(std::uint64_t, std::uint64_t)>,
                  std::function<void(Result<UploadOutcome>)>),
                 (override));
+    MOCK_METHOD(void, cancelDownload, (), (override));
+    MOCK_METHOD(void, cancelUpload, (), (override));
     MOCK_METHOD(Result<void>, checkUpload, (std::uint64_t, bool), (const, override));
     MOCK_METHOD(Result<std::vector<FileEntry>>,
                 findChildFiles,
