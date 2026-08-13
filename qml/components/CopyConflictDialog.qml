@@ -42,7 +42,9 @@ Dialog {
     onClosed: root.showNextRequest()
 
     Label {
-        width: 360
+        // The frame is as wide as its button footer, so a fixed width here would
+        // wrap the message well short of the edge.
+        width: root.availableWidth
         wrapMode: Text.Wrap
         text: qsTr("%1 file(s) with the same name already exist in the destination:").arg(
                   root.conflictNames.length) + "\n" + root.conflictNames.slice(0, 5).join(", ") + (
