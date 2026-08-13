@@ -50,8 +50,8 @@ TestCase {
 
             signal nameConflictRequiresConfirmation(var filePaths, var conflictNames,
                                                     var destinationHandle, bool destinationIsRoot)
-            signal uploadRequiresConfirmation(var filePaths, int fileCount,
-                                              var destinationHandle, bool destinationIsRoot)
+            signal uploadRequiresConfirmation(var filePaths, int fileCount, var destinationHandle,
+                                              bool destinationIsRoot)
 
             property int confirmedCount: 0
             property int uploadFilesCount: 0
@@ -344,6 +344,25 @@ TestCase {
         const text = dialog.contentChildren[0].text;
         compare(text.indexOf(data.shown) !== -1, true);
         compare(text.indexOf("…") !== -1, data.ellipsis);
+    }
+
+    function test_nameConflict_staysInsideTheWindowOnALongNameList() {
+        // A Popup sizes itself from its content's *implicit* width, so before the
+        // cap the frame followed the name list and took its own buttons
+        // off-screen. Asserting against the overlay is the only reachable form:
+        // the dialog opens only from a drop, which no screenshot can stage.
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+        const long = "a-name-long-enough-to-outgrow-any-sane-window-on-its-own.txt";
+
+        uploads.nameConflictRequiresConfirmation([long], [long, long, long], 0, true);
+
+        tryCompare(dialog, "opened", true);
+        verify(dialog.parent.width > 0);
+        verify(dialog.width > 0);
+        verify(dialog.width <= dialog.parent.width);
     }
 
     function test_nameConflict_aSecondDropWaitsInsteadOfReplacingTheFirst() {
