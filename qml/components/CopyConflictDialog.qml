@@ -62,7 +62,7 @@ Dialog {
             }
         }
         Button {
-            text: qsTr("Copy with a new name")
+            text: qsTr("Keep both")
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
                 root.mutController.copyRenamingExisting(root.entries, root.destinationHandle,
