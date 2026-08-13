@@ -36,20 +36,19 @@
 
 | 状態 | 項目 | サイズ | メモ |
 |---|---|---|---|
-| — | （現在なし） | — | 入口は `docs/REQUESTS.md` に `[バグ]` + 再現手順 |
+| todo | アップロードの名前衝突ダイアログが狭いウィンドウからはみ出す | S | `NameConflictDialog.qml:47` の `Label { width: root.availableWidth }`。Popup は content の *implicit* 幅を採り、`Text` の implicitWidth は折り返さない幅なので、本文が長いとダイアログ幅が本文に追従し、ウィンドウより広くなると左右のボタンが画面外へ切れる。`CopyConflictDialog.qml` は `evolve/019` で `width: Math.min(implicitWidth, Overlay.overlay.width - 48)` を入れて対処済みなので、同じ 1 行でよい |
 
 ---
 
 ## 優先度: 高
 
-先頭の 5 件は `docs/investigations/SPEC_NAME_CONFLICT_RESOLUTION.md` を S/M へ割ったもの
-（evolve/018）。**上から順に実装する** — 1 が衝突集合とダイアログの共通形を決め、2〜5 はその形に
-各経路を合わせる。仕様の節番号はすべてその SPEC のもの。
+先頭の 4 件は `docs/investigations/SPEC_NAME_CONFLICT_RESOLUTION.md` を S/M へ割ったもの
+（evolve/018）。**上から順に実装する** — 1（`evolve/019` で完了）が衝突集合とダイアログの共通形を
+決めたので、2〜5 はその形に各経路を合わせる。仕様の節番号はすべてその SPEC のもの。
 
 | 状態 | 項目 | サイズ | メモ |
 |---|---|---|---|
-| todo | 名前衝突 1／コピー経路を新仕様に合わせる | M | SPEC §3-0・§3-1・§3-2。**この項目でダイアログの共通形が決まる**（`Replace` は衝突集合にファイルが 1 つ以上あるときだけ出す／`Keep both` は選択肢から廃止）。`collides()` の `!entry.isFolder`（`FileMutationController.cpp:538`）を外してフォルダも衝突扱いにし、**同一フォルダへの貼り付けだけは衝突ではなく複製**として無確認で `- Copy`（判定は貼り付け先一覧に自ハンドルが含まれるか、SPEC §2-3）。`Rename` は既定エンジンとして経路には残す（SPEC §2-1、消すと壊れる） |
-| todo | 名前衝突 2／移動（D&D）経路にダイアログを通す | M | SPEC §3-1。`moveNode()` はバージョン化しないので **Replace は「既存をゴミ箱へ移動 → 移動」の 2 リクエスト**。1 の共通形に乗せるだけで、選択肢の設計判断は無い |
+| todo | 名前衝突 2／移動（D&D）経路にダイアログを通す | M | SPEC §3-1。`moveNode()` はバージョン化しないので **Replace は「既存をゴミ箱へ移動 → 移動」の 2 リクエスト**。1 の共通形（`copyNameConflict(entries, conflictingFiles, conflictingFolders, ...)` と `CopyConflictDialog.qml`）に乗せるだけで、選択肢の設計判断は無い |
 | todo | 名前衝突 3／アップロード経路のフォルダ衝突を拾う | M | SPEC §1-2・§3-1。`UploadController::collisionsFor()` がフォルダを除外している（`UploadController.cpp:334`）ため、同名フォルダが SDK 側で無言マージされ中のファイルが上書きされる（発端のバグ）。フォルダを衝突集合に入れれば**再帰チェック無しで消える**（SPEC §4-1）。Replace は既存の `replaceHandle` 機構がそのまま使える。代償はフォルダのマージ喪失（SPEC §4-2・§5、受け入れ済み） |
 | todo | 名前衝突 4／衝突ダイアログに件数と追加サイズを添える | S | SPEC §1-4・§3-4。`MegaApi::getSize()` / `getNumChildFiles()` は同期・ローカルで返る（ネットワーク不要）が、**`IMegaClient` に生えていないので SDK 層に追加が要る**。フォルダがスキップされる場合は「中身ごと」と明示（SPEC §5） |
 | todo | 名前衝突 5／同名を複数まとめて Replace したときの重複を防ぐ | S | SPEC §6-3。クリップボードに別フォルダ由来の同名ファイルが 2 つあると、2 つ目が 1 つ目に版を重ねる。アップロード経路の `claimedReplaceHandles`（`UploadController.cpp:367`）に相当するものをコピー経路にも置く |

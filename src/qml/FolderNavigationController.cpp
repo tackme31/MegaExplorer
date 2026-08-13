@@ -471,16 +471,9 @@ bool FolderNavigationController::isLoaded() const
     return mHasLoadedOnce;
 }
 
-std::set<std::string> FolderNavigationController::cachedChildNames(bool filesOnly) const
+const std::vector<FileEntry>& FolderNavigationController::cachedChildren() const
 {
-    std::set<std::string> names;
-    for (const FileEntry& entry : mLastFolderEntries)
-    {
-        if (filesOnly && entry.isFolder)
-            continue;
-        names.insert(entry.name);
-    }
-    return names;
+    return mLastFolderEntries;
 }
 
 bool FolderNavigationController::hasChildFolderNamed(const std::string& name) const
