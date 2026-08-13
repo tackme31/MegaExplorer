@@ -165,7 +165,16 @@ Development now runs mostly as an unattended loop: `/loop 2h /evolve` fires
 `docs/ROADMAP.md`, implements it, verifies it, reviews it, and lands it as a single commit on a
 fresh `evolve/NNN` branch, then merges that into `master` and pushes. Implementation only ever
 happens on the branch — `master` is touched by nothing but that merge. Started 2026-08-11; the
-reasoning behind each decision is in that skill file, not here.
+reasoning behind each decision is in the skill, not here.
+
+**The skill is two files, and the split is load-bearing.** `SKILL.md` is a dispatcher: it spawns
+one `general-purpose` subagent and relays its report, nothing else. The actual cycle — all seven
+steps — lives in `cycle.md`, which **only that subagent reads**. `/loop` fires into one long-lived
+session, so before the split each cycle left ~45k tokens (100k on a heavy one) in the loop's
+context permanently and filled the window in 15–20 cycles; a subagent's consumption doesn't reach
+its parent, so the same work now costs the loop ~2k a cycle. The rule that follows: **never read
+`cycle.md`, `ROADMAP.md`, or any source from the loop session itself** — reading it there is what
+the split exists to prevent.
 
 **Which document may be written by whom** — this is the part that goes wrong if it isn't explicit:
 
