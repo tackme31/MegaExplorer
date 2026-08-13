@@ -84,6 +84,12 @@ public:
     Q_INVOKABLE void
     uploadSkippingExisting(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
+    // Stops the whole upload queue, active transfer included. Reported once from
+    // here for the same reason as DownloadController::cancelDownloads(). Files
+    // already uploaded stay up: MEGA has no transactional batch, and a cancel is a
+    // request to stop, not to undo.
+    Q_INVOKABLE void cancelUploads();
+
     // Not QML-facing: TabsController folds this into a tab's busy role, since an
     // upload has no owning tab to drive FolderNavigationController::busy.
     bool isUploadingTo(quint64 handle, bool isRoot) const;

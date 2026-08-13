@@ -209,10 +209,8 @@ class DownloadListener : public mega::MegaTransferListener
 {
 public:
     DownloadListener(std::function<void(std::uint64_t, std::uint64_t)> onProgress,
-                     std::function<void(Result<DownloadOutcome>)> onDone,
-                     std::unique_ptr<mega::MegaCancelToken> cancelToken)
-        : mOnProgress(std::move(onProgress)), mOnDone(std::move(onDone)),
-          mCancelToken(std::move(cancelToken))
+                     std::function<void(Result<DownloadOutcome>)> onDone)
+        : mOnProgress(std::move(onProgress)), mOnDone(std::move(onDone))
     {}
 
     void onTransferUpdate(mega::MegaApi* /*api*/, mega::MegaTransfer* transfer) override
@@ -250,10 +248,6 @@ public:
 private:
     std::function<void(std::uint64_t, std::uint64_t)> mOnProgress;
     std::function<void(Result<DownloadOutcome>)> mOnDone;
-    // Not required by the SDK: startDownload copies the token and CancelToken is
-    // itself a shared handle, so destroying this mid-transfer is harmless. Held only
-    // as the hook a future cancel(jobId) would call.
-    std::unique_ptr<mega::MegaCancelToken> mCancelToken;
 };
 
 // Same shape as DownloadListener, minus the alreadyPresent inference (see
@@ -262,10 +256,8 @@ class UploadListener : public mega::MegaTransferListener
 {
 public:
     UploadListener(std::function<void(std::uint64_t, std::uint64_t)> onProgress,
-                   std::function<void(Result<UploadOutcome>)> onDone,
-                   std::unique_ptr<mega::MegaCancelToken> cancelToken)
-        : mOnProgress(std::move(onProgress)), mOnDone(std::move(onDone)),
-          mCancelToken(std::move(cancelToken))
+                   std::function<void(Result<UploadOutcome>)> onDone)
+        : mOnProgress(std::move(onProgress)), mOnDone(std::move(onDone))
     {}
 
     void onTransferUpdate(mega::MegaApi* /*api*/, mega::MegaTransfer* transfer) override
@@ -295,7 +287,6 @@ public:
 private:
     std::function<void(std::uint64_t, std::uint64_t)> mOnProgress;
     std::function<void(Result<UploadOutcome>)> mOnDone;
-    std::unique_ptr<mega::MegaCancelToken> mCancelToken;
 };
 
 // The one listener that collects bytes rather than a path: startStreaming hands
@@ -303,7 +294,7 @@ private:
 //
 // No mutex around mBuffer -- the SDK serializes one transfer's callbacks, the same
 // assumption DownloadListener already makes across onTransferUpdate/onTransferFinish.
-class StreamingContentListener: public mega::MegaTransferListener
+class StreamingContentListener : public mega::MegaTransferListener
 {
 public:
     StreamingContentListener(std::uint64_t maxBytes,

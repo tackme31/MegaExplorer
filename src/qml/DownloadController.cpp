@@ -23,6 +23,14 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
     });
     mService->setOnJobFinished([this](DownloadJob job) {
         invokeOnGuiThread(this, [this, job = std::move(job)]() mutable {
+            // The user asked for this one to stop, and cancelDownloads() has already
+            // said so once for the whole queue. Reporting it again per job would
+            // stack N toasts on one click, all of them phrased as failures.
+            if (job.state == DownloadState::Cancelled)
+            {
+                refreshActiveJob();
+                return;
+            }
             // On success report the *actual* saved leaf name: it differs from
             // job.name when a collision made the SDK rename the file, and showing
             // the pre-rename name reads as if the existing file was overwritten.
@@ -94,6 +102,16 @@ void DownloadController::downloadFile(quint64 handle, QString name, quint64 size
                       destinationPath.toStdString(),
                       static_cast<std::uint64_t>(sizeBytes));
     refreshActiveJob(); // already on the GUI thread here (called from QML)
+}
+
+void DownloadController::cancelDownloads()
+{
+    const int queued = static_cast<int>(mService->jobs().size());
+    if (queued == 0)
+        return;
+    mService->cancelAll();
+    mNotifications->notifyOperation(QStringLiteral("downloadCancelled"), queued, 0);
+    refreshActiveJob(); // pending jobs are gone already; the active one clears later
 }
 
 void DownloadController::openFile(QString localPath)

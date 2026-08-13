@@ -25,6 +25,7 @@ constexpr int kENoEnt = -9;        // Bad credentials, or bad 2FA pin
 constexpr int kECircular = -10;    // Move would make a folder its own descendant
 constexpr int kEAccess = -11;      // Access denied
 constexpr int kEExist = -12;       // Resource already exists (e.g. same-named folder)
+constexpr int kEIncomplete = -13;  // Transfer aborted -- what a cancelled transfer finishes with
 constexpr int kESid = -15;         // Stored session invalid or expired
 constexpr int kEBlocked = -16;     // Account blocked/suspended
 constexpr int kEMfaRequired = -26; // Two-factor auth required to complete this request

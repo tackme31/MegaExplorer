@@ -178,6 +178,15 @@ Item {
             else
                 text = qsTr("Uploaded %1 file(s), %2 failed").arg(succeeded).arg(failed);
             break;
+            // Both cancel toasts count what was still queued at the click, active
+            // transfer included, so "failed" is always 0 here -- a cancel is not a
+            // failure and the partial-failure wording above would misread it.
+        case "downloadCancelled":
+            text = qsTr("Cancelled %1 download(s)").arg(succeeded);
+            break;
+        case "uploadCancelled":
+            text = qsTr("Cancelled %1 upload(s)").arg(succeeded);
+            break;
             // Whole batch failed because the destination was gone by the time its
             // turn came -- the count adds nothing, the reason is the point.
         case "uploadDestinationGone":
@@ -319,8 +328,7 @@ Item {
             // Fixed sentence: nothing reached the SDK, the count was rejected
             // here. The cap is named so the user knows how much to trim.
         case "uploadTooManyFiles":
-            text = qsTr("Too many files — upload at most %1 at a time").arg(
-                        root.maxFilesPerUpload);
+            text = qsTr("Too many files — upload at most %1 at a time").arg(root.maxFilesPerUpload);
             break;
             // The uploads themselves succeeded; what needs saying is that the files
             // they were meant to replace are still there.

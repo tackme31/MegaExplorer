@@ -568,3 +568,38 @@ TEST(UploadServiceTest, StaleProgressIsIgnoredAcrossAJobDroppedByTheDestinationR
     EXPECT_EQ(active->totalBytes, 999u);
     EXPECT_TRUE(progressSnapshots.empty());
 }
+
+TEST(UploadServiceTest, CancelAllDropsPendingJobsAndAbortsTheActiveTransfer)
+{
+    auto mockClient = makeClient();
+    std::function<void(Result<UploadOutcome>)> onDone1;
+    EXPECT_CALL(*mockClient,
+                upload(std::string("/tmp/a.txt"), ::testing::_, ::testing::_, ::testing::_,
+                       ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&onDone1));
+    EXPECT_CALL(*mockClient, cancelUpload());
+
+    UploadService service(mockClient);
+    std::vector<UploadJob> finished;
+    service.setOnJobFinished([&](UploadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    const std::uint64_t id1 = service.enqueue("/tmp/a.txt", "a.txt", 7, false, 10);
+    const std::uint64_t id2 = service.enqueue("/tmp/b.txt", "b.txt", 7, false, 10);
+
+    // Act
+    service.cancelAll();
+
+    // Assert: same contract as DownloadService -- one notification per dropped job
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished[0].id, id2);
+    EXPECT_EQ(finished[0].state, UploadState::Cancelled);
+
+    ASSERT_TRUE(onDone1);
+    onDone1(Result<UploadOutcome>::fail("Transfer cancelled", MegaErrorCode::kEIncomplete));
+    ASSERT_EQ(finished.size(), 2u);
+    EXPECT_EQ(finished[1].id, id1);
+    EXPECT_EQ(finished[1].state, UploadState::Cancelled);
+    EXPECT_EQ(service.queueLength(), 0u);
+}

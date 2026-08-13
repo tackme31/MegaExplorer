@@ -34,6 +34,12 @@ public:
     // before the first SDK update. No-ops if the handle is already queued or active.
     Q_INVOKABLE void downloadFile(quint64 handle, QString name, quint64 sizeBytes);
 
+    // Stops the whole download queue, active transfer included. The toast is raised
+    // from here, once, with the queue length as it stands now -- the alternative
+    // (tallying the Cancelled jobs as they land) would have to wait for the SDK to
+    // acknowledge the abort, leaving the button looking dead in the meantime.
+    Q_INVOKABLE void cancelDownloads();
+
     // Opens the file with the OS default application. Only ever from the snackbar's
     // "Open" button -- never auto-invoked.
     Q_INVOKABLE void openFile(QString localPath);

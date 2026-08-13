@@ -13,6 +13,8 @@ enum class UploadState
     Active,
     Completed,
     Failed,
+    // Same meaning as DownloadState::Cancelled -- see there.
+    Cancelled,
 };
 
 struct UploadJob
@@ -72,6 +74,10 @@ public:
     // remaining" label a hot path.
     std::size_t queueLength() const;
 
+    // Mirrors DownloadService::cancelAll() exactly, including the one-onJobFinished-
+    // per-dropped-job guarantee UploadController's batch counters depend on.
+    void cancelAll();
+
     // Synchronous pre-checks straight through to IMegaClient: a hovering drag needs
     // its answer immediately.
     Result<void> canUploadTo(std::uint64_t parentHandle, bool parentIsRoot) const;
@@ -102,4 +108,7 @@ private:
     // -- see there for why the recursion it replaces was a real risk.
     bool mAdvancing = false;
     bool mAdvanceRequested = false;
+
+    // Same role as DownloadService::mCancelGeneration -- see there.
+    std::uint64_t mCancelGeneration = 0;
 };
