@@ -212,6 +212,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/ConfirmUploadDialog.qml
         qml/components/ConfirmPermanentDeleteDialog.qml
         qml/components/ConfirmRubbishDialog.qml
+        qml/components/CopyConflictDialog.qml
         qml/components/DragAutoScroller.qml
         qml/components/DragProxy.qml
         qml/components/EmptyListingNotice.qml

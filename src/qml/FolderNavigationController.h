@@ -204,8 +204,10 @@ public:
     bool isLoaded() const;
 
     // Child names from the cached listing, not the server: the mutation half's
-    // fallback when a paste's destination re-read fails.
-    std::set<std::string> cachedChildNames() const;
+    // fallback when a paste's destination re-read fails. filesOnly narrows it to
+    // the names a copy could actually land *over* -- a folder of that name cannot
+    // be overwritten, only duplicated (IMegaClient::copyNode).
+    std::set<std::string> cachedChildNames(bool filesOnly) const;
 
     // Folders only: MEGA lets a file and a folder share a name, so a same-named
     // file is no conflict for createFolder (IMegaClient::createFolder).

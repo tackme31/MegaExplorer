@@ -57,6 +57,11 @@ public:
     // boundary, which src/core stays free of.
     static std::vector<NodeRef> toNodeRefs(const QVariantList& entries);
 
+    // The inverse, for handing a batch out to QML and getting it back: a dialog
+    // that asks about a copy carries the entries rather than having C++ remember
+    // them, so they live exactly as long as the question does.
+    static QVariantList toVariantList(const std::vector<NodeRef>& entries);
+
     // Typed accessors for FolderNavigationController; not QML-facing.
     const std::vector<NodeRef>& entries() const;
     quint64 sourceHandle() const;

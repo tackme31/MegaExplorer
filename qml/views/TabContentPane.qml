@@ -178,6 +178,13 @@ ColumnLayout {
         mutController: pane.mutController
     }
 
+    // Same reasoning, one per tab: the question is raised by this tab's
+    // mutController, whether the copy came from Ctrl+V or a Ctrl+drop.
+    CopyConflictDialog {
+        id: copyConflictDialog
+        mutController: pane.mutController
+    }
+
     // uploadController is app-global (three of the five drop targets are shared
     // chrome with no owning tab), so it broadcasts the destination and each tab
     // decides for itself whether it's the one showing it. Connections is a
