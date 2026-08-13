@@ -37,6 +37,11 @@ Dialog {
     modal: true
     title: qsTr("Files with the same name already exist")
 
+    // A Popup takes its content's *implicit* width, and a Text's implicit width
+    // is its unwrapped width -- so without a cap the frame follows the name list
+    // below and, on a small window, pushes its own buttons off-screen.
+    width: Math.min(implicitWidth, Overlay.overlay.width - 48)
+
     // Every one of the three buttons closes, so this is the one place the next
     // question can start from.
     onClosed: root.showNextRequest()
