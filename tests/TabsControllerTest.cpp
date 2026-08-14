@@ -43,7 +43,6 @@ protected:
         // isUploadingTo() off it, and with nothing ever enqueued that answer is
         // a constant false -- what's under test here is row bookkeeping.
         uploads = std::make_unique<UploadController>(std::make_shared<UploadService>(client),
-                                                     std::make_shared<FileOperationService>(client),
                                                      &notifications);
     }
 

@@ -110,7 +110,7 @@ int main(int argc, char* argv[])
     // Same reason as notifications for being declared here.
     ClipboardController clipboard;
     DownloadController downloadController(downloadService, &notifications);
-    UploadController uploadController(uploadService, fileOperationService, &notifications);
+    UploadController uploadController(uploadService, &notifications);
     AuthController authController(authService);
     AccountController accountController(accountService);
     PreviewController previewController(previewService, previewImageStore);

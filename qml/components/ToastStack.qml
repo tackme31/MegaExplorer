@@ -330,11 +330,6 @@ Item {
         case "uploadTooManyFiles":
             text = qsTr("Too many files — upload at most %1 at a time").arg(root.maxFilesPerUpload);
             break;
-            // The uploads themselves succeeded; what needs saying is that the files
-            // they were meant to replace are still there.
-        case "uploadReplaceFailed":
-            text = qsTr("Uploaded, but some of the files being replaced could not be removed");
-            break;
             // A context C++ sends that nothing here handles -- exactly what
             // R3-5 was. The old default printed rawMessage, which meant the
             // gap surfaced as untranslated English to the user and to nobody

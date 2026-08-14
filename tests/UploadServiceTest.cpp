@@ -230,14 +230,14 @@ TEST(UploadServiceTest, DestinationGoneDrainsEveryQueuedJobForThatDestination)
     EXPECT_EQ(service.queueLength(), 0u);
 }
 
-TEST(UploadServiceTest, ReplaceHandleRidesAlongUntouchedToTheFinishedNotification)
+TEST(UploadServiceTest, TheCreatedNodeHandleReachesTheFinishedNotification)
 {
-    // UploadService must not act on replaceHandle in any way -- it only
-    // carries it (UploadController does the Rubbish-bin move).
     auto mockClient = makeClient();
     EXPECT_CALL(*mockClient,
                 upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{99})));
+    // An upload is one step: MEGA versions a same-named node itself, so nothing in
+    // this service ever deletes anything.
     EXPECT_CALL(*mockClient, moveToRubbish(::testing::_, ::testing::_)).Times(0);
 
     UploadService service(mockClient);
@@ -247,10 +247,9 @@ TEST(UploadServiceTest, ReplaceHandleRidesAlongUntouchedToTheFinishedNotificatio
     });
 
     // Act
-    service.enqueue("C:\\tmp\\a.txt", "a.txt", 7, false, 0, /*replaceHandle*/ 1234);
+    service.enqueue("C:\\tmp\\a.txt", "a.txt", 7, false, 0);
 
     // Assert
-    EXPECT_EQ(finished.replaceHandle, 1234u);
     EXPECT_EQ(finished.nodeHandle, 99u);
 }
 

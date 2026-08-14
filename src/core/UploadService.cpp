@@ -8,8 +8,7 @@ std::uint64_t UploadService::enqueue(const std::string& localPath,
                                      const std::string& name,
                                      std::uint64_t parentHandle,
                                      bool parentIsRoot,
-                                     std::uint64_t expectedTotalBytes,
-                                     std::uint64_t replaceHandle)
+                                     std::uint64_t expectedTotalBytes)
 {
     std::uint64_t id;
     {
@@ -20,7 +19,6 @@ std::uint64_t UploadService::enqueue(const std::string& localPath,
         job.name = name;
         job.parentHandle = parentHandle;
         job.parentIsRoot = parentIsRoot;
-        job.replaceHandle = replaceHandle;
         job.totalBytes = expectedTotalBytes;
         id = job.id;
         mPending.push_back(std::move(job));

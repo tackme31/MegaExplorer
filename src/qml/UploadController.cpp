@@ -1,7 +1,6 @@
 #include "UploadController.h"
 
 #include "app/Logging.h"
-#include "core/FileOperationService.h"
 #include "core/MegaErrorCodes.h"
 #include "GuiThread.h"
 #include "NotificationController.h"
@@ -25,11 +24,9 @@ bool isFolderUpload(const QFileInfo& info)
 } // namespace
 
 UploadController::UploadController(std::shared_ptr<UploadService> service,
-                                   std::shared_ptr<FileOperationService> fileOperations,
                                    NotificationController* notifications,
                                    QObject* parent)
-    : QObject(parent), mService(std::move(service)), mFileOps(std::move(fileOperations)),
-      mNotifications(notifications)
+    : QObject(parent), mService(std::move(service)), mNotifications(notifications)
 {
     mService->setOnProgress([this](UploadJob) {
         invokeOnGuiThread(this, [this] {
@@ -40,52 +37,12 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
         invokeOnGuiThread(this, [this, job = std::move(job)]() mutable {
             --mBatch.pendingJobs;
             const Destination destination{static_cast<quint64>(job.parentHandle), job.parentIsRoot};
-            bool replaceStarted = false;
-            if (job.state == UploadState::Cancelled)
-            {
-                // Counted as neither succeeded nor failed, which is what keeps the
-                // batch flush below silent about it -- cancelUploads() has already
-                // reported the stop for the whole queue. A cancelled job's
-                // replaceHandle is left alone on purpose: nothing was uploaded, so
-                // binning the old file would delete the only copy.
-                releaseDestination(destination);
-                refreshActiveJob();
-                flushBatchIfDone();
-                return;
-            }
             if (job.state == UploadState::Completed)
             {
                 ++mBatch.succeeded;
                 mBatch.destinations.insert(destination);
-
-                if (job.replaceHandle != 0)
-                {
-                    replaceStarted = true;
-                    // MEGA has no native overwrite, so "replace" is upload
-                    // first, then bin the old node -- never the reverse, which
-                    // would lose data if the transfer failed. The batch flush
-                    // waits for this so a refreshed listing can't show both.
-                    ++mBatch.pendingReplaces;
-                    mFileOps->moveToRubbish(
-                        job.replaceHandle, [this, destination](Result<void> result) {
-                            invokeOnGuiThread(
-                                this, [this, destination, result = std::move(result)] {
-                                    --mBatch.pendingReplaces;
-                                    releaseDestination(destination);
-                                    if (!result.success)
-                                    {
-                                        ++mBatch.replaceFailed;
-                                        qCWarning(lcUpload)
-                                            << "failed to remove the replaced file:"
-                                            << QString::fromStdString(result.errorMessage)
-                                            << "code=" << result.errorCode;
-                                    }
-                                    flushBatchIfDone();
-                                });
-                        });
-                }
             }
-            else
+            else if (job.state != UploadState::Cancelled)
             {
                 ++mBatch.failed;
                 if (job.errorCode == MegaErrorCode::kENoEnt)
@@ -96,10 +53,11 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
                     << "upload failed for" << QString::fromStdString(job.name) << ":"
                     << QString::fromStdString(job.errorMessage) << "code=" << job.errorCode;
             }
+            // A cancelled job is counted as neither, which is what keeps the batch
+            // flush silent about it -- cancelUploads() already reported the stop for
+            // the whole queue.
 
-            if (!replaceStarted)
-                releaseDestination(destination);
-
+            releaseDestination(destination);
             refreshActiveJob(); // reflect whatever's now at the front (or nothing)
             flushBatchIfDone();
         });
@@ -111,8 +69,7 @@ UploadController::~UploadController()
     // Same contract as DownloadController's destructor: clearing the observers stops
     // only deliveries that start after this line, and what makes the rest safe is
     // client->shutdown() joining the SDK thread while both controllers are still
-    // alive. The one-shot moveToRubbish callback below can't be unregistered at all
-    // and rests on that same stop point.
+    // alive.
     mService->setOnProgress(nullptr);
     mService->setOnJobFinished(nullptr);
 }
@@ -283,16 +240,16 @@ void UploadController::askAboutConflicts(const QStringList& localPaths,
                                          quint64 target,
                                          bool targetIsRoot)
 {
-    std::map<QString, quint64> hits = collisionsFor(localPaths, target, targetIsRoot);
+    const std::set<QString> hits = collisionsFor(localPaths, target, targetIsRoot);
     if (hits.empty())
     {
-        enqueueAll(localPaths, {}, target, targetIsRoot);
+        enqueueAll(localPaths, target, targetIsRoot);
         return;
     }
 
     QStringList conflictNames;
-    for (const auto& hit : hits)
-        conflictNames.append(hit.first);
+    for (const QString& name : hits)
+        conflictNames.append(name);
     emit nameConflictRequiresConfirmation(localPaths, conflictNames, target, targetIsRoot);
 }
 
@@ -300,14 +257,16 @@ void UploadController::uploadReplacingExisting(const QStringList& localPaths,
                                                quint64 target,
                                                bool targetIsRoot)
 {
-    enqueueAll(localPaths, collisionsFor(localPaths, target, targetIsRoot), target, targetIsRoot);
+    // Nothing to arrange: MEGA turns a same-named upload into a new version of the
+    // node that is already there, so a replace is just an ordinary upload.
+    enqueueAll(localPaths, target, targetIsRoot);
 }
 
 void UploadController::uploadSkippingExisting(const QStringList& localPaths,
                                               quint64 target,
                                               bool targetIsRoot)
 {
-    std::map<QString, quint64> hits = collisionsFor(localPaths, target, targetIsRoot);
+    const std::set<QString> hits = collisionsFor(localPaths, target, targetIsRoot);
     QStringList remaining;
     for (const QString& path : localPaths)
     {
@@ -319,12 +278,12 @@ void UploadController::uploadSkippingExisting(const QStringList& localPaths,
     }
     // Nothing left is the user's own choice, so say nothing.
     if (!remaining.isEmpty())
-        enqueueAll(remaining, {}, target, targetIsRoot);
+        enqueueAll(remaining, target, targetIsRoot);
 }
 
-std::map<QString, quint64> UploadController::collisionsFor(const QStringList& localPaths,
-                                                           quint64 target,
-                                                           bool targetIsRoot) const
+std::set<QString> UploadController::collisionsFor(const QStringList& localPaths,
+                                                  quint64 target,
+                                                  bool targetIsRoot) const
 {
     std::vector<std::string> names;
     names.reserve(static_cast<std::size_t>(localPaths.size()));
@@ -339,7 +298,7 @@ std::map<QString, quint64> UploadController::collisionsFor(const QStringList& lo
 
     Result<std::vector<FileEntry>> result =
         mService->findNameCollisions(static_cast<std::uint64_t>(target), targetIsRoot, names);
-    std::map<QString, quint64> hits;
+    std::set<QString> hits;
     if (!result.success)
     {
         // Can't ask the question, so don't -- just upload. MEGA stacks a
@@ -352,41 +311,27 @@ std::map<QString, quint64> UploadController::collisionsFor(const QStringList& lo
     }
 
     for (const FileEntry& entry : result.value())
-        hits.emplace(QString::fromStdString(entry.name), static_cast<quint64>(entry.handle));
+        hits.insert(QString::fromStdString(entry.name));
     return hits;
 }
 
 void UploadController::enqueueAll(const QStringList& localPaths,
-                                  const std::map<QString, quint64>& replaceHandleByName,
                                   quint64 target,
                                   bool targetIsRoot)
 {
-    // Two dropped files can share a leaf name (C:\a\x.txt and C:\b\x.txt) while
-    // there is only ever one node to replace -- give it to the first of them,
-    // or the second Rubbish-bin move would just fail with kENoEnt.
-    std::set<quint64> claimedReplaceHandles;
     mBatch.pendingJobs += static_cast<int>(localPaths.size());
     retainDestination(Destination{target, targetIsRoot}, static_cast<int>(localPaths.size()));
     for (const QString& path : localPaths)
     {
         QFileInfo info(path);
-        QString name = info.fileName();
-        const bool isFolder = isFolderUpload(info);
-        quint64 replaceHandle = 0;
-        auto it = replaceHandleByName.find(name);
-        if (!isFolder && it != replaceHandleByName.end() &&
-            claimedReplaceHandles.insert(it->second).second)
-            replaceHandle = it->second;
-
         // A folder has no meaningful size of its own, and 0 is what totalBytes
         // already means "not known yet" -- the SDK overwrites it once the
         // recursive transfer reports.
         mService->enqueue(path.toStdString(),
-                          name.toStdString(),
+                          info.fileName().toStdString(),
                           static_cast<std::uint64_t>(target),
                           targetIsRoot,
-                          isFolder ? 0u : static_cast<std::uint64_t>(info.size()),
-                          static_cast<std::uint64_t>(replaceHandle));
+                          isFolderUpload(info) ? 0u : static_cast<std::uint64_t>(info.size()));
     }
     refreshActiveJob(); // already on the GUI thread here (called from QML)
 }
@@ -399,7 +344,7 @@ void UploadController::refreshActiveJob()
 
 void UploadController::flushBatchIfDone()
 {
-    if (mBatch.pendingJobs > 0 || mBatch.pendingReplaces > 0)
+    if (mBatch.pendingJobs > 0)
         return;
     if (mBatch.succeeded == 0 && mBatch.failed == 0)
         return;
@@ -411,13 +356,6 @@ void UploadController::flushBatchIfDone()
         mNotifications->notifyOperation(QStringLiteral("uploadDestinationGone"), 0, mBatch.failed);
     else
         mNotifications->notifyOperation(QStringLiteral("upload"), mBatch.succeeded, mBatch.failed);
-
-    if (mBatch.replaceFailed > 0)
-    {
-        // The uploads themselves succeeded and the new files are there; what
-        // needs explaining is that the old ones didn't go away.
-        mNotifications->notifyError(QStringLiteral("uploadReplaceFailed"));
-    }
 
     mBatch = Batch{};
 }

@@ -12,7 +12,6 @@
 #include <optional>
 #include <set>
 
-class FileOperationService;
 class NotificationController;
 
 // QML-facing GUI glue wrapping UploadService. App-global rather than per-tab
@@ -40,7 +39,6 @@ public:
     static constexpr int kMaxFilesPerUpload = 100;
 
     explicit UploadController(std::shared_ptr<UploadService> service,
-                              std::shared_ptr<FileOperationService> fileOperations,
                               NotificationController* notifications,
                               QObject* parent = nullptr);
     ~UploadController() override;
@@ -76,11 +74,14 @@ public:
     Q_INVOKABLE void
     uploadConfirmed(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
-    // Both re-derive the collision set rather than trust handles round-tripped
-    // through QML, which also picks up destination changes made while the dialog was
-    // open. Cheap -- it is an in-memory lookup.
+    // Replacing is a plain upload: MEGA stacks a same-named file as a new version of
+    // the existing node, so there is nothing for the app to delete afterwards.
     Q_INVOKABLE void
     uploadReplacingExisting(const QStringList& localPaths, quint64 target, bool targetIsRoot);
+
+    // Re-derives the collision set rather than trust names round-tripped through QML,
+    // which also picks up destination changes made while the dialog was open. Cheap --
+    // it is an in-memory lookup.
     Q_INVOKABLE void
     uploadSkippingExisting(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
@@ -118,8 +119,8 @@ signals:
                                           quint64 destinationHandle,
                                           bool destinationIsRoot);
 
-    // A batch finished entirely -- queue drained, every replaced node dealt with --
-    // emitted once per destination it touched.
+    // A batch finished entirely -- queue drained -- emitted once per destination it
+    // touched.
     void destinationChanged(quint64 handle, bool isRoot);
 
 private:
@@ -134,12 +135,10 @@ private:
         int succeeded = 0;
         int failed = 0;
         int destinationGone = 0; // failures whose code was kENoEnt
-        int replaceFailed = 0;
         // Counted here rather than read off UploadService's queue length: the
         // finished notifications arrive through a queued invoke, so the queue can
         // already be empty when the first is handled -- flushing once per job.
         int pendingJobs = 0;
-        int pendingReplaces = 0; // Rubbish-bin moves still in flight
         std::set<Destination> destinations;
         // Unfinished work per destination, for isUploadingTo(). Separate from
         // destinations above, which is success-only and fills in as jobs land -- a
@@ -156,29 +155,24 @@ private:
     // same-named files first. Shared with uploadConfirmed().
     void askAboutConflicts(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
-    void enqueueAll(const QStringList& localPaths,
-                    const std::map<QString, quint64>& replaceHandleByName,
-                    quint64 target,
-                    bool targetIsRoot);
+    void enqueueAll(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
     // Empty if the lookup itself failed: that must not block the upload, it only
-    // means no replace/skip question gets asked. Folders are left out -- MEGA lets
-    // a file and a folder share a name, so "replace" would delete something the
-    // user never pointed at.
-    std::map<QString, quint64>
+    // means no replace/skip question gets asked. Folders are left out -- MEGA lets a
+    // file and a folder share a name, and a folder upload merges into the existing
+    // folder rather than versioning it, so the file-shaped question doesn't fit.
+    std::set<QString>
     collisionsFor(const QStringList& localPaths, quint64 target, bool targetIsRoot) const;
 
     void refreshActiveJob();
     void flushBatchIfDone();
 
     // The only two places pendingByDestination changes: each job is retained once and
-    // released once. A replace hands its release to the Rubbish-bin move that
-    // follows, so the destination keeps spinning until the old node is gone.
+    // released once.
     void retainDestination(const Destination& destination, int count);
     void releaseDestination(const Destination& destination);
 
     std::shared_ptr<UploadService> mService;
-    std::shared_ptr<FileOperationService> mFileOps;
     NotificationController* mNotifications;
     std::optional<UploadJob> mActiveJob;
     Batch mBatch;
