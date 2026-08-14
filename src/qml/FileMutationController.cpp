@@ -34,9 +34,7 @@ FileMutationController::DestinationSnapshot::of(const std::vector<FileEntry>& ch
         if (child.isFolder)
             snapshot.folders.insert(child.name);
         else
-            // insert, not assign: duplicate siblings are legal, and the first is
-            // the one a replace acts on.
-            snapshot.files.emplace(child.name, child.handle);
+            snapshot.files.insert(child.name);
         snapshot.handles.insert(child.handle);
     }
     return snapshot;
@@ -426,7 +424,7 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
     struct PlannedMove
     {
         std::uint64_t handle;
-        std::optional<std::uint64_t> replaced = std::nullopt;
+        bool replacing = false;
     };
     std::vector<PlannedMove> plan;
     plan.reserve(entries.size());
@@ -434,7 +432,7 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
     {
         if (!destination.collidesWith(entry))
         {
-            plan.push_back({entry.handle, std::nullopt});
+            plan.push_back({entry.handle, false});
             continue;
         }
         // A colliding folder is skipped under either answer, as on the copy path:
@@ -443,7 +441,7 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
         // source never had with it.
         if (entry.isFolder || onConflict == MoveConflict::Skip)
             continue;
-        plan.push_back({entry.handle, destination.files.at(entry.name)});
+        plan.push_back({entry.handle, true});
     }
 
     if (plan.empty())
@@ -461,7 +459,7 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
                     });
 
     for (const PlannedMove& planned : plan)
-        moveOne(planned.handle, planned.replaced, target, targetIsRoot, batch);
+        moveOne(planned.handle, planned.replacing, target, targetIsRoot, batch);
 }
 
 void FileMutationController::clearClipboardIfSpentBy(const std::vector<NodeRef>& entries)
@@ -484,17 +482,22 @@ void FileMutationController::clearClipboardIfSpentBy(const std::vector<NodeRef>&
 }
 
 void FileMutationController::moveOne(std::uint64_t handle,
-                                     std::optional<std::uint64_t> replaced,
+                                     bool replacing,
                                      quint64 target,
                                      bool targetIsRoot,
                                      std::shared_ptr<BulkOperationRunner::Batch> batch)
 {
-    if (replaced.has_value())
+    if (replacing)
     {
-        // Asked before the bin, not left to mFileOps->move() below: canMove is
-        // synchronous and local, so a move that was never going to be allowed
-        // would otherwise cost the destination its file and put nothing in its
-        // place.
+        // moveNode sends no overwrite hint of its own, so a replacing move is a
+        // copy -- which the SDK does attach as a new version of the same-named
+        // file -- followed by binning the source. Never the other way round: a
+        // failed copy then leaves both sides untouched, and nothing the user did
+        // not delete themselves reaches the rubbish bin.
+        //
+        // canMove is still asked first, synchronous and local: it is what says
+        // the source may be removed, and a copy issued without it would leave a
+        // duplicate behind that step 2 is then refused the right to clear away.
         const Result<void> allowed =
             mFileOps->canMove(handle, static_cast<std::uint64_t>(target), targetIsRoot);
         if (!allowed.success)
@@ -503,32 +506,33 @@ void FileMutationController::moveOne(std::uint64_t handle,
             return;
         }
 
-        mFileOps->moveToRubbish(
-            *replaced,
-            [this, self = shared_from_this(), batch, handle, target, targetIsRoot](
-                Result<void> result) {
+        mFileOps->copy(
+            handle,
+            static_cast<std::uint64_t>(target),
+            targetIsRoot,
+            // Empty == keep the source's name, which is what makes the SDK
+            // version the copy over the existing file instead of landing beside it.
+            std::string(),
+            [this, self = shared_from_this(), batch, handle](Result<void> result) {
                 // self is captured here too: invokeOnGuiThread only guarantees
                 // `this` is alive, and the queued call outlives the outer
-                // lambda's own reference -- so without it the shared_from_this()
-                // below would throw bad_weak_ptr on a tab closed mid-flight.
-                invokeOnGuiThread(this,
-                                  [this,
-                                   self,
-                                   batch,
-                                   handle,
-                                   target,
-                                   targetIsRoot,
-                                   result = std::move(result)]() {
-                                      // Abandoning this entry rather than moving anyway: the
-                                      // node in the way is still there, so the move would land
-                                      // beside the file it was meant to replace.
-                                      if (!result.success)
-                                      {
-                                          batch->settle(result);
-                                          return;
-                                      }
-                                      moveOne(handle, std::nullopt, target, targetIsRoot, batch);
-                                  });
+                // lambda's own reference -- so without it the capture below
+                // would dangle on a tab closed mid-flight.
+                invokeOnGuiThread(
+                    this, [this, self, batch, handle, result = std::move(result)]() {
+                        if (!result.success)
+                        {
+                            batch->settle(result);
+                            return;
+                        }
+                        mFileOps->moveToRubbish(
+                            handle, [this, self, batch](Result<void> binned) {
+                                invokeOnGuiThread(this,
+                                                  [batch, binned = std::move(binned)]() {
+                                                      batch->settle(binned);
+                                                  });
+                            });
+                    });
             });
         return;
     }

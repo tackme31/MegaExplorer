@@ -10,9 +10,7 @@
 #include <QVariantList>
 
 #include <cstdint>
-#include <map>
 #include <memory>
-#include <optional>
 #include <set>
 #include <string>
 
@@ -177,11 +175,11 @@ public:
     // cut-paste is wherever the clipboard was filled -- not recoverable here by
     // the time the question is answered.
     //
-    // Replacing bins the node in the way and then moves: moveNode has no
-    // versioning counterpart to copyNode's, so without that the destination
-    // would end up holding both (SPEC_NAME_CONFLICT_RESOLUTION 1-3). It reaches
-    // files only -- a colliding folder is skipped under either answer, as on the
-    // copy path.
+    // Replacing copies over the node in the way and then bins the source:
+    // moveNode has no versioning counterpart to copyNode's, so without that the
+    // destination would end up holding both (SPEC_NAME_CONFLICT_RESOLUTION 1-3,
+    // 3-4). It reaches files only -- a colliding folder is skipped under either
+    // answer, as on the copy path.
     Q_INVOKABLE void moveReplacingExisting(const QVariantList& entries,
                                            quint64 target,
                                            bool targetIsRoot,
@@ -290,14 +288,10 @@ private:
     // file can be replaced; handles is who already lives there, so an entry
     // pasted back into its own folder is recognised as a duplication rather than
     // a collision (docs/investigations/SPEC_NAME_CONFLICT_RESOLUTION.md 3-2).
-    //
-    // files carries the handle as well because a replacing *move* has to bin the
-    // node in the way first. MEGA allows duplicate siblings, so a name can have
-    // several; the first wins, which matches what copyNode's versioning reaches.
     struct DestinationSnapshot
     {
         std::set<std::string> taken;
-        std::map<std::string, std::uint64_t> files;
+        std::set<std::string> files;
         std::set<std::string> folders;
         std::set<std::uint64_t> handles;
 
@@ -347,11 +341,11 @@ private:
     void clearClipboardIfSpentBy(const std::vector<NodeRef>& entries);
 
     // One planned move, settling the batch exactly once however many requests it
-    // takes. replaced is the node this one is to overwrite, which has to reach
-    // the rubbish bin before the move -- and if that fails the move is abandoned
-    // rather than left to land beside the file it was meant to replace.
+    // takes. replacing means the destination already holds a same-named file:
+    // moveNode cannot overwrite, so that case is issued as a copy (which the SDK
+    // attaches as a new version) followed by binning the source.
     void moveOne(std::uint64_t handle,
-                 std::optional<std::uint64_t> replaced,
+                 bool replacing,
                  quint64 target,
                  bool targetIsRoot,
                  std::shared_ptr<BulkOperationRunner::Batch> batch);
