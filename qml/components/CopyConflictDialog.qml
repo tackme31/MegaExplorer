@@ -47,14 +47,17 @@ Dialog {
     // A Popup takes its content's *implicit* width, and a Text's implicit width
     // is its unwrapped width -- so without a cap the frame grows to the longest
     // sentence below and, on a small window, pushes its own buttons off-screen.
-    width: Math.min(implicitWidth, Overlay.overlay.width - 48)
+    readonly property real maxWidth: Overlay.overlay.width - 48
+    width: Math.min(implicitWidth, maxWidth)
 
     // Every button closes, so this is the one place the next question can start
     // from.
     onClosed: root.showNextRequest()
 
     Label {
-        width: root.availableWidth
+        // Capped against the overlay rather than root.availableWidth: reading the
+        // dialog's own width here closes a loop through its implicitHeight.
+        width: Math.min(implicitWidth, root.maxWidth - root.leftPadding - root.rightPadding)
         wrapMode: Text.Wrap
         text: root.buildMessage()
     }

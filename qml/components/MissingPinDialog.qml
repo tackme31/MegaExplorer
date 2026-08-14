@@ -33,7 +33,17 @@ Dialog {
     standardButtons: Dialog.Yes | Dialog.Cancel
     title: qsTr("Folder no longer exists")
 
+    // A Popup takes its content's *implicit* width, and a Text's implicit width
+    // is its unwrapped width -- so without a cap the folder name in the message
+    // below drags the frame past the window edge.
+    readonly property real maxWidth: Overlay.overlay.width - 48
+    width: Math.min(implicitWidth, maxWidth)
+
     Label {
+        // Capped against the overlay rather than root.availableWidth: reading the
+        // dialog's own width here closes a loop through its implicitHeight.
+        width: Math.min(implicitWidth, root.maxWidth - root.leftPadding - root.rightPadding)
+        wrapMode: Text.Wrap
         text: qsTr("\"%1\" could not be found. Remove it from Quick access?").arg(root.pinName)
     }
 
