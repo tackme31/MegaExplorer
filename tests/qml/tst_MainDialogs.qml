@@ -37,6 +37,18 @@ TestCase {
         MissingPinDialog {}
     }
 
+    // Declared per file view rather than by Main.qml, unlike the three above,
+    // but silent in the same way: nothing outside them opens them.
+    Component {
+        id: confirmRubbishComponent
+        ConfirmRubbishDialog {}
+    }
+
+    Component {
+        id: confirmPermanentDeleteComponent
+        ConfirmPermanentDeleteDialog {}
+    }
+
     // A QtObject, not a JS object literal: Connections.target is typed QObject*,
     // so a plain JS object lands there as null, the dialog never opens and the
     // tests that assert on what it called would pass on their own emptiness.
@@ -113,6 +125,50 @@ TestCase {
                 fakeQuickAccess.lastUnpin = handle;
             }
         }
+    }
+
+    // confirm() reaches through navController.fileListModel.selectedEntries(),
+    // so the fake has to be nested the same way.
+    Component {
+        id: navControllerComponent
+
+        QtObject {
+            id: fakeNav
+
+            property var entries: []
+            property QtObject fileListModel: QtObject {
+                function selectedEntries() {
+                    return fakeNav.entries;
+                }
+            }
+        }
+    }
+
+    Component {
+        id: mutControllerComponent
+
+        QtObject {
+            property var lastRubbishHandles: null
+            property var lastDeleteHandles: null
+
+            function moveHandlesToRubbish(handles) {
+                lastRubbishHandles = handles;
+            }
+
+            function deleteHandlesPermanently(handles) {
+                lastDeleteHandles = handles;
+            }
+        }
+    }
+
+    function makeSelection(names) {
+        const nav = createTemporaryObject(navControllerComponent, testCase);
+        verify(nav !== null);
+        nav.entries = names.map((n, i) => ({
+            "name": n,
+            "handle": i + 1
+        }));
+        return nav;
     }
 
     function makeUploads() {
@@ -430,5 +486,85 @@ TestCase {
         dialog.reject();
 
         compare(quickAccess.unpinCount, 0);
+    }
+
+    // ---- ConfirmRubbishDialog / ConfirmPermanentDeleteDialog -----------
+
+    function test_confirmDelete_staysInsideTheWindowOnALongName_data() {
+        return [
+                    {
+                        tag: "rubbish",
+                        component: "confirmRubbish"
+                    },
+                    {
+                        tag: "permanent",
+                        component: "confirmPermanentDelete"
+                    }
+                ];
+    }
+
+    // Both embed one file name in their message, so before the cap the message
+    // laid out on one unwrapped line far wider than the frame around it.
+    // Asserting on the frame is not enough -- a Popup clamps its own width to
+    // the overlay anyway, so dialog.width alone passes with the bug present.
+    // Staged here rather than in a screenshot because the dialog is reachable
+    // only through a live selection.
+    function test_confirmDelete_staysInsideTheWindowOnALongName(data) {
+        const nav = makeSelection(["a-name-long-enough-to-outgrow-any-sane-window-on-its-own.txt"]);
+        const mut = createTemporaryObject(mutControllerComponent, testCase);
+        verify(mut !== null);
+        const component = data.component === "confirmRubbish" ? confirmRubbishComponent :
+                                                                confirmPermanentDeleteComponent;
+        const dialog = makeDialog(component, {
+                                      "navController": nav,
+                                      "mutController": mut
+                                  });
+
+        dialog.confirm();
+
+        tryCompare(dialog, "opened", true);
+        const label = dialog.contentChildren[0];
+        // Guard: if the name ever stops being wider than the window, everything
+        // below would pass on its own emptiness.
+        verify(dialog.parent.width > 0);
+        verify(label.implicitWidth > dialog.parent.width);
+
+        verify(dialog.width <= dialog.parent.width);
+        verify(label.width <= dialog.availableWidth);
+        verify(label.lineCount > 1);
+    }
+
+    // The handles are sampled at confirm() time, and the wrap must not have
+    // disturbed that: what gets deleted has to be what the prompt named.
+    function test_confirmRubbish_acceptBinsTheSampledHandles() {
+        const nav = makeSelection(["a.txt", "b.txt"]);
+        const mut = createTemporaryObject(mutControllerComponent, testCase);
+        verify(mut !== null);
+        const dialog = makeDialog(confirmRubbishComponent, {
+                                      "navController": nav,
+                                      "mutController": mut
+                                  });
+
+        dialog.confirm();
+        nav.entries = [];
+        dialog.accept();
+
+        compare(mut.lastRubbishHandles, [1, 2]);
+    }
+
+    function test_confirmPermanentDelete_acceptDeletesTheSampledHandles() {
+        const nav = makeSelection(["a.txt", "b.txt"]);
+        const mut = createTemporaryObject(mutControllerComponent, testCase);
+        verify(mut !== null);
+        const dialog = makeDialog(confirmPermanentDeleteComponent, {
+                                      "navController": nav,
+                                      "mutController": mut
+                                  });
+
+        dialog.confirm();
+        nav.entries = [];
+        dialog.accept();
+
+        compare(mut.lastDeleteHandles, [1, 2]);
     }
 }
