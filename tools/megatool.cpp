@@ -22,21 +22,20 @@
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h> // SetErrorMode: no crash dialog in an unattended run
-
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
+#include <windows.h> // SetErrorMode: no crash dialog in an unattended run
 
 namespace
 {
@@ -78,7 +77,9 @@ R await(const std::function<void(std::function<void(R)>)>& start)
     });
 
     std::unique_lock<std::mutex> lock(state->mutex);
-    if (!state->ready.wait_for(lock, kAwaitBudget, [&] { return state->result.has_value(); }))
+    if (!state->ready.wait_for(lock, kAwaitBudget, [&] {
+            return state->result.has_value();
+        }))
     {
         // Safe to walk away: the callback owns its own reference to the state,
         // so a late delivery writes into live storage and is simply ignored.
@@ -336,8 +337,9 @@ int cmdWhoami()
     // fetchNodes before asking who we are: MegaApi::getMyEmail() returns null
     // after a fastLogin until the tree has been fetched, so skipping this reports
     // "Not logged in" for a perfectly good session.
-    const Result<void> fetched =
-        await<Result<void>>([&](auto done) { client->fetchNodes(kIgnoreProgress, std::move(done)); });
+    const Result<void> fetched = await<Result<void>>([&](auto done) {
+        client->fetchNodes(kIgnoreProgress, std::move(done));
+    });
 
     const Result<AccountIdentity> identity = client->currentAccountIdentity();
     if (!fetched.success)
@@ -434,6 +436,34 @@ int cmdRm(IMegaClient& client, const std::string& path)
     return 0;
 }
 
+int cmdMv(IMegaClient& client, const std::string& path, const std::string& destDir)
+{
+    const Result<Node> node = resolve(client, path);
+    if (!node.success)
+        return fail("resolve " + path + ": " + node.errorMessage);
+    if (node.value().isRoot)
+        return fail("refusing to move the Cloud Drive root");
+
+    // resolve, not makeDirs: a typo in the destination should fail rather than
+    // quietly create that folder and report a move that went somewhere else.
+    const Result<Node> parent = resolve(client, destDir);
+    if (!parent.success)
+        return fail("resolve " + destDir + ": " + parent.errorMessage);
+
+    // No name check of any kind, deliberately. MEGA allows same-name siblings and
+    // moveNode sends no overwrite hint, so landing on a name the destination
+    // already holds is precisely what this command exists to make reachable --
+    // every path in the app diverts to a conflict dialog before that point.
+    const Result<void> moved = await<Result<void>>([&](auto done) {
+        client.moveNode(
+            node.value().handle, parent.value().handle, parent.value().isRoot, std::move(done));
+    });
+    if (!moved.success)
+        return fail("mv " + path, moved);
+    std::printf("moved %s -> %s\n", path.c_str(), destDir.c_str());
+    return 0;
+}
+
 // The known tree every fixture-dependent check starts from. Kept small on
 // purpose -- it is rebuilt from scratch each time, and each entry exists to
 // cover one listing case.
@@ -523,6 +553,7 @@ void usage()
                  "                          Bash rewrites a bare '/' before we see it)\n"
                  "  mkdir <path>            create a folder, parents included\n"
                  "  put <local> <path>      upload one local file into a folder\n"
+                 "  mv <path> <folder>      move a node into a folder, taken name or not\n"
                  "  rm <path>               move a node to the Rubbish bin\n"
                  "  fixture reset           rebuild the known test tree under "
                  "/MegaExplorerFixture\n"
@@ -585,6 +616,8 @@ int main(int argc, char* argv[])
         rc = cmdMkdir(*client, args[1]);
     else if (command == "put" && args.size() > 2 && !args[2].empty())
         rc = cmdPut(*client, args[1], args[2]);
+    else if (command == "mv" && args.size() > 2 && !emptyTarget && !args[2].empty())
+        rc = cmdMv(*client, args[1], args[2]);
     else if (command == "rm" && args.size() > 1 && !emptyTarget)
         rc = cmdRm(*client, args[1]);
     else if (command == "fixture" && args.size() > 1 && args[1] == "reset")

@@ -32,6 +32,7 @@ megatool whoami                  アプリの保存セッションがどのア�
 megatool ls <path>               フォルダの中身（ルートは '.'）
 megatool mkdir <path>            フォルダ作成。途中の階層も作る（mkdir -p 相当）
 megatool put <local> <path>      ローカルのファイル 1 個をフォルダへアップロード
+megatool mv <path> <folder>      ノードをフォルダへ移動。宛先に同名があっても止めない
 megatool rm <path>               ノードをゴミ箱へ移動
 megatool fixture reset           /MegaExplorerFixture を既知の状態へ作り直す
 ```
@@ -58,6 +59,13 @@ match  : yes
 両者がずれうるのは「別アカウントでログイン中だがまだ保存していないアプリが動いている」場合だけで、
 `loop_verify.sh` はどのみち先頭でアプリを終了させるため、**次に起動したときに使われるのは
 `session.dat` のほう**。つまりこのゲートは、ループが実際に開くことになるアカウントを見ている。
+
+### `mv` — 同名の上に落とせる唯一の経路
+
+宛先の名前を一切見ない。**アプリ側は移動の全経路が衝突ダイアログへ逸れる**ので、同名の上へ素の
+`moveNode` を撃つ手段がここ以外に無く、それがこのコマンドを足した理由
+（`SPEC_NAME_CONFLICT_COPY_MOVE.md` §1-2 の実測）。宛先は `mkdir -p` せず `resolve` するだけなので、
+綴りを間違えたら黙ってフォルダを作らずに失敗する。
 
 ### `fixture reset` が作る木
 
