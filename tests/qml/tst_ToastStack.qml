@@ -175,11 +175,6 @@ TestCase {
                         tag: "uploadNothingToUpload",
                         context: "uploadNothingToUpload",
                         expected: "Nothing to upload — only files and folders on this PC can be uploaded"
-                    },
-                    {
-                        tag: "uploadReplaceFailed",
-                        context: "uploadReplaceFailed",
-                        expected: "Uploaded, but some of the files being replaced could not be removed"
                     }
                 ];
     }

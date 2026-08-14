@@ -25,11 +25,6 @@ struct UploadJob
     std::uint64_t parentHandle = 0;
     bool parentIsRoot = false;
 
-    // An existing same-named file the user chose to replace, or 0. Opaque here: it
-    // rides along and comes back untouched in the finished-job notification, so
-    // this service never owns a two-step upload-then-delete transaction.
-    std::uint64_t replaceHandle = 0;
-
     std::uint64_t nodeHandle = 0; // handle of the created node, once Completed
     UploadState state = UploadState::Queued;
     std::uint64_t transferredBytes = 0;
@@ -63,8 +58,7 @@ public:
                           const std::string& name,
                           std::uint64_t parentHandle,
                           bool parentIsRoot,
-                          std::uint64_t expectedTotalBytes,
-                          std::uint64_t replaceHandle = 0);
+                          std::uint64_t expectedTotalBytes);
 
     // A copy under the lock, for the same reason as DownloadService::currentJob().
     std::optional<UploadJob> currentJob() const;

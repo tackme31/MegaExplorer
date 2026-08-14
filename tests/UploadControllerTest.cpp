@@ -1,6 +1,5 @@
 #include "qml/UploadController.h"
 
-#include "core/FileOperationService.h"
 #include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
 #include "qml/NotificationController.h"
@@ -52,9 +51,8 @@ protected:
             .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({})));
 
         service = std::make_shared<UploadService>(client);
-        fileOps = std::make_shared<FileOperationService>(client);
         notifications = std::make_unique<NotificationController>();
-        controller = std::make_unique<UploadController>(service, fileOps, notifications.get());
+        controller = std::make_unique<UploadController>(service, notifications.get());
 
         QObject::connect(notifications.get(),
                          &NotificationController::operationFinished,
@@ -149,7 +147,6 @@ protected:
     QTemporaryDir dir;
     std::shared_ptr<MockMegaClient> client;
     std::shared_ptr<UploadService> service;
-    std::shared_ptr<FileOperationService> fileOps;
     std::unique_ptr<NotificationController> notifications;
     std::unique_ptr<UploadController> controller;
 
@@ -455,12 +452,16 @@ TEST_F(UploadControllerTest, NameCollisionAsksBeforeEnqueueingAnything)
     EXPECT_EQ(controller->pendingCount(), 0);
 }
 
-TEST_F(UploadControllerTest, ReplaceEnqueuesEverythingAndTagsOnlyTheConflictingFile)
+TEST_F(UploadControllerTest, ReplaceEnqueuesEverythingAndBinsNothing)
 {
     EXPECT_CALL(*client, findChildFiles(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
     // Never completing the transfers keeps the whole queue observable.
     EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(1);
+    // The point of the whole change: MEGA folds a same-named upload into the
+    // existing node as a new version, so binning that node would throw the version
+    // away instead of replacing anything.
+    EXPECT_CALL(*client, moveToRubbish(_, _)).Times(0);
 
     // Act
     controller->uploadReplacingExisting({makeFile("a.txt"), makeFile("b.txt")}, 7, false);
@@ -469,31 +470,7 @@ TEST_F(UploadControllerTest, ReplaceEnqueuesEverythingAndTagsOnlyTheConflictingF
     std::vector<UploadJob> jobs = service->jobs();
     ASSERT_EQ(jobs.size(), 2u);
     EXPECT_EQ(jobs[0].name, "a.txt");
-    EXPECT_EQ(jobs[0].replaceHandle, 55u);
     EXPECT_EQ(jobs[1].name, "b.txt");
-    EXPECT_EQ(jobs[1].replaceHandle, 0u);
-}
-
-TEST_F(UploadControllerTest, ReplaceHandleGoesToTheFirstOfTwoSameNamedFilesOnly)
-{
-    // Two dropped files can share a leaf name while there's only one node to
-    // replace -- binning it twice would just fail the second time with kENoEnt.
-    EXPECT_CALL(*client, findChildFiles(7, false, _))
-        .WillRepeatedly(
-            Return(Result<std::vector<FileEntry>>::ok({entry("x.txt", 55), entry("x.txt", 55)})));
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(1);
-
-    QDir(dir.path()).mkdir("one");
-    QDir(dir.path()).mkdir("two");
-
-    // Act
-    controller->uploadReplacingExisting({makeFile("one/x.txt"), makeFile("two/x.txt")}, 7, false);
-
-    // Assert
-    std::vector<UploadJob> jobs = service->jobs();
-    ASSERT_EQ(jobs.size(), 2u);
-    EXPECT_EQ(jobs[0].replaceHandle, 55u);
-    EXPECT_EQ(jobs[1].replaceHandle, 0u);
 }
 
 TEST_F(UploadControllerTest, SkipDropsTheConflictingFilesAndUploadsTheRest)
@@ -594,19 +571,19 @@ TEST_F(UploadControllerTest, IsUploadingToClearsEvenWhenEveryJobFails)
     EXPECT_FALSE(controller->isUploadingTo(7, false));
 }
 
-TEST_F(UploadControllerTest, IsUploadingToOutlastsTheUploadWhileTheReplacedNodeIsStillBeingBinned)
+TEST_F(UploadControllerTest, ReplaceStopsSpinningAsSoonAsTheUploadLands)
 {
     EXPECT_CALL(*client, findChildFiles(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
     EXPECT_CALL(*client, upload(_, _, _, _, _))
         .WillRepeatedly(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{1})));
-    // Never answered, so the replace stays in flight.
-    EXPECT_CALL(*client, moveToRubbish(55, _)).Times(1);
 
     controller->uploadReplacingExisting({makeFile("a.txt")}, 7, false);
     flushQueuedEvents();
 
-    EXPECT_TRUE(controller->isUploadingTo(7, false));
+    // Nothing follows the transfer any more, so the destination must not keep a
+    // spinner waiting on a second step that no longer exists.
+    EXPECT_FALSE(controller->isUploadingTo(7, false));
 }
 
 } // namespace
