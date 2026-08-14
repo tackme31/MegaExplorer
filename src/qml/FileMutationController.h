@@ -36,8 +36,9 @@ class NotificationController;
 // nobody is showing.
 //
 // Deliberately has no reset(): mFileOps is stateless, mClipboard is app-global,
-// mBulk keeps nothing between batches, and the busy counter is cleared by
-// FolderNavigationController::reset()'s abandonAll().
+// mBulk keeps nothing between batches, the busy counter is cleared by
+// FolderNavigationController::reset()'s abandonAll(), and mCutPasteReadInFlight
+// self-clears when the read it guards lands.
 class FileMutationController : public QObject,
                                public std::enable_shared_from_this<FileMutationController>
 {
@@ -339,6 +340,12 @@ private:
                         const DestinationSnapshot& destination,
                         MoveConflict onConflict);
 
+    // Empties the clipboard when the batch about to be issued *is* its cut, matched
+    // by handle so an unrelated drag-move leaves the cut alone. Called from the
+    // issuing point rather than from paste(): the conflict dialog sits between the
+    // two, and cancelling it must leave the cut intact.
+    void clearClipboardIfSpentBy(const std::vector<NodeRef>& entries);
+
     // One planned move, settling the batch exactly once however many requests it
     // takes. replaced is the node this one is to overwrite, which has to reach
     // the rubbish bin before the move -- and if that fails the move is abandoned
@@ -348,6 +355,13 @@ private:
                  quint64 target,
                  bool targetIsRoot,
                  std::shared_ptr<BulkOperationRunner::Batch> batch);
+
+    // True between a cut-paste and its destination read landing. The clipboard used
+    // to double as that guard by being emptied at once; it now survives until the
+    // batch is issued, so the re-entry it blocked needs its own flag. Cleared by any
+    // destination read, which is harmless: the ones that are not this paste's can
+    // only land after it began.
+    bool mCutPasteReadInFlight = false;
 
     std::shared_ptr<FolderNavigationController> mNavigation;
     std::shared_ptr<FolderNavigationService> mService;

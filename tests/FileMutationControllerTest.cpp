@@ -1844,6 +1844,113 @@ TEST_F(FileMutationControllerTest, PasteOfACutAsksAndReportsTheClipboardsSourceF
     EXPECT_TRUE(lastMoveConflictDestinationIsRoot);
 }
 
+TEST_F(FileMutationControllerTest, PasteOfACutKeepsTheClipboardWhileTheQuestionIsOpen)
+{
+    // Cancelling the dialog used to cost the user the cut: paste() emptied the
+    // clipboard as it issued the destination read, long before anything moved.
+    givenRootListing({entry("a", 90)});
+    controller->loadRoot();
+    flush();
+    clipboard->cut(clipboardEntries({entry("a", 1)}), 7, false);
+
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+
+    mutations->paste();
+    flush();
+    flush();
+
+    ASSERT_EQ(moveConflictCalls, 1);
+    EXPECT_TRUE(clipboard->hasContent());
+    EXPECT_TRUE(clipboard->isCut());
+}
+
+TEST_F(FileMutationControllerTest, PasteOfACutKeepsTheClipboardWhenTheDestinationCannotBeRead)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->cut(clipboardEntries({entry("a", 1)}), 7, false);
+
+    EXPECT_CALL(*client, getRootChildren(_, _))
+        .WillRepeatedly(InvokeArgument<1>(
+            Result<std::vector<FileEntry>>::fail("gone", MegaErrorCode::kENoEnt)));
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+
+    mutations->paste();
+    flush();
+    flush();
+
+    EXPECT_EQ(errorCalls, 1);
+    EXPECT_TRUE(clipboard->hasContent());
+}
+
+TEST_F(FileMutationControllerTest, TheMoveAnswerClearsTheClipboardOnceItIssuesTheBatch)
+{
+    givenRootListing({entry("a.txt", 90)});
+    controller->loadRoot();
+    flush();
+    clipboard->cut(clipboardEntries({entry("a.txt", 1), entry("b.txt", 2)}), 7, false);
+
+    EXPECT_CALL(*client, moveNode(2u, _, true, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
+
+    mutations->paste();
+    flush();
+    flush();
+    ASSERT_EQ(moveConflictCalls, 1);
+    ASSERT_TRUE(clipboard->hasContent());
+
+    // The answer comes back the way QML sends it: the entries the signal carried.
+    mutations->moveSkippingExisting(lastMoveConflictEntries,
+                                    lastMoveConflictDestination,
+                                    lastMoveConflictDestinationIsRoot,
+                                    lastMoveConflictSource,
+                                    lastMoveConflictSourceIsRoot);
+    flush();
+    flush();
+
+    EXPECT_FALSE(clipboard->hasContent());
+}
+
+TEST_F(FileMutationControllerTest, ASecondPasteOfTheSameCutBeforeTheReadLandsIsIgnored)
+{
+    // The clipboard used to be the guard here by being emptied at once. Without a
+    // replacement, the second Ctrl+V issues the same cut as a second batch, which
+    // then asks the user about a collision with the nodes the first just moved.
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->cut(clipboardEntries({entry("a", 1)}), 7, false);
+
+    EXPECT_CALL(*client, moveNode(1u, _, true, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
+
+    mutations->paste();
+    mutations->paste(); // the destination read has not landed yet
+    flush();
+    flush();
+
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastSucceeded, 1);
+}
+
+TEST_F(FileMutationControllerTest, ADragMoveOfOtherNodesLeavesAPendingCutOnTheClipboard)
+{
+    givenRootListing({entry("b", 2)});
+    controller->loadRoot();
+    flush();
+    givenChildrenOf(99u, {});
+    clipboard->cut(clipboardEntries({entry("a", 1)}), 7, false);
+
+    EXPECT_CALL(*client, moveNode(2u, 99u, false, _))
+        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+
+    mutations->moveEntriesTo(clipboardEntries({entry("b", 2)}), 99, false);
+    flush();
+    flush();
+
+    EXPECT_TRUE(clipboard->hasContent());
+    EXPECT_TRUE(clipboard->isCut());
+}
+
 TEST_F(FileMutationControllerTest, MoveReplacingExistingDoesNotBinWhenTheMoveWouldBeRefused)
 {
     // canMove is synchronous, so asking it after the bin would cost the
