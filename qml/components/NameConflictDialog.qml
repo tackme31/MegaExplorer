@@ -40,16 +40,17 @@ Dialog {
     // A Popup takes its content's *implicit* width, and a Text's implicit width
     // is its unwrapped width -- so without a cap the frame follows the name list
     // below and, on a small window, pushes its own buttons off-screen.
-    width: Math.min(implicitWidth, Overlay.overlay.width - 48)
+    readonly property real maxWidth: Overlay.overlay.width - 48
+    width: Math.min(implicitWidth, maxWidth)
 
     // Every one of the three buttons closes, so this is the one place the next
     // question can start from.
     onClosed: root.showNextRequest()
 
     Label {
-        // The frame is as wide as its button footer, so a fixed width here would
-        // wrap the message well short of the edge.
-        width: root.availableWidth
+        // Capped against the overlay rather than root.availableWidth: reading the
+        // dialog's own width here closes a loop through its implicitHeight.
+        width: Math.min(implicitWidth, root.maxWidth - root.leftPadding - root.rightPadding)
         wrapMode: Text.Wrap
         text: qsTr("%1 file(s) with the same name already exist in the destination:").arg(
                   root.conflictNames.length) + "\n" + root.conflictNames.slice(0, 5).join(", ") + (
