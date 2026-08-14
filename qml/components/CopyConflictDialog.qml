@@ -15,9 +15,10 @@ import QtQuick.Controls
 //
 // standardButtons can't express it: a hand-built DialogButtonBox whose answers
 // call the controller directly rather than going through onAccepted/onRejected.
-// Replace appears only when a file is among the conflicts -- everything the
-// wording and the button set do here follows from
-// docs/investigations/SPEC_NAME_CONFLICT_RESOLUTION.md section 3.
+// A copy hides Continue when only folders collide, because the copy path skips
+// a colliding folder either way -- a move has no such case, since moveNode
+// never looks at a name. Everything the wording and the button set do here
+// follows from docs/investigations/SPEC_NAME_CONFLICT_COPY_MOVE.md section 3.
 Dialog {
     id: root
 
@@ -78,10 +79,10 @@ Dialog {
         alignment: Qt.AlignRight
 
         Button {
-            text: qsTr("Replace")
-            // Nothing to replace when only folders collide: MEGA cannot merge
-            // one, so the button would silently mean Skip.
-            visible: root.conflictingFiles.length > 0
+            text: qsTr("Continue")
+            // On the copy path this would silently mean Skip when only folders
+            // collide: copyNode cannot merge one, so it is dropped either way.
+            visible: root.operation === "move" || root.conflictingFiles.length > 0
             // The box lays its buttons out through a ListView over contentModel,
             // which counts hidden ones -- so `visible` alone leaves a
             // button-sized hole. Collapsing the *implicit* width is what takes it
@@ -92,12 +93,12 @@ Dialog {
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
                 if (root.operation === "move")
-                    root.mutController.moveReplacingExisting(root.entries, root.destinationHandle,
-                                                             root.destinationIsRoot,
-                                                             root.sourceHandle, root.sourceIsRoot);
+                    root.mutController.moveIgnoringExisting(root.entries, root.destinationHandle,
+                                                            root.destinationIsRoot,
+                                                            root.sourceHandle, root.sourceIsRoot);
                 else
-                    root.mutController.copyReplacingExisting(root.entries, root.destinationHandle,
-                                                             root.destinationIsRoot);
+                    root.mutController.copyIgnoringExisting(root.entries, root.destinationHandle,
+                                                            root.destinationIsRoot);
                 root.close();
             }
         }
@@ -140,11 +141,19 @@ Dialog {
         const names = root.conflictingFiles.concat(root.conflictingFolders);
         const lines = [head + "\n" + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "")];
 
-        if (folders > 0)
+        if (root.operation === "move") {
             lines.push(qsTr(
-                           "Folders are skipped with everything inside them: MEGA cannot merge one folder into another."));
-        if (files > 0 && folders > 0)
-            lines.push(qsTr("\"Replace\" overwrites the files only."));
+                           "\"Continue\" leaves both: MEGA allows two items with the same name and never merges folders."));
+        } else {
+            if (folders > 0)
+                lines.push(qsTr(
+                               "Folders are skipped with everything inside them: MEGA cannot merge one folder into another."));
+            if (files > 0 && folders > 0)
+                lines.push(qsTr(
+                               "\"Continue\" affects the files only, keeping the existing ones as earlier versions."));
+            else if (files > 0)
+                lines.push(qsTr("\"Continue\" keeps the existing files as earlier versions."));
+        }
         if (root.unaffectedCount > 0)
             lines.push(root.operation === "move" ? qsTr(
                                                        "The other %1 item(s) are moved either way.").arg(

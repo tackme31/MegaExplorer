@@ -159,13 +159,13 @@ public:
     // reading state kept here: the question rides on the dialog, as the upload
     // ones do. Cancel calls neither.
     //
-    // Replacing means copying under the source's own name, which the SDK turns
-    // into a new *version* of the existing file (IMegaClient::copyNode) -- the
-    // closest thing MEGA has to an overwrite. It reaches files only: copyNode
-    // cannot merge into an existing folder, so a colliding folder is skipped
-    // under either answer.
+    // Ignoring means issuing the copy under the source's own name, which the SDK
+    // forces into a new *version* of the same-named file (IMegaClient::copyNode) --
+    // MEGA has no way to end up with two same-named files. Reaches files only:
+    // copyNode cannot merge into an existing folder, so a colliding folder is
+    // skipped under either answer.
     Q_INVOKABLE void
-    copyReplacingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
+    copyIgnoringExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
     Q_INVOKABLE void
     copySkippingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
 
@@ -175,16 +175,15 @@ public:
     // cut-paste is wherever the clipboard was filled -- not recoverable here by
     // the time the question is answered.
     //
-    // Replacing copies over the node in the way and then bins the source:
-    // moveNode has no versioning counterpart to copyNode's, so without that the
-    // destination would end up holding both (SPEC_NAME_CONFLICT_RESOLUTION 1-3,
-    // 3-4). It reaches files only -- a colliding folder is skipped under either
-    // answer, as on the copy path.
-    Q_INVOKABLE void moveReplacingExisting(const QVariantList& entries,
-                                           quint64 target,
-                                           bool targetIsRoot,
-                                           quint64 source,
-                                           bool sourceIsRoot);
+    // Ignoring issues the move unchanged. moveNode looks at no name at all, so
+    // both end up side by side, folders included -- MEGA has no move that
+    // overwrites, and synthesising one out of copy + rubbish is what this path
+    // stopped doing (SPEC_NAME_CONFLICT_COPY_MOVE 1-2, 7-2).
+    Q_INVOKABLE void moveIgnoringExisting(const QVariantList& entries,
+                                          quint64 target,
+                                          bool targetIsRoot,
+                                          quint64 source,
+                                          bool sourceIsRoot);
     Q_INVOKABLE void moveSkippingExisting(const QVariantList& entries,
                                           quint64 target,
                                           bool targetIsRoot,
@@ -209,9 +208,9 @@ signals:
     // A copy would land on names the destination already uses, so nothing has been
     // issued yet -- one of the two copy*Existing() calls above (or nothing, for
     // Cancel) decides what happens. Files and folders are reported apart because
-    // only a file can be replaced: the dialog offers Replace exactly when
-    // conflictingFiles is non-empty, and a colliding folder is skipped whatever
-    // the answer (docs/investigations/SPEC_NAME_CONFLICT_RESOLUTION.md 3-1).
+    // the copy path treats them differently: a colliding folder is skipped
+    // whatever the answer, since copyNode cannot merge one
+    // (docs/investigations/SPEC_NAME_CONFLICT_COPY_MOVE.md 1-2).
     void copyNameConflict(QVariantList entries,
                           QStringList conflictingFiles,
                           QStringList conflictingFolders,
@@ -244,13 +243,13 @@ signals:
 
 private:
     // What to do with an entry whose name the destination already holds. Ask is
-    // the entry points' value; Replace and Skip are the dialog's two answers.
+    // the entry points' value; Proceed and Skip are the dialog's two answers.
     // There is no Rename here: unlike a copy, a move has no reason to invent a
     // name -- the user asked for the node to be *there*, under that name.
     enum class MoveConflict
     {
         Ask,
-        Replace,
+        Proceed,
         Skip
     };
 
@@ -271,23 +270,24 @@ private:
     Result<void> clipboardCopyAllowedHere() const;
 
     // What to do with an entry whose name the destination already holds. Ask is
-    // the entry points' value; Replace and Skip are the dialog's two answers.
+    // the entry points' value; Proceed and Skip are the dialog's two answers.
     // Rename is not offered any more, but stays as the engine every non-colliding
     // copy runs through -- and as the whole answer for a same-folder paste.
     enum class CopyConflict
     {
         Ask,
         Rename,
-        Replace,
+        Proceed,
         Skip
     };
 
     // The destination's listing, reduced to what a copy or a move needs. taken is
     // every name already there (what a generated name must dodge); files and
-    // folders are the halves an entry could land on, kept apart because only a
-    // file can be replaced; handles is who already lives there, so an entry
-    // pasted back into its own folder is recognised as a duplication rather than
-    // a collision (docs/investigations/SPEC_NAME_CONFLICT_RESOLUTION.md 3-2).
+    // folders are the halves an entry could land on, kept apart because the two
+    // are worded differently and only the copy path can act on a folder at all;
+    // handles is who already lives there, so an entry pasted back into its own
+    // folder is recognised as a duplication rather than a collision
+    // (docs/investigations/SPEC_NAME_CONFLICT_COPY_MOVE.md 3-5).
     struct DestinationSnapshot
     {
         std::set<std::string> taken;
@@ -340,12 +340,9 @@ private:
     // two, and cancelling it must leave the cut intact.
     void clearClipboardIfSpentBy(const std::vector<NodeRef>& entries);
 
-    // One planned move, settling the batch exactly once however many requests it
-    // takes. replacing means the destination already holds a same-named file:
-    // moveNode cannot overwrite, so that case is issued as a copy (which the SDK
-    // attaches as a new version) followed by binning the source.
+    // One planned move, settling the batch exactly once. Colliding or not, every
+    // planned entry is issued the same way -- moveNode never looks at a name.
     void moveOne(std::uint64_t handle,
-                 bool replacing,
                  quint64 target,
                  bool targetIsRoot,
                  std::shared_ptr<BulkOperationRunner::Batch> batch);
