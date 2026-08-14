@@ -10,7 +10,9 @@
 #include <QVariantList>
 
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -104,17 +106,21 @@ public:
     // name the server would have accepted.
     Q_INVOKABLE bool folderNameTaken(const QString& name) const;
 
-    // Drag & drop's move. handles is the snapshot taken when the drag started,
-    // passed explicitly because a drop can land on the folder tree or a
-    // quick-access pin -- both shared by every tab, so "the selection" is
-    // ambiguous there.
-    Q_INVOKABLE void moveHandlesTo(const QVariantList& handles, quint64 target, bool targetIsRoot);
+    // Drag & drop's move. entries carries {handle, name, isFolder} maps rather
+    // than bare handles because a move has to know what it would land on: the
+    // destination is read first, and a name already used there raises
+    // moveNameConflict rather than quietly producing two same-named siblings,
+    // which MEGA allows. Passed explicitly because a drop can land on the folder
+    // tree or a quick-access pin -- both shared by every tab, so "the selection"
+    // is ambiguous there.
+    Q_INVOKABLE void moveEntriesTo(const QVariantList& entries, quint64 target, bool targetIsRoot);
 
     // Pastes the app-global clipboard into the folder this tab is showing.
     //
     // A cut is reported under the "move" context but announces the *clipboard's*
     // source folder, so the folder the nodes were cut from refreshes even when the
-    // paste happened in another tab. A copy is two-stage: re-read the
+    // paste happened in another tab; it is otherwise the same two-stage shape as a
+    // copy, asking at moveNameConflict. A copy is two-stage: re-read the
     // destination's names, then copy each entry under a name nothing there uses
     // (IMegaClient::copyNode says why a colliding one is not merely untidy). An
     // entry whose name is already taken stops the batch at copyNameConflict --
@@ -164,13 +170,35 @@ public:
     Q_INVOKABLE void
     copySkippingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
 
+    // moveNameConflict's two answers, shaped like the copy pair above and riding
+    // on the dialog for the same reason. They carry the source folder as well
+    // because a move empties one folder and fills another, and the source of a
+    // cut-paste is wherever the clipboard was filled -- not recoverable here by
+    // the time the question is answered.
+    //
+    // Replacing bins the node in the way and then moves: moveNode has no
+    // versioning counterpart to copyNode's, so without that the destination
+    // would end up holding both (SPEC_NAME_CONFLICT_RESOLUTION 1-3). It reaches
+    // files only -- a colliding folder is skipped under either answer, as on the
+    // copy path.
+    Q_INVOKABLE void moveReplacingExisting(const QVariantList& entries,
+                                           quint64 target,
+                                           bool targetIsRoot,
+                                           quint64 source,
+                                           bool sourceIsRoot);
+    Q_INVOKABLE void moveSkippingExisting(const QVariantList& entries,
+                                          quint64 target,
+                                          bool targetIsRoot,
+                                          quint64 source,
+                                          bool sourceIsRoot);
+
 signals:
     void folderCreated();
     // reason is a structured selector, not a message: "exists", "invalidName" or
     // "other". C++ supplies structure, QML supplies wording.
     void folderCreationFailed(QString reason);
 
-    // At least one node of a moveHandlesTo batch landed. This tab has already
+    // At least one node of a moveEntriesTo batch landed. This tab has already
     // refreshed itself; the signal exists so TabsController can fan refreshIfShowing
     // out to the *other* tabs. Both ends are reported because a move empties one
     // folder and fills another.
@@ -191,6 +219,19 @@ signals:
                           quint64 destination,
                           bool destinationIsRoot);
 
+    // copyNameConflict's move counterpart -- same question, different verbs and
+    // a different pair of answers, so the dialog handles both. Kept a separate
+    // signal rather than a discriminated one so neither carries parameters the
+    // other has no meaning for: this one adds the source folder, which only a
+    // move has to announce afterwards.
+    void moveNameConflict(QVariantList entries,
+                          QStringList conflictingFiles,
+                          QStringList conflictingFolders,
+                          quint64 destination,
+                          bool destinationIsRoot,
+                          quint64 source,
+                          bool sourceIsRoot);
+
     // Source only, for the opposite reason: the rubbish bin is not a place any tab
     // can be showing. Until F7b this batch announced nothing at all, so a second
     // tab on the same folder -- or on the favourites listing, which any rubbished
@@ -203,14 +244,28 @@ signals:
     void favouriteChanged(quint64 handle, bool favourite);
 
 private:
-    // Body of moveHandlesTo, with the source passed in: a cut-paste's source is
+    // What to do with an entry whose name the destination already holds. Ask is
+    // the entry points' value; Replace and Skip are the dialog's two answers.
+    // There is no Rename here: unlike a copy, a move has no reason to invent a
+    // name -- the user asked for the node to be *there*, under that name.
+    enum class MoveConflict
+    {
+        Ask,
+        Replace,
+        Skip
+    };
+
+    // Body of moveEntriesTo, with the source passed in: a cut-paste's source is
     // wherever the clipboard was filled, possibly another tab or a folder this one
-    // has since navigated away from.
-    void moveHandlesFrom(const QVariantList& handles,
+    // has since navigated away from. Reads the destination, then hands over to
+    // startMoveBatch; also the body of the two answers, which re-read so the
+    // answer is applied against whatever the folder holds now.
+    void moveEntriesFrom(const std::vector<NodeRef>& entries,
                          quint64 target,
                          bool targetIsRoot,
                          quint64 source,
-                         bool sourceIsRoot);
+                         bool sourceIsRoot,
+                         MoveConflict onConflict);
 
     // canPaste()'s copy check, carrying the first refusal: paste() needs the
     // reason, not just the verdict.
@@ -228,20 +283,29 @@ private:
         Skip
     };
 
-    // The destination's listing, reduced to what a copy needs. taken is every name
-    // already there (what a generated name must dodge); files and folders are the
-    // halves a copy could land on, kept apart because only a file can be versioned
-    // over; handles is who already lives there, so an entry pasted back into its
-    // own folder is recognised as a duplication rather than a collision
-    // (docs/investigations/SPEC_NAME_CONFLICT_RESOLUTION.md 3-2).
+    // The destination's listing, reduced to what a copy or a move needs. taken is
+    // every name already there (what a generated name must dodge); files and
+    // folders are the halves an entry could land on, kept apart because only a
+    // file can be replaced; handles is who already lives there, so an entry
+    // pasted back into its own folder is recognised as a duplication rather than
+    // a collision (docs/investigations/SPEC_NAME_CONFLICT_RESOLUTION.md 3-2).
+    //
+    // files carries the handle as well because a replacing *move* has to bin the
+    // node in the way first. MEGA allows duplicate siblings, so a name can have
+    // several; the first wins, which matches what copyNode's versioning reaches.
     struct DestinationSnapshot
     {
         std::set<std::string> taken;
-        std::set<std::string> files;
+        std::map<std::string, std::uint64_t> files;
         std::set<std::string> folders;
         std::set<std::uint64_t> handles;
 
         static DestinationSnapshot of(const std::vector<FileEntry>& children);
+
+        // Matched by kind: a file and a folder sharing a name can neither
+        // overwrite nor merge into each other, so asking about that pair would
+        // pose a question with no useful answer.
+        bool collidesWith(const NodeRef& entry) const;
     };
 
     // Second stage of a copy, on the GUI thread. How the snapshot was arrived at
@@ -263,6 +327,27 @@ private:
                             quint64 target,
                             bool targetIsRoot,
                             CopyConflict resolution);
+
+    // startCopyBatch's move twin, on the GUI thread: decides per entry whether it
+    // collides, raises moveNameConflict if any does and onConflict is still Ask,
+    // and otherwise issues one moveOne() per surviving entry.
+    void startMoveBatch(const std::vector<NodeRef>& entries,
+                        quint64 target,
+                        bool targetIsRoot,
+                        quint64 source,
+                        bool sourceIsRoot,
+                        const DestinationSnapshot& destination,
+                        MoveConflict onConflict);
+
+    // One planned move, settling the batch exactly once however many requests it
+    // takes. replaced is the node this one is to overwrite, which has to reach
+    // the rubbish bin before the move -- and if that fails the move is abandoned
+    // rather than left to land beside the file it was meant to replace.
+    void moveOne(std::uint64_t handle,
+                 std::optional<std::uint64_t> replaced,
+                 quint64 target,
+                 bool targetIsRoot,
+                 std::shared_ptr<BulkOperationRunner::Batch> batch);
 
     std::shared_ptr<FolderNavigationController> mNavigation;
     std::shared_ptr<FolderNavigationService> mService;

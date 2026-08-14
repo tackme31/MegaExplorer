@@ -5,10 +5,13 @@ import QtQuick
 import QtQuick.Controls.FluentWinUI3
 import QtQuick.Controls
 
-// The paste/drop-copy counterpart of NameConflictDialog.qml's upload question.
-// One per tab, in TabContentPane.qml, because the question comes from that
-// tab's FileMutationController -- a single window-wide instance would have to
-// re-bind itself every time the active tab changed.
+// The counterpart of NameConflictDialog.qml's upload question for the two
+// in-cloud paths: paste/drop-copy and cut-paste/drop-move. Both ask the same
+// thing with different verbs, so one dialog answers both signals rather than
+// two near-identical files. One per tab, in TabContentPane.qml, because the
+// question comes from that tab's FileMutationController -- a single
+// window-wide instance would have to re-bind itself every time the active tab
+// changed.
 //
 // standardButtons can't express it: a hand-built DialogButtonBox whose answers
 // call the controller directly rather than going through onAccepted/onRejected.
@@ -24,11 +27,16 @@ Dialog {
     // stays alive exactly as long as the question does. destinationHandle is
     // `property var` because a quint64 doesn't survive QML's int/real property
     // types.
+    property string operation: "copy" // or "move"
     property var entries: []
     property var conflictingFiles: []
     property var conflictingFolders: []
     property var destinationHandle: 0
     property bool destinationIsRoot: false
+    // Only a move announces where the nodes came from, so these stay unset for
+    // a copy.
+    property var sourceHandle: 0
+    property bool sourceIsRoot: false
 
     // Questions that arrived while one was already being asked -- a Ctrl+drop is
     // still delivered while this is up (a modal overlay blocks mouse and keys,
@@ -83,8 +91,13 @@ Dialog {
                                               implicitContentWidth + leftPadding + rightPadding) : 0
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
-                root.mutController.copyReplacingExisting(root.entries, root.destinationHandle,
-                                                         root.destinationIsRoot);
+                if (root.operation === "move")
+                    root.mutController.moveReplacingExisting(root.entries, root.destinationHandle,
+                                                             root.destinationIsRoot,
+                                                             root.sourceHandle, root.sourceIsRoot);
+                else
+                    root.mutController.copyReplacingExisting(root.entries, root.destinationHandle,
+                                                             root.destinationIsRoot);
                 root.close();
             }
         }
@@ -92,8 +105,13 @@ Dialog {
             text: qsTr("Skip")
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
-                root.mutController.copySkippingExisting(root.entries, root.destinationHandle,
-                                                        root.destinationIsRoot);
+                if (root.operation === "move")
+                    root.mutController.moveSkippingExisting(root.entries, root.destinationHandle,
+                                                            root.destinationIsRoot,
+                                                            root.sourceHandle, root.sourceIsRoot);
+                else
+                    root.mutController.copySkippingExisting(root.entries, root.destinationHandle,
+                                                            root.destinationIsRoot);
                 root.close();
             }
         }
@@ -128,8 +146,11 @@ Dialog {
         if (files > 0 && folders > 0)
             lines.push(qsTr("\"Replace\" overwrites the files only."));
         if (root.unaffectedCount > 0)
-            lines.push(qsTr("The other %1 item(s) are copied either way.").arg(
-                           root.unaffectedCount));
+            lines.push(root.operation === "move" ? qsTr(
+                                                       "The other %1 item(s) are moved either way.").arg(
+                                                       root.unaffectedCount) : qsTr(
+                                                       "The other %1 item(s) are copied either way.").arg(
+                                                       root.unaffectedCount));
         return lines.join("\n\n");
     }
 
@@ -140,12 +161,21 @@ Dialog {
             return;
         const next = root.pendingRequests[0];
         root.pendingRequests = root.pendingRequests.slice(1);
+        root.operation = next.operation;
         root.entries = next.entries;
         root.conflictingFiles = next.conflictingFiles;
         root.conflictingFolders = next.conflictingFolders;
         root.destinationHandle = next.destinationHandle;
         root.destinationIsRoot = next.destinationIsRoot;
+        root.sourceHandle = next.sourceHandle;
+        root.sourceIsRoot = next.sourceIsRoot;
         root.open();
+    }
+
+    function enqueue(request) {
+        root.pendingRequests = root.pendingRequests.concat([request]);
+        if (!root.visible)
+            root.showNextRequest();
     }
 
     Connections {
@@ -153,21 +183,30 @@ Dialog {
 
         function onCopyNameConflict(entries, conflictingFiles, conflictingFolders, destination,
                                     destinationIsRoot) {
-            root.pendingRequests = root.pendingRequests.concat([
-                                                                   {
-                                                                       "entries": entries,
-                                                                       "conflictingFiles":
-                                                                       conflictingFiles,
-                                                                       "conflictingFolders":
-                                                                       conflictingFolders,
-                                                                       "destinationHandle":
-                                                                       destination,
-                                                                       "destinationIsRoot":
-                                                                       destinationIsRoot
-                                                                   }
-                                                               ]);
-            if (!root.visible)
-                root.showNextRequest();
+            root.enqueue({
+                             "operation": "copy",
+                             "entries": entries,
+                             "conflictingFiles": conflictingFiles,
+                             "conflictingFolders": conflictingFolders,
+                             "destinationHandle": destination,
+                             "destinationIsRoot": destinationIsRoot,
+                             "sourceHandle": 0,
+                             "sourceIsRoot": false
+                         });
+        }
+
+        function onMoveNameConflict(entries, conflictingFiles, conflictingFolders, destination,
+                                    destinationIsRoot, source, sourceIsRoot) {
+            root.enqueue({
+                             "operation": "move",
+                             "entries": entries,
+                             "conflictingFiles": conflictingFiles,
+                             "conflictingFolders": conflictingFolders,
+                             "destinationHandle": destination,
+                             "destinationIsRoot": destinationIsRoot,
+                             "sourceHandle": source,
+                             "sourceIsRoot": sourceIsRoot
+                         });
         }
     }
 }

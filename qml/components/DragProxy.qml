@@ -25,15 +25,16 @@ Item {
     // than read live off the source view: the drop can land on the folder tree
     // or a quick-access pin, neither of which belongs to any one tab.
     //
-    // The names are here for the copy path -- FileOperationService::uniqueCopyName
-    // needs them, and re-resolving every handle at drop time would buy nothing.
+    // The names are here because both drop paths need them --
+    // FileOperationService::uniqueCopyName for a copy, the name-conflict check for
+    // either -- and re-resolving every handle at drop time would buy nothing.
     property var entries: []
 
     // Derived rather than passed alongside entries, so the two can't drift.
     readonly property var handles: root.entries.map(e => e.handle)
 
     // The FileMutationController the drag started from. Drop targets call
-    // canDropHandlesOn()/moveHandlesTo() through it -- the move is performed by
+    // canDropHandlesOn()/moveEntriesTo() through it -- the move is performed by
     // the source tab (it's the one that has to refresh afterwards), not by
     // whatever happens to be under the cursor.
     //
@@ -215,7 +216,7 @@ Item {
         if (root.copyMode)
             root.sourceMutations.copyEntriesTo(root.entries, handle, isRoot);
         else
-            root.sourceMutations.moveHandlesTo(root.handles, handle, isRoot);
+            root.sourceMutations.moveEntriesTo(root.entries, handle, isRoot);
     }
 
     // Ends the gesture. Drag.drop() delivers the drop event to whichever

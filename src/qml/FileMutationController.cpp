@@ -31,11 +31,26 @@ FileMutationController::DestinationSnapshot::of(const std::vector<FileEntry>& ch
     for (const FileEntry& child : children)
     {
         snapshot.taken.insert(child.name);
-        (child.isFolder ? snapshot.folders : snapshot.files).insert(child.name);
+        if (child.isFolder)
+            snapshot.folders.insert(child.name);
+        else
+            // insert, not assign: duplicate siblings are legal, and the first is
+            // the one a replace acts on.
+            snapshot.files.emplace(child.name, child.handle);
         snapshot.handles.insert(child.handle);
     }
     return snapshot;
 } // namespace
+
+bool FileMutationController::DestinationSnapshot::collidesWith(const NodeRef& entry) const
+{
+    // Its own node is what it would collide with: this is a paste or a drop back
+    // into the folder it already lives in, which duplicates or does nothing
+    // rather than overwriting (SPEC_NAME_CONFLICT_RESOLUTION 3-2).
+    if (handles.count(entry.handle) > 0)
+        return false;
+    return entry.isFolder ? folders.count(entry.name) > 0 : files.count(entry.name) > 0;
+}
 
 FileMutationController::FileMutationController(
     std::shared_ptr<FolderNavigationController> navigation,
@@ -169,7 +184,7 @@ void FileMutationController::moveHandlesToRubbish(const QVariantList& handles)
     if (handles.isEmpty())
         return;
 
-    // Read now, for the same reason moveHandlesTo does: a refresh mid-batch could
+    // Read now, for the same reason moveEntriesTo does: a refresh mid-batch could
     // in principle move this tab.
     const quint64 source = mNavigation->currentHandle();
     const bool sourceIsRoot = mNavigation->atRoot();
@@ -293,45 +308,231 @@ void FileMutationController::restoreHandles(const QVariantList& handles)
     }
 }
 
-void FileMutationController::moveHandlesTo(const QVariantList& handles,
-                                           quint64 target,
-                                           bool targetIsRoot)
+void FileMutationController::moveEntriesTo(const QVariantList& entries,
+                                          quint64 target,
+                                          bool targetIsRoot)
 {
     // A drag started in this tab, so this tab is where the nodes came from --
     // read *now*, because a refresh mid-batch could in principle move it.
-    moveHandlesFrom(
-        handles, target, targetIsRoot, mNavigation->currentHandle(), mNavigation->atRoot());
+    moveEntriesFrom(ClipboardController::toNodeRefs(entries),
+                    target,
+                    targetIsRoot,
+                    mNavigation->currentHandle(),
+                    mNavigation->atRoot(),
+                    MoveConflict::Ask);
 }
 
-void FileMutationController::moveHandlesFrom(const QVariantList& handles,
+void FileMutationController::moveEntriesFrom(const std::vector<NodeRef>& entries,
                                              quint64 target,
                                              bool targetIsRoot,
                                              quint64 source,
-                                             bool sourceIsRoot)
+                                             bool sourceIsRoot,
+                                             MoveConflict onConflict)
 {
-    if (handles.isEmpty())
+    if (entries.empty())
+        return;
+
+    mBusy->begin();
+    mService->listChildrenOf(
+        static_cast<std::uint64_t>(target),
+        targetIsRoot,
+        kNameOrder,
+        [this, self = shared_from_this(), entries, target, targetIsRoot, source, sourceIsRoot,
+         onConflict](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(this,
+                              [this, self, entries, target, targetIsRoot, source, sourceIsRoot,
+                               onConflict, result = std::move(result)]() mutable {
+                                  mBusy->end();
+                                  // No cached fallback, not even for a cut-paste
+                                  // into this tab's own folder: a move issued
+                                  // against names read from a stale listing is
+                                  // exactly the silent same-named sibling this
+                                  // question exists to prevent.
+                                  if (!result.success)
+                                  {
+                                      qCWarning(lcFileOps)
+                                          << "move destination read failed:"
+                                          << QString::fromStdString(result.errorMessage)
+                                          << "code=" << result.errorCode;
+                                      mNotifications->notifyError(
+                                          QStringLiteral("move"),
+                                          result.errorCode,
+                                          QString::fromStdString(result.errorMessage));
+                                      return;
+                                  }
+
+                                  startMoveBatch(entries,
+                                                 target,
+                                                 targetIsRoot,
+                                                 source,
+                                                 sourceIsRoot,
+                                                 DestinationSnapshot::of(result.value()),
+                                                 onConflict);
+                              });
+        });
+}
+
+void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
+                                            quint64 target,
+                                            bool targetIsRoot,
+                                            quint64 source,
+                                            bool sourceIsRoot,
+                                            const DestinationSnapshot& destination,
+                                            MoveConflict onConflict)
+{
+    if (entries.empty())
+        return;
+
+    if (onConflict == MoveConflict::Ask)
+    {
+        QStringList conflictingFiles;
+        QStringList conflictingFolders;
+        for (const NodeRef& entry : entries)
+        {
+            if (!destination.collidesWith(entry))
+                continue;
+            (entry.isFolder ? conflictingFolders : conflictingFiles)
+                .append(QString::fromStdString(entry.name));
+        }
+        if (!conflictingFiles.isEmpty() || !conflictingFolders.isEmpty())
+        {
+            emit moveNameConflict(ClipboardController::toVariantList(entries),
+                                  conflictingFiles,
+                                  conflictingFolders,
+                                  target,
+                                  targetIsRoot,
+                                  source,
+                                  sourceIsRoot);
+            return;
+        }
+        // Nothing collides, so both answers mean the same thing here; Skip is the
+        // one that issues every entry unchanged.
+        onConflict = MoveConflict::Skip;
+    }
+
+    // Planned before the batch starts because the batch has to be told how many
+    // moves to expect, and Skip removes entries from that count.
+    struct PlannedMove
+    {
+        std::uint64_t handle;
+        std::optional<std::uint64_t> replaced = std::nullopt;
+    };
+    std::vector<PlannedMove> plan;
+    plan.reserve(entries.size());
+    for (const NodeRef& entry : entries)
+    {
+        if (!destination.collidesWith(entry))
+        {
+            plan.push_back({entry.handle, std::nullopt});
+            continue;
+        }
+        // A colliding folder is skipped under either answer, as on the copy path:
+        // MEGA cannot merge one folder into another, so the only "replace"
+        // available would bin the destination folder whole -- taking files the
+        // source never had with it.
+        if (entry.isFolder || onConflict == MoveConflict::Skip)
+            continue;
+        plan.push_back({entry.handle, destination.files.at(entry.name)});
+    }
+
+    if (plan.empty())
         return;
 
     auto batch =
         mBulk.start("move",
-                    static_cast<int>(handles.size()),
+                    static_cast<int>(plan.size()),
                     {},
                     [this, target, targetIsRoot, source, sourceIsRoot](int succeeded, int) {
                         if (succeeded > 0)
                             emit nodesMoved(target, targetIsRoot, source, sourceIsRoot);
                     });
 
-    for (const QVariant& handle : handles)
+    for (const PlannedMove& planned : plan)
+        moveOne(planned.handle, planned.replaced, target, targetIsRoot, batch);
+}
+
+void FileMutationController::moveOne(std::uint64_t handle,
+                                     std::optional<std::uint64_t> replaced,
+                                     quint64 target,
+                                     bool targetIsRoot,
+                                     std::shared_ptr<BulkOperationRunner::Batch> batch)
+{
+    if (replaced.has_value())
     {
-        mFileOps->move(static_cast<std::uint64_t>(handle.toULongLong()),
-                       static_cast<std::uint64_t>(target),
-                       targetIsRoot,
-                       [this, self = shared_from_this(), batch](Result<void> result) {
-                           invokeOnGuiThread(this, [batch, result = std::move(result)]() {
-                               batch->settle(result);
-                           });
-                       });
+        // Asked before the bin, not left to mFileOps->move() below: canMove is
+        // synchronous and local, so a move that was never going to be allowed
+        // would otherwise cost the destination its file and put nothing in its
+        // place.
+        const Result<void> allowed =
+            mFileOps->canMove(handle, static_cast<std::uint64_t>(target), targetIsRoot);
+        if (!allowed.success)
+        {
+            batch->settle(allowed);
+            return;
+        }
+
+        mFileOps->moveToRubbish(
+            *replaced,
+            [this, self = shared_from_this(), batch, handle, target, targetIsRoot](
+                Result<void> result) {
+                // self is captured here too: invokeOnGuiThread only guarantees
+                // `this` is alive, and the queued call outlives the outer
+                // lambda's own reference -- so without it the shared_from_this()
+                // below would throw bad_weak_ptr on a tab closed mid-flight.
+                invokeOnGuiThread(
+                    this,
+                    [this, self, batch, handle, target, targetIsRoot,
+                     result = std::move(result)]() {
+                        // Abandoning this entry rather than moving anyway: the
+                        // node in the way is still there, so the move would land
+                        // beside the file it was meant to replace.
+                        if (!result.success)
+                        {
+                            batch->settle(result);
+                            return;
+                        }
+                        moveOne(handle, std::nullopt, target, targetIsRoot, batch);
+                    });
+            });
+        return;
     }
+
+    mFileOps->move(handle,
+                   static_cast<std::uint64_t>(target),
+                   targetIsRoot,
+                   [this, self = shared_from_this(), batch](Result<void> result) {
+                       invokeOnGuiThread(this, [batch, result = std::move(result)]() {
+                           batch->settle(result);
+                       });
+                   });
+}
+
+void FileMutationController::moveReplacingExisting(const QVariantList& entries,
+                                                   quint64 target,
+                                                   bool targetIsRoot,
+                                                   quint64 source,
+                                                   bool sourceIsRoot)
+{
+    moveEntriesFrom(ClipboardController::toNodeRefs(entries),
+                    target,
+                    targetIsRoot,
+                    source,
+                    sourceIsRoot,
+                    MoveConflict::Replace);
+}
+
+void FileMutationController::moveSkippingExisting(const QVariantList& entries,
+                                                  quint64 target,
+                                                  bool targetIsRoot,
+                                                  quint64 source,
+                                                  bool sourceIsRoot)
+{
+    moveEntriesFrom(ClipboardController::toNodeRefs(entries),
+                    target,
+                    targetIsRoot,
+                    source,
+                    sourceIsRoot,
+                    MoveConflict::Skip);
 }
 
 bool FileMutationController::canPaste() const
@@ -390,10 +591,8 @@ void FileMutationController::paste()
 
     if (mClipboard->isCut())
     {
-        QVariantList handles;
-        handles.reserve(static_cast<qsizetype>(mClipboard->entries().size()));
-        for (const NodeRef& entry : mClipboard->entries())
-            handles.append(QVariant::fromValue(static_cast<quint64>(entry.handle)));
+        // Copied out before clear() below: the move outlives the clipboard.
+        const std::vector<NodeRef> cut = mClipboard->entries();
         const quint64 source = mClipboard->sourceHandle();
         const bool sourceIsRoot = mClipboard->sourceIsRoot();
         // Emptied as the paste is *issued*, like Explorer: the ghosting has to
@@ -401,7 +600,7 @@ void FileMutationController::paste()
         // nodes are partly somewhere else. A copy keeps its content, so pasting
         // twice is a legitimate way to get two copies.
         mClipboard->clear();
-        moveHandlesFrom(handles, target, targetIsRoot, source, sourceIsRoot);
+        moveEntriesFrom(cut, target, targetIsRoot, source, sourceIsRoot, MoveConflict::Ask);
         return;
     }
 
@@ -432,7 +631,8 @@ void FileMutationController::paste()
         [this, self = shared_from_this(), target, targetIsRoot](
             Result<std::vector<FileEntry>> result) {
             invokeOnGuiThread(this,
-                              [this, target, targetIsRoot, result = std::move(result)]() mutable {
+                              [this, self, target, targetIsRoot,
+                               result = std::move(result)]() mutable {
                                   mBusy->end();
                                   const std::vector<NodeRef>& entries = mClipboard->entries();
                                   if (entries.empty())
@@ -480,7 +680,8 @@ void FileMutationController::copyEntriesTo(const QVariantList& entries,
         [this, self = shared_from_this(), copied, target, targetIsRoot](
             Result<std::vector<FileEntry>> result) {
             invokeOnGuiThread(
-                this, [this, copied, target, targetIsRoot, result = std::move(result)]() mutable {
+                this,
+                [this, self, copied, target, targetIsRoot, result = std::move(result)]() mutable {
                     mBusy->end();
                     // No fallback here, unlike paste(): the destination is
                     // whatever folder the pointer was over, and this tab holds
@@ -518,18 +719,10 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
 
     // The snapshot is deliberately the *destination's* names and nothing else: a
     // name this batch itself just claimed (below) is not a collision, and treating
-    // it as one would silently drop an entry under Skip. Matched by kind, so a
-    // file and a folder sharing a name are no collision -- neither can land on the
-    // other, and uniqueCopyName still keeps the new one distinguishable.
+    // it as one would silently drop an entry under Skip. uniqueCopyName still
+    // keeps a same-name-different-kind pair distinguishable.
     const auto collides = [&destination](const NodeRef& entry) {
-        // Its own node is what it would collide with: this is a paste back into
-        // the folder it already lives in, which duplicates rather than overwrites
-        // (SPEC_NAME_CONFLICT_RESOLUTION 3-2).
-        if (destination.handles.count(entry.handle) > 0)
-            return false;
-        const std::set<std::string>& sameKind =
-            entry.isFolder ? destination.folders : destination.files;
-        return sameKind.count(entry.name) > 0;
+        return destination.collidesWith(entry);
     };
 
     if (onConflict == CopyConflict::Ask)
@@ -664,7 +857,8 @@ void FileMutationController::answerCopyConflict(const QVariantList& entries,
             Result<std::vector<FileEntry>> result) {
             invokeOnGuiThread(
                 this,
-                [this, chosen, target, targetIsRoot, resolution, result = std::move(result)]() mutable {
+                [this, self, chosen, target, targetIsRoot, resolution,
+                 result = std::move(result)]() mutable {
                     mBusy->end();
                     // No cached fallback even for a paste: the answer is only
                     // meaningful against the listing it was asked about, and
