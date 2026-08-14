@@ -179,7 +179,7 @@ ColumnLayout {
     }
 
     // Same reasoning, one per tab: the question is raised by this tab's
-    // mutController, whether the copy came from Ctrl+V or a Ctrl+drop.
+    // mutController, whether the copy or move came from Ctrl+V, Ctrl+X or a drag.
     CopyConflictDialog {
         id: copyConflictDialog
         mutController: pane.mutController
