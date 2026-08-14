@@ -976,9 +976,9 @@ TEST_F(FileMutationControllerTest, PasteKeepsANonCollidingNameUnchanged)
 
 // An entry whose name the destination already holds stops the paste at the
 // question below instead of being renamed on the spot, which is what it used to
-// do unconditionally. Files and folders are reported apart because only a file
-// can be replaced (SPEC_NAME_CONFLICT_RESOLUTION 3-1), and the match is by kind:
-// a file and a folder sharing a name can neither merge nor overwrite.
+// do unconditionally. Files and folders are reported apart because the copy path
+// treats them differently (SPEC_NAME_CONFLICT_COPY_MOVE 1-2), and the match is by
+// kind: a file and a folder sharing a name can neither merge nor overwrite.
 
 TEST_F(FileMutationControllerTest, PasteAsksBeforeCopyingOntoAnExistingFile)
 {
@@ -1023,7 +1023,7 @@ TEST_F(FileMutationControllerTest, PasteAsksAboutAFolderWhoseNameIsTaken)
     EXPECT_EQ(lastConflictFolders, QStringList{QStringLiteral("shared")});
 }
 
-TEST_F(FileMutationControllerTest, CopyReplacingExistingStillSkipsACollidingFolder)
+TEST_F(FileMutationControllerTest, CopyIgnoringExistingStillSkipsACollidingFolder)
 {
     givenRootListing({entry("a.txt", 1), entry("shared", 2, true)});
     controller->loadRoot();
@@ -1035,13 +1035,13 @@ TEST_F(FileMutationControllerTest, CopyReplacingExistingStillSkipsACollidingFold
     flush();
     ASSERT_EQ(conflictCalls, 1);
 
-    // Replacing the folder would mean binning the destination's copy whole,
-    // taking files the source never had with it -- so only the file is issued.
+    // copyNode copies a subtree in one request and cannot merge into an existing
+    // folder, so the folder has no per-file outcome to issue -- only the file is.
     EXPECT_CALL(*client, copyNode(5u, _, _, std::string(), _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
     EXPECT_CALL(*client, copyNode(6u, _, _, _, _)).Times(0);
 
-    mutations->copyReplacingExisting(
+    mutations->copyIgnoringExisting(
         lastConflictEntries, lastConflictDestination, lastConflictDestinationIsRoot);
     flush();
     flush();
@@ -1053,7 +1053,7 @@ TEST_F(FileMutationControllerTest, CopyReplacingExistingStillSkipsACollidingFold
 TEST_F(FileMutationControllerTest, PasteIntoTheFolderTheEntriesLiveInDuplicatesWithoutAsking)
 {
     // Same-folder paste is a duplication, not a collision: the entry's own node
-    // is the thing its name clashes with (SPEC_NAME_CONFLICT_RESOLUTION 3-2).
+    // is the thing its name clashes with (SPEC_NAME_CONFLICT_COPY_MOVE 3-5).
     givenRootListing({entry("a.txt", 5), entry("shared", 6, true)});
     controller->loadRoot();
     flush();
@@ -1115,11 +1115,11 @@ TEST_F(FileMutationControllerTest, PasteDoesNotAskWhenOnlyAFolderHoldsTheName)
     EXPECT_EQ(lastSucceeded, 1);
 }
 
-TEST_F(FileMutationControllerTest, CopyReplacingExistingKeepsTheCollidingSourceName)
+TEST_F(FileMutationControllerTest, CopyIgnoringExistingKeepsTheCollidingSourceName)
 {
     // Empty name == "keep the source's", which is what makes the SDK attach the
-    // copy as a new version over the existing file -- MEGA's nearest thing to an
-    // overwrite (IMegaClient::copyNode).
+    // copy as a new version of the existing file -- the API's only outcome for a
+    // same-named copy (IMegaClient::copyNode).
     givenRootListing({entry("a.txt", 1)});
     controller->loadRoot();
     flush();
@@ -1135,7 +1135,7 @@ TEST_F(FileMutationControllerTest, CopyReplacingExistingKeepsTheCollidingSourceN
     EXPECT_CALL(*client, copyNode(6u, _, _, std::string(), _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
-    mutations->copyReplacingExisting(
+    mutations->copyIgnoringExisting(
         lastConflictEntries, lastConflictDestination, lastConflictDestinationIsRoot);
     flush();
     flush();
@@ -1211,7 +1211,7 @@ TEST_F(FileMutationControllerTest, CopyAnswerRefusesWhenTheDestinationCannotBeRe
             Result<std::vector<FileEntry>>::fail("offline", MegaErrorCode::kEAgain)));
     EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
 
-    mutations->copyReplacingExisting(
+    mutations->copyIgnoringExisting(
         lastConflictEntries, lastConflictDestination, lastConflictDestinationIsRoot);
     flush();
     flush();
@@ -1648,7 +1648,7 @@ TEST_F(FileMutationControllerTest, CanPasteIsFalseForACopyOfAFolderIntoItsOwnSub
     EXPECT_EQ(lastErrorContext, QStringLiteral("paste"));
 }
 
-// --- Move name conflicts (SPEC_NAME_CONFLICT_RESOLUTION 3-1) ---------------
+// --- Move name conflicts (SPEC_NAME_CONFLICT_COPY_MOVE 3-1) ----------------
 // A move used to be issued blind. MEGA allows duplicate siblings, so landing on
 // a taken name produced two rows with the same name rather than an error --
 // which is what these ask about instead.
@@ -1720,119 +1720,76 @@ TEST_F(FileMutationControllerTest, MoveSkippingExistingMovesOnlyTheEntriesThatDi
     EXPECT_EQ(lastFailed, 0);
 }
 
-TEST_F(FileMutationControllerTest, MoveReplacingExistingCopiesThenBinsTheSource)
+TEST_F(FileMutationControllerTest, MoveSkippingExistingIssuesNothingWhenEverythingCollides)
 {
-    // moveNode has no versioning counterpart to copyNode's, so a replace is a
-    // copy over the destination's file followed by binning the *source* -- the
-    // node in the way survives as an older version (SPEC 3-4).
+    // No batch is started at all, so the cut stays on the clipboard: nothing was
+    // spent.
     givenRootListing({});
     controller->loadRoot();
     flush();
     givenChildrenOf(7u, {entry("a.txt", 90)});
+    clipboard->cut(clipboardEntries({entry("a.txt", 1)}), 0, true);
 
-    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
     EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
-    EXPECT_CALL(*client, moveToRubbish(90u, _)).Times(0);
-    bool copied = false;
-    EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string(), _))
-        .WillOnce(Invoke([&](std::uint64_t,
-                             std::uint64_t,
-                             bool,
-                             const std::string&,
-                             std::function<void(Result<void>)> onDone) {
-            copied = true;
-            onDone(Result<void>::ok());
-        }));
-    EXPECT_CALL(*client, moveToRubbish(1u, _))
-        .WillOnce(Invoke([&](std::uint64_t, std::function<void(Result<void>)> onDone) {
-            EXPECT_TRUE(copied);
-            onDone(Result<void>::ok());
-        }));
 
-    mutations->moveReplacingExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
-    flush();
+    mutations->moveSkippingExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
     flush();
     flush();
 
-    ASSERT_EQ(operationCalls, 1);
-    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(operationCalls, 0);
+    EXPECT_TRUE(clipboard->hasContent());
 }
 
-TEST_F(FileMutationControllerTest, MoveReplacingExistingKeepsTheSourceWhenTheCopyFails)
+TEST_F(FileMutationControllerTest, MoveIgnoringExistingIssuesEveryEntryAsAPlainMove)
 {
-    // Binning anyway would destroy the only remaining copy: the destination
-    // never got the new version, so the source is all there is.
+    // moveNode never looks at a name, so both the file and the folder go through
+    // as one request each and the destination ends up holding two of each --
+    // nothing is copied and nothing is binned (SPEC_NAME_CONFLICT_COPY_MOVE 1-2).
     givenRootListing({});
     controller->loadRoot();
     flush();
-    givenChildrenOf(7u, {entry("a.txt", 90)});
+    givenChildrenOf(7u, {entry("a.txt", 90), entry("d", 91, true)});
 
     EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::fail("access denied", MegaErrorCode::kEAccess)));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
     EXPECT_CALL(*client, moveToRubbish(_, _)).Times(0);
-    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+    EXPECT_CALL(*client, moveNode(1u, 7u, false, _))
+        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(2u, 7u, false, _))
+        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
 
-    mutations->moveReplacingExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
-    flush();
-    flush();
-    flush();
-
-    ASSERT_EQ(operationCalls, 1);
-    EXPECT_EQ(lastSucceeded, 0);
-    EXPECT_EQ(lastFailed, 1);
-}
-
-TEST_F(FileMutationControllerTest, MoveReplacingExistingReportsAFailedBinAfterASuccessfulCopy)
-{
-    // The half-done state: the destination already carries the new version, so
-    // settling on the copy's result instead would report a move that left the
-    // source sitting where it was.
-    givenRootListing({});
-    controller->loadRoot();
-    flush();
-    givenChildrenOf(7u, {entry("a.txt", 90)});
-
-    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-    EXPECT_CALL(*client, moveToRubbish(1u, _))
-        .WillOnce(InvokeArgument<1>(Result<void>::fail("access denied", MegaErrorCode::kEAccess)));
-
-    mutations->moveReplacingExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
-    flush();
-    flush();
-    flush();
-
-    ASSERT_EQ(operationCalls, 1);
-    EXPECT_EQ(lastSucceeded, 0);
-    EXPECT_EQ(lastFailed, 1);
-}
-
-TEST_F(FileMutationControllerTest, MoveReplacingExistingStillSkipsACollidingFolder)
-{
-    // MEGA cannot merge one folder into another, so "replace" for a folder would
-    // mean binning the destination folder whole -- SPEC 3-1 skips it instead.
-    givenRootListing({});
-    controller->loadRoot();
-    flush();
-    givenChildrenOf(7u, {entry("d", 90, true), entry("a.txt", 91)});
-
-    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, copyNode(2u, _, _, _, _)).Times(0);
-    EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-    EXPECT_CALL(*client, moveToRubbish(1u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
-
-    mutations->moveReplacingExisting(
+    mutations->moveIgnoringExisting(
         clipboardEntries({entry("a.txt", 1), entry("d", 2, true)}), 7, false, 0, true);
     flush();
     flush();
+
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastSucceeded, 2);
+    EXPECT_EQ(lastFailed, 0);
+}
+
+TEST_F(FileMutationControllerTest, MoveIgnoringExistingReportsAMoveTheSdkWouldRefuse)
+{
+    // FileOperationService::move is gated on canMove, so a refusal settles the
+    // batch as a failure without reaching moveNode.
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    givenChildrenOf(7u, {entry("a.txt", 90)});
+
+    EXPECT_CALL(*client, checkMove(1u, 7u, false))
+        .WillRepeatedly(Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, moveToRubbish(_, _)).Times(0);
+
+    mutations->moveIgnoringExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
+    flush();
     flush();
 
     ASSERT_EQ(operationCalls, 1);
-    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(lastSucceeded, 0);
+    EXPECT_EQ(lastFailed, 1);
 }
 
 TEST_F(FileMutationControllerTest, MoveEntriesToRefusesTheWholeDropWhenTheTargetCantBeRead)
@@ -1982,29 +1939,4 @@ TEST_F(FileMutationControllerTest, ADragMoveOfOtherNodesLeavesAPendingCutOnTheCl
 
     EXPECT_TRUE(clipboard->hasContent());
     EXPECT_TRUE(clipboard->isCut());
-}
-
-TEST_F(FileMutationControllerTest, MoveReplacingExistingDoesNotCopyWhenTheMoveWouldBeRefused)
-{
-    // canMove is what says the source may be removed, so skipping it would leave
-    // a copy in the destination that the bin step is then refused the right to
-    // pair with -- a duplicate rather than a move.
-    givenRootListing({});
-    controller->loadRoot();
-    flush();
-    givenChildrenOf(7u, {entry("a.txt", 90)});
-
-    EXPECT_CALL(*client, checkMove(1u, 7u, false))
-        .WillRepeatedly(Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
-    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
-    EXPECT_CALL(*client, moveToRubbish(_, _)).Times(0);
-    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
-
-    mutations->moveReplacingExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
-    flush();
-    flush();
-
-    ASSERT_EQ(operationCalls, 1);
-    EXPECT_EQ(lastSucceeded, 0);
-    EXPECT_EQ(lastFailed, 1);
 }
