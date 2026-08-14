@@ -41,7 +41,18 @@ Dialog {
     standardButtons: Dialog.Yes | Dialog.Cancel
     title: qsTr("Delete permanently?")
 
+    // A Popup takes its content's *implicit* width, and a Text's implicit width
+    // is its unwrapped width -- so without a cap a single long file name in the
+    // message below drags the frame past the window edge.
+    readonly property real maxWidth: Overlay.overlay.width - 48
+    width: Math.min(implicitWidth, maxWidth)
+
     Label {
+        // Capped against the overlay rather than root.availableWidth: reading the
+        // dialog's own width here closes a loop through its implicitHeight, which
+        // Qt reports 49 times a run.
+        width: Math.min(implicitWidth, root.maxWidth - root.leftPadding - root.rightPadding)
+        wrapMode: Text.Wrap
         text: root.itemCount === 1 ? qsTr("Delete \"%1\" permanently? This cannot be undone.").arg(
                                          root.firstName) : qsTr(
                                          "Delete %1 items permanently? This cannot be undone.").arg(

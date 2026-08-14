@@ -36,8 +36,8 @@
 
 | 状態 | 項目 | サイズ | メモ |
 |---|---|---|---|
-| todo | 削除確認ダイアログが長いファイル名ではみ出す | S | `ConfirmRubbishDialog.qml:49` と `ConfirmPermanentDeleteDialog.qml:44` の `Label` に `width` も `wrapMode` も無く、どちらも本文にファイル名を 1 件埋め込む（`Move "%1" to the Rubbish bin?`）。`evolve/020` で直したアップロード側と同じ Popup の implicit 幅の罠で、長い名前のファイルを 1 件選ぶとダイアログがウィンドウより広くなる。対処も同じ 2 行（`width: Math.min(implicitWidth, Overlay.overlay.width - 48)` と `Label` 側の `width: root.availableWidth` + `wrapMode: Text.Wrap`） |
-| todo | `NameConflictDialog` の implicitHeight にバインディングループが出ている | S | `evolve/020` で確認。QML テストを `-o -,tap` で走らせると `NameConflictDialog: Binding loop detected for property "implicitHeight"` が 8 件出る。**`evolve/020` の幅の修正より前から出ている**（修正を外して測っても出る）ので原因は別で、`contentItem` の高さ ↔ ダイアログの高さの間と思われる。実害は未確認だがレイアウトが 1 フレーム暴れる可能性がある。`CopyConflictDialog` 側でも出ていないか併せて見る |
+| todo | `NameConflictDialog` の implicitHeight にバインディングループが出ている | S | `evolve/020` で確認。QML テストを `-o -,tap` で走らせると `NameConflictDialog: Binding loop detected for property "implicitHeight"` が 8 件出る。**`evolve/020` の幅の修正より前から出ている**（修正を外して測っても出る）。**`evolve/021` で原因と直し方が判明**: `Label` の `width` が `root.availableWidth` を読むとダイアログ自身の幅を経由してループが閉じる。`width: Math.min(implicitWidth, root.maxWidth - root.leftPadding - root.rightPadding)`（`maxWidth` は `Overlay.overlay.width - 48`）に替えると 0 件になることを削除確認ダイアログ 2 つで実測済み。`MissingPinDialog`（3 件）も併せて見る |
+| todo | `evolve/020` が入れたダイアログ幅の回帰テストが素通りする | S | `tst_MainDialogs.qml` の `test_nameConflict_staysInsideTheWindowOnALongNameList` は `dialog.width <= dialog.parent.width` しか見ないが、**Popup は自分の幅をオーバーレイに切り詰めるので修正が無くてもこの式は成立する**（`evolve/021` で削除確認ダイアログの同型のテストを実測し、修正を外しても通ることを確認した）。実際の症状は本文が折り返されず 1 行で伸びること。`evolve/021` が入れた `label.implicitWidth > dialog.parent.width` のガードと `label.lineCount > 1` の形に揃える |
 
 ---
 
