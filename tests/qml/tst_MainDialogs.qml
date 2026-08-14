@@ -402,11 +402,12 @@ TestCase {
         compare(text.indexOf("…") !== -1, data.ellipsis);
     }
 
+    // A Popup sizes itself from its content's *implicit* width, so before the cap
+    // the frame followed the name list and took its own buttons off-screen.
+    // Asserting on the frame is not enough -- a Popup clamps its own width to the
+    // overlay anyway, so dialog.width alone passes with the bug present. Staged
+    // here rather than in a screenshot because the dialog opens only from a drop.
     function test_nameConflict_staysInsideTheWindowOnALongNameList() {
-        // A Popup sizes itself from its content's *implicit* width, so before the
-        // cap the frame followed the name list and took its own buttons
-        // off-screen. Asserting against the overlay is the only reachable form:
-        // the dialog opens only from a drop, which no screenshot can stage.
         const uploads = makeUploads();
         const dialog = makeDialog(nameConflictComponent, {
                                       "uploads": uploads
@@ -416,9 +417,18 @@ TestCase {
         uploads.nameConflictRequiresConfirmation([long], [long, long, long], 0, true);
 
         tryCompare(dialog, "opened", true);
+        const label = dialog.contentChildren[0];
+        // Guard: if the list ever stops being wider than the window, everything
+        // below would pass on its own emptiness.
         verify(dialog.parent.width > 0);
-        verify(dialog.width > 0);
+        verify(label.implicitWidth > dialog.parent.width);
+
         verify(dialog.width <= dialog.parent.width);
+        verify(label.width <= dialog.availableWidth);
+        // Counted against the message's own hard breaks rather than against 1:
+        // this text already carries a "\n" ahead of the name list, so lineCount > 1
+        // holds even completely unwrapped.
+        verify(label.lineCount > label.text.split("\n").length);
     }
 
     function test_nameConflict_aSecondDropWaitsInsteadOfReplacingTheFirst() {

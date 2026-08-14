@@ -36,7 +36,8 @@
 
 | 状態 | 項目 | サイズ | メモ |
 |---|---|---|---|
-| todo | `evolve/020` が入れたダイアログ幅の回帰テストが素通りする | S | `tst_MainDialogs.qml` の `test_nameConflict_staysInsideTheWindowOnALongNameList` は `dialog.width <= dialog.parent.width` しか見ないが、**Popup は自分の幅をオーバーレイに切り詰めるので修正が無くてもこの式は成立する**（`evolve/021` で削除確認ダイアログの同型のテストを実測し、修正を外しても通ることを確認した）。実際の症状は本文が折り返されず 1 行で伸びること。`evolve/021` が入れた `label.implicitWidth > dialog.parent.width` のガードと `label.lineCount > 1` の形に揃える |
+
+（現在なし）
 
 ---
 
