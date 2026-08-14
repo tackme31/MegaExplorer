@@ -1720,28 +1720,34 @@ TEST_F(FileMutationControllerTest, MoveSkippingExistingMovesOnlyTheEntriesThatDi
     EXPECT_EQ(lastFailed, 0);
 }
 
-TEST_F(FileMutationControllerTest, MoveReplacingExistingBinsTheNodeInTheWayFirst)
+TEST_F(FileMutationControllerTest, MoveReplacingExistingCopiesThenBinsTheSource)
 {
-    // moveNode has no versioning counterpart to copyNode's, so a replace is two
-    // requests: the existing node reaches the rubbish bin, then the move goes.
+    // moveNode has no versioning counterpart to copyNode's, so a replace is a
+    // copy over the destination's file followed by binning the *source* -- the
+    // node in the way survives as an older version (SPEC 3-4).
     givenRootListing({});
     controller->loadRoot();
     flush();
     givenChildrenOf(7u, {entry("a.txt", 90)});
 
     EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    bool binned = false;
-    EXPECT_CALL(*client, moveToRubbish(90u, _))
-        .WillOnce(Invoke([&](std::uint64_t, std::function<void(Result<void>)> onDone) {
-            binned = true;
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+    EXPECT_CALL(*client, moveToRubbish(90u, _)).Times(0);
+    bool copied = false;
+    EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string(), _))
+        .WillOnce(Invoke([&](std::uint64_t,
+                             std::uint64_t,
+                             bool,
+                             const std::string&,
+                             std::function<void(Result<void>)> onDone) {
+            copied = true;
             onDone(Result<void>::ok());
         }));
-    EXPECT_CALL(*client, moveNode(1u, 7u, false, _))
-        .WillOnce(Invoke(
-            [&](std::uint64_t, std::uint64_t, bool, std::function<void(Result<void>)> onDone) {
-                EXPECT_TRUE(binned);
-                onDone(Result<void>::ok());
-            }));
+    EXPECT_CALL(*client, moveToRubbish(1u, _))
+        .WillOnce(Invoke([&](std::uint64_t, std::function<void(Result<void>)> onDone) {
+            EXPECT_TRUE(copied);
+            onDone(Result<void>::ok());
+        }));
 
     mutations->moveReplacingExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
     flush();
@@ -1752,19 +1758,46 @@ TEST_F(FileMutationControllerTest, MoveReplacingExistingBinsTheNodeInTheWayFirst
     EXPECT_EQ(lastSucceeded, 1);
 }
 
-TEST_F(FileMutationControllerTest, MoveReplacingExistingAbandonsTheEntryWhenTheBinFails)
+TEST_F(FileMutationControllerTest, MoveReplacingExistingKeepsTheSourceWhenTheCopyFails)
 {
-    // Moving anyway would land the node beside the one it was meant to replace,
-    // which is the duplicate-sibling state the question exists to avoid.
+    // Binning anyway would destroy the only remaining copy: the destination
+    // never got the new version, so the source is all there is.
     givenRootListing({});
     controller->loadRoot();
     flush();
     givenChildrenOf(7u, {entry("a.txt", 90)});
 
     EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveToRubbish(90u, _))
-        .WillOnce(InvokeArgument<1>(Result<void>::fail("access denied", MegaErrorCode::kEAccess)));
+    EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string(), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::fail("access denied", MegaErrorCode::kEAccess)));
+    EXPECT_CALL(*client, moveToRubbish(_, _)).Times(0);
     EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+
+    mutations->moveReplacingExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
+    flush();
+    flush();
+    flush();
+
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastSucceeded, 0);
+    EXPECT_EQ(lastFailed, 1);
+}
+
+TEST_F(FileMutationControllerTest, MoveReplacingExistingReportsAFailedBinAfterASuccessfulCopy)
+{
+    // The half-done state: the destination already carries the new version, so
+    // settling on the copy's result instead would report a move that left the
+    // source sitting where it was.
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    givenChildrenOf(7u, {entry("a.txt", 90)});
+
+    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string(), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveToRubbish(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<void>::fail("access denied", MegaErrorCode::kEAccess)));
 
     mutations->moveReplacingExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
     flush();
@@ -1786,11 +1819,11 @@ TEST_F(FileMutationControllerTest, MoveReplacingExistingStillSkipsACollidingFold
     givenChildrenOf(7u, {entry("d", 90, true), entry("a.txt", 91)});
 
     EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveToRubbish(90u, _)).Times(0);
-    EXPECT_CALL(*client, moveToRubbish(91u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(2u, _, _, _)).Times(0);
-    EXPECT_CALL(*client, moveNode(1u, 7u, false, _))
-        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(2u, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string(), _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveToRubbish(1u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
 
     mutations->moveReplacingExisting(
         clipboardEntries({entry("a.txt", 1), entry("d", 2, true)}), 7, false, 0, true);
@@ -1951,10 +1984,11 @@ TEST_F(FileMutationControllerTest, ADragMoveOfOtherNodesLeavesAPendingCutOnTheCl
     EXPECT_TRUE(clipboard->isCut());
 }
 
-TEST_F(FileMutationControllerTest, MoveReplacingExistingDoesNotBinWhenTheMoveWouldBeRefused)
+TEST_F(FileMutationControllerTest, MoveReplacingExistingDoesNotCopyWhenTheMoveWouldBeRefused)
 {
-    // canMove is synchronous, so asking it after the bin would cost the
-    // destination its file and put nothing in its place.
+    // canMove is what says the source may be removed, so skipping it would leave
+    // a copy in the destination that the bin step is then refused the right to
+    // pair with -- a duplicate rather than a move.
     givenRootListing({});
     controller->loadRoot();
     flush();
@@ -1962,6 +1996,7 @@ TEST_F(FileMutationControllerTest, MoveReplacingExistingDoesNotBinWhenTheMoveWou
 
     EXPECT_CALL(*client, checkMove(1u, 7u, false))
         .WillRepeatedly(Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
     EXPECT_CALL(*client, moveToRubbish(_, _)).Times(0);
     EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
 
