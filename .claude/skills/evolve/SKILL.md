@@ -3,9 +3,10 @@ name: evolve
 description: >-
   Run one autonomous development cycle on MegaExplorer: pick the top item off
   docs/ROADMAP.md, implement it, verify it with scripts/loop_verify.sh, review
-  it, land it on an evolve/NNN branch, and merge that into master. Invoked on a timer as
-  `/loop 2h /evolve`, or by hand for a single cycle. Use only when asked to run
-  a cycle -- ordinary feature work does not go through this skill.
+  it, land it on an evolve/NNN branch, and merge that into master. Always runs one
+  cycle starting now; the timer that fires it is registered separately by
+  `/evolve-loop`. Use only when asked to run a cycle -- ordinary feature work does
+  not go through this skill.
 ---
 
 # /evolve — ディスパッチャ
