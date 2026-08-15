@@ -378,3 +378,69 @@ TEST_F(AccountControllerTest, RefreshAfterResetReloadsProfile)
     // Assert
     EXPECT_EQ(controller.email(), QStringLiteral("ada@example.com"));
 }
+
+TEST_F(AccountControllerTest, FileVersioningIsEnabledBeforeAnythingIsRead)
+{
+    // Arrange & Act -- nothing is fetched at construction.
+    AccountController controller(service);
+
+    // Assert -- the conflict dialog can word itself from this the moment it opens.
+    EXPECT_TRUE(controller.fileVersioningEnabled());
+}
+
+TEST_F(AccountControllerTest, LoadFileVersioningPublishesDisabled)
+{
+    // Arrange
+    EXPECT_CALL(*mockClient, getFileVersioningEnabled(::testing::_))
+        .WillOnce(::testing::InvokeArgument<0>(Result<bool>::ok(false)));
+    AccountController controller(service);
+    int changes = 0;
+    QObject::connect(&controller, &AccountController::fileVersioningEnabledChanged, [&] {
+        ++changes;
+    });
+
+    // Act
+    controller.loadFileVersioning();
+    flushQueuedEvents();
+
+    // Assert
+    EXPECT_FALSE(controller.fileVersioningEnabled());
+    EXPECT_EQ(changes, 1);
+}
+
+TEST_F(AccountControllerTest, ResetRestoresFileVersioningDefault)
+{
+    // Arrange -- the setting belongs to the account that was signed in, so the next
+    // one must not inherit the previous account's warning.
+    EXPECT_CALL(*mockClient, getFileVersioningEnabled(::testing::_))
+        .WillOnce(::testing::InvokeArgument<0>(Result<bool>::ok(false)));
+    AccountController controller(service);
+    controller.loadFileVersioning();
+    flushQueuedEvents();
+
+    // Act
+    controller.reset();
+
+    // Assert
+    EXPECT_TRUE(controller.fileVersioningEnabled());
+}
+
+// A read abandoned by a logout can still land afterwards; the generation counter
+// keeps it from re-disabling versioning under the account that signed in next.
+TEST_F(AccountControllerTest, FileVersioningAnswerAfterResetIsDropped)
+{
+    // Arrange
+    std::function<void(Result<bool>)> pending;
+    EXPECT_CALL(*mockClient, getFileVersioningEnabled(::testing::_))
+        .WillOnce(::testing::SaveArg<0>(&pending));
+    AccountController controller(service);
+    controller.loadFileVersioning();
+
+    // Act
+    controller.reset();
+    pending(Result<bool>::ok(false));
+    flushQueuedEvents();
+
+    // Assert
+    EXPECT_TRUE(controller.fileVersioningEnabled());
+}

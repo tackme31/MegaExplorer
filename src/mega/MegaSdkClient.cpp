@@ -999,6 +999,26 @@ void MegaSdkClient::getMyUserAttribute(UserAttribute attribute,
                            new megasdk::TextResultListener(std::move(onDone)));
 }
 
+void MegaSdkClient::getFileVersioningEnabled(std::function<void(Result<bool>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<bool>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    // getText() is "1" when versioning is *off* (megaapi.h:21429-21447), so the
+    // port's "enabled" is its negation -- don't "fix" this to `== "1"`.
+    mApi->getFileVersionsOption(
+        new megasdk::TextResultListener([onDone = std::move(onDone)](Result<std::string> result) {
+            if (!result.success)
+            {
+                onDone(Result<bool>::fail(result.errorMessage, result.errorCode));
+                return;
+            }
+            onDone(Result<bool>::ok(result.value() != "1"));
+        }));
+}
+
 void MegaSdkClient::getAccountInfo(std::function<void(Result<AccountInfo>)> onDone)
 {
     // storage + pro only; transfer quota is out of scope and megaapi.h asks

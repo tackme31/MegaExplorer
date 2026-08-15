@@ -183,6 +183,9 @@ ColumnLayout {
     CopyConflictDialog {
         id: copyConflictDialog
         mutController: pane.mutController
+        // Injected rather than read inside the dialog, which keeps that file free of
+        // root-context lookups and so testable by tst_MainDialogs.qml.
+        fileVersioningEnabled: accountController.fileVersioningEnabled
     }
 
     // uploadController is app-global (three of the five drop targets are shared

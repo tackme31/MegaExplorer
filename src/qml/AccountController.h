@@ -18,6 +18,11 @@
 // re-read on every open, since a session may stay open for days. The previous
 // value stays on screen during a re-read, so the loading state shows only once.
 //
+// fileVersioningEnabled is the exception, and deliberately so: it is read once at
+// login from the composition root, because the conflict dialog that words itself
+// from it must be right the first time it opens, and nothing gives it a round-trip
+// to wait for.
+//
 // Deliberately has no NotificationController dependency: the only user-visible
 // failure is the storage fetch, which has its own inline retry, and a toast would
 // fire for something the user never asked for.
@@ -68,6 +73,12 @@ public:
     Q_PROPERTY(QString storageText READ storageText NOTIFY storageChanged)
     Q_PROPERTY(int planLevel READ planLevel NOTIFY storageChanged)
 
+    // True until the account is known to have versioning off: an overwritten file's
+    // previous content survives as a version. What CopyConflictDialog words its
+    // "Continue" line and its default button from.
+    Q_PROPERTY(
+        bool fileVersioningEnabled READ fileVersioningEnabled NOTIFY fileVersioningEnabledChanged)
+
     explicit AccountController(std::shared_ptr<AccountService> service, QObject* parent = nullptr);
 
     // Cheap to call repeatedly: a re-read already in flight is not duplicated.
@@ -80,6 +91,10 @@ public:
     // fallbacks and no retry affordance.
     Q_INVOKABLE void retryAccountInfo();
 
+    // Not Q_INVOKABLE: called once per login from the composition root, like
+    // AuthController::restoreSession. Nothing in QML has a reason to re-ask.
+    void loadFileVersioning();
+
     QString email() const;
     QString displayName() const; // empty when the account has no name set
     QString avatarColor() const;
@@ -90,10 +105,12 @@ public:
     qreal storageRatio() const;  // 0.0-1.0, and 0.0 when the max is unknown
     QString storageText() const; // "12.4 GB / 20.0 GB", empty unless Loaded
     int planLevel() const;
+    bool fileVersioningEnabled() const;
 
 signals:
     void profileChanged();
     void storageChanged();
+    void fileVersioningEnabledChanged();
 
 private:
     void loadProfile();
@@ -113,6 +130,10 @@ private:
     std::uint64_t mStorageUsedBytes = 0;
     std::uint64_t mStorageMaxBytes = 0;
     int mPlanLevel = Unknown;
+    // Enabled is both the SDK's default for an account that never set the attribute
+    // and the safe reading of "not fetched yet": it is the wording that describes
+    // what MEGA does unless the user turned versioning off.
+    bool mFileVersioningEnabled = true;
 
     // Stays false if the synchronous identity read failed, so a later open retries.
     bool mProfileLoaded = false;

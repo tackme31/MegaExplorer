@@ -43,6 +43,20 @@ Dialog {
     property var sourceHandle: 0
     property bool sourceIsRoot: false
 
+    // Bound to accountController by whoever declares this dialog, rather than read
+    // off the root context here, so the QML test can instantiate it without
+    // main.cpp's context properties. Defaults to the SDK's own default for an
+    // account that never set the attribute.
+    property bool fileVersioningEnabled: true
+
+    // The one cell of the four where "Continue" destroys something no one can get
+    // back: a copy onto a file's name replaces it outright when versioning is off,
+    // and the node does not even reach the rubbish bin
+    // (SPEC_NAME_CONFLICT_COPY_MOVE 1-3). Folders never version, so they are not it.
+    readonly property bool continueLosesData: root.operation === "copy"
+                                              && root.conflictingFiles.length > 0 &&
+                                              !root.fileVersioningEnabled
+
     // Questions that arrived while one was already being asked -- a Ctrl+drop is
     // still delivered while this is up (a modal overlay blocks mouse and keys,
     // not Qt's drag-and-drop path) and open() does nothing on a visible Popup.
@@ -67,6 +81,15 @@ Dialog {
     // from.
     onClosed: root.showNextRequest()
 
+    onOpened: root.markDefaultAnswer()
+
+    // fileVersioningEnabled arrives from an SDK round-trip issued at login, so it can
+    // land while this dialog is already up: the message rewords itself to "cannot be
+    // recovered" through its binding, and without this the accent and the focus would
+    // stay on Continue, pointing Enter at the one answer that destroys data.
+    onContinueLosesDataChanged: if (root.visible)
+                                    root.markDefaultAnswer()
+
     Label {
         // Capped against the overlay rather than root.availableWidth: reading the
         // dialog's own width here closes a loop through its implicitHeight.
@@ -82,7 +105,9 @@ Dialog {
         alignment: Qt.AlignRight
 
         Button {
+            id: continueButton
             text: qsTr("Continue")
+            // highlighted is set from onOpened above, not here.
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
                 if (root.operation === "move")
@@ -96,6 +121,7 @@ Dialog {
             }
         }
         Button {
+            id: renameButton
             text: qsTr("Rename")
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
@@ -130,6 +156,20 @@ Dialog {
         }
     }
 
+    // Both halves of "this is the default": the accent fill, and the focus that makes
+    // Enter answer it -- none of the four buttons carries AcceptRole, so Dialog's own
+    // Enter handling never fires.
+    //
+    // Assigned imperatively rather than bound on the buttons because DialogButtonBox
+    // writes highlighted on every child it adopts, which kills any binding declared
+    // there -- even `highlighted: true` reads back false. A write after the box has
+    // taken them sticks.
+    function markDefaultAnswer() {
+        continueButton.highlighted = !root.continueLosesData;
+        renameButton.highlighted = root.continueLosesData;
+        (root.continueLosesData ? renameButton : continueButton).forceActiveFocus();
+    }
+
     function buildMessage() {
         const files = root.conflictingFiles.length;
         const folders = root.conflictingFolders.length;
@@ -151,15 +191,19 @@ Dialog {
         if (root.operation === "move") {
             lines.push(qsTr(
                            "\"Continue\" leaves both: MEGA allows two items with the same name and never merges folders."));
+        } else if (files > 0 && folders > 0) {
+            // Whole sentences per case rather than clauses joined at runtime: a
+            // translator needs the sentence, and there are only five of them.
+            lines.push(root.fileVersioningEnabled ? qsTr(
+                                                        "\"Continue\" keeps the existing files as earlier versions, and leaves two folders with the same name -- MEGA never merges one into another.") :
+                                                    qsTr("\"Continue\" deletes the existing files outright -- file versioning is off for this account, so they cannot be recovered -- and leaves two folders with the same name, since MEGA never merges one into another."));
+        } else if (files > 0) {
+            lines.push(root.fileVersioningEnabled ? qsTr(
+                                                        "\"Continue\" keeps the existing files as earlier versions.") :
+                                                    qsTr("\"Continue\" deletes the existing files outright: file versioning is off for this account, so they do not go to the rubbish bin and cannot be recovered."));
         } else {
-            if (files > 0 && folders > 0)
-                lines.push(qsTr(
-                               "\"Continue\" keeps the existing files as earlier versions, and leaves two folders with the same name -- MEGA never merges one into another."));
-            else if (files > 0)
-                lines.push(qsTr("\"Continue\" keeps the existing files as earlier versions."));
-            else
-                lines.push(qsTr(
-                               "\"Continue\" leaves two folders with the same name: MEGA never merges one into another."));
+            lines.push(qsTr(
+                           "\"Continue\" leaves two folders with the same name: MEGA never merges one into another."));
         }
         lines.push(root.renameLine());
         if (root.unaffectedCount > 0)

@@ -307,3 +307,43 @@ TEST(AccountServiceTest, LoadAccountInfoPropagatesFailureCode)
     EXPECT_FALSE(captured.success);
     EXPECT_EQ(captured.errorCode, MegaErrorCode::kETooMany);
 }
+
+TEST(AccountServiceTest, FileVersioningPassesThroughDisabled)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, getFileVersioningEnabled(::testing::_))
+        .WillOnce(::testing::InvokeArgument<0>(Result<bool>::ok(false)));
+    AccountService service(mockClient);
+    bool captured = true;
+
+    // Act
+    service.loadFileVersioningEnabled([&](bool enabled) {
+        captured = enabled;
+    });
+
+    // Assert
+    EXPECT_FALSE(captured);
+}
+
+// The account never touched the setting: the attribute read fails with kENoEnt and
+// versioning is on. Reported as an ordinary answer rather than an error, which is
+// why the callback takes no Result.
+TEST(AccountServiceTest, FileVersioningDefaultsToEnabledWhenAttributeUnset)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, getFileVersioningEnabled(::testing::_))
+        .WillOnce(::testing::InvokeArgument<0>(
+            Result<bool>::fail("Not found", MegaErrorCode::kENoEnt)));
+    AccountService service(mockClient);
+    bool captured = false;
+
+    // Act
+    service.loadFileVersioningEnabled([&](bool enabled) {
+        captured = enabled;
+    });
+
+    // Assert
+    EXPECT_TRUE(captured);
+}
