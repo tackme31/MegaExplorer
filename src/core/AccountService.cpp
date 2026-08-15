@@ -80,3 +80,10 @@ void AccountService::loadAccountInfo(std::function<void(Result<AccountInfo>)> on
 {
     mClient->getAccountInfo(std::move(onDone));
 }
+
+void AccountService::loadFileVersioningEnabled(std::function<void(bool)> onDone)
+{
+    mClient->getFileVersioningEnabled([onDone = std::move(onDone)](Result<bool> result) {
+        onDone(result.success ? result.value() : true);
+    });
+}

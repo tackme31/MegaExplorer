@@ -42,6 +42,14 @@ public:
     // of the account section with a visible error state.
     void loadAccountInfo(std::function<void(Result<AccountInfo>)> onDone);
 
+    // Whether an overwritten file keeps its previous content as a version. Takes no
+    // Result: an account that never touched the setting has the attribute unset, and
+    // unset means enabled, so "no answer" and "enabled" are the same state. Any other
+    // failure degrades to enabled too -- that is the SDK's own default, and the
+    // alternative is a third state every caller would have to word
+    // (docs/investigations/SPEC_NAME_CONFLICT_COPY_MOVE.md 1-3).
+    void loadFileVersioningEnabled(std::function<void(bool)> onDone);
+
 private:
     std::shared_ptr<IMegaClient> mClient;
 };

@@ -351,6 +351,13 @@ public:
     virtual void getMyUserAttribute(UserAttribute attribute,
                                     std::function<void(Result<std::string>)> onDone) = 0;
 
+    // Whether the account keeps an overwritten file's previous content as a version.
+    // The port's sense is "enabled"; the SDK's getFileVersionsOption reports the
+    // *disabled* flag, and the adapter negates it. Fails with kENoEnt on an account
+    // that never touched the setting, which means enabled -- callers apply that
+    // default themselves (docs/investigations/SPEC_NAME_CONFLICT_COPY_MOVE.md 1-3).
+    virtual void getFileVersioningEnabled(std::function<void(Result<bool>)> onDone) = 0;
+
     // Storage quota and plan level. MegaApi::getSpecificAccountDetails with only
     // storage+pro: megaapi.h asks callers to request just what they need, and
     // transfer quota is out of scope. A real server round-trip -- never per-frame

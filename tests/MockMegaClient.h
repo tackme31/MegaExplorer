@@ -138,5 +138,6 @@ public:
                 getMyUserAttribute,
                 (UserAttribute, std::function<void(Result<std::string>)>),
                 (override));
+    MOCK_METHOD(void, getFileVersioningEnabled, (std::function<void(Result<bool>)>), (override));
     MOCK_METHOD(void, getAccountInfo, (std::function<void(Result<AccountInfo>)>), (override));
 };

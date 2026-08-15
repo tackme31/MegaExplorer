@@ -3,7 +3,8 @@ import QtTest
 import MegaExplorer
 
 // R6-4. The dialogs Main.qml used to declare inline and now instantiates
-// from qml/components/: NameConflictDialog, MissingPinDialog. Both
+// from qml/components/: NameConflictDialog, MissingPinDialog, and since the
+// copy/move conflict rework CopyConflictDialog. All of them
 // wire themselves to their controller's signal, so nothing outside
 // them opens them -- which means every failure mode here is silent. A mistyped
 // handler name makes the dialog simply never appear; Replace and Skip swapped
@@ -157,6 +158,39 @@ TestCase {
 
             function deleteHandlesPermanently(handles) {
                 lastDeleteHandles = handles;
+            }
+        }
+    }
+
+    // CopyConflictDialog's own controller stub: it answers two signals rather than
+    // reading state, so the signatures here have to track
+    // src/qml/FileMutationController.h's exactly.
+    Component {
+        id: copyConflictComponent
+        CopyConflictDialog {}
+    }
+
+    Component {
+        id: conflictControllerComponent
+
+        QtObject {
+            signal copyNameConflict(var entries, var conflictingFiles, var conflictingFolders,
+                                    var renamedTo, var destination, bool destinationIsRoot)
+            signal moveNameConflict(var entries, var conflictingFiles, var conflictingFolders,
+                                    var renamedTo, var destination, bool destinationIsRoot,
+                                    var source, bool sourceIsRoot)
+
+            function copyIgnoringExisting(entries, target, targetIsRoot) {
+            }
+            function copyRenamingExisting(entries, target, targetIsRoot) {
+            }
+            function copySkippingExisting(entries, target, targetIsRoot) {
+            }
+            function moveIgnoringExisting(entries, target, targetIsRoot, source, sourceIsRoot) {
+            }
+            function moveRenamingExisting(entries, target, targetIsRoot, source, sourceIsRoot) {
+            }
+            function moveSkippingExisting(entries, target, targetIsRoot, source, sourceIsRoot) {
             }
         }
     }
@@ -576,5 +610,104 @@ TestCase {
         dialog.accept();
 
         compare(mut.lastDeleteHandles, [1, 2]);
+    }
+
+    // ---- CopyConflictDialog --------------------------------------------
+    //
+    // Which button is highlighted is the whole point of these: "Continue" is the
+    // default in three of the four cells, but a copy onto a file's name with
+    // versioning off destroys the existing file beyond recovery, so there it must
+    // not be (SPEC_NAME_CONFLICT_COPY_MOVE 3-1). Nothing on screen distinguishes a
+    // wrongly-defaulted dialog from a right one until someone presses Enter.
+
+    function makeCopyConflict(versioningEnabled) {
+        const mut = createTemporaryObject(conflictControllerComponent, testCase);
+        verify(mut !== null);
+        const dialog = makeDialog(copyConflictComponent, {
+                                      "mutController": mut,
+                                      "fileVersioningEnabled": versioningEnabled
+                                  });
+        return {
+            "mut": mut,
+            "dialog": dialog
+        };
+    }
+
+    function test_copyConflict_defaultIsContinueWhenVersioningKeepsTheOldFile() {
+        const c = makeCopyConflict(true);
+
+        c.mut.copyNameConflict([
+                                   {}
+                               ], ["a.txt"], [], ["a - Copy.txt"], 42, false);
+
+        tryCompare(c.dialog, "opened", true);
+        compare(c.dialog.continueLosesData, false);
+        tryCompare(buttonNamed(c.dialog, "Continue"), "highlighted", true);
+        compare(buttonNamed(c.dialog, "Rename").highlighted, false);
+        verify(buttonNamed(c.dialog, "Continue").activeFocus);
+        verify(c.dialog.buildMessage().indexOf("earlier versions") !== -1);
+    }
+
+    function test_copyConflict_defaultIsRenameWhenVersioningIsOff() {
+        const c = makeCopyConflict(false);
+
+        c.mut.copyNameConflict([
+                                   {}
+                               ], ["a.txt"], [], ["a - Copy.txt"], 42, false);
+
+        tryCompare(c.dialog, "opened", true);
+        compare(c.dialog.continueLosesData, true);
+        tryCompare(buttonNamed(c.dialog, "Rename"), "highlighted", true);
+        compare(buttonNamed(c.dialog, "Continue").highlighted, false);
+        verify(buttonNamed(c.dialog, "Rename").activeFocus);
+        verify(c.dialog.buildMessage().indexOf("cannot be recovered") !== -1);
+    }
+
+    // Folders never version, so the setting must not reach them.
+    function test_copyConflict_foldersKeepContinueEvenWithVersioningOff() {
+        const c = makeCopyConflict(false);
+
+        c.mut.copyNameConflict([
+                                   {}
+                               ], [], ["photos"], ["photos - Copy"], 42, false);
+
+        tryCompare(c.dialog, "opened", true);
+        compare(c.dialog.continueLosesData, false);
+        tryCompare(buttonNamed(c.dialog, "Continue"), "highlighted", true);
+    }
+
+    // The versioning answer is an SDK round-trip issued at login, so it can land
+    // after this dialog is already open. The wording follows it through a binding;
+    // the accent and the focus have to be re-applied by hand, and a Continue left
+    // highlighted under "cannot be recovered" points Enter at the destructive answer.
+    function test_copyConflict_versioningLandingWhileOpenMovesTheDefault() {
+        const c = makeCopyConflict(true);
+
+        c.mut.copyNameConflict([
+                                   {}
+                               ], ["a.txt"], [], ["a - Copy.txt"], 42, false);
+        tryCompare(c.dialog, "opened", true);
+        tryCompare(buttonNamed(c.dialog, "Continue"), "highlighted", true);
+
+        c.dialog.fileVersioningEnabled = false;
+
+        compare(c.dialog.continueLosesData, true);
+        compare(buttonNamed(c.dialog, "Rename").highlighted, true);
+        compare(buttonNamed(c.dialog, "Continue").highlighted, false);
+        verify(buttonNamed(c.dialog, "Rename").activeFocus);
+        verify(c.dialog.buildMessage().indexOf("cannot be recovered") !== -1);
+    }
+
+    // Neither does a move: moveNode overwrites nothing, whatever the setting says.
+    function test_copyConflict_moveKeepsContinueEvenWithVersioningOff() {
+        const c = makeCopyConflict(false);
+
+        c.mut.moveNameConflict([
+                                   {}
+                               ], ["a.txt"], [], ["a (2).txt"], 42, false, 7, false);
+
+        tryCompare(c.dialog, "opened", true);
+        compare(c.dialog.continueLosesData, false);
+        tryCompare(buttonNamed(c.dialog, "Continue"), "highlighted", true);
     }
 }

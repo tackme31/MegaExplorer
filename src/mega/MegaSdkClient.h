@@ -169,6 +169,8 @@ public:
     void getMyUserAttribute(UserAttribute attribute,
                             std::function<void(Result<std::string>)> onDone) override;
 
+    void getFileVersioningEnabled(std::function<void(Result<bool>)> onDone) override;
+
     void getAccountInfo(std::function<void(Result<AccountInfo>)> onDone) override;
 
 private:

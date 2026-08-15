@@ -58,8 +58,11 @@ void AccountController::reset()
     mAccountInfoInFlight = false;
     mHasStorageValue = false;
 
+    mFileVersioningEnabled = true;
+
     emit profileChanged();
     emit storageChanged();
+    emit fileVersioningEnabledChanged();
 }
 
 void AccountController::retryAccountInfo()
@@ -176,6 +179,22 @@ void AccountController::loadAccountInfo()
     });
 }
 
+void AccountController::loadFileVersioning()
+{
+    const std::uint64_t generation = mGeneration;
+
+    mService->loadFileVersioningEnabled([this, generation](bool enabled) {
+        invokeOnGuiThread(this, [this, generation, enabled]() {
+            if (generation != mGeneration)
+                return;
+            if (mFileVersioningEnabled == enabled)
+                return;
+            mFileVersioningEnabled = enabled;
+            emit fileVersioningEnabledChanged();
+        });
+    });
+}
+
 QString AccountController::computeAvatarPath(std::uint64_t userHandle) const
 {
     const QString dir =
@@ -252,4 +271,9 @@ QString AccountController::storageText() const
 int AccountController::planLevel() const
 {
     return mPlanLevel;
+}
+
+bool AccountController::fileVersioningEnabled() const
+{
+    return mFileVersioningEnabled;
 }

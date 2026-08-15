@@ -115,6 +115,17 @@ int main(int argc, char* argv[])
     AccountController accountController(accountService);
     PreviewController previewController(previewService, previewImageStore);
 
+    // The one account read that cannot be lazy: the copy-conflict dialog words its
+    // warning from it and has no round-trip to wait for once it is open. Logging out
+    // is where AccountController::reset() puts it back to the default.
+    QObject::connect(&authController,
+                     &AuthController::authStateChanged,
+                     &accountController,
+                     [&authController, &accountController] {
+                         if (authController.authState() == AuthController::LoggedIn)
+                             accountController.loadFileVersioning();
+                     });
+
     // Shared: the side panel is chrome beside the tab content, not per-tab state.
     auto folderTreeService = std::make_shared<FolderTreeService>(client);
     FolderTreeModel folderTreeModel(folderTreeService);
