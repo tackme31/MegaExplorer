@@ -160,12 +160,15 @@ where the loop reads them from.
 
 ## Loop engineering (`/evolve`)
 
-Development now runs mostly as an unattended loop: `/loop 2h /evolve` fires
+Development now runs mostly as an unattended loop: `/evolve-loop 2h` registers a cron that fires
 `.claude/skills/evolve/SKILL.md` every two hours, and each cycle takes **one** item off
 `docs/ROADMAP.md`, implements it, verifies it, reviews it, and lands it as a single commit on a
 fresh `evolve/NNN` branch, then merges that into `master` and pushes. Implementation only ever
 happens on the branch — `master` is touched by nothing but that merge. Started 2026-08-11; the
-reasoning behind each decision is in the skill, not here.
+reasoning behind each decision is in the skill, not here. **Not `/loop 2h /evolve`** — its last step
+runs a cycle immediately, at a time unrelated to the schedule it just registered, so the first cron
+fire can land seconds after that cycle ends. `/evolve` by hand still means "one cycle, now";
+`/evolve-loop off` cancels the timer.
 
 **The skill is two files, and the split is load-bearing.** `SKILL.md` is a dispatcher: it spawns
 one `general-purpose` subagent and relays its report, nothing else. The actual cycle — all seven
