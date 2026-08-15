@@ -37,10 +37,12 @@ public:
     Result<RestoreTarget> restoreTargetFor(std::uint64_t handle) const;
 
     // Gated on canMove(), so a caller that skipped the hover-time pre-check still
-    // can't issue a move the SDK would only refuse later.
+    // can't issue a move the SDK would only refuse later. An empty newName keeps the
+    // source's name; a non-empty one is validated like rename()'s.
     void move(std::uint64_t handle,
               std::uint64_t newParentHandle,
               bool newParentIsRoot,
+              const std::string& newName,
               std::function<void(Result<void>)> onDone);
 
     // An empty newName keeps the source's name; a non-empty one is validated like
@@ -59,9 +61,8 @@ public:
                       const std::string& name,
                       std::function<void(Result<void>)> onDone);
 
-    void setFavourite(std::uint64_t handle,
-                      bool favourite,
-                      std::function<void(Result<void>)> onDone);
+    void
+    setFavourite(std::uint64_t handle, bool favourite, std::function<void(Result<void>)> onDone);
 
     // "Would move() be accepted?", answered without an API round-trip so a drag
     // hovering over a drop target can query it continuously. Failures carry a
@@ -107,6 +108,13 @@ public:
     // of reach of the .ts files.
     static std::string
     uniqueCopyName(const std::string& name, bool isFolder, const std::set<std::string>& taken);
+
+    // The move path's counterpart: "report.pdf" -> "report (2).pdf" -> "report (3).pdf".
+    // A different suffix from uniqueCopyName's because a move is not a duplication and
+    // "- Copy" would misdescribe it; the split and the bound are the same
+    // (SPEC_NAME_CONFLICT_COPY_MOVE 3-4).
+    static std::string
+    uniqueMoveName(const std::string& name, bool isFolder, const std::set<std::string>& taken);
 
 private:
     std::shared_ptr<IMegaClient> mClient;

@@ -155,21 +155,23 @@ public:
     Q_INVOKABLE bool
     canCopyEntriesOn(const QVariantList& entries, quint64 target, bool targetIsRoot) const;
 
-    // The two answers to copyNameConflict, both taking the batch back rather than
+    // The three answers to copyNameConflict, all taking the batch back rather than
     // reading state kept here: the question rides on the dialog, as the upload
-    // ones do. Cancel calls neither.
+    // ones do. Cancel calls none of them.
     //
-    // Ignoring means issuing the copy under the source's own name, which the SDK
-    // forces into a new *version* of the same-named file (IMegaClient::copyNode) --
-    // MEGA has no way to end up with two same-named files. Reaches files only:
-    // copyNode cannot merge into an existing folder, so a colliding folder is
-    // skipped under either answer.
+    // Ignoring means issuing the copy under the source's own name. For a file the SDK
+    // forces that into a new *version* of the same-named one (IMegaClient::copyNode)
+    // -- MEGA has no way to end up with two same-named files; for a folder it lands a
+    // second folder of that name, since copyNode neither merges nor versions one.
+    // Renaming takes the "... - Copy" name uniqueCopyName picks.
     Q_INVOKABLE void
     copyIgnoringExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
     Q_INVOKABLE void
+    copyRenamingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
+    Q_INVOKABLE void
     copySkippingExisting(const QVariantList& entries, quint64 target, bool targetIsRoot);
 
-    // moveNameConflict's two answers, shaped like the copy pair above and riding
+    // moveNameConflict's three answers, shaped like the copy trio above and riding
     // on the dialog for the same reason. They carry the source folder as well
     // because a move empties one folder and fills another, and the source of a
     // cut-paste is wherever the clipboard was filled -- not recoverable here by
@@ -178,8 +180,14 @@ public:
     // Ignoring issues the move unchanged. moveNode looks at no name at all, so
     // both end up side by side, folders included -- MEGA has no move that
     // overwrites, and synthesising one out of copy + rubbish is what this path
-    // stopped doing (SPEC_NAME_CONFLICT_COPY_MOVE 1-2, 7-2).
+    // stopped doing (SPEC_NAME_CONFLICT_COPY_MOVE 1-2, 7-2). Renaming takes the
+    // "... (2)" name uniqueMoveName picks, in the same request as the move.
     Q_INVOKABLE void moveIgnoringExisting(const QVariantList& entries,
+                                          quint64 target,
+                                          bool targetIsRoot,
+                                          quint64 source,
+                                          bool sourceIsRoot);
+    Q_INVOKABLE void moveRenamingExisting(const QVariantList& entries,
                                           quint64 target,
                                           bool targetIsRoot,
                                           quint64 source,
@@ -206,14 +214,21 @@ signals:
     void nodesCopied(quint64 destination, bool destinationIsRoot);
 
     // A copy would land on names the destination already uses, so nothing has been
-    // issued yet -- one of the two copy*Existing() calls above (or nothing, for
+    // issued yet -- one of the three copy*Existing() calls above (or nothing, for
     // Cancel) decides what happens. Files and folders are reported apart because
-    // the copy path treats them differently: a colliding folder is skipped
-    // whatever the answer, since copyNode cannot merge one
+    // "Continue" resolves differently for them: a file becomes a new version of the
+    // existing one, a folder a second folder of that name
     // (docs/investigations/SPEC_NAME_CONFLICT_COPY_MOVE.md 1-2).
+    //
+    // renamedTo pairs with conflictingFiles + conflictingFolders concatenated, so
+    // the dialog can name what "Rename" would produce rather than promise an
+    // unstated one (SPEC 3-4). It is a preview: the answer re-reads the destination
+    // and picks again, which is what keeps a name claimed meanwhile from being
+    // reused.
     void copyNameConflict(QVariantList entries,
                           QStringList conflictingFiles,
                           QStringList conflictingFolders,
+                          QStringList renamedTo,
                           quint64 destination,
                           bool destinationIsRoot);
 
@@ -225,6 +240,7 @@ signals:
     void moveNameConflict(QVariantList entries,
                           QStringList conflictingFiles,
                           QStringList conflictingFolders,
+                          QStringList renamedTo,
                           quint64 destination,
                           bool destinationIsRoot,
                           quint64 source,
@@ -243,13 +259,14 @@ signals:
 
 private:
     // What to do with an entry whose name the destination already holds. Ask is
-    // the entry points' value; Proceed and Skip are the dialog's two answers.
-    // There is no Rename here: unlike a copy, a move has no reason to invent a
-    // name -- the user asked for the node to be *there*, under that name.
+    // the entry points' value; the other three are the dialog's answers. Unlike
+    // the copy side's, Rename here is only ever an answer -- a move that collides
+    // with nothing keeps every name as it was.
     enum class MoveConflict
     {
         Ask,
         Proceed,
+        Rename,
         Skip
     };
 
@@ -270,9 +287,9 @@ private:
     Result<void> clipboardCopyAllowedHere() const;
 
     // What to do with an entry whose name the destination already holds. Ask is
-    // the entry points' value; Proceed and Skip are the dialog's two answers.
-    // Rename is not offered any more, but stays as the engine every non-colliding
-    // copy runs through -- and as the whole answer for a same-folder paste.
+    // the entry points' value; the other three are the dialog's answers. Rename is
+    // also the engine every non-colliding copy runs through -- and the whole answer
+    // for a same-folder paste, which asks nothing (SPEC 3-5).
     enum class CopyConflict
     {
         Ask,
@@ -331,7 +348,7 @@ private:
                         bool targetIsRoot,
                         quint64 source,
                         bool sourceIsRoot,
-                        const DestinationSnapshot& destination,
+                        DestinationSnapshot destination,
                         MoveConflict onConflict);
 
     // Empties the clipboard when the batch about to be issued *is* its cut, matched
@@ -340,11 +357,12 @@ private:
     // two, and cancelling it must leave the cut intact.
     void clearClipboardIfSpentBy(const std::vector<NodeRef>& entries);
 
-    // One planned move, settling the batch exactly once. Colliding or not, every
-    // planned entry is issued the same way -- moveNode never looks at a name.
+    // One planned move, settling the batch exactly once. newName empty keeps the
+    // node's name, which is every case but the dialog's Rename answer.
     void moveOne(std::uint64_t handle,
                  quint64 target,
                  bool targetIsRoot,
+                 const std::string& newName,
                  std::shared_ptr<BulkOperationRunner::Batch> batch);
 
     // True between a cut-paste and its destination read landing. The clipboard used

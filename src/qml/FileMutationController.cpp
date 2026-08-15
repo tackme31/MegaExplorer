@@ -296,6 +296,7 @@ void FileMutationController::restoreHandles(const QVariantList& handles)
         mFileOps->move(restore.handle,
                        restore.target.handle,
                        restore.target.isRoot,
+                       std::string(),
                        [this, self = shared_from_this(), batch](Result<void> result) {
                            invokeOnGuiThread(this, [batch, result = std::move(result)]() {
                                batch->settle(result);
@@ -386,48 +387,85 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
                                             bool targetIsRoot,
                                             quint64 source,
                                             bool sourceIsRoot,
-                                            const DestinationSnapshot& destination,
+                                            DestinationSnapshot destination,
                                             MoveConflict onConflict)
 {
     if (entries.empty())
         return;
 
+    // A generated name has to dodge this batch's own arrivals, not just what the
+    // destination already holds: an entry that keeps its name lands there too, and
+    // MEGA would accept the duplicate without complaint. collidesWith reads files
+    // and folders rather than taken, so claiming here cannot turn a later entry
+    // into a collision.
+    for (const NodeRef& entry : entries)
+    {
+        if (!destination.collidesWith(entry))
+            destination.taken.insert(entry.name);
+    }
+
     if (onConflict == MoveConflict::Ask)
     {
         QStringList conflictingFiles;
         QStringList conflictingFolders;
+        QStringList renamedFiles;
+        QStringList renamedFolders;
+        // Previewed against a copy of the same set the Rename plan below works
+        // from, so the name shown is the name that answer would pick.
+        std::set<std::string> preview = destination.taken;
         for (const NodeRef& entry : entries)
         {
             if (!destination.collidesWith(entry))
                 continue;
+            const std::string chosen =
+                FileOperationService::uniqueMoveName(entry.name, entry.isFolder, preview);
+            preview.insert(chosen);
             (entry.isFolder ? conflictingFolders : conflictingFiles)
                 .append(QString::fromStdString(entry.name));
+            (entry.isFolder ? renamedFolders : renamedFiles).append(QString::fromStdString(chosen));
         }
         if (!conflictingFiles.isEmpty() || !conflictingFolders.isEmpty())
         {
             emit moveNameConflict(ClipboardController::toVariantList(entries),
                                   conflictingFiles,
                                   conflictingFolders,
+                                  renamedFiles + renamedFolders,
                                   target,
                                   targetIsRoot,
                                   source,
                                   sourceIsRoot);
             return;
         }
-        // Nothing collides, so both answers mean the same thing here; Skip is the
+        // Nothing collides, so every answer means the same thing here; Skip is the
         // one that issues every entry unchanged.
         onConflict = MoveConflict::Skip;
     }
 
-    // Planned before the batch starts because the batch has to be told how many
-    // moves to expect, and Skip removes entries from that count.
-    std::vector<std::uint64_t> plan;
+    // Names are settled before the batch starts because the batch has to be told how
+    // many moves to expect, and Skip removes entries from that count.
+    struct PlannedMove
+    {
+        std::uint64_t handle;
+        std::string newName;
+    };
+    std::vector<PlannedMove> plan;
     plan.reserve(entries.size());
     for (const NodeRef& entry : entries)
     {
-        if (onConflict == MoveConflict::Skip && destination.collidesWith(entry))
+        const bool colliding = destination.collidesWith(entry);
+        if (colliding && onConflict == MoveConflict::Skip)
             continue;
-        plan.push_back(entry.handle);
+        if (colliding && onConflict == MoveConflict::Rename)
+        {
+            const std::string chosen =
+                FileOperationService::uniqueMoveName(entry.name, entry.isFolder, destination.taken);
+            // Claimed right away: MEGA allows duplicate siblings, so two colliding
+            // entries must not be handed the same new name.
+            destination.taken.insert(chosen);
+            plan.push_back({entry.handle, chosen});
+            continue;
+        }
+        plan.push_back({entry.handle, std::string()});
     }
 
     if (plan.empty())
@@ -444,8 +482,8 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
                             emit nodesMoved(target, targetIsRoot, source, sourceIsRoot);
                     });
 
-    for (const std::uint64_t handle : plan)
-        moveOne(handle, target, targetIsRoot, batch);
+    for (const PlannedMove& planned : plan)
+        moveOne(planned.handle, target, targetIsRoot, planned.newName, batch);
 }
 
 void FileMutationController::clearClipboardIfSpentBy(const std::vector<NodeRef>& entries)
@@ -470,11 +508,13 @@ void FileMutationController::clearClipboardIfSpentBy(const std::vector<NodeRef>&
 void FileMutationController::moveOne(std::uint64_t handle,
                                      quint64 target,
                                      bool targetIsRoot,
+                                     const std::string& newName,
                                      std::shared_ptr<BulkOperationRunner::Batch> batch)
 {
     mFileOps->move(handle,
                    static_cast<std::uint64_t>(target),
                    targetIsRoot,
+                   newName,
                    [this, self = shared_from_this(), batch](Result<void> result) {
                        invokeOnGuiThread(this, [batch, result = std::move(result)]() {
                            batch->settle(result);
@@ -494,6 +534,20 @@ void FileMutationController::moveIgnoringExisting(const QVariantList& entries,
                     source,
                     sourceIsRoot,
                     MoveConflict::Proceed);
+}
+
+void FileMutationController::moveRenamingExisting(const QVariantList& entries,
+                                                  quint64 target,
+                                                  bool targetIsRoot,
+                                                  quint64 source,
+                                                  bool sourceIsRoot)
+{
+    moveEntriesFrom(ClipboardController::toNodeRefs(entries),
+                    target,
+                    targetIsRoot,
+                    source,
+                    sourceIsRoot,
+                    MoveConflict::Rename);
 }
 
 void FileMutationController::moveSkippingExisting(const QVariantList& entries,
@@ -709,18 +763,29 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
     {
         QStringList conflictingFiles;
         QStringList conflictingFolders;
+        QStringList renamedFiles;
+        QStringList renamedFolders;
+        // Walks every entry, not just the colliding ones, because the Rename plan
+        // below does: a non-colliding entry claims a name too, and a preview that
+        // skipped it could advertise a name that answer would then find taken.
+        std::set<std::string> preview = destination.taken;
         for (const NodeRef& entry : entries)
         {
+            const std::string chosen =
+                FileOperationService::uniqueCopyName(entry.name, entry.isFolder, preview);
+            preview.insert(chosen);
             if (!collides(entry))
                 continue;
             (entry.isFolder ? conflictingFolders : conflictingFiles)
                 .append(QString::fromStdString(entry.name));
+            (entry.isFolder ? renamedFolders : renamedFiles).append(QString::fromStdString(chosen));
         }
         if (!conflictingFiles.isEmpty() || !conflictingFolders.isEmpty())
         {
             emit copyNameConflict(ClipboardController::toVariantList(entries),
                                   conflictingFiles,
                                   conflictingFolders,
+                                  renamedFiles + renamedFolders,
                                   target,
                                   targetIsRoot);
             return;
@@ -740,15 +805,14 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
     for (const NodeRef& entry : entries)
     {
         const bool colliding = collides(entry);
-        // A folder is dropped under Proceed too: copyNode copies a subtree in one
-        // request and cannot merge into an existing folder, so there is no
-        // per-file outcome to offer for it here.
-        if (colliding && (onConflict == CopyConflict::Skip || entry.isFolder))
+        if (colliding && onConflict == CopyConflict::Skip)
             continue;
         if (colliding && onConflict == CopyConflict::Proceed)
         {
-            // Empty == keep the source's name, which is exactly what makes the
-            // SDK attach the copy as a new version over the existing file.
+            // Empty == keep the source's name. For a file that is what makes the SDK
+            // attach the copy as a new version over the existing one; for a folder it
+            // lands a second folder of that name, since copyNode neither merges nor
+            // versions (SPEC_NAME_CONFLICT_COPY_MOVE 1-2).
             plan.push_back({entry.handle, std::string()});
             continue;
         }
@@ -799,6 +863,13 @@ void FileMutationController::copyIgnoringExisting(const QVariantList& entries,
     answerCopyConflict(entries, target, targetIsRoot, CopyConflict::Proceed);
 }
 
+void FileMutationController::copyRenamingExisting(const QVariantList& entries,
+                                                  quint64 target,
+                                                  bool targetIsRoot)
+{
+    answerCopyConflict(entries, target, targetIsRoot, CopyConflict::Rename);
+}
+
 void FileMutationController::copySkippingExisting(const QVariantList& entries,
                                                   quint64 target,
                                                   bool targetIsRoot)
@@ -846,7 +917,7 @@ void FileMutationController::answerCopyConflict(const QVariantList& entries,
                     mBusy->end();
                     // No cached fallback even for a paste: the answer is only
                     // meaningful against the listing it was asked about, and
-                    // "replace" issued against a guess is what versions over the
+                    // "Continue" issued against a guess is what versions over the
                     // wrong file.
                     if (!result.success)
                     {

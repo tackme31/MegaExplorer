@@ -15,10 +15,10 @@ import QtQuick.Controls
 //
 // standardButtons can't express it: a hand-built DialogButtonBox whose answers
 // call the controller directly rather than going through onAccepted/onRejected.
-// A copy hides Continue when only folders collide, because the copy path skips
-// a colliding folder either way -- a move has no such case, since moveNode
-// never looks at a name. Everything the wording and the button set do here
-// follows from docs/investigations/SPEC_NAME_CONFLICT_COPY_MOVE.md section 3.
+// The same four answers in the same order on both paths, whatever collides --
+// what changes between the cells is only the wording. Everything the wording and
+// the button set do here follows from
+// docs/investigations/SPEC_NAME_CONFLICT_COPY_MOVE.md section 3.
 Dialog {
     id: root
 
@@ -32,6 +32,10 @@ Dialog {
     property var entries: []
     property var conflictingFiles: []
     property var conflictingFolders: []
+    // Pairs with conflictingFiles.concat(conflictingFolders): what "Rename" would
+    // name each of them. A preview -- the answer re-reads the destination and picks
+    // again -- so it is only ever shown as an example, never promised.
+    property var renamedTo: []
     property var destinationHandle: 0
     property bool destinationIsRoot: false
     // Only a move announces where the nodes came from, so these stay unset for
@@ -73,23 +77,12 @@ Dialog {
 
     footer: DialogButtonBox {
         // Natural widths, right-aligned, rather than the style's default of
-        // stretching every button across the footer: that default divides by
-        // contentModel's count, which a hidden button still occupies, so the
-        // folder-only case would leave a button-sized hole.
+        // stretching all four across the footer, which pushes the frame past the
+        // message it belongs to.
         alignment: Qt.AlignRight
 
         Button {
             text: qsTr("Continue")
-            // On the copy path this would silently mean Skip when only folders
-            // collide: copyNode cannot merge one, so it is dropped either way.
-            visible: root.operation === "move" || root.conflictingFiles.length > 0
-            // The box lays its buttons out through a ListView over contentModel,
-            // which counts hidden ones -- so `visible` alone leaves a
-            // button-sized hole. Collapsing the *implicit* width is what takes it
-            // out of the row; overriding `width` instead makes the button render
-            // as a sliver when it is shown.
-            implicitWidth: visible ? Math.max(implicitBackgroundWidth + leftInset + rightInset,
-                                              implicitContentWidth + leftPadding + rightPadding) : 0
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
                 if (root.operation === "move")
@@ -98,6 +91,20 @@ Dialog {
                                                             root.sourceHandle, root.sourceIsRoot);
                 else
                     root.mutController.copyIgnoringExisting(root.entries, root.destinationHandle,
+                                                            root.destinationIsRoot);
+                root.close();
+            }
+        }
+        Button {
+            text: qsTr("Rename")
+            DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+            onClicked: {
+                if (root.operation === "move")
+                    root.mutController.moveRenamingExisting(root.entries, root.destinationHandle,
+                                                            root.destinationIsRoot,
+                                                            root.sourceHandle, root.sourceIsRoot);
+                else
+                    root.mutController.copyRenamingExisting(root.entries, root.destinationHandle,
                                                             root.destinationIsRoot);
                 root.close();
             }
@@ -145,15 +152,16 @@ Dialog {
             lines.push(qsTr(
                            "\"Continue\" leaves both: MEGA allows two items with the same name and never merges folders."));
         } else {
-            if (folders > 0)
-                lines.push(qsTr(
-                               "Folders are skipped with everything inside them: MEGA cannot merge one folder into another."));
             if (files > 0 && folders > 0)
                 lines.push(qsTr(
-                               "\"Continue\" affects the files only, keeping the existing ones as earlier versions."));
+                               "\"Continue\" keeps the existing files as earlier versions, and leaves two folders with the same name -- MEGA never merges one into another."));
             else if (files > 0)
                 lines.push(qsTr("\"Continue\" keeps the existing files as earlier versions."));
+            else
+                lines.push(qsTr(
+                               "\"Continue\" leaves two folders with the same name: MEGA never merges one into another."));
         }
+        lines.push(root.renameLine());
         if (root.unaffectedCount > 0)
             lines.push(root.operation === "move" ? qsTr(
                                                        "The other %1 item(s) are moved either way.").arg(
@@ -161,6 +169,21 @@ Dialog {
                                                        "The other %1 item(s) are copied either way.").arg(
                                                        root.unaffectedCount));
         return lines.join("\n\n");
+    }
+
+    // The name Rename would give is named outright rather than described, since
+    // "renamed automatically" leaves the user unable to tell what to look for
+    // afterwards (SPEC_NAME_CONFLICT_COPY_MOVE 3-4). One example is enough for a
+    // batch -- the rest follow the same suffix.
+    function renameLine() {
+        const names = root.conflictingFiles.concat(root.conflictingFolders);
+        if (root.renamedTo.length === 0)
+            return qsTr("\"Rename\" adds them under names the destination does not use yet.");
+        if (names.length === 1)
+            return qsTr("\"Rename\" adds \"%1\" as \"%2\" instead.").arg(names[0]).arg(
+                        root.renamedTo[0]);
+        return qsTr("\"Rename\" adds them under unused names, such as \"%1\" for \"%2\".").arg(
+                    root.renamedTo[0]).arg(names[0]);
     }
 
     // Reassigned rather than push()ed: an in-place mutation of a `var` array
@@ -174,6 +197,7 @@ Dialog {
         root.entries = next.entries;
         root.conflictingFiles = next.conflictingFiles;
         root.conflictingFolders = next.conflictingFolders;
+        root.renamedTo = next.renamedTo;
         root.destinationHandle = next.destinationHandle;
         root.destinationIsRoot = next.destinationIsRoot;
         root.sourceHandle = next.sourceHandle;
@@ -190,13 +214,14 @@ Dialog {
     Connections {
         target: root.mutController
 
-        function onCopyNameConflict(entries, conflictingFiles, conflictingFolders, destination,
-                                    destinationIsRoot) {
+        function onCopyNameConflict(entries, conflictingFiles, conflictingFolders, renamedTo,
+                                    destination, destinationIsRoot) {
             root.enqueue({
                              "operation": "copy",
                              "entries": entries,
                              "conflictingFiles": conflictingFiles,
                              "conflictingFolders": conflictingFolders,
+                             "renamedTo": renamedTo,
                              "destinationHandle": destination,
                              "destinationIsRoot": destinationIsRoot,
                              "sourceHandle": 0,
@@ -204,13 +229,14 @@ Dialog {
                          });
         }
 
-        function onMoveNameConflict(entries, conflictingFiles, conflictingFolders, destination,
-                                    destinationIsRoot, source, sourceIsRoot) {
+        function onMoveNameConflict(entries, conflictingFiles, conflictingFolders, renamedTo,
+                                    destination, destinationIsRoot, source, sourceIsRoot) {
             root.enqueue({
                              "operation": "move",
                              "entries": entries,
                              "conflictingFiles": conflictingFiles,
                              "conflictingFolders": conflictingFolders,
+                             "renamedTo": renamedTo,
                              "destinationHandle": destination,
                              "destinationIsRoot": destinationIsRoot,
                              "sourceHandle": source,

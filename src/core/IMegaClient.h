@@ -239,9 +239,15 @@ public:
     // nor leaves it half-emptied if the app quits mid-way. Irreversible.
     virtual void cleanRubbishBin(std::function<void(Result<void>)> onDone) = 0;
 
+    // newName empty keeps the node's name. Renaming here rather than move-then-rename
+    // is one request, not two: the SDK folds the new name into the same command
+    // (SPEC_NAME_CONFLICT_COPY_MOVE 1-4). Unlike copyNode below, the name changes
+    // nothing about the outcome -- a move never merges or versions, so a colliding
+    // name simply leaves two siblings sharing it.
     virtual void moveNode(std::uint64_t handle,
                           std::uint64_t newParentHandle,
                           bool newParentIsRoot,
+                          const std::string& newName,
                           std::function<void(Result<void>)> onDone) = 0;
 
     // Duplicates the node under newParentHandle. A folder is copied with its whole

@@ -130,6 +130,7 @@ public:
     void moveNode(std::uint64_t handle,
                   std::uint64_t newParentHandle,
                   bool newParentIsRoot,
+                  const std::string& newName,
                   std::function<void(Result<void>)> onDone) override;
 
     void copyNode(std::uint64_t handle,

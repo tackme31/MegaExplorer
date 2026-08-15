@@ -753,6 +753,7 @@ void MegaSdkClient::setNodeFavourite(std::uint64_t handle,
 void MegaSdkClient::moveNode(std::uint64_t handle,
                              std::uint64_t newParentHandle,
                              bool newParentIsRoot,
+                             const std::string& newName,
                              std::function<void(Result<void>)> onDone)
 {
     if (mShuttingDown)
@@ -778,7 +779,17 @@ void MegaSdkClient::moveNode(std::uint64_t handle,
         return;
     }
 
-    mApi->moveNode(node.get(), parent.get(), new megasdk::SimpleResultListener(std::move(onDone)));
+    // Same split as copyNode below, and for the same reason: the named overload
+    // pushes newName through as an attribute update, so "keep the name" has to go
+    // through the unnamed one rather than through an empty string.
+    if (newName.empty())
+        mApi->moveNode(
+            node.get(), parent.get(), new megasdk::SimpleResultListener(std::move(onDone)));
+    else
+        mApi->moveNode(node.get(),
+                       parent.get(),
+                       newName.c_str(),
+                       new megasdk::SimpleResultListener(std::move(onDone)));
 }
 
 void MegaSdkClient::copyNode(std::uint64_t handle,

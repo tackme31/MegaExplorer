@@ -183,11 +183,11 @@ TEST(FileOperationServiceTest, MovePassesThroughOnceCanMoveAccepts)
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
     EXPECT_CALL(*client, checkMove(11u, 22u, false)).WillOnce(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(11u, 22u, false, _))
-        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(11u, 22u, false, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
     Capture captured;
 
-    service.move(11, 22, false, captured.sink());
+    service.move(11, 22, false, "", captured.sink());
 
     EXPECT_EQ(captured.calls, 1);
     EXPECT_TRUE(captured.result.success);
@@ -198,10 +198,11 @@ TEST(FileOperationServiceTest, MoveForwardsTheRootSentinelToTheClient)
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
     EXPECT_CALL(*client, checkMove(11u, _, true)).WillOnce(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(11u, _, true, _)).WillOnce(InvokeArgument<3>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(11u, _, true, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
     Capture captured;
 
-    service.move(11, 0, true, captured.sink());
+    service.move(11, 0, true, "", captured.sink());
 
     EXPECT_TRUE(captured.result.success);
 }
@@ -212,10 +213,10 @@ TEST(FileOperationServiceTest, RejectsACircularMoveWithoutCallingTheSdk)
     FileOperationService service(client);
     EXPECT_CALL(*client, checkMove(11u, 22u, false))
         .WillOnce(Return(Result<void>::fail("circular linkage", MegaErrorCode::kECircular)));
-    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+    EXPECT_CALL(*client, moveNode(_, _, _, _, _)).Times(0);
     Capture captured;
 
-    service.move(11, 22, false, captured.sink());
+    service.move(11, 22, false, "", captured.sink());
 
     ASSERT_EQ(captured.calls, 1);
     EXPECT_FALSE(captured.result.success);
@@ -230,10 +231,10 @@ TEST(FileOperationServiceTest, RejectsAMoveIntoTheFolderTheNodeIsAlreadyInWithou
     FileOperationService service(client);
     EXPECT_CALL(*client, checkMove(11u, 22u, false))
         .WillOnce(Return(Result<void>::fail("already in that folder", MegaErrorCode::kEArgs)));
-    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+    EXPECT_CALL(*client, moveNode(_, _, _, _, _)).Times(0);
     Capture captured;
 
-    service.move(11, 22, false, captured.sink());
+    service.move(11, 22, false, "", captured.sink());
 
     ASSERT_EQ(captured.calls, 1);
     EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kEArgs);
@@ -245,10 +246,10 @@ TEST(FileOperationServiceTest, RejectsAMoveWhoseDestinationIsGoneWithoutCallingT
     FileOperationService service(client);
     EXPECT_CALL(*client, checkMove(11u, 22u, false))
         .WillOnce(Return(Result<void>::fail("not found", MegaErrorCode::kENoEnt)));
-    EXPECT_CALL(*client, moveNode(_, _, _, _)).Times(0);
+    EXPECT_CALL(*client, moveNode(_, _, _, _, _)).Times(0);
     Capture captured;
 
-    service.move(11, 22, false, captured.sink());
+    service.move(11, 22, false, "", captured.sink());
 
     ASSERT_EQ(captured.calls, 1);
     EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kENoEnt);
@@ -261,11 +262,11 @@ TEST(FileOperationServiceTest, PropagatesAMoveFailureFromTheSdk)
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
     EXPECT_CALL(*client, checkMove(_, _, _)).WillOnce(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(11u, 22u, false, _))
-        .WillOnce(InvokeArgument<3>(Result<void>::fail("access denied", MegaErrorCode::kEAccess)));
+    EXPECT_CALL(*client, moveNode(11u, 22u, false, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::fail("access denied", MegaErrorCode::kEAccess)));
     Capture captured;
 
-    service.move(11, 22, false, captured.sink());
+    service.move(11, 22, false, "", captured.sink());
 
     ASSERT_EQ(captured.calls, 1);
     EXPECT_FALSE(captured.result.success);
@@ -541,4 +542,27 @@ TEST(FileOperationServiceTest, UniqueCopyNameChainsOnAnAlreadyCopiedName)
     EXPECT_EQ(
         FileOperationService::uniqueCopyName("report - Copy.pdf", false, {"report - Copy.pdf"}),
         "report - Copy - Copy.pdf");
+}
+
+TEST(FileOperationServiceTest, UniqueMoveNameLeavesAFreeNameAlone)
+{
+    EXPECT_EQ(FileOperationService::uniqueMoveName("report.pdf", false, {"other.pdf"}),
+              "report.pdf");
+}
+
+TEST(FileOperationServiceTest, UniqueMoveNameNumbersFromTwoAndSkipsTheExtension)
+{
+    // A move is not a duplication, so the suffix is a plain counter rather than
+    // uniqueCopyName's " - Copy" (SPEC_NAME_CONFLICT_COPY_MOVE 3-4).
+    EXPECT_EQ(FileOperationService::uniqueMoveName("report.pdf", false, {"report.pdf"}),
+              "report (2).pdf");
+    EXPECT_EQ(
+        FileOperationService::uniqueMoveName("report.pdf", false, {"report.pdf", "report (2).pdf"}),
+        "report (3).pdf");
+}
+
+TEST(FileOperationServiceTest, UniqueMoveNameNeverSplitsAFolderNameAtADot)
+{
+    EXPECT_EQ(FileOperationService::uniqueMoveName("My.Folder", true, {"My.Folder"}),
+              "My.Folder (2)");
 }
