@@ -63,6 +63,27 @@ std::string FileOperationService::uniqueCopyName(const std::string& name,
     return candidate;
 }
 
+std::string FileOperationService::uniqueMoveName(const std::string& name,
+                                                 bool isFolder,
+                                                 const std::set<std::string>& taken)
+{
+    if (taken.count(name) == 0)
+        return name;
+
+    const std::size_t split = isFolder ? name.size() : extensionStart(name);
+    const std::string stem = name.substr(0, split);
+    const std::string extension = name.substr(split);
+
+    std::string candidate;
+    for (int n = 2; n < 10000; ++n)
+    {
+        candidate = stem + " (" + std::to_string(n) + ")" + extension;
+        if (taken.count(candidate) == 0)
+            break;
+    }
+    return candidate;
+}
+
 void FileOperationService::copy(std::uint64_t handle,
                                 std::uint64_t newParentHandle,
                                 bool newParentIsRoot,
@@ -108,7 +129,7 @@ void FileOperationService::moveToRubbish(std::uint64_t handle,
 }
 
 void FileOperationService::removeNode(std::uint64_t handle,
-                                     std::function<void(Result<void>)> onDone)
+                                      std::function<void(Result<void>)> onDone)
 {
     mClient->removeNode(handle, std::move(onDone));
 }
@@ -133,8 +154,16 @@ void FileOperationService::setFavourite(std::uint64_t handle,
 void FileOperationService::move(std::uint64_t handle,
                                 std::uint64_t newParentHandle,
                                 bool newParentIsRoot,
+                                const std::string& newName,
                                 std::function<void(Result<void>)> onDone)
 {
+    if (!newName.empty() && !isValidName(newName))
+    {
+        onDone(Result<void>::fail("Invalid name: empty, or contains a path separator",
+                                  MegaErrorCode::kEArgs));
+        return;
+    }
+
     Result<void> allowed = canMove(handle, newParentHandle, newParentIsRoot);
     if (!allowed.success)
     {
@@ -142,7 +171,7 @@ void FileOperationService::move(std::uint64_t handle,
         return;
     }
 
-    mClient->moveNode(handle, newParentHandle, newParentIsRoot, std::move(onDone));
+    mClient->moveNode(handle, newParentHandle, newParentIsRoot, newName, std::move(onDone));
 }
 
 Result<void> FileOperationService::canMove(std::uint64_t handle,

@@ -455,8 +455,11 @@ int cmdMv(IMegaClient& client, const std::string& path, const std::string& destD
     // already holds is precisely what this command exists to make reachable --
     // every path in the app diverts to a conflict dialog before that point.
     const Result<void> moved = await<Result<void>>([&](auto done) {
-        client.moveNode(
-            node.value().handle, parent.value().handle, parent.value().isRoot, std::move(done));
+        client.moveNode(node.value().handle,
+                        parent.value().handle,
+                        parent.value().isRoot,
+                        std::string(),
+                        std::move(done));
     });
     if (!moved.success)
         return fail("mv " + path, moved);
