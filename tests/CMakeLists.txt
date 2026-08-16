@@ -1,6 +1,6 @@
 find_package(GTest CONFIG REQUIRED)
 
-# Both src/platform adapters (not part of MegaExplorerCore -- same reason
+# The src/platform adapters (not part of MegaExplorerCore -- same reason
 # src/mega isn't) are fully offline-testable, unlike MegaSdkClient which needs
 # a live account, so they get their own real adapter tests here instead of
 # mock-only substitutes. QSettingsPinnedFolderStore takes a test-only INI path
@@ -15,7 +15,9 @@ add_executable(MegaExplorerTests
     SearchServiceTest.cpp
     DownloadServiceTest.cpp
     UploadServiceTest.cpp
+    UploadScanServiceTest.cpp
     UploadControllerTest.cpp
+    QtLocalFileSystemTest.cpp
     ThumbnailServiceTest.cpp
     PreviewKindTest.cpp
     PreviewServiceTest.cpp
@@ -44,6 +46,7 @@ add_executable(MegaExplorerTests
     ThreadedDeliveryTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/QSettingsPinnedFolderStore.cpp
+    ${CMAKE_SOURCE_DIR}/src/platform/QtLocalFileSystem.cpp
     ${CMAKE_SOURCE_DIR}/src/app/Logging.cpp
     MockMegaClient.h
     MockSessionStore.h

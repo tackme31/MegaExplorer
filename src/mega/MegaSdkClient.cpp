@@ -910,8 +910,11 @@ Result<void> MegaSdkClient::checkUpload(std::uint64_t parentHandle, bool parentI
     return Result<void>::ok();
 }
 
-Result<std::vector<FileEntry>> MegaSdkClient::findChildFiles(
-    std::uint64_t parentHandle, bool parentIsRoot, const std::vector<std::string>& names) const
+Result<std::vector<FileEntry>> MegaSdkClient::findChildrenOfType(
+    std::uint64_t parentHandle,
+    bool parentIsRoot,
+    const std::vector<std::string>& names,
+    int nodeType) const
 {
     if (mShuttingDown)
         return Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode);
@@ -923,13 +926,27 @@ Result<std::vector<FileEntry>> MegaSdkClient::findChildFiles(
     std::vector<FileEntry> hits;
     for (const std::string& name : names)
     {
-        // TYPE_FILE, not getChildNode(), which prefers a same-named folder.
+        // getChildNodeOfType, not getChildNode(), which prefers a same-named
+        // folder whichever type the caller asked about. It answers from memory
+        // or local SQLite, so this loop never goes to the network.
         std::unique_ptr<mega::MegaNode> child(
-            mApi->getChildNodeOfType(parent.get(), name.c_str(), mega::MegaNode::TYPE_FILE));
+            mApi->getChildNodeOfType(parent.get(), name.c_str(), nodeType));
         if (child)
             hits.push_back(nodeToEntry(child.get()));
     }
     return Result<std::vector<FileEntry>>::ok(std::move(hits));
+}
+
+Result<std::vector<FileEntry>> MegaSdkClient::findChildFiles(
+    std::uint64_t parentHandle, bool parentIsRoot, const std::vector<std::string>& names) const
+{
+    return findChildrenOfType(parentHandle, parentIsRoot, names, mega::MegaNode::TYPE_FILE);
+}
+
+Result<std::vector<FileEntry>> MegaSdkClient::findChildFolders(
+    std::uint64_t parentHandle, bool parentIsRoot, const std::vector<std::string>& names) const
+{
+    return findChildrenOfType(parentHandle, parentIsRoot, names, mega::MegaNode::TYPE_FOLDER);
 }
 
 Result<bool> MegaSdkClient::hasSubfolders(std::uint64_t handle, bool isRoot) const

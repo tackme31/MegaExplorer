@@ -128,6 +128,10 @@ public:
                 findChildFiles,
                 (std::uint64_t, bool, const std::vector<std::string>&),
                 (const, override));
+    MOCK_METHOD(Result<std::vector<FileEntry>>,
+                findChildFolders,
+                (std::uint64_t, bool, const std::vector<std::string>&),
+                (const, override));
     MOCK_METHOD(Result<bool>, hasSubfolders, (std::uint64_t, bool), (const, override));
     MOCK_METHOD(Result<AccountIdentity>, currentAccountIdentity, (), (const, override));
     MOCK_METHOD(void,
