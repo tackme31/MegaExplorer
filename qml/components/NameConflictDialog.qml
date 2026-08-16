@@ -29,6 +29,10 @@ Dialog {
     // How many files "Skip" would still upload. Without it Skip and Cancel look
     // like the same answer (SPEC_NAME_CONFLICT_UPLOAD 3-0).
     property int unaffectedCount: 0
+    // Formatted by the controller -- QML has no formattedDataSize -- and empty when
+    // the total is zero, which is what drops the parenthetical below.
+    property string conflictingSize: ""
+    property string unaffectedSize: ""
     property var destinationHandle: 0
     property bool destinationIsRoot: false
 
@@ -93,17 +97,25 @@ Dialog {
     }
 
     // Whole sentences per case rather than clauses joined at runtime: a translator
-    // needs the sentence, and there are only four of them.
+    // needs the sentence, and there are only six of them.
     function buildMessage() {
         const names = root.conflictNames;
-        const lines = [qsTr("%1 file(s) with the same name already exist in the destination:").arg(
-                           names.length) + "\n" + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "")];
+        const head = root.conflictingSize === "" ? qsTr(
+                                                       "%1 file(s) with the same name already exist in the destination:").arg(
+                                                       names.length) : qsTr(
+                                                       "%1 file(s) with the same name already exist in the destination (%2):").arg(
+                                                       names.length).arg(root.conflictingSize);
+        const lines = [head + "\n" + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "")];
         lines.push(root.fileVersioningEnabled ? qsTr(
-                                                    "\"Replace\" keeps the existing files as earlier versions.") : qsTr(
-                                                    "\"Replace\" deletes the existing files outright: file versioning is off for this account, so they cannot be recovered."));
+                                                    "\"Replace\" keeps the existing files as earlier versions.") :
+                                                qsTr("\"Replace\" deletes the existing files outright: file versioning is off for this account, so they cannot be recovered."));
         if (root.unaffectedCount > 0)
-            lines.push(qsTr("The other %1 file(s) are uploaded either way.").arg(
-                           root.unaffectedCount));
+            lines.push(root.unaffectedSize === "" ? qsTr(
+                                                        "The other %1 file(s) are uploaded either way.").arg(
+                                                        root.unaffectedCount) : qsTr(
+                                                        "The other %1 file(s) are uploaded either way (%2).").arg(
+                                                        root.unaffectedCount).arg(
+                                                        root.unaffectedSize));
         return lines.join("\n\n");
     }
 
@@ -116,6 +128,8 @@ Dialog {
         root.filePaths = next.filePaths;
         root.conflictNames = next.conflictNames;
         root.unaffectedCount = next.unaffectedCount;
+        root.conflictingSize = next.conflictingSize;
+        root.unaffectedSize = next.unaffectedSize;
         root.destinationHandle = next.destinationHandle;
         root.destinationIsRoot = next.destinationIsRoot;
         root.open();
@@ -124,6 +138,7 @@ Dialog {
     Connections {
         target: root.uploads
         function onNameConflictRequiresConfirmation(filePaths, conflictNames, unaffectedCount,
+                                                    conflictingSize, unaffectedSize,
                                                     destinationHandle, destinationIsRoot) {
             root.pendingRequests = root.pendingRequests.concat([
                                                                    {
@@ -132,6 +147,10 @@ Dialog {
                                                                        conflictNames,
                                                                        "unaffectedCount":
                                                                        unaffectedCount,
+                                                                       "conflictingSize":
+                                                                       conflictingSize,
+                                                                       "unaffectedSize":
+                                                                       unaffectedSize,
                                                                        "destinationHandle":
                                                                        destinationHandle,
                                                                        "destinationIsRoot":

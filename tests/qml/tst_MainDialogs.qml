@@ -62,7 +62,8 @@ TestCase {
             id: fakeUploads
 
             signal nameConflictRequiresConfirmation(var filePaths, var conflictNames,
-                                                    int unaffectedCount, var destinationHandle,
+                                                    int unaffectedCount, string conflictingSize,
+                                                    string unaffectedSize, var destinationHandle,
                                                     bool destinationIsRoot)
             signal uploadRequiresConfirmation(var filePaths, int fileCount, var destinationHandle,
                                               bool destinationIsRoot)
@@ -176,7 +177,8 @@ TestCase {
 
         QtObject {
             signal copyNameConflict(var entries, var conflictingFiles, var conflictingFolders,
-                                    var renamedTo, var destination, bool destinationIsRoot)
+                                    var renamedTo, string conflictingSize, string unaffectedSize,
+                                    var destination, bool destinationIsRoot)
             signal moveNameConflict(var entries, var conflictingFiles, var conflictingFolders,
                                     var renamedTo, var destination, bool destinationIsRoot,
                                     var source, bool sourceIsRoot)
@@ -248,7 +250,7 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, 0, true);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, "", "", 0, true);
 
         tryCompare(dialog, "opened", true);
         compare(dialog.filePaths, ["a.txt"]);
@@ -365,7 +367,7 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, 0, true);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, "", "", 0, true);
         buttonNamed(dialog, "Replace").clicked();
 
         compare(uploads.replacingCount, 1);
@@ -382,7 +384,7 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, 42, false);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, "", "", 42, false);
         buttonNamed(dialog, "Skip").clicked();
 
         compare(uploads.skippingCount, 1);
@@ -398,7 +400,7 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, 42, false);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, "", "", 42, false);
         buttonNamed(dialog, "Cancel").clicked();
 
         compare(uploads.replacingCount, 0);
@@ -430,7 +432,7 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(data.names, data.names, 0, 0, true);
+        uploads.nameConflictRequiresConfirmation(data.names, data.names, 0, "", "", 0, true);
 
         const text = dialog.contentChildren[0].text;
         compare(text.indexOf(data.shown) !== -1, true);
@@ -444,13 +446,45 @@ TestCase {
                                       "fileVersioningEnabled": false
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 4, 0, true);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 4, "", "", 0, true);
 
         tryCompare(dialog, "opened", true);
         const text = dialog.contentChildren[0].text;
         verify(text.indexOf("cannot be recovered") !== -1);
         // Without this line Skip and Cancel read as the same answer.
         verify(text.indexOf("other 4") !== -1);
+    }
+
+    // Sizes are formatted in C++ and only quoted here, so what this checks is that
+    // each one reaches the half of the message it belongs to.
+    function test_nameConflict_quotesTheSizeOnBothSidesOfTheQuestion() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 4, "2.0 KB", "9.0 MB", 0,
+                                                 true);
+
+        tryCompare(dialog, "opened", true);
+        const text = dialog.contentChildren[0].text;
+        verify(text.indexOf("(2.0 KB)") !== -1);
+        verify(text.indexOf("other 4 file(s) are uploaded either way (9.0 MB)") !== -1);
+    }
+
+    // Zero bytes arrives as an empty string, and "(0 B)" is worse than nothing.
+    function test_nameConflict_leavesTheSizeOutWhenItIsUnknown() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 4, "", "", 0, true);
+
+        tryCompare(dialog, "opened", true);
+        const text = dialog.contentChildren[0].text;
+        verify(text.indexOf("()") === -1);
+        verify(text.indexOf("other 4 file(s) are uploaded either way.") !== -1);
     }
 
     // A Popup sizes itself from its content's *implicit* width, so before the cap
@@ -465,7 +499,7 @@ TestCase {
                                   });
         const long = "a-name-long-enough-to-outgrow-any-sane-window-on-its-own.txt";
 
-        uploads.nameConflictRequiresConfirmation([long], [long, long, long], 0, 0, true);
+        uploads.nameConflictRequiresConfirmation([long], [long, long, long], 0, "", "", 0, true);
 
         tryCompare(dialog, "opened", true);
         const label = dialog.contentChildren[0];
@@ -490,8 +524,8 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, 42, false);
-        uploads.nameConflictRequiresConfirmation(["b.txt"], ["b.txt"], 0, 7, false);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, "", "", 42, false);
+        uploads.nameConflictRequiresConfirmation(["b.txt"], ["b.txt"], 0, "", "", 7, false);
 
         tryCompare(dialog, "opened", true);
         compare(dialog.destinationHandle, 42);
@@ -655,7 +689,7 @@ TestCase {
 
         c.mut.copyNameConflict([
                                    {}
-                               ], ["a.txt"], [], ["a - Copy.txt"], 42, false);
+                               ], ["a.txt"], [], ["a - Copy.txt"], "", "", 42, false);
 
         tryCompare(c.dialog, "opened", true);
         compare(c.dialog.continueLosesData, false);
@@ -670,7 +704,7 @@ TestCase {
 
         c.mut.copyNameConflict([
                                    {}
-                               ], ["a.txt"], [], ["a - Copy.txt"], 42, false);
+                               ], ["a.txt"], [], ["a - Copy.txt"], "", "", 42, false);
 
         tryCompare(c.dialog, "opened", true);
         compare(c.dialog.continueLosesData, true);
@@ -686,7 +720,7 @@ TestCase {
 
         c.mut.copyNameConflict([
                                    {}
-                               ], [], ["photos"], ["photos - Copy"], 42, false);
+                               ], [], ["photos"], ["photos - Copy"], "", "", 42, false);
 
         tryCompare(c.dialog, "opened", true);
         compare(c.dialog.continueLosesData, false);
@@ -702,7 +736,7 @@ TestCase {
 
         c.mut.copyNameConflict([
                                    {}
-                               ], ["a.txt"], [], ["a - Copy.txt"], 42, false);
+                               ], ["a.txt"], [], ["a - Copy.txt"], "", "", 42, false);
         tryCompare(c.dialog, "opened", true);
         tryCompare(buttonNamed(c.dialog, "Continue"), "highlighted", true);
 
@@ -713,6 +747,48 @@ TestCase {
         compare(buttonNamed(c.dialog, "Continue").highlighted, false);
         verify(buttonNamed(c.dialog, "Rename").activeFocus);
         verify(c.dialog.buildMessage().indexOf("cannot be recovered") !== -1);
+    }
+
+    function test_copyConflict_quotesTheSizeOnBothSidesOfTheQuestion() {
+        const c = makeCopyConflict(true);
+
+        c.mut.copyNameConflict([
+                                   {},
+                                   {}
+                               ], ["a.txt"], [], ["a - Copy.txt"], "2.0 KB", "9.0 MB", 42, false);
+
+        tryCompare(c.dialog, "opened", true);
+        const text = c.dialog.buildMessage();
+        verify(text.indexOf("(2.0 KB)") !== -1);
+        verify(text.indexOf("other 1 item(s) are copied either way (9.0 MB)") !== -1);
+    }
+
+    // A move rearranges nodes inside one account, so the signal carries no size at
+    // all and quoting one would suggest data is being sent.
+    function test_copyConflict_movesQuoteNoSize() {
+        const c = makeCopyConflict(true);
+
+        c.mut.moveNameConflict([
+                                   {},
+                                   {}
+                               ], ["a.txt"], [], ["a (2).txt"], 42, false, 7, false);
+
+        tryCompare(c.dialog, "opened", true);
+        const text = c.dialog.buildMessage();
+        verify(text.indexOf("KB") === -1);
+        verify(text.indexOf("other 1 item(s) are moved either way.") !== -1);
+    }
+
+    // A folder is listed by name alone, so nothing else says Skip drops its contents.
+    function test_copyConflict_saysAFolderIsSkippedWithItsContents() {
+        const c = makeCopyConflict(true);
+
+        c.mut.copyNameConflict([
+                                   {}
+                               ], [], ["photos"], ["photos - Copy"], "", "", 42, false);
+
+        tryCompare(c.dialog, "opened", true);
+        verify(c.dialog.buildMessage().indexOf("with everything inside them") !== -1);
     }
 
     // Neither does a move: moveNode overwrites nothing, whatever the setting says.

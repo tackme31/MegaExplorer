@@ -10,6 +10,7 @@
 #include "NotificationController.h"
 
 #include <QDebug>
+#include <QLocale>
 #include <QString>
 #include <QVariantMap>
 
@@ -24,6 +25,18 @@ namespace
 // listing, so the order is inert and fixed here rather than threaded through
 // from the navigation half's current sort.
 constexpr SortOrder kNameOrder{SortKey::Name, true};
+
+// Empty for zero, so the dialog can drop the parenthetical rather than print
+// "(0 B)". Traditional (1024-based) units for the same reason AccountController
+// uses them: that is what MEGA itself quotes.
+QString sizeText(std::uint64_t bytes)
+{
+    if (bytes == 0)
+        return QString();
+    return QLocale::system().formattedDataSize(static_cast<qint64>(bytes),
+                                               1,
+                                               QLocale::DataSizeTraditionalFormat);
+}
 } // namespace
 
 FileMutationController::DestinationSnapshot
@@ -789,12 +802,27 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
         // below does: a non-colliding entry claims a name too, and a preview that
         // skipped it could advertise a name that answer would then find taken.
         std::set<std::string> preview = destination.taken;
+        // Sizing walks each entry's sub-tree, so it is gated on the question being
+        // asked at all: without this every ordinary conflict-free paste would pay
+        // for a total it then discards. A size the SDK cannot answer is left out of
+        // the total rather than failing the question -- it only costs the dialog a
+        // parenthetical.
+        const bool anyColliding = std::find(colliding.begin(), colliding.end(), true) !=
+                                  colliding.end();
+        std::uint64_t conflictingBytes = 0;
+        std::uint64_t unaffectedBytes = 0;
         for (std::size_t i = 0; i < entries.size(); ++i)
         {
             const NodeRef& entry = entries[i];
             const std::string chosen =
                 FileOperationService::uniqueCopyName(entry.name, entry.isFolder, preview);
             preview.insert(chosen);
+            if (anyColliding)
+            {
+                const Result<std::uint64_t> size = mFileOps->subtreeSizeOf(entry.handle);
+                (colliding[i] ? conflictingBytes : unaffectedBytes) +=
+                    size.success ? size.value() : 0;
+            }
             if (!colliding[i])
                 continue;
             (entry.isFolder ? conflictingFolders : conflictingFiles)
@@ -807,6 +835,8 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
                                   conflictingFiles,
                                   conflictingFolders,
                                   renamedFiles + renamedFolders,
+                                  sizeText(conflictingBytes),
+                                  sizeText(unaffectedBytes),
                                   target,
                                   targetIsRoot);
             return;

@@ -8,6 +8,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QLocale>
 #include <QTemporaryDir>
 #include <QUrl>
 
@@ -96,12 +97,16 @@ protected:
             [this](QStringList filePaths,
                    QStringList conflictNames,
                    int unaffected,
+                   QString conflictingSize,
+                   QString unaffectedSize,
                    quint64 handle,
                    bool) {
                 ++conflictAsks;
                 askedFilePaths = filePaths;
                 askedConflictNames = conflictNames;
                 askedUnaffected = unaffected;
+                askedConflictingSize = conflictingSize;
+                askedUnaffectedSize = unaffectedSize;
                 askedHandle = handle;
             });
         QObject::connect(controller.get(),
@@ -121,6 +126,16 @@ protected:
         QFile file(path);
         EXPECT_TRUE(file.open(QIODevice::WriteOnly));
         file.write("x");
+        file.close();
+        return path;
+    }
+
+    QString makeFileOfSize(const QString& name, int bytes) const
+    {
+        QString path = dir.filePath(name);
+        QFile file(path);
+        EXPECT_TRUE(file.open(QIODevice::WriteOnly));
+        file.write(QByteArray(bytes, 'x'));
         file.close();
         return path;
     }
@@ -178,6 +193,8 @@ protected:
     QStringList askedFilePaths;
     QStringList askedConflictNames;
     int askedUnaffected = 0;
+    QString askedConflictingSize;
+    QString askedUnaffectedSize;
     quint64 askedHandle = 0;
     int destinationChanges = 0;
     quint64 changedDestination = 0;
@@ -558,6 +575,30 @@ TEST_F(UploadControllerTest, ACollisionNestedInADroppedFolderIsAskedAboutByItsPa
     EXPECT_EQ(askedConflictNames, QStringList{QStringLiteral("dir/a.txt")});
     EXPECT_EQ(askedUnaffected, 1);
     EXPECT_EQ(controller->pendingCount(), 0);
+}
+
+TEST_F(UploadControllerTest, TheConflictQuestionCarriesTheBytesOnEachSideOfIt)
+{
+    EXPECT_CALL(*client, findChildFiles(7, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("big.bin", 55)})));
+    EXPECT_CALL(*client, findChildFolders(7, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({})));
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    const QString colliding = makeFileOfSize(QStringLiteral("big.bin"), 2048);
+    const QString other = makeFileOfSize(QStringLiteral("small.bin"), 512);
+
+    // Act
+    controller->uploadConfirmed({colliding, other}, 7, false);
+
+    // Assert: the two totals are kept apart, so "Skip" can be priced separately
+    // from "Replace". Compared against the same formatter the controller uses --
+    // what is under test is which bytes landed in which half, not the units.
+    ASSERT_EQ(conflictAsks, 1);
+    const QLocale locale = QLocale::system();
+    EXPECT_EQ(askedConflictingSize,
+              locale.formattedDataSize(2048, 1, QLocale::DataSizeTraditionalFormat));
+    EXPECT_EQ(askedUnaffectedSize,
+              locale.formattedDataSize(512, 1, QLocale::DataSizeTraditionalFormat));
 }
 
 TEST_F(UploadControllerTest, SkipWalksTheCollidingBranchAndSendsTheRestToTheMergedFolder)

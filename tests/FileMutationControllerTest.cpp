@@ -10,6 +10,7 @@
 #include "TestApp.h"
 
 #include <QEventLoop>
+#include <QLocale>
 #include <QTimer>
 #include <QVariantMap>
 
@@ -66,6 +67,11 @@ protected:
     void SetUp() override
     {
         client = std::make_shared<MockMegaClient>();
+        // Every copy conflict prices its entries, so this fires on paths that are
+        // not about sizes at all; tests that care set their own expectation first.
+        EXPECT_CALL(*client, subtreeSize(::testing::_, ::testing::_))
+            .Times(::testing::AnyNumber())
+            .WillRepeatedly(::testing::Return(Result<std::uint64_t>::ok(0)));
         navigationService = std::make_shared<FolderNavigationService>(client);
         searchService = std::make_shared<SearchService>(client, navigationService);
         fileOps = std::make_shared<FileOperationService>(client);
@@ -110,6 +116,8 @@ protected:
                                 QStringList files,
                                 QStringList folders,
                                 QStringList renamedTo,
+                                QString conflictingSize,
+                                QString unaffectedSize,
                                 quint64 destination,
                                 bool destinationIsRoot) {
                              ++conflictCalls;
@@ -117,6 +125,8 @@ protected:
                              lastConflictFiles = files;
                              lastConflictFolders = folders;
                              lastConflictRenamedTo = renamedTo;
+                             lastConflictSize = conflictingSize;
+                             lastConflictUnaffectedSize = unaffectedSize;
                              lastConflictDestination = destination;
                              lastConflictDestinationIsRoot = destinationIsRoot;
                          });
@@ -241,6 +251,8 @@ protected:
     QStringList lastConflictFiles;
     QStringList lastConflictFolders;
     QStringList lastConflictRenamedTo;
+    QString lastConflictSize;
+    QString lastConflictUnaffectedSize;
     quint64 lastConflictDestination = 0;
     bool lastConflictDestinationIsRoot = false;
     int moveConflictCalls = 0;
@@ -1223,6 +1235,53 @@ TEST_F(FileMutationControllerTest, CopyRenamingKeepsTwoEntriesThatShareANameApar
     flush();
 
     EXPECT_EQ(lastSucceeded, 2);
+}
+
+TEST_F(FileMutationControllerTest, CopyConflictPricesTheCollidingAndSurvivingHalvesApart)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("b.txt", 6)}), 7, false);
+
+    EXPECT_CALL(*client, subtreeSize(5u, false))
+        .WillRepeatedly(Return(Result<std::uint64_t>::ok(2048)));
+    EXPECT_CALL(*client, subtreeSize(6u, false))
+        .WillRepeatedly(Return(Result<std::uint64_t>::ok(512)));
+
+    mutations->paste();
+    flush();
+    flush();
+
+    // Compared against the same formatter the controller uses: what is under test
+    // is which bytes landed in which half, not the units.
+    ASSERT_EQ(conflictCalls, 1);
+    const QLocale locale = QLocale::system();
+    EXPECT_EQ(lastConflictSize,
+              locale.formattedDataSize(2048, 1, QLocale::DataSizeTraditionalFormat));
+    EXPECT_EQ(lastConflictUnaffectedSize,
+              locale.formattedDataSize(512, 1, QLocale::DataSizeTraditionalFormat));
+}
+
+// Sizing a sub-tree is a synchronous SDK walk, and a paste that collides with
+// nothing shows no dialog to spend it on.
+TEST_F(FileMutationControllerTest, ACopyThatCollidesWithNothingIsNeverPriced)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("b.txt", 6)}), 7, false);
+
+    EXPECT_CALL(*client, subtreeSize(_, _)).Times(0);
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _))
+        .Times(2)
+        .WillRepeatedly(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->paste();
+    flush();
+    flush();
+
+    EXPECT_EQ(conflictCalls, 0);
 }
 
 TEST_F(FileMutationControllerTest, CopyConflictAnnouncesTheNameRenamingWouldUse)

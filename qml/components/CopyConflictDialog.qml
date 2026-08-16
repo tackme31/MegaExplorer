@@ -36,6 +36,11 @@ Dialog {
     // name each of them. A preview -- the answer re-reads the destination and picks
     // again -- so it is only ever shown as an example, never promised.
     property var renamedTo: []
+    // Formatted by the controller -- QML has no formattedDataSize -- and empty both
+    // when the total is zero and for a move, which rearranges nodes inside one
+    // account and so adds nothing to it (SPEC_NAME_CONFLICT_COPY_MOVE 1-6).
+    property string conflictingSize: ""
+    property string unaffectedSize: ""
     property var destinationHandle: 0
     property bool destinationIsRoot: false
     // Only a move announces where the nodes came from, so these stay unset for
@@ -173,17 +178,26 @@ Dialog {
     function buildMessage() {
         const files = root.conflictingFiles.length;
         const folders = root.conflictingFolders.length;
+        const size = root.conflictingSize;
         let head;
         if (files > 0 && folders > 0)
-            head = qsTr(
-                        "%1 file(s) and %2 folder(s) with the same name already exist in the destination:").arg(
-                        files).arg(folders);
+            head = size === "" ? qsTr(
+                                     "%1 file(s) and %2 folder(s) with the same name already exist in the destination:").arg(
+                                     files).arg(folders) : qsTr(
+                                     "%1 file(s) and %2 folder(s) with the same name already exist in the destination (%3):").arg(
+                                     files).arg(folders).arg(size);
         else if (files > 0)
-            head = qsTr("%1 file(s) with the same name already exist in the destination:").arg(
-                        files);
+            head = size === "" ? qsTr(
+                                     "%1 file(s) with the same name already exist in the destination:").arg(
+                                     files) : qsTr(
+                                     "%1 file(s) with the same name already exist in the destination (%2):").arg(
+                                     files).arg(size);
         else
-            head = qsTr("%1 folder(s) with the same name already exist in the destination:").arg(
-                        folders);
+            head = size === "" ? qsTr(
+                                     "%1 folder(s) with the same name already exist in the destination:").arg(
+                                     folders) : qsTr(
+                                     "%1 folder(s) with the same name already exist in the destination (%2):").arg(
+                                     folders).arg(size);
 
         const names = root.conflictingFiles.concat(root.conflictingFolders);
         const lines = [head + "\n" + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "")];
@@ -206,13 +220,25 @@ Dialog {
                            "\"Continue\" leaves two folders with the same name: MEGA never merges one into another."));
         }
         lines.push(root.renameLine());
+        // A folder is skipped whole -- there is no per-child answer here -- which is
+        // not obvious from a list that names only the folder.
+        if (folders > 0)
+            lines.push(qsTr(
+                           "\"Skip\" leaves those folders out entirely, with everything inside them."));
         if (root.unaffectedCount > 0)
-            lines.push(root.operation === "move" ? qsTr(
-                                                       "The other %1 item(s) are moved either way.").arg(
-                                                       root.unaffectedCount) : qsTr(
-                                                       "The other %1 item(s) are copied either way.").arg(
-                                                       root.unaffectedCount));
+            lines.push(root.unaffectedLine());
         return lines.join("\n\n");
+    }
+
+    // The size rides along only on a copy: a move adds nothing to the account, so
+    // quoting bytes there would suggest data is being sent that is not.
+    function unaffectedLine() {
+        if (root.operation === "move")
+            return qsTr("The other %1 item(s) are moved either way.").arg(root.unaffectedCount);
+        if (root.unaffectedSize === "")
+            return qsTr("The other %1 item(s) are copied either way.").arg(root.unaffectedCount);
+        return qsTr("The other %1 item(s) are copied either way (%2).").arg(
+                    root.unaffectedCount).arg(root.unaffectedSize);
     }
 
     // The name Rename would give is named outright rather than described, since
@@ -242,6 +268,8 @@ Dialog {
         root.conflictingFiles = next.conflictingFiles;
         root.conflictingFolders = next.conflictingFolders;
         root.renamedTo = next.renamedTo;
+        root.conflictingSize = next.conflictingSize;
+        root.unaffectedSize = next.unaffectedSize;
         root.destinationHandle = next.destinationHandle;
         root.destinationIsRoot = next.destinationIsRoot;
         root.sourceHandle = next.sourceHandle;
@@ -259,13 +287,16 @@ Dialog {
         target: root.mutController
 
         function onCopyNameConflict(entries, conflictingFiles, conflictingFolders, renamedTo,
-                                    destination, destinationIsRoot) {
+                                    conflictingSize, unaffectedSize, destination,
+                                    destinationIsRoot) {
             root.enqueue({
                              "operation": "copy",
                              "entries": entries,
                              "conflictingFiles": conflictingFiles,
                              "conflictingFolders": conflictingFolders,
                              "renamedTo": renamedTo,
+                             "conflictingSize": conflictingSize,
+                             "unaffectedSize": unaffectedSize,
                              "destinationHandle": destination,
                              "destinationIsRoot": destinationIsRoot,
                              "sourceHandle": 0,
@@ -281,6 +312,8 @@ Dialog {
                              "conflictingFiles": conflictingFiles,
                              "conflictingFolders": conflictingFolders,
                              "renamedTo": renamedTo,
+                             "conflictingSize": "",
+                             "unaffectedSize": "",
                              "destinationHandle": destination,
                              "destinationIsRoot": destinationIsRoot,
                              "sourceHandle": source,

@@ -225,10 +225,17 @@ signals:
     // unstated one (SPEC 3-4). It is a preview: the answer re-reads the destination
     // and picks again, which is what keeps a name claimed meanwhile from being
     // reused.
+    //
+    // The two sizes are already formatted, because QML has no formattedDataSize
+    // equivalent; either is empty when it is zero or could not be read, and the
+    // dialog then leaves that parenthetical out. Only the copy signal carries them:
+    // a move rearranges nodes inside one account and adds nothing to it.
     void copyNameConflict(QVariantList entries,
                           QStringList conflictingFiles,
                           QStringList conflictingFolders,
                           QStringList renamedTo,
+                          QString conflictingSize,
+                          QString unaffectedSize,
                           quint64 destination,
                           bool destinationIsRoot);
 
