@@ -1,4 +1,5 @@
 #pragma once
+#include "core/UploadScanService.h"
 #include "core/UploadService.h"
 
 #include <QList>
@@ -39,6 +40,7 @@ public:
     static constexpr int kMaxFilesPerUpload = 100;
 
     explicit UploadController(std::shared_ptr<UploadService> service,
+                              std::shared_ptr<UploadScanService> scan,
                               NotificationController* notifications,
                               QObject* parent = nullptr);
     ~UploadController() override;
@@ -81,7 +83,9 @@ public:
 
     // Re-derives the collision set rather than trust names round-tripped through QML,
     // which also picks up destination changes made while the dialog was open. Cheap --
-    // it is an in-memory lookup.
+    // it is an in-memory lookup. A collision nested inside a dropped folder makes this
+    // walk that branch itself, since the SDK's recursive upload cannot leave one file
+    // out (SPEC_NAME_CONFLICT_UPLOAD.md 5-2).
     Q_INVOKABLE void
     uploadSkippingExisting(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
@@ -111,11 +115,16 @@ signals:
                                     quint64 destinationHandle,
                                     bool destinationIsRoot);
 
-    // Some of filePaths name files that already exist in the destination.
-    // filePaths is the *whole* set, conflicting or not -- the answer handlers
-    // re-derive which is which. conflictNames is for the dialog's wording only.
+    // Some files in this upload already exist in the destination, whether they were
+    // dropped directly or sit inside a dropped folder. filePaths is the *whole* set
+    // of dropped paths -- the answer handlers re-derive which is which.
+    // conflictNames and unaffectedCount are for the dialog's wording only:
+    // conflictNames spells a nested hit out as "folder/sub/name", and
+    // unaffectedCount is how many files Skip would still upload, without which
+    // Skip and Cancel read the same (spec 3-0).
     void nameConflictRequiresConfirmation(QStringList filePaths,
                                           QStringList conflictNames,
+                                          int unaffectedCount,
                                           quint64 destinationHandle,
                                           bool destinationIsRoot);
 
@@ -157,11 +166,16 @@ private:
 
     void enqueueAll(const QStringList& localPaths, quint64 target, bool targetIsRoot);
 
+    // The one place jobs reach UploadService. Each item carries its own destination,
+    // because a skip that walked into a dropped folder places files in the MEGA
+    // folders they merged with, not in the drop target.
+    void enqueuePlan(const std::vector<UploadPlanItem>& plan);
+
     // Empty if the lookup itself failed: that must not block the upload, it only
-    // means no replace/skip question gets asked. Folders are left out -- MEGA lets a
-    // file and a folder share a name, and a folder upload merges into the existing
-    // folder rather than versioning it, so the file-shaped question doesn't fit.
-    std::set<QString>
+    // means no replace/skip question gets asked. Only files ever appear -- a folder
+    // whose name is taken merges into the existing one instead of versioning it, so
+    // the walk descends through it rather than asking about it.
+    std::vector<UploadCollision>
     collisionsFor(const QStringList& localPaths, quint64 target, bool targetIsRoot) const;
 
     void refreshActiveJob();
@@ -173,6 +187,7 @@ private:
     void releaseDestination(const Destination& destination);
 
     std::shared_ptr<UploadService> mService;
+    std::shared_ptr<UploadScanService> mScan;
     NotificationController* mNotifications;
     std::optional<UploadJob> mActiveJob;
     Batch mBatch;

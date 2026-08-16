@@ -21,12 +21,40 @@ bool isFolderUpload(const QFileInfo& info)
     return info.isDir() && !info.isShortcut();
 }
 
+std::vector<std::string> toLocalPaths(const QStringList& paths)
+{
+    std::vector<std::string> out;
+    out.reserve(static_cast<std::size_t>(paths.size()));
+    for (const QString& path : paths)
+        out.push_back(path.toStdString());
+    return out;
+}
+
+// How the dialog names one hit: a bare leaf name cannot be told apart from the same
+// name elsewhere in the tree, so a nested one is shown as "folder/sub/name", relative
+// to the dropped path it came from (spec 3-3).
+QString displayPath(const std::string& localPath, const QStringList& roots)
+{
+    const QString path = QString::fromStdString(localPath);
+    for (const QString& root : roots)
+    {
+        const QString native = QDir::toNativeSeparators(root);
+        const QString prefix = native + QDir::separator();
+        if (path.startsWith(prefix))
+            return QFileInfo(native).fileName() + QLatin1Char('/') +
+                   QDir::fromNativeSeparators(path.mid(prefix.size()));
+    }
+    return QFileInfo(path).fileName();
+}
+
 } // namespace
 
 UploadController::UploadController(std::shared_ptr<UploadService> service,
+                                   std::shared_ptr<UploadScanService> scan,
                                    NotificationController* notifications,
                                    QObject* parent)
-    : QObject(parent), mService(std::move(service)), mNotifications(notifications)
+    : QObject(parent), mService(std::move(service)), mScan(std::move(scan)),
+      mNotifications(notifications)
 {
     mService->setOnProgress([this](UploadJob) {
         invokeOnGuiThread(this, [this] {
@@ -240,7 +268,7 @@ void UploadController::askAboutConflicts(const QStringList& localPaths,
                                          quint64 target,
                                          bool targetIsRoot)
 {
-    const std::set<QString> hits = collisionsFor(localPaths, target, targetIsRoot);
+    const std::vector<UploadCollision> hits = collisionsFor(localPaths, target, targetIsRoot);
     if (hits.empty())
     {
         enqueueAll(localPaths, target, targetIsRoot);
@@ -248,9 +276,19 @@ void UploadController::askAboutConflicts(const QStringList& localPaths,
     }
 
     QStringList conflictNames;
-    for (const QString& name : hits)
-        conflictNames.append(name);
-    emit nameConflictRequiresConfirmation(localPaths, conflictNames, target, targetIsRoot);
+    conflictNames.reserve(static_cast<qsizetype>(hits.size()));
+    for (const UploadCollision& hit : hits)
+        conflictNames.append(displayPath(hit.localPath, localPaths));
+    // Counted rather than taken from the scan: a folder that collides by name only
+    // is not a hit, but everything inside it still goes up.
+    const int total = expandedFileCount(localPaths);
+    const int collided = static_cast<int>(hits.size());
+    const int unaffected = total > collided ? total - collided : 0;
+    emit nameConflictRequiresConfirmation(localPaths,
+                                          conflictNames,
+                                          unaffected,
+                                          target,
+                                          targetIsRoot);
 }
 
 void UploadController::uploadReplacingExisting(const QStringList& localPaths,
@@ -266,39 +304,33 @@ void UploadController::uploadSkippingExisting(const QStringList& localPaths,
                                               quint64 target,
                                               bool targetIsRoot)
 {
-    const std::set<QString> hits = collisionsFor(localPaths, target, targetIsRoot);
-    QStringList remaining;
-    for (const QString& path : localPaths)
+    Result<std::vector<UploadPlanItem>> plan =
+        mScan->planSkippingCollisions(toLocalPaths(localPaths),
+                                      static_cast<std::uint64_t>(target),
+                                      targetIsRoot);
+    if (!plan.success)
     {
-        QFileInfo info(path);
-        // A folder was never part of the question -- collisionsFor leaves them
-        // out -- so a same-named file's hit must not take it out too.
-        if (isFolderUpload(info) || hits.find(info.fileName()) == hits.end())
-            remaining.append(path);
+        // Falling back to a plain upload would version over the very files the user
+        // just asked to leave alone, so an unanswerable scan stops the operation
+        // instead -- the opposite call from collisionsFor(), where the same failure
+        // only costs a question.
+        qCWarning(lcUpload) << "skip plan failed:" << QString::fromStdString(plan.errorMessage)
+                            << "code=" << plan.errorCode;
+        mNotifications->notifyError(QStringLiteral("uploadSkipFailed"));
+        return;
     }
     // Nothing left is the user's own choice, so say nothing.
-    if (!remaining.isEmpty())
-        enqueueAll(remaining, target, targetIsRoot);
+    enqueuePlan(plan.value());
 }
 
-std::set<QString> UploadController::collisionsFor(const QStringList& localPaths,
-                                                  quint64 target,
-                                                  bool targetIsRoot) const
+std::vector<UploadCollision> UploadController::collisionsFor(const QStringList& localPaths,
+                                                             quint64 target,
+                                                             bool targetIsRoot) const
 {
-    std::vector<std::string> names;
-    names.reserve(static_cast<std::size_t>(localPaths.size()));
-    for (const QString& path : localPaths)
-    {
-        QFileInfo info(path);
-        if (!isFolderUpload(info))
-            names.push_back(info.fileName().toStdString());
-    }
-    if (names.empty())
-        return {};
-
-    Result<std::vector<FileEntry>> result =
-        mService->findNameCollisions(static_cast<std::uint64_t>(target), targetIsRoot, names);
-    std::set<QString> hits;
+    Result<std::vector<UploadCollision>> result =
+        mScan->findCollisions(toLocalPaths(localPaths),
+                              static_cast<std::uint64_t>(target),
+                              targetIsRoot);
     if (!result.success)
     {
         // Can't ask the question, so don't -- just upload. MEGA stacks a
@@ -307,30 +339,42 @@ std::set<QString> UploadController::collisionsFor(const QStringList& localPaths,
         qCWarning(lcUpload) << "name-collision check skipped:"
                             << QString::fromStdString(result.errorMessage)
                             << "code=" << result.errorCode;
-        return hits;
+        return {};
     }
-
-    for (const FileEntry& entry : result.value())
-        hits.insert(QString::fromStdString(entry.name));
-    return hits;
+    return result.value();
 }
 
 void UploadController::enqueueAll(const QStringList& localPaths,
                                   quint64 target,
                                   bool targetIsRoot)
 {
-    mBatch.pendingJobs += static_cast<int>(localPaths.size());
-    retainDestination(Destination{target, targetIsRoot}, static_cast<int>(localPaths.size()));
+    std::vector<UploadPlanItem> plan;
+    plan.reserve(static_cast<std::size_t>(localPaths.size()));
     for (const QString& path : localPaths)
+        plan.push_back(UploadPlanItem{path.toStdString(),
+                                      static_cast<std::uint64_t>(target),
+                                      targetIsRoot});
+    enqueuePlan(plan);
+}
+
+void UploadController::enqueuePlan(const std::vector<UploadPlanItem>& plan)
+{
+    if (plan.empty())
+        return;
+
+    mBatch.pendingJobs += static_cast<int>(plan.size());
+    for (const UploadPlanItem& item : plan)
     {
-        QFileInfo info(path);
+        const Destination destination{static_cast<quint64>(item.parentHandle), item.parentIsRoot};
+        retainDestination(destination, 1);
+        QFileInfo info(QString::fromStdString(item.localPath));
         // A folder has no meaningful size of its own, and 0 is what totalBytes
         // already means "not known yet" -- the SDK overwrites it once the
         // recursive transfer reports.
-        mService->enqueue(path.toStdString(),
+        mService->enqueue(item.localPath,
                           info.fileName().toStdString(),
-                          static_cast<std::uint64_t>(target),
-                          targetIsRoot,
+                          item.parentHandle,
+                          item.parentIsRoot,
                           isFolderUpload(info) ? 0u : static_cast<std::uint64_t>(info.size()));
     }
     refreshActiveJob(); // already on the GUI thread here (called from QML)

@@ -330,6 +330,12 @@ Item {
         case "uploadTooManyFiles":
             text = qsTr("Too many files — upload at most %1 at a time").arg(root.maxFilesPerUpload);
             break;
+            // Skip is the one answer the app cannot approximate: uploading anyway
+            // would version over the files the user asked to leave alone, so it
+            // stops and says so rather than guessing.
+        case "uploadSkipFailed":
+            text = qsTr("Couldn't check the destination — nothing was uploaded");
+            break;
             // A context C++ sends that nothing here handles -- exactly what
             // R3-5 was. The old default printed rawMessage, which meant the
             // gap surfaced as untranslated English to the user and to nobody

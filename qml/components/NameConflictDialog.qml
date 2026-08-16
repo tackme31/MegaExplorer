@@ -23,9 +23,20 @@ Dialog {
     // destinationHandle is `property var` because a quint64 doesn't survive
     // QML's int/real property types.
     property var filePaths: []
+    // Already spelled out relative to the drop by the controller, so a hit nested
+    // inside a dropped folder reads "folder/sub/name" rather than a bare leaf.
     property var conflictNames: []
+    // How many files "Skip" would still upload. Without it Skip and Cancel look
+    // like the same answer (SPEC_NAME_CONFLICT_UPLOAD 3-0).
+    property int unaffectedCount: 0
     property var destinationHandle: 0
     property bool destinationIsRoot: false
+
+    // Bound to accountController by whoever declares this dialog, rather than read
+    // off the root context here, so the QML test can instantiate it without
+    // main.cpp's context properties. Defaults to the SDK's own default for an
+    // account that never set the attribute.
+    property bool fileVersioningEnabled: true
 
     // Questions that arrived while one was already being asked -- same hazard and
     // same fix as ConfirmUploadDialog.qml: a drop still reaches the app while this
@@ -52,9 +63,7 @@ Dialog {
         // dialog's own width here closes a loop through its implicitHeight.
         width: Math.min(implicitWidth, root.maxWidth - root.leftPadding - root.rightPadding)
         wrapMode: Text.Wrap
-        text: qsTr("%1 file(s) with the same name already exist in the destination:").arg(
-                  root.conflictNames.length) + "\n" + root.conflictNames.slice(0, 5).join(", ") + (
-                  root.conflictNames.length > 5 ? " …" : "")
+        text: root.buildMessage()
     }
 
     footer: DialogButtonBox {
@@ -83,6 +92,21 @@ Dialog {
         }
     }
 
+    // Whole sentences per case rather than clauses joined at runtime: a translator
+    // needs the sentence, and there are only four of them.
+    function buildMessage() {
+        const names = root.conflictNames;
+        const lines = [qsTr("%1 file(s) with the same name already exist in the destination:").arg(
+                           names.length) + "\n" + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "")];
+        lines.push(root.fileVersioningEnabled ? qsTr(
+                                                    "\"Replace\" keeps the existing files as earlier versions.") : qsTr(
+                                                    "\"Replace\" deletes the existing files outright: file versioning is off for this account, so they cannot be recovered."));
+        if (root.unaffectedCount > 0)
+            lines.push(qsTr("The other %1 file(s) are uploaded either way.").arg(
+                           root.unaffectedCount));
+        return lines.join("\n\n");
+    }
+
     // Reassigned rather than push()ed, as in ConfirmUploadDialog.qml.
     function showNextRequest() {
         if (root.pendingRequests.length === 0)
@@ -91,6 +115,7 @@ Dialog {
         root.pendingRequests = root.pendingRequests.slice(1);
         root.filePaths = next.filePaths;
         root.conflictNames = next.conflictNames;
+        root.unaffectedCount = next.unaffectedCount;
         root.destinationHandle = next.destinationHandle;
         root.destinationIsRoot = next.destinationIsRoot;
         root.open();
@@ -98,13 +123,15 @@ Dialog {
 
     Connections {
         target: root.uploads
-        function onNameConflictRequiresConfirmation(filePaths, conflictNames, destinationHandle,
-                                                    destinationIsRoot) {
+        function onNameConflictRequiresConfirmation(filePaths, conflictNames, unaffectedCount,
+                                                    destinationHandle, destinationIsRoot) {
             root.pendingRequests = root.pendingRequests.concat([
                                                                    {
                                                                        "filePaths": filePaths,
                                                                        "conflictNames":
                                                                        conflictNames,
+                                                                       "unaffectedCount":
+                                                                       unaffectedCount,
                                                                        "destinationHandle":
                                                                        destinationHandle,
                                                                        "destinationIsRoot":

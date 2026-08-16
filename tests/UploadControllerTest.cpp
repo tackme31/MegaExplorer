@@ -2,6 +2,7 @@
 
 #include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
+#include "platform/QtLocalFileSystem.h"
 #include "qml/NotificationController.h"
 #include "TestApp.h"
 
@@ -49,10 +50,16 @@ protected:
         EXPECT_CALL(*client, findChildFiles(_, _, _))
             .Times(AnyNumber())
             .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({})));
+        EXPECT_CALL(*client, findChildFolders(_, _, _))
+            .Times(AnyNumber())
+            .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({})));
 
         service = std::make_shared<UploadService>(client);
+        // The real local filesystem, not a fake: every test here already makes its
+        // files on disk, because dropUrls classifies through QFileInfo.
+        scan = std::make_shared<UploadScanService>(client, std::make_shared<QtLocalFileSystem>());
         notifications = std::make_unique<NotificationController>();
-        controller = std::make_unique<UploadController>(service, notifications.get());
+        controller = std::make_unique<UploadController>(service, scan, notifications.get());
 
         QObject::connect(notifications.get(),
                          &NotificationController::operationFinished,
@@ -86,10 +93,15 @@ protected:
             controller.get(),
             &UploadController::nameConflictRequiresConfirmation,
             controller.get(),
-            [this](QStringList filePaths, QStringList conflictNames, quint64 handle, bool) {
+            [this](QStringList filePaths,
+                   QStringList conflictNames,
+                   int unaffected,
+                   quint64 handle,
+                   bool) {
                 ++conflictAsks;
                 askedFilePaths = filePaths;
                 askedConflictNames = conflictNames;
+                askedUnaffected = unaffected;
                 askedHandle = handle;
             });
         QObject::connect(controller.get(),
@@ -147,6 +159,7 @@ protected:
     QTemporaryDir dir;
     std::shared_ptr<MockMegaClient> client;
     std::shared_ptr<UploadService> service;
+    std::shared_ptr<UploadScanService> scan;
     std::unique_ptr<NotificationController> notifications;
     std::unique_ptr<UploadController> controller;
 
@@ -164,6 +177,7 @@ protected:
     int conflictAsks = 0;
     QStringList askedFilePaths;
     QStringList askedConflictNames;
+    int askedUnaffected = 0;
     quint64 askedHandle = 0;
     int destinationChanges = 0;
     quint64 changedDestination = 0;
@@ -502,6 +516,97 @@ TEST_F(UploadControllerTest, SkippingEverythingUploadsNothingAndSaysNothing)
     EXPECT_EQ(controller->pendingCount(), 0);
     EXPECT_EQ(errorCalls, 0);
     EXPECT_EQ(operationCalls, 0);
+}
+
+TEST_F(UploadControllerTest, AFolderThatOnlyGainsFilesIsNotWorthAQuestion)
+{
+    // The case the one-dialog rewrite exists for: a local copy of an existing
+    // folder with one extra file in it merges to 101 files and asks nothing,
+    // because no *file* name is taken (SPEC_NAME_CONFLICT_UPLOAD 3-1).
+    EXPECT_CALL(*client, findChildFolders(7, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("dir", 20)})));
+    EXPECT_CALL(*client, findChildFiles(20, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("other.txt", 55)})));
+    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+    const QString folder = makeDir(QStringLiteral("dir"));
+    makeFile(QStringLiteral("dir/file1.txt"));
+
+    // Act
+    controller->uploadFiles({folder}, 7, false);
+
+    // Assert: no question, and one folder transfer rather than a file at a time
+    EXPECT_EQ(conflictAsks, 0);
+    EXPECT_EQ(controller->pendingCount(), 1);
+}
+
+TEST_F(UploadControllerTest, ACollisionNestedInADroppedFolderIsAskedAboutByItsPath)
+{
+    EXPECT_CALL(*client, findChildFolders(7, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("dir", 20)})));
+    EXPECT_CALL(*client, findChildFiles(20, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    const QString folder = makeDir(QStringLiteral("dir"));
+    makeFile(QStringLiteral("dir/a.txt"));
+    makeFile(QStringLiteral("dir/b.txt"));
+
+    // Act: two files inside, so the count question comes first
+    controller->uploadConfirmed({folder}, 7, false);
+
+    // Assert: a bare "a.txt" would not say where it is
+    ASSERT_EQ(conflictAsks, 1);
+    EXPECT_EQ(askedConflictNames, QStringList{QStringLiteral("dir/a.txt")});
+    EXPECT_EQ(askedUnaffected, 1);
+    EXPECT_EQ(controller->pendingCount(), 0);
+}
+
+TEST_F(UploadControllerTest, SkipWalksTheCollidingBranchAndSendsTheRestToTheMergedFolder)
+{
+    EXPECT_CALL(*client, findChildFolders(7, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("dir", 20)})));
+    EXPECT_CALL(*client, findChildFolders(20, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({})));
+    EXPECT_CALL(*client, findChildFiles(20, false, _))
+        .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
+    const QString folder = makeDir(QStringLiteral("dir"));
+    makeFile(QStringLiteral("dir/a.txt"));
+    makeFile(QStringLiteral("dir/b.txt"));
+    const QString sub = makeTree(QStringLiteral("dir/sub"), 2);
+
+    // Act
+    controller->uploadSkippingExisting({folder}, 7, false);
+
+    // Assert: b.txt and the whole untouched subfolder, both into the folder the
+    // drop merged with -- not into the drop target, and not a.txt.
+    std::vector<UploadJob> jobs = service->jobs();
+    ASSERT_EQ(jobs.size(), 2u);
+    for (const UploadJob& job : jobs)
+    {
+        EXPECT_EQ(job.parentHandle, 20u);
+        EXPECT_FALSE(job.parentIsRoot);
+    }
+    EXPECT_EQ(jobs[0].name, "b.txt");
+    EXPECT_EQ(jobs[1].name, "sub");
+    EXPECT_EQ(QString::fromStdString(jobs[1].localPath), QDir::toNativeSeparators(sub));
+}
+
+TEST_F(UploadControllerTest, SkipStopsRatherThanUploadWhatItCannotCheck)
+{
+    // The opposite call from the question itself: an unanswerable scan there only
+    // costs a dialog, but here it would version over the files Skip was chosen to
+    // spare.
+    EXPECT_CALL(*client, findChildFiles(_, _, _))
+        .WillRepeatedly(
+            Return(Result<std::vector<FileEntry>>::fail("gone", MegaErrorCode::kENoEnt)));
+    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+
+    // Act
+    controller->uploadSkippingExisting({makeFile("a.txt")}, 7, false);
+
+    // Assert
+    ASSERT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("uploadSkipFailed"));
+    EXPECT_EQ(controller->pendingCount(), 0);
 }
 
 TEST_F(UploadControllerTest, BatchReportsOnceAndAnnouncesTheDestinationAfterTheQueueDrains)

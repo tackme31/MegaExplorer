@@ -234,6 +234,10 @@ ApplicationWindow {
 
     NameConflictDialog {
         uploads: uploadController
+        // Injected rather than read inside the dialog, same as CopyConflictDialog:
+        // that keeps the file free of root-context lookups and so testable by
+        // tst_MainDialogs.qml.
+        fileVersioningEnabled: accountController.fileVersioningEnabled
     }
 
     Loader {

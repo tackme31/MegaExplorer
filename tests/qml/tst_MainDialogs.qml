@@ -62,7 +62,8 @@ TestCase {
             id: fakeUploads
 
             signal nameConflictRequiresConfirmation(var filePaths, var conflictNames,
-                                                    var destinationHandle, bool destinationIsRoot)
+                                                    int unaffectedCount, var destinationHandle,
+                                                    bool destinationIsRoot)
             signal uploadRequiresConfirmation(var filePaths, int fileCount, var destinationHandle,
                                               bool destinationIsRoot)
 
@@ -247,7 +248,7 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, true);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, 0, true);
 
         tryCompare(dialog, "opened", true);
         compare(dialog.filePaths, ["a.txt"]);
@@ -364,7 +365,7 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, true);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, 0, true);
         buttonNamed(dialog, "Replace").clicked();
 
         compare(uploads.replacingCount, 1);
@@ -381,7 +382,7 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 42, false);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, 42, false);
         buttonNamed(dialog, "Skip").clicked();
 
         compare(uploads.skippingCount, 1);
@@ -397,7 +398,7 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 42, false);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, 42, false);
         buttonNamed(dialog, "Cancel").clicked();
 
         compare(uploads.replacingCount, 0);
@@ -429,11 +430,27 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(data.names, data.names, 0, true);
+        uploads.nameConflictRequiresConfirmation(data.names, data.names, 0, 0, true);
 
         const text = dialog.contentChildren[0].text;
         compare(text.indexOf(data.shown) !== -1, true);
         compare(text.indexOf("…") !== -1, data.ellipsis);
+    }
+
+    function test_nameConflict_wordsReplaceFromVersioningAndSaysWhatSkipKeeps() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads,
+                                      "fileVersioningEnabled": false
+                                  });
+
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 4, 0, true);
+
+        tryCompare(dialog, "opened", true);
+        const text = dialog.contentChildren[0].text;
+        verify(text.indexOf("cannot be recovered") !== -1);
+        // Without this line Skip and Cancel read as the same answer.
+        verify(text.indexOf("other 4") !== -1);
     }
 
     // A Popup sizes itself from its content's *implicit* width, so before the cap
@@ -448,7 +465,7 @@ TestCase {
                                   });
         const long = "a-name-long-enough-to-outgrow-any-sane-window-on-its-own.txt";
 
-        uploads.nameConflictRequiresConfirmation([long], [long, long, long], 0, true);
+        uploads.nameConflictRequiresConfirmation([long], [long, long, long], 0, 0, true);
 
         tryCompare(dialog, "opened", true);
         const label = dialog.contentChildren[0];
@@ -473,8 +490,8 @@ TestCase {
                                       "uploads": uploads
                                   });
 
-        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 42, false);
-        uploads.nameConflictRequiresConfirmation(["b.txt"], ["b.txt"], 7, false);
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, 42, false);
+        uploads.nameConflictRequiresConfirmation(["b.txt"], ["b.txt"], 0, 7, false);
 
         tryCompare(dialog, "opened", true);
         compare(dialog.destinationHandle, 42);
