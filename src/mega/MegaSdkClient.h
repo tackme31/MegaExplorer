@@ -159,6 +159,11 @@ public:
                    bool parentIsRoot,
                    const std::vector<std::string>& names) const override;
 
+    Result<std::vector<FileEntry>>
+    findChildFolders(std::uint64_t parentHandle,
+                     bool parentIsRoot,
+                     const std::vector<std::string>& names) const override;
+
     Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const override;
 
     Result<AccountIdentity> currentAccountIdentity() const override;
@@ -177,6 +182,13 @@ private:
     // const so the const checkMove() can use it: unique_ptr::operator->() is
     // const-qualified but hands back a non-const MegaApi*.
     std::unique_ptr<mega::MegaNode> resolveNode(std::uint64_t handle, bool isRoot) const;
+
+    // nodeType is a mega::MegaNode::TYPE_* value; the header the interface lives
+    // in must not include the SDK's, so the public pair spells it out instead.
+    Result<std::vector<FileEntry>> findChildrenOfType(std::uint64_t parentHandle,
+                                                      bool parentIsRoot,
+                                                      const std::vector<std::string>& names,
+                                                      int nodeType) const;
 
     void listChildren(std::unique_ptr<mega::MegaNode> node,
                       const char* notFoundMessage,

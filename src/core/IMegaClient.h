@@ -314,6 +314,15 @@ public:
                    bool parentIsRoot,
                    const std::vector<std::string>& names) const = 0;
 
+    // The folder-typed twin of findChildFiles, used to walk an upload's nested
+    // name collisions: a local subfolder is only worth descending into when a
+    // folder of that name already exists, and the hit carries the handle the
+    // level below has to be checked against.
+    virtual Result<std::vector<FileEntry>>
+    findChildFolders(std::uint64_t parentHandle,
+                     bool parentIsRoot,
+                     const std::vector<std::string>& names) const = 0;
+
     // Whether the node has at least one *folder* child -- the folder tree's own
     // question, since files never appear in the side panel. False for a file.
     virtual Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const = 0;
