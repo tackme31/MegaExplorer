@@ -963,6 +963,20 @@ Result<bool> MegaSdkClient::hasSubfolders(std::uint64_t handle, bool isRoot) con
     return Result<bool>::ok(node->isFolder() && mApi->getNumChildFolders(node.get()) > 0);
 }
 
+Result<std::uint64_t> MegaSdkClient::subtreeSize(std::uint64_t handle, bool isRoot) const
+{
+    if (mShuttingDown)
+        return Result<std::uint64_t>::fail(kShutDownMessage, kClientShutDownCode);
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, isRoot);
+    if (!node)
+        return Result<std::uint64_t>::fail("No node with the given handle", MegaErrorCode::kENoEnt);
+
+    // Signed in the SDK, and documented to be a sum rather than a status, so a
+    // negative can only mean the node went away between resolve and read.
+    const long long size = mApi->getSize(node.get());
+    return Result<std::uint64_t>::ok(size > 0 ? static_cast<std::uint64_t>(size) : 0);
+}
+
 Result<AccountIdentity> MegaSdkClient::currentAccountIdentity() const
 {
     if (mShuttingDown)

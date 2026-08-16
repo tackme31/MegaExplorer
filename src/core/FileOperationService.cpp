@@ -199,3 +199,9 @@ Result<void> FileOperationService::canAddChildren(std::uint64_t parentHandle,
 {
     return mClient->checkUpload(parentHandle, parentIsRoot);
 }
+
+Result<std::uint64_t> FileOperationService::subtreeSizeOf(std::uint64_t handle) const
+{
+    // Never the root: only a real node can be copied or moved.
+    return mClient->subtreeSize(handle, false);
+}

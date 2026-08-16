@@ -122,9 +122,15 @@ signals:
     // conflictNames spells a nested hit out as "folder/sub/name", and
     // unaffectedCount is how many files Skip would still upload, without which
     // Skip and Cancel read the same (spec 3-0).
+    //
+    // The two sizes go with those two counts and are already formatted, because QML
+    // has no formattedDataSize equivalent; either is empty when it is zero, and the
+    // dialog then leaves that parenthetical out (spec 1-6, 3-3).
     void nameConflictRequiresConfirmation(QStringList filePaths,
                                           QStringList conflictNames,
                                           int unaffectedCount,
+                                          QString conflictingSize,
+                                          QString unaffectedSize,
                                           quint64 destinationHandle,
                                           bool destinationIsRoot);
 
@@ -155,10 +161,17 @@ private:
         std::map<Destination, int> pendingByDestination;
     };
 
+    struct UploadVolume
+    {
+        int files = 0;
+        qint64 bytes = 0;
+    };
+
     // What the cap is measured against: dropped files count as one each, a dropped
     // folder as everything inside it. Stops counting once past the cap, so a
-    // 200k-file tree costs the same as a 101-file one.
-    int expandedFileCount(const QStringList& localPaths) const;
+    // 200k-file tree costs the same as a 101-file one -- which truncates bytes too,
+    // so only read those once files is known to be within the cap.
+    UploadVolume expandedVolume(const QStringList& localPaths) const;
 
     // The half of uploadFiles() after the two gates: enqueue, or ask about
     // same-named files first. Shared with uploadConfirmed().

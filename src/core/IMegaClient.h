@@ -327,6 +327,16 @@ public:
     // question, since files never appear in the side panel. False for a file.
     virtual Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const = 0;
 
+    // Bytes the node is worth to an operation that duplicates it: for a folder the
+    // whole sub-tree, for a file its own size. Synchronous and local -- it sums the
+    // tree already in memory since fetchNodes(), so it costs no round-trip
+    // (SPEC_NAME_CONFLICT_COPY_MOVE 1-6).
+    //
+    // There is deliberately no recursive file count beside it: the SDK's
+    // getNumChildFiles() counts direct children only, and the recursive one
+    // (getFolderInfo) is a request, not a read.
+    virtual Result<std::uint64_t> subtreeSize(std::uint64_t handle, bool isRoot) const = 0;
+
     // --- Account-level reads -------------------------------------------------
 
     // MegaApi::getMyEmail + getMyUserHandle + getUserAvatarColor in one read.

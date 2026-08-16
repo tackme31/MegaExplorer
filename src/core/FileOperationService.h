@@ -90,6 +90,11 @@ public:
     // share) are exactly what a paste must answer before it fans out.
     Result<void> canAddChildren(std::uint64_t parentHandle, bool parentIsRoot) const;
 
+    // How many bytes a copy of this node would add -- the whole sub-tree for a
+    // folder. Synchronous, so a conflict dialog can quote it while it is being
+    // built (IMegaClient::subtreeSize).
+    Result<std::uint64_t> subtreeSizeOf(std::uint64_t handle) const;
+
     // Deliberately minimal: MEGA permits duplicate names within one folder, so there
     // is no uniqueness check to make here.
     static bool isValidName(const std::string& name);

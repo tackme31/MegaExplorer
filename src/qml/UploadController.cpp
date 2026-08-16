@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+#include <QLocale>
 
 namespace
 {
@@ -45,6 +46,16 @@ QString displayPath(const std::string& localPath, const QStringList& roots)
                    QDir::fromNativeSeparators(path.mid(prefix.size()));
     }
     return QFileInfo(path).fileName();
+}
+
+// Empty for zero, so the dialog can drop the parenthetical rather than print
+// "(0 B)". Traditional (1024-based) units for the same reason AccountController
+// uses them: that is what MEGA itself quotes.
+QString sizeText(qint64 bytes)
+{
+    if (bytes <= 0)
+        return QString();
+    return QLocale::system().formattedDataSize(bytes, 1, QLocale::DataSizeTraditionalFormat);
 }
 
 } // namespace
@@ -198,31 +209,33 @@ void UploadController::dropUrls(const QList<QUrl>& urls, quint64 target, bool ta
     uploadFiles(paths, target, targetIsRoot);
 }
 
-int UploadController::expandedFileCount(const QStringList& localPaths) const
+UploadController::UploadVolume UploadController::expandedVolume(const QStringList& localPaths) const
 {
-    int count = 0;
+    UploadVolume volume;
     for (const QString& path : localPaths)
     {
         QFileInfo info(path);
         if (!isFolderUpload(info))
         {
-            ++count;
+            ++volume.files;
+            volume.bytes += info.size();
         }
         else
         {
             // Hidden files are included because startUpload sends them; the
             // count has to match what actually goes up, not what Explorer shows.
             QDirIterator walker(path, QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
-            while (walker.hasNext() && count <= kMaxFilesPerUpload)
+            while (walker.hasNext() && volume.files <= kMaxFilesPerUpload)
             {
                 walker.next();
-                ++count;
+                ++volume.files;
+                volume.bytes += walker.fileInfo().size();
             }
         }
-        if (count > kMaxFilesPerUpload)
+        if (volume.files > kMaxFilesPerUpload)
             break;
     }
-    return count;
+    return volume;
 }
 
 void UploadController::uploadFiles(const QStringList& localPaths, quint64 target, bool targetIsRoot)
@@ -230,7 +243,7 @@ void UploadController::uploadFiles(const QStringList& localPaths, quint64 target
     if (localPaths.isEmpty())
         return;
 
-    const int fileCount = expandedFileCount(localPaths);
+    const int fileCount = expandedVolume(localPaths).files;
     if (fileCount > kMaxFilesPerUpload)
     {
         mNotifications->notifyError(QStringLiteral("uploadTooManyFiles"));
@@ -255,7 +268,7 @@ void UploadController::uploadConfirmed(const QStringList& localPaths,
     if (localPaths.isEmpty())
         return;
 
-    if (expandedFileCount(localPaths) > kMaxFilesPerUpload)
+    if (expandedVolume(localPaths).files > kMaxFilesPerUpload)
     {
         mNotifications->notifyError(QStringLiteral("uploadTooManyFiles"));
         return;
@@ -277,16 +290,24 @@ void UploadController::askAboutConflicts(const QStringList& localPaths,
 
     QStringList conflictNames;
     conflictNames.reserve(static_cast<qsizetype>(hits.size()));
+    qint64 collidedBytes = 0;
     for (const UploadCollision& hit : hits)
+    {
         conflictNames.append(displayPath(hit.localPath, localPaths));
+        collidedBytes += QFileInfo(QString::fromStdString(hit.localPath)).size();
+    }
     // Counted rather than taken from the scan: a folder that collides by name only
     // is not a hit, but everything inside it still goes up.
-    const int total = expandedFileCount(localPaths);
+    const UploadVolume total = expandedVolume(localPaths);
     const int collided = static_cast<int>(hits.size());
-    const int unaffected = total > collided ? total - collided : 0;
+    const int unaffected = total.files > collided ? total.files - collided : 0;
+    const qint64 unaffectedBytes =
+        total.bytes > collidedBytes ? total.bytes - collidedBytes : qint64{0};
     emit nameConflictRequiresConfirmation(localPaths,
                                           conflictNames,
                                           unaffected,
+                                          sizeText(collidedBytes),
+                                          sizeText(unaffectedBytes),
                                           target,
                                           targetIsRoot);
 }
