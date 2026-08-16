@@ -17,6 +17,16 @@ std::map<std::string, std::uint64_t> handlesByName(const std::vector<FileEntry>&
         byName.emplace(hit.name, hit.handle);
     return byName;
 }
+
+// Collision paths are absolute and native, and this is a Windows-only app, so
+// "inside this directory" is a '\' prefix test. Ordered set, hence lower_bound
+// rather than a scan.
+bool hasCollisionUnder(const std::set<std::string>& collided, const std::string& directory)
+{
+    const std::string prefix = directory + "\\";
+    const auto it = collided.lower_bound(prefix);
+    return it != collided.end() && it->compare(0, prefix.size(), prefix) == 0;
+}
 } // namespace
 
 UploadScanService::UploadScanService(std::shared_ptr<IMegaClient> client,
@@ -27,6 +37,60 @@ UploadScanService::UploadScanService(std::shared_ptr<IMegaClient> client,
 Result<std::vector<UploadCollision>> UploadScanService::findCollisions(
     const std::vector<std::string>& localPaths, std::uint64_t parentHandle, bool parentIsRoot) const
 {
+    Result<Scan> scanned = scan(localPaths, parentHandle, parentIsRoot);
+    if (!scanned.success)
+        return Result<std::vector<UploadCollision>>::fail(scanned.errorMessage, scanned.errorCode);
+    return Result<std::vector<UploadCollision>>::ok(std::move(scanned.value().collisions));
+}
+
+Result<std::vector<UploadPlanItem>> UploadScanService::planSkippingCollisions(
+    const std::vector<std::string>& localPaths, std::uint64_t parentHandle, bool parentIsRoot) const
+{
+    Result<Scan> scanned = scan(localPaths, parentHandle, parentIsRoot);
+    if (!scanned.success)
+        return Result<std::vector<UploadPlanItem>>::fail(scanned.errorMessage, scanned.errorCode);
+
+    std::set<std::string> collided;
+    for (const UploadCollision& hit : scanned.value().collisions)
+        collided.insert(hit.localPath);
+
+    std::vector<UploadPlanItem> plan;
+    for (const LocalEntry& entry : scanned.value().topLevel)
+        addToPlan(entry, parentHandle, parentIsRoot, scanned.value(), collided, plan);
+    return Result<std::vector<UploadPlanItem>>::ok(std::move(plan));
+}
+
+void UploadScanService::addToPlan(const LocalEntry& entry,
+                                  std::uint64_t parentHandle,
+                                  bool parentIsRoot,
+                                  const Scan& scanned,
+                                  const std::set<std::string>& collided,
+                                  std::vector<UploadPlanItem>& plan) const
+{
+    if (!entry.isDirectory)
+    {
+        if (collided.find(entry.path) == collided.end())
+            plan.push_back(UploadPlanItem{entry.path, parentHandle, parentIsRoot});
+        return;
+    }
+
+    // Only a directory the walk descended into can hold a collision, and only one
+    // that actually holds a live one is worth taking apart -- everything else goes
+    // up as a single SDK folder transfer.
+    const auto merged = scanned.folderHandles.find(entry.path);
+    if (merged == scanned.folderHandles.end() || !hasCollisionUnder(collided, entry.path))
+    {
+        plan.push_back(UploadPlanItem{entry.path, parentHandle, parentIsRoot});
+        return;
+    }
+    for (const LocalEntry& child : mFs->listDirectory(entry.path))
+        addToPlan(child, merged->second, false, scanned, collided, plan);
+}
+
+Result<UploadScanService::Scan> UploadScanService::scan(const std::vector<std::string>& localPaths,
+                                                        std::uint64_t parentHandle,
+                                                        bool parentIsRoot) const
+{
     std::vector<LocalEntry> topLevel;
     topLevel.reserve(localPaths.size());
     for (const std::string& path : localPaths)
@@ -35,23 +99,25 @@ Result<std::vector<UploadCollision>> UploadScanService::findCollisions(
             topLevel.push_back(*entry);
     }
 
-    std::vector<UploadCollision> collisions;
-    Result<void> scan = scanLevel(topLevel, parentHandle, parentIsRoot, 0, collisions);
-    if (!scan.success)
-        return Result<std::vector<UploadCollision>>::fail(scan.errorMessage, scan.errorCode);
-    return Result<std::vector<UploadCollision>>::ok(std::move(collisions));
+    Scan scanned;
+    Result<void> walk = scanLevel(topLevel, parentHandle, parentIsRoot, 0, scanned);
+    if (!walk.success)
+        return Result<Scan>::fail(walk.errorMessage, walk.errorCode);
+    scanned.topLevel = std::move(topLevel);
+    return Result<Scan>::ok(std::move(scanned));
 }
 
 Result<void> UploadScanService::scanLevel(const std::vector<LocalEntry>& entries,
                                           std::uint64_t parentHandle,
                                           bool parentIsRoot,
                                           int depth,
-                                          std::vector<UploadCollision>& out) const
+                                          Scan& out) const
 {
-    // Two of the paths handed to findCollisions can share a leaf name (dragged
-    // from different folders), so each name is asked about once and answers are
-    // paired back by name. Which of the two local files then owns the collision
-    // row is left to the same-name-within-one-operation item, not decided here.
+    // Two of the paths handed here can share a leaf name (dragged from different
+    // folders), so each name is asked about once and the answer is paired back to
+    // *every* path carrying it. Dropping the twin instead would leave its path out
+    // of the skip plan, which keys on path -- and it would then upload over the
+    // node the user just chose to spare.
     std::vector<const LocalEntry*> files;
     std::vector<const LocalEntry*> directories;
     std::vector<std::string> fileNames;
@@ -63,10 +129,9 @@ Result<void> UploadScanService::scanLevel(const std::vector<LocalEntry>& entries
         bool seen = false;
         for (const LocalEntry* known : sameKind)
             seen = seen || known->name == entry.name;
-        if (seen)
-            continue;
         sameKind.push_back(&entry);
-        names.push_back(entry.name);
+        if (!seen)
+            names.push_back(entry.name);
     }
 
     if (!fileNames.empty())
@@ -81,7 +146,7 @@ Result<void> UploadScanService::scanLevel(const std::vector<LocalEntry>& entries
             const auto hit = existing.find(local->name);
             if (hit == existing.end())
                 continue;
-            out.push_back(
+            out.collisions.push_back(
                 UploadCollision{local->path, local->name, parentHandle, parentIsRoot, hit->second});
         }
     }
@@ -105,6 +170,7 @@ Result<void> UploadScanService::scanLevel(const std::vector<LocalEntry>& entries
             return Result<void>::fail("Local folders are nested too deeply to check for name "
                                       "collisions",
                                       MegaErrorCode::kEInternal);
+        out.folderHandles.emplace(local->path, hit->second);
         // Below the top level the parent is always a real node, so parentIsRoot
         // stops applying once the walk descends.
         Result<void> deeper =

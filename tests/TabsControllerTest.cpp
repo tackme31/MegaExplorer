@@ -3,7 +3,9 @@
 #include "core/FolderNavigationService.h"
 #include "core/SearchService.h"
 #include "core/ThumbnailService.h"
+#include "core/UploadScanService.h"
 #include "MockMegaClient.h"
+#include "platform/QtLocalFileSystem.h"
 #include "qml/BusyState.h"
 #include "qml/ClipboardController.h"
 #include "qml/FileMutationController.h"
@@ -42,8 +44,10 @@ protected:
         // Real one rather than a stub: TabsController only reads
         // isUploadingTo() off it, and with nothing ever enqueued that answer is
         // a constant false -- what's under test here is row bookkeeping.
-        uploads = std::make_unique<UploadController>(std::make_shared<UploadService>(client),
-                                                     &notifications);
+        uploads = std::make_unique<UploadController>(
+            std::make_shared<UploadService>(client),
+            std::make_shared<UploadScanService>(client, std::make_shared<QtLocalFileSystem>()),
+            &notifications);
     }
 
     TabContext makeTabContext()

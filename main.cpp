@@ -9,9 +9,11 @@
 #include "core/QuickAccessService.h"
 #include "core/SearchService.h"
 #include "core/ThumbnailService.h"
+#include "core/UploadScanService.h"
 #include "core/UploadService.h"
 #include "mega/MegaSdkClient.h"
 #include "platform/QSettingsPinnedFolderStore.h"
+#include "platform/QtLocalFileSystem.h"
 #include "platform/WindowsSessionStore.h"
 #include "qml/AccountController.h"
 #include "qml/AuthController.h"
@@ -91,6 +93,8 @@ int main(int argc, char* argv[])
 
     auto downloadService = std::make_shared<DownloadService>(client);
     auto uploadService = std::make_shared<UploadService>(client);
+    auto uploadScanService =
+        std::make_shared<UploadScanService>(client, std::make_shared<QtLocalFileSystem>());
     // Shared across every tab: handle-keyed cache, no per-tab state. What is
     // inherently per-tab lives in tabFactory below instead.
     auto thumbnailService = std::make_shared<ThumbnailService>(client);
@@ -110,7 +114,7 @@ int main(int argc, char* argv[])
     // Same reason as notifications for being declared here.
     ClipboardController clipboard;
     DownloadController downloadController(downloadService, &notifications);
-    UploadController uploadController(uploadService, &notifications);
+    UploadController uploadController(uploadService, uploadScanService, &notifications);
     AuthController authController(authService);
     AccountController accountController(accountService);
     PreviewController previewController(previewService, previewImageStore);
