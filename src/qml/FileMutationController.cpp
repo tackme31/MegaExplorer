@@ -14,6 +14,8 @@
 #include <QVariantMap>
 
 #include <algorithm>
+#include <set>
+#include <utility>
 #include <vector>
 
 namespace
@@ -48,6 +50,29 @@ bool FileMutationController::DestinationSnapshot::collidesWith(const NodeRef& en
     if (handles.count(entry.handle) > 0)
         return false;
     return entry.isFolder ? folders.count(entry.name) > 0 : files.count(entry.name) > 0;
+}
+
+std::vector<bool> FileMutationController::collidingEntries(const std::vector<NodeRef>& entries,
+                                                           const DestinationSnapshot& destination)
+{
+    std::vector<bool> colliding;
+    colliding.reserve(entries.size());
+    // Keyed by kind as well as name, for the reason collidesWith matches by kind.
+    std::set<std::pair<std::string, bool>> arriving;
+    for (const NodeRef& entry : entries)
+    {
+        // Already a child of the destination: this is a paste or drop back into
+        // its own folder, which duplicates rather than collides, and two such
+        // entries duplicate independently (SPEC_NAME_CONFLICT_COPY_MOVE 3-5).
+        if (destination.handles.count(entry.handle) > 0)
+        {
+            colliding.push_back(false);
+            continue;
+        }
+        const bool broughtTwice = !arriving.insert({entry.name, entry.isFolder}).second;
+        colliding.push_back(destination.collidesWith(entry) || broughtTwice);
+    }
+    return colliding;
 }
 
 FileMutationController::FileMutationController(
@@ -393,15 +418,15 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
     if (entries.empty())
         return;
 
+    const std::vector<bool> colliding = collidingEntries(entries, destination);
+
     // A generated name has to dodge this batch's own arrivals, not just what the
     // destination already holds: an entry that keeps its name lands there too, and
-    // MEGA would accept the duplicate without complaint. collidesWith reads files
-    // and folders rather than taken, so claiming here cannot turn a later entry
-    // into a collision.
-    for (const NodeRef& entry : entries)
+    // MEGA would accept the duplicate without complaint.
+    for (std::size_t i = 0; i < entries.size(); ++i)
     {
-        if (!destination.collidesWith(entry))
-            destination.taken.insert(entry.name);
+        if (!colliding[i])
+            destination.taken.insert(entries[i].name);
     }
 
     if (onConflict == MoveConflict::Ask)
@@ -413,9 +438,10 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
         // Previewed against a copy of the same set the Rename plan below works
         // from, so the name shown is the name that answer would pick.
         std::set<std::string> preview = destination.taken;
-        for (const NodeRef& entry : entries)
+        for (std::size_t i = 0; i < entries.size(); ++i)
         {
-            if (!destination.collidesWith(entry))
+            const NodeRef& entry = entries[i];
+            if (!colliding[i])
                 continue;
             const std::string chosen =
                 FileOperationService::uniqueMoveName(entry.name, entry.isFolder, preview);
@@ -450,12 +476,12 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
     };
     std::vector<PlannedMove> plan;
     plan.reserve(entries.size());
-    for (const NodeRef& entry : entries)
+    for (std::size_t i = 0; i < entries.size(); ++i)
     {
-        const bool colliding = destination.collidesWith(entry);
-        if (colliding && onConflict == MoveConflict::Skip)
+        const NodeRef& entry = entries[i];
+        if (colliding[i] && onConflict == MoveConflict::Skip)
             continue;
-        if (colliding && onConflict == MoveConflict::Rename)
+        if (colliding[i] && onConflict == MoveConflict::Rename)
         {
             const std::string chosen =
                 FileOperationService::uniqueMoveName(entry.name, entry.isFolder, destination.taken);
@@ -751,13 +777,7 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
     if (entries.empty())
         return;
 
-    // The snapshot is deliberately the *destination's* names and nothing else: a
-    // name this batch itself just claimed (below) is not a collision, and treating
-    // it as one would silently drop an entry under Skip. uniqueCopyName still
-    // keeps a same-name-different-kind pair distinguishable.
-    const auto collides = [&destination](const NodeRef& entry) {
-        return destination.collidesWith(entry);
-    };
+    const std::vector<bool> colliding = collidingEntries(entries, destination);
 
     if (onConflict == CopyConflict::Ask)
     {
@@ -769,12 +789,13 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
         // below does: a non-colliding entry claims a name too, and a preview that
         // skipped it could advertise a name that answer would then find taken.
         std::set<std::string> preview = destination.taken;
-        for (const NodeRef& entry : entries)
+        for (std::size_t i = 0; i < entries.size(); ++i)
         {
+            const NodeRef& entry = entries[i];
             const std::string chosen =
                 FileOperationService::uniqueCopyName(entry.name, entry.isFolder, preview);
             preview.insert(chosen);
-            if (!collides(entry))
+            if (!colliding[i])
                 continue;
             (entry.isFolder ? conflictingFolders : conflictingFiles)
                 .append(QString::fromStdString(entry.name));
@@ -802,12 +823,12 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
     };
     std::vector<PlannedCopy> plan;
     plan.reserve(entries.size());
-    for (const NodeRef& entry : entries)
+    for (std::size_t i = 0; i < entries.size(); ++i)
     {
-        const bool colliding = collides(entry);
-        if (colliding && onConflict == CopyConflict::Skip)
+        const NodeRef& entry = entries[i];
+        if (colliding[i] && onConflict == CopyConflict::Skip)
             continue;
-        if (colliding && onConflict == CopyConflict::Proceed)
+        if (colliding[i] && onConflict == CopyConflict::Proceed)
         {
             // Empty == keep the source's name. For a file that is what makes the SDK
             // attach the copy as a new version over the existing one; for a folder it

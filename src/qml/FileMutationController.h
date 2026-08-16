@@ -320,6 +320,14 @@ private:
         bool collidesWith(const NodeRef& entry) const;
     };
 
+    // One flag per entry, in order: does it land on a name that is already spoken
+    // for? Shared by both paths so the dialog's preview and the plan it previews
+    // never disagree. A name the batch itself brings counts, since two same-named
+    // entries from different folders land on each other even when the destination
+    // holds neither (SPEC_NAME_CONFLICT_COPY_MOVE 5-3).
+    static std::vector<bool> collidingEntries(const std::vector<NodeRef>& entries,
+                                              const DestinationSnapshot& destination);
+
     // Second stage of a copy, on the GUI thread. How the snapshot was arrived at
     // is the caller's problem, since the callers answer a failed destination read
     // differently (paste() falls back to the cached listing, the other two
