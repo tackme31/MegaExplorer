@@ -218,6 +218,12 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
 **Supporting pieces**, all of which exist for the loop but are useful by hand too:
 
 - `scripts/loop_verify.sh` — the single verification entry point (see "Compiler warnings" below).
+- `scripts/usage_gate.sh` — the subscription-quota gate every cycle starts with: exit 1 means skip
+  this fire and wait for the next one, since a cycle begun near the limit dies mid-way and strands a
+  branch. It reads the 5h/7d percentages out of `claude -p "/usage"`, which resolves locally at zero
+  tokens — the only surface that reports them at all (hooks, OTel and the org-scoped Admin Usage API
+  do not). **Unreadable output also exits 1**: unattended, a wrong skip costs one cycle, a wrong
+  start costs the window. Thresholds default to 5h 70% / 7d 90% (`EVOLVE_USAGE_MAX_{5H,7D}`).
 - `megatool` — a CLI over `IMegaClient` for setting up fixtures and for `whoami`. It logs in from
   `MEGAEXPLORER_TEST_ACCOUNT` / `MEGAEXPLORER_TEST_PASSWORD`, **independently of the app's saved
   session**, so it always sees the test account. Details: `docs/MEGATOOL.md`.
