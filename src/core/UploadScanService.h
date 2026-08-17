@@ -12,11 +12,13 @@
 
 struct UploadCollision
 {
-    std::string localPath;          // the local file that would land on an existing one
+    std::string localPath;          // the local file that would land on a taken name
     std::string name;               // leaf name, shared by both sides
     std::uint64_t parentHandle = 0; // MEGA folder it would land in
     bool parentIsRoot = false;
-    std::uint64_t existingHandle = 0; // the MEGA file already sitting there
+    // The MEGA file already sitting there, or 0 when the name is taken by an
+    // earlier file in this same upload rather than by anything on MEGA.
+    std::uint64_t existingHandle = 0;
 };
 
 // One upload the app issues itself: a local path -- a file, or a whole directory
@@ -28,9 +30,11 @@ struct UploadPlanItem
     bool parentIsRoot = false;
 };
 
-// Answers "which files in this upload already exist on MEGA", including the ones
-// nested inside folders being uploaded, since the SDK merges a folder into a
-// same-named one instead of refusing (SPEC_NAME_CONFLICT_UPLOAD.md 1-2).
+// Answers "which files in this upload land on a name already spoken for",
+// including the ones nested inside folders being uploaded, since the SDK merges a
+// folder into a same-named one instead of refusing (SPEC_NAME_CONFLICT_UPLOAD.md
+// 1-2). A name the upload itself brings twice counts too: the second copy versions
+// over the first exactly as it would over a pre-existing node.
 //
 // The walk only descends where both sides have a folder of the same name, so its
 // cost tracks the size of the overlap rather than the size of the upload: adding
