@@ -24,10 +24,11 @@ ToolBar {
     // CaptionBar/SidePanel/TabContentPane take.
     required property var dragProxy
 
-    // The three dialogs live in Main.qml and are only ever open()ed from here,
-    // so this relays instead of taking three object injections -- Main.qml owns
-    // them, so opening one is its call, not ours (AboutDialog.qml makes the same
+    // The dialogs live in Main.qml and are only ever open()ed from here, so this
+    // relays instead of taking one object injection each -- Main.qml owns them,
+    // so opening one is its call, not ours (AboutDialog.qml makes the same
     // argument for its own licensesRequested).
+    signal settingsRequested
     signal aboutRequested
     signal licensesRequested
     signal signOutRequested
@@ -319,6 +320,12 @@ ToolBar {
                 // IconMenuItem, not MenuItem, for the leading glyph -- same rows
                 // as a context menu gets, so the two kinds of menu don't
                 // disagree about whether items have icons.
+                IconMenuItem {
+                    text: qsTr("Settings")
+                    glyph: Theme.glyph.menu.settings
+                    onTriggered: root.settingsRequested()
+                }
+                MenuSeparator {}
                 IconMenuItem {
                     text: qsTr("About MegaExplorer")
                     glyph: Theme.glyph.menu.about

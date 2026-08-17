@@ -38,6 +38,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QStyleHints>
 
@@ -66,7 +67,8 @@ int main(int argc, char* argv[])
 
     // Style-tuning aid: check a theme without flipping the Windows setting. Both
     // FluentWinUI3 and Theme.qml read styleHints.colorScheme, so one call covers the
-    // whole UI. Unset keeps the default of following the OS.
+    // whole UI. It wins over the user's stored choice below, which is why that read
+    // sits in the else branch.
     const QByteArray colorScheme = qgetenv("MEGAEXPLORER_COLOR_SCHEME").toLower();
     if (colorScheme == "light")
     {
@@ -75,6 +77,19 @@ int main(int argc, char* argv[])
     else if (colorScheme == "dark")
     {
         app.styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+    }
+    else
+    {
+        // The settings dialog's theme choice, applied before the first frame so the
+        // window is never painted in the OS scheme first. Written by Main.qml's
+        // QtCore Settings item, which stores its aliases ungrouped -- hence the bare
+        // key. Qt::ColorScheme::Unknown, the default, is "follow the OS".
+        const int stored = QSettings().value(QStringLiteral("colorSchemePreference")).toInt();
+        if (stored == static_cast<int>(Qt::ColorScheme::Light)
+            || stored == static_cast<int>(Qt::ColorScheme::Dark))
+        {
+            app.styleHints()->setColorScheme(static_cast<Qt::ColorScheme>(stored));
+        }
     }
 
     // AppLocalDataLocation, not AppDataLocation: same non-roaming rationale

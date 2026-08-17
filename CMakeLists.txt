@@ -239,6 +239,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/PreviewPane.qml
         qml/components/QuickAccessSection.qml
         qml/components/SearchFilterPopup.qml
+        qml/components/SettingsDialog.qml
         qml/components/SidePanel.qml
         qml/components/SignOutDialog.qml
         qml/components/SpecialViewsSection.qml
