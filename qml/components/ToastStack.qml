@@ -307,6 +307,12 @@ Item {
         case "renameInvalidName":
             text = qsTr("That name can't be used — names can't be empty or contain \\ or /");
             break;
+            // Fixed sentence for the same reason, and the rename is off: MEGA
+            // itself would allow the duplicate, so this refusal is the app's own
+            // (FileOperationService::rename).
+        case "renameNameTaken":
+            text = qsTr("That name is already used here — the item was not renamed");
+            break;
             // Fixed sentence: the cause is a local settings write failing, not
             // anything the SDK saw, and what the user needs to know is that the
             // pin change won't survive a restart.

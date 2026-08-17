@@ -323,6 +323,15 @@ public:
                      bool parentIsRoot,
                      const std::vector<std::string>& names) const = 0;
 
+    // Whether a sibling of the node -- another child of its own parent -- already
+    // carries name, as either a file or a folder. Same in-memory lookup as
+    // findChildFiles, so it costs no round-trip (SPEC_NAME_CONFLICT_COPY_MOVE 1-5);
+    // the parent is read here because only an implementation can see it, as with
+    // checkMove. The node itself never counts as its own collision, so a rename
+    // that only changes a name's case still goes through.
+    virtual Result<bool> siblingNameTaken(std::uint64_t handle,
+                                          const std::string& name) const = 0;
+
     // Whether the node has at least one *folder* child -- the folder tree's own
     // question, since files never appear in the side panel. False for a file.
     virtual Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const = 0;

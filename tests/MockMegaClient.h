@@ -132,6 +132,10 @@ public:
                 findChildFolders,
                 (std::uint64_t, bool, const std::vector<std::string>&),
                 (const, override));
+    MOCK_METHOD(Result<bool>,
+                siblingNameTaken,
+                (std::uint64_t, const std::string&),
+                (const, override));
     MOCK_METHOD(Result<bool>, hasSubfolders, (std::uint64_t, bool), (const, override));
     MOCK_METHOD(Result<std::uint64_t>, subtreeSize, (std::uint64_t, bool), (const, override));
     MOCK_METHOD(Result<AccountIdentity>, currentAccountIdentity, (), (const, override));

@@ -635,6 +635,7 @@ TEST_F(FileMutationControllerTest, RenameEntryReportsARealFailureAsAnOperationFa
 
     // Anything that isn't kEArgs stays on the generic path -- guards against
     // the invalid-name branch swallowing every failure.
+    EXPECT_CALL(*client, siblingNameTaken(_, _)).WillOnce(Return(Result<bool>::ok(false)));
     EXPECT_CALL(*client, renameNode(1u, std::string("b"), _))
         .WillOnce(InvokeArgument<2>(Result<void>::fail("denied", MegaErrorCode::kEAccess)));
     const int fetchesBefore = rootFetches;
@@ -656,6 +657,8 @@ TEST_F(FileMutationControllerTest, RenameEntryRefetchesOnSuccess)
     controller->loadRoot();
     flush();
 
+    EXPECT_CALL(*client, siblingNameTaken(1u, std::string("b")))
+        .WillOnce(Return(Result<bool>::ok(false)));
     EXPECT_CALL(*client, renameNode(1u, std::string("b"), _))
         .WillOnce(InvokeArgument<2>(Result<void>::ok()));
     const int fetchesBefore = rootFetches;
@@ -665,6 +668,27 @@ TEST_F(FileMutationControllerTest, RenameEntryRefetchesOnSuccess)
 
     EXPECT_EQ(errorCalls, 0);
     EXPECT_EQ(rootFetches - fetchesBefore, 1);
+}
+
+TEST_F(FileMutationControllerTest, RenameEntryRefusesANameASiblingAlreadyHas)
+{
+    givenRootListing({entry("a", 1), entry("b", 2)});
+    controller->loadRoot();
+    flush();
+
+    // The check is the client's, not the cached listing's: rename is offered in
+    // Favourites and in search results too, where the rows are not siblings.
+    EXPECT_CALL(*client, siblingNameTaken(1u, std::string("b")))
+        .WillOnce(Return(Result<bool>::ok(true)));
+    EXPECT_CALL(*client, renameNode(_, _, _)).Times(0);
+    const int fetchesBefore = rootFetches;
+
+    mutations->renameEntry(1, QStringLiteral("b"));
+    flush();
+
+    EXPECT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("renameNameTaken"));
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
 }
 
 TEST_F(FileMutationControllerTest, SetEntryFavouriteUpdatesTheRowInPlaceWithoutRefetching)

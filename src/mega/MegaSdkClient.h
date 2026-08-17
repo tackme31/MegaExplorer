@@ -164,6 +164,8 @@ public:
                      bool parentIsRoot,
                      const std::vector<std::string>& names) const override;
 
+    Result<bool> siblingNameTaken(std::uint64_t handle, const std::string& name) const override;
+
     Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const override;
     Result<std::uint64_t> subtreeSize(std::uint64_t handle, bool isRoot) const override;
 
