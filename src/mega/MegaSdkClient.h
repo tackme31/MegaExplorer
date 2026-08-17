@@ -71,6 +71,7 @@ public:
     void search(std::uint64_t ancestorHandle,
                 bool isRoot,
                 const std::string& query,
+                const SearchFilter& filter,
                 SortOrder order,
                 std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 

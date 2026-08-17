@@ -6,6 +6,7 @@
 #include "PathSegment.h"
 #include "RestoreTarget.h"
 #include "Result.h"
+#include "SearchFilter.h"
 #include "SortOrder.h"
 #include "UploadOutcome.h"
 #include "UserAttribute.h"
@@ -95,9 +96,11 @@ public:
 
     // Recursive name search rooted at ancestorHandle. Must be called after a
     // successful fetchNodes(); order is forwarded to MegaApi::search's own order.
+    // An empty query means "no name predicate", so filter alone is a valid search.
     virtual void search(std::uint64_t ancestorHandle,
                         bool isRoot,
                         const std::string& query,
+                        const SearchFilter& filter,
                         SortOrder order,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 

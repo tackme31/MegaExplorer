@@ -167,6 +167,11 @@ QtObject {
         // The toolbar's refresh button (added after S7); same cmap check
         // re-run for it, present in both fonts.
         readonly property string refresh: "\uE72C" // Refresh
+        // Advanced-search button beside the search field. Drawn and checked at 16px
+        // (a funnel, monochrome -- no COLR layers, unlike the E80A case below); the
+        // Segoe MDL2 cmap half of the check was not re-run, fontTools being absent
+        // from this machine.
+        readonly property string filter: "\uE71C" // Filter
         // Status bar's view-mode toggles (S9), replacing the typed-out box
         // and hamburger characters that were the last non-ASCII glyphs left
         // in the QML. Not E80A Tiles, the obvious partner to List: that one

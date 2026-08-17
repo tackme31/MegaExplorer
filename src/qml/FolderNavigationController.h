@@ -50,9 +50,9 @@ class FolderNavigationController : public QObject,
     // Same derivation again. int rather than ViewKindEnum::Kind so this header keeps
     // its Qt-free core includes; QML compares against ViewKind.CloudDrive either way.
     Q_PROPERTY(int viewKind READ viewKind NOTIFY breadcrumbChanged)
-    // Whether a search query is narrowing what the model holds, so an empty listing
-    // can say which kind of empty it is. Its own NOTIFY: the query changes without
-    // the location doing so.
+    // Whether a search query or an advanced-search filter is narrowing what the model
+    // holds, so an empty listing can say which kind of empty it is. Its own NOTIFY:
+    // the query changes without the location doing so.
     Q_PROPERTY(bool searchActive READ searchActive NOTIFY searchActiveChanged)
     // True while this tab has a mutating operation or a server sync in flight.
     // Deliberately NOT set by listing/search/breadcrumb fetches -- those are
@@ -139,6 +139,16 @@ public:
     // navigation state alone, so openFolder() still works from search results.
     Q_INVOKABLE void search(QString query);
 
+    // The advanced-search popup's four facets, as ints so this header stays free of
+    // Qt-side enum types (same argument as viewKind above); QML passes
+    // SearchNodeType/SearchCategory/SearchTimeWindow values. Out-of-range values fall
+    // back to "any". Re-runs the current query, and a filter with no query is itself a
+    // search -- clearing both is what restores the cached folder listing.
+    Q_INVOKABLE void setSearchFilter(int nodeType,
+                                     int category,
+                                     int createdWithin,
+                                     bool favouritesOnly);
+
     // column: 0=Name, 1=ModificationTime, 2=Size. Also called at startup with the
     // persisted value, before login/loadRoot() have run (see mHasLoadedOnce).
     Q_INVOKABLE void setSortOrder(int column, bool ascending);
@@ -219,8 +229,9 @@ signals:
     void busyChanged();
     void searchActiveChanged();
 
-    // The tab dropped its query because it navigated. The search box owns its text,
-    // so it has to be told; nothing else can reach it.
+    // The tab dropped its query and filter because it navigated. The search box owns
+    // its text and the filter popup its selections, so both have to be told; nothing
+    // else can reach them.
     void searchCleared();
 
     // Row is already selected in the model when this fires; the views only have
@@ -229,9 +240,12 @@ signals:
     void revealRowRequested(int row);
 
 private:
-    void applyResult(Result<std::vector<FileEntry>> result,
-                     const QString& revealName = QString());
+    void applyResult(Result<std::vector<FileEntry>> result, const QString& revealName = QString());
     void applySearchResult(Result<std::vector<FileEntry>> result);
+
+    // Shared tail of search() and setSearchFilter(): publishes searchActive if it
+    // flipped, then either restores the cached listing or runs the search.
+    void applySearchCriteria(bool wasActive);
 
     // Drops the query because the tab is moving somewhere the results do not
     // describe. Called by the navigation entry points and by none of the refresh
@@ -280,7 +294,10 @@ private:
     QVariantList mBreadcrumb;
     std::vector<FileEntry> mLastFolderEntries; // restored when search is cleared
     SortOrder mSortOrder{SortKey::Name, true};
-    std::string mLastSearchQuery; // empty == not currently searching
+    std::string mLastSearchQuery; // empty == no name predicate
+    // The advanced-search facets. Together with mLastSearchQuery this is the search:
+    // either being non-default makes searchActive() true.
+    SearchFilter mSearchFilter;
     // Whether the rows in the model are search hits rather than one folder's
     // children. Not derivable from mLastSearchQuery: opening a folder from the
     // results replaces the rows but deliberately leaves the query alone.
