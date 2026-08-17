@@ -119,6 +119,14 @@ public:
                 setNodeFavourite,
                 (std::uint64_t, bool, std::function<void(Result<void>)>),
                 (override));
+    MOCK_METHOD(void,
+                exportNode,
+                (std::uint64_t, std::function<void(Result<std::string>)>),
+                (override));
+    MOCK_METHOD(void,
+                disableExport,
+                (std::uint64_t, std::function<void(Result<void>)>),
+                (override));
     MOCK_METHOD(Result<void>, checkMove, (std::uint64_t, std::uint64_t, bool), (const, override));
     MOCK_METHOD(void,
                 upload,

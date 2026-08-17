@@ -224,6 +224,12 @@ QtObject {
             // in an otherwise outline menu, which read as emphasis rather than
             // as a different action. The label carries the direction.
             readonly property string toggleFavourite: glyphSet.favouriteOutline
+            // One chain-link glyph for both link actions, the same choice as
+            // toggleFavourite above and for the same reason: the font has no
+            // broken-link counterpart, and the label says which direction it is.
+            // Present in both icon fonts' cmaps; not yet checked drawn at 16px.
+            readonly property string copyLink: "\uE71B"      // Link
+            readonly property string removeLink: copyLink
             readonly property string cut: "\uE8C6"           // Cut
             readonly property string copy: "\uE8C8"          // Copy
             readonly property string paste: "\uE77F"         // Paste

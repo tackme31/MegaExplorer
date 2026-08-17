@@ -794,6 +794,98 @@ TEST_F(FileMutationControllerTest, SetEntryFavouriteAppliesTheRequestedValueEven
     EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsFavouriteRole).toBool());
 }
 
+// The clipboard itself is out of reach here: this binary runs on a plain
+// QCoreApplication, so FileMutationController's own cast skips the write (see
+// copyLinkToClipboard). What these cover is everything around it -- which SDK call
+// is made, and which toast the outcome selects.
+TEST_F(FileMutationControllerTest, CopyLinkExportsTheNodeAndReportsItUnderItsOwnContext)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, exportNode(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<std::string>::ok("https://mega.nz/file/abc#key")));
+
+    mutations->copyLinkToClipboard(1);
+    flush();
+
+    EXPECT_EQ(errorCalls, 0);
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastContext, QStringLiteral("copyLink"));
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(lastFailed, 0);
+}
+
+TEST_F(FileMutationControllerTest, CopyLinkReportsAnEmptyLinkRatherThanClaimingItCopiedOne)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, exportNode(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<std::string>::ok("")));
+
+    mutations->copyLinkToClipboard(1);
+    flush();
+
+    EXPECT_EQ(operationCalls, 0);
+    ASSERT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("copyLinkEmpty"));
+}
+
+TEST_F(FileMutationControllerTest, CopyLinkReportsAFailedExportAsAnError)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, exportNode(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<std::string>::fail("denied", MegaErrorCode::kEAccess)));
+
+    mutations->copyLinkToClipboard(1);
+    flush();
+
+    EXPECT_EQ(operationCalls, 0);
+    ASSERT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("copyLink"));
+    EXPECT_EQ(lastErrorReason, NotificationController::NoPermission);
+}
+
+TEST_F(FileMutationControllerTest, RemoveLinkDisablesTheExportAndReportsSuccessOnce)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, disableExport(1u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
+
+    mutations->removeLink(1);
+    flush();
+
+    EXPECT_EQ(errorCalls, 0);
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastContext, QStringLiteral("removeLink"));
+}
+
+TEST_F(FileMutationControllerTest, RemoveLinkReportsAFailureUnderItsOwnContext)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, disableExport(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
+
+    mutations->removeLink(1);
+    flush();
+
+    EXPECT_EQ(operationCalls, 0);
+    ASSERT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("removeLink"));
+    EXPECT_EQ(lastErrorReason, NotificationController::NotFound);
+}
+
 TEST_F(FileMutationControllerTest, BusyClearsOnlyAfterTheLastCallbackOfABulkOperation)
 {
     givenRootListing({entry("a", 1), entry("b", 2)});

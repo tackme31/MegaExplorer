@@ -17,6 +17,13 @@ enum class MenuAction
     // One action like TogglePin above, and for the same reason: the resolver can't
     // see the favourite flag, so QML picks between "add" and "remove".
     ToggleFavourite,
+    // Not a toggle pair like the two above, and deliberately: a link is worth
+    // re-copying after it exists, so "copy" stays offered either way and "remove"
+    // is its own entry. Neither depends on the node's export state, which the
+    // listing doesn't carry -- IMegaClient::exportNode and disableExport are both
+    // idempotent, so a stale menu still lands where the label promised.
+    CopyLink,
+    RemoveLink,
     Cut,
     Copy,
     // FolderBackground only, and unconditional there: an empty clipboard is a greying

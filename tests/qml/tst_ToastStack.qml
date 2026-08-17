@@ -110,6 +110,16 @@ TestCase {
                         expected: "Failed to create folder — check your connection"
                     },
                     {
+                        tag: "copyLink",
+                        context: "copyLink",
+                        expected: "Couldn't get a link — check your connection"
+                    },
+                    {
+                        tag: "removeLink",
+                        context: "removeLink",
+                        expected: "Couldn't remove the link — check your connection"
+                    },
+                    {
                         tag: "addFavourite",
                         context: "addFavourite",
                         expected: "Failed to add to Favourites — check your connection"
@@ -175,6 +185,11 @@ TestCase {
                         tag: "uploadNothingToUpload",
                         context: "uploadNothingToUpload",
                         expected: "Nothing to upload — only files and folders on this PC can be uploaded"
+                    },
+                    {
+                        tag: "copyLinkEmpty",
+                        context: "copyLinkEmpty",
+                        expected: "MEGA returned no link — nothing was copied"
                     }
                 ];
     }
@@ -311,6 +326,22 @@ TestCase {
                         ok: 1,
                         failed: 0,
                         expected: "Folder created"
+                    },
+                    // Single-selection actions, so the counts say nothing the
+                    // sentence needs.
+                    {
+                        tag: "copyLink",
+                        context: "copyLink",
+                        ok: 1,
+                        failed: 0,
+                        expected: "Link copied to clipboard"
+                    },
+                    {
+                        tag: "removeLink",
+                        context: "removeLink",
+                        ok: 1,
+                        failed: 0,
+                        expected: "Link removed"
                     }
                 ];
     }

@@ -892,6 +892,60 @@ void MegaSdkClient::setNodeFavourite(std::uint64_t handle,
         node.get(), favourite, new megasdk::SimpleResultListener(std::move(onDone)));
 }
 
+void MegaSdkClient::exportNode(std::uint64_t handle,
+                               std::function<void(Result<std::string>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::string>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<std::string>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / node deleted)",
+            MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    // The plain read-only link, which is the only one the UI offers: no expiry (0 is
+    // the SDK's "never"), not writable, and not MEGA-hosted -- the writable variants
+    // also hand back a key the caller would have to keep, and nothing here does.
+    mApi->exportNode(node.get(),
+                     0,
+                     false,
+                     false,
+                     new megasdk::LinkResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::disableExport(std::uint64_t handle, std::function<void(Result<void>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<void>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / node deleted)",
+            MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    // A node with no link is already where the caller wants it; the SDK would answer
+    // this with an error, which would put a failure toast on screen for a no-op.
+    if (!node->isExported())
+    {
+        onDone(Result<void>::ok());
+        return;
+    }
+
+    mApi->disableExport(node.get(), new megasdk::SimpleResultListener(std::move(onDone)));
+}
+
 void MegaSdkClient::moveNode(std::uint64_t handle,
                              std::uint64_t newParentHandle,
                              bool newParentIsRoot,

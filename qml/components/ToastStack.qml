@@ -199,6 +199,14 @@ Item {
         case "createFolder":
             text = qsTr("Folder created");
             break;
+            // Always exactly one node -- the menu entries are single-selection
+            // only -- so neither of these counts anything either.
+        case "copyLink":
+            text = qsTr("Link copied to clipboard");
+            break;
+        case "removeLink":
+            text = qsTr("Link removed");
+            break;
         }
         return text;
     }
@@ -339,6 +347,17 @@ Item {
             // Skip is the one answer the app cannot approximate: uploading anyway
             // would version over the files the user asked to leave alone, so it
             // stops and says so rather than guessing.
+        case "copyLink":
+            text = root.describeReason(qsTr("Couldn't get a link"), reason, rawMessage);
+            break;
+        case "removeLink":
+            text = root.describeReason(qsTr("Couldn't remove the link"), reason, rawMessage);
+            break;
+            // Fixed sentence: the export succeeded but handed back no URL, so
+            // there is no code to classify and nothing was put on the clipboard.
+        case "copyLinkEmpty":
+            text = qsTr("MEGA returned no link — nothing was copied");
+            break;
         case "uploadSkipFailed":
             text = qsTr("Couldn't check the destination — nothing was uploaded");
             break;
