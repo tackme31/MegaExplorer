@@ -7,6 +7,7 @@
 #include "MegaSdkLogger.h"
 
 #include <algorithm>
+#include <ctime>
 #include <megaapi.h>
 #include <utility>
 
@@ -117,6 +118,96 @@ FileEntry nodeToEntry(mega::MegaNode* node)
     entry.hasThumbnail = node->hasThumbnail();
     entry.isFavourite = node->isFavourite();
     return entry;
+}
+
+// Copies our SearchFilter onto the SDK's. Every facet is only touched when it is
+// narrowing something: MegaSearchFilter's "unset" defaults already mean "match
+// everything", and byCategory(FILE_TYPE_DEFAULT) is not the same as leaving it alone.
+void applySearchFilter(mega::MegaSearchFilter& target, const SearchFilter& filter)
+{
+    switch (filter.nodeType)
+    {
+        case SearchNodeType::Files:
+            target.byNodeType(mega::MegaNode::TYPE_FILE);
+            break;
+        case SearchNodeType::Folders:
+            target.byNodeType(mega::MegaNode::TYPE_FOLDER);
+            break;
+        case SearchNodeType::Any:
+            break;
+    }
+
+    // Any category other than DEFAULT makes the SDK return files only, whatever
+    // byNodeType said -- so "folders" plus a category is an empty result by design,
+    // and the popup greys the category picker out rather than letting that happen.
+    int category = mega::MegaApi::FILE_TYPE_DEFAULT;
+    switch (filter.category)
+    {
+        case SearchCategory::Photo:
+            category = mega::MegaApi::FILE_TYPE_PHOTO;
+            break;
+        case SearchCategory::Audio:
+            category = mega::MegaApi::FILE_TYPE_AUDIO;
+            break;
+        case SearchCategory::Video:
+            category = mega::MegaApi::FILE_TYPE_VIDEO;
+            break;
+        case SearchCategory::Document:
+            category = mega::MegaApi::FILE_TYPE_DOCUMENT;
+            break;
+        case SearchCategory::Pdf:
+            category = mega::MegaApi::FILE_TYPE_PDF;
+            break;
+        case SearchCategory::Presentation:
+            category = mega::MegaApi::FILE_TYPE_PRESENTATION;
+            break;
+        case SearchCategory::Spreadsheet:
+            category = mega::MegaApi::FILE_TYPE_SPREADSHEET;
+            break;
+        case SearchCategory::Archive:
+            category = mega::MegaApi::FILE_TYPE_ARCHIVE;
+            break;
+        case SearchCategory::Program:
+            category = mega::MegaApi::FILE_TYPE_PROGRAM;
+            break;
+        case SearchCategory::Other:
+            category = mega::MegaApi::FILE_TYPE_OTHERS;
+            break;
+        case SearchCategory::Any:
+            break;
+    }
+    if (category != mega::MegaApi::FILE_TYPE_DEFAULT)
+        target.byCategory(category);
+
+    if (filter.favouritesOnly)
+        target.byFavourite(mega::MegaSearchFilter::BOOL_FILTER_ONLY_TRUE);
+
+    int windowDays = 0;
+    switch (filter.createdWithin)
+    {
+        case SearchTimeWindow::PastDay:
+            windowDays = 1;
+            break;
+        case SearchTimeWindow::PastWeek:
+            windowDays = 7;
+            break;
+        case SearchTimeWindow::PastMonth:
+            windowDays = 30;
+            break;
+        case SearchTimeWindow::PastYear:
+            windowDays = 365;
+            break;
+        case SearchTimeWindow::Any:
+            break;
+    }
+    if (windowDays > 0)
+    {
+        const std::int64_t since =
+            static_cast<std::int64_t>(std::time(nullptr)) - windowDays * 24 * 60 * 60;
+        // Upper limit 0 rather than "now": MegaSearchFilter ignores a 0 limit, and a
+        // literal now would drop nodes whose timestamp is a few seconds ahead of ours.
+        target.byCreationTime(since, 0);
+    }
 }
 
 std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
@@ -349,6 +440,7 @@ void MegaSdkClient::getChildren(std::uint64_t handle,
 void MegaSdkClient::search(std::uint64_t ancestorHandle,
                            bool isRoot,
                            const std::string& query,
+                           const SearchFilter& searchFilter,
                            SortOrder order,
                            std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
@@ -367,8 +459,12 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
     }
 
     std::unique_ptr<mega::MegaSearchFilter> filter(mega::MegaSearchFilter::createInstance());
-    filter->byName(query.c_str());
+    // Left unset when empty, as in listFavourites(): an advanced-search filter with
+    // no typed query is a valid search, and the name predicate must not narrow it.
+    if (!query.empty())
+        filter->byName(query.c_str());
     filter->byLocationHandle(ancestor->getHandle());
+    applySearchFilter(*filter, searchFilter);
 
     std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get(), toMegaOrder(order)));
     onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));

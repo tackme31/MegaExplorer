@@ -43,6 +43,7 @@ public:
                 (std::uint64_t,
                  bool,
                  const std::string&,
+                 const SearchFilter&,
                  SortOrder,
                  std::function<void(Result<std::vector<FileEntry>>)>),
                 (override));

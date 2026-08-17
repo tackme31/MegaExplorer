@@ -5,6 +5,7 @@
 #include "qml/BusyState.h"
 #include "qml/GuiThread.h"
 #include "qml/NotificationController.h"
+#include "qml/SearchFilterEnums.h"
 #include "qml/ViewKindEnum.h"
 #include "TestApp.h"
 
@@ -223,8 +224,8 @@ TEST_F(FolderNavigationControllerTest, OpeningAFolderFromResultsDropsTheSearch)
     controller->loadRoot();
     flush();
 
-    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _))
-        .WillRepeatedly(InvokeArgument<4>(
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
+        .WillRepeatedly(InvokeArgument<5>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("photos", 1, true)})));
     controller->search(QStringLiteral("q"));
     flush();
@@ -252,14 +253,82 @@ TEST_F(FolderNavigationControllerTest, GoingBackDropsTheSearchToo)
     controller->openFolder(1);
     flush();
 
-    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _))
-        .WillRepeatedly(InvokeArgument<4>(
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
+        .WillRepeatedly(InvokeArgument<5>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
     controller->search(QStringLiteral("q"));
     flush();
     ASSERT_TRUE(controller->searchActive());
 
     controller->goBack();
+    flush();
+
+    EXPECT_FALSE(controller->searchActive());
+}
+
+TEST_F(FolderNavigationControllerTest, AFilterWithNoQueryIsAnActiveSearch)
+{
+    // The whole point of the advanced-search popup: narrowing by category alone,
+    // with nothing typed, has to reach the client and count as searching.
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    SearchFilter seen;
+    EXPECT_CALL(*client, search(_, _, std::string(""), _, _, _))
+        .WillRepeatedly(Invoke([&seen](std::uint64_t,
+                                       bool,
+                                       const std::string&,
+                                       const SearchFilter& filter,
+                                       SortOrder,
+                                       std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            seen = filter;
+            onDone(Result<std::vector<FileEntry>>::ok({entry("b.jpg", 2)}));
+        }));
+
+    controller->setSearchFilter(
+        SearchNodeTypeEnum::Files, SearchCategoryEnum::Photo, SearchTimeWindowEnum::PastWeek, true);
+    flush();
+
+    EXPECT_TRUE(controller->searchActive());
+    EXPECT_EQ(seen.nodeType, SearchNodeType::Files);
+    EXPECT_EQ(seen.category, SearchCategory::Photo);
+    EXPECT_EQ(seen.createdWithin, SearchTimeWindow::PastWeek);
+    EXPECT_TRUE(seen.favouritesOnly);
+}
+
+TEST_F(FolderNavigationControllerTest, ClearingTheFilterRestoresTheCachedListing)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, search(_, _, std::string(""), _, _, _))
+        .WillRepeatedly(InvokeArgument<5>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
+    controller->setSearchFilter(
+        SearchNodeTypeEnum::Any, SearchCategoryEnum::Photo, SearchTimeWindowEnum::Any, false);
+    flush();
+    ASSERT_TRUE(controller->searchActive());
+
+    controller->setSearchFilter(
+        SearchNodeTypeEnum::Any, SearchCategoryEnum::Any, SearchTimeWindowEnum::Any, false);
+    flush();
+
+    EXPECT_FALSE(controller->searchActive());
+    EXPECT_EQ(model()->rowCount(), 1);
+}
+
+TEST_F(FolderNavigationControllerTest, AnOutOfRangeFilterFacetNarrowsNothing)
+{
+    // QML passes these as ints, so a bad binding must not become a garbage cast.
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, search(_, _, _, _, _, _)).Times(0);
+
+    controller->setSearchFilter(99, -1, 12345, false);
     flush();
 
     EXPECT_FALSE(controller->searchActive());
@@ -272,11 +341,12 @@ TEST_F(FolderNavigationControllerTest, RefreshReRunsTheActiveSearch)
     flush();
 
     int searches = 0;
-    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _))
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
         .WillRepeatedly(
             Invoke([&searches](std::uint64_t,
                                bool,
                                const std::string&,
+                               const SearchFilter&,
                                SortOrder,
                                std::function<void(Result<std::vector<FileEntry>>)> onDone) {
                 ++searches;
@@ -463,7 +533,7 @@ TEST_F(FolderNavigationControllerTest, SearchInFavouritesNarrowsTheListingWithou
     // SearchService is defined as "recursive search under the current folder",
     // which a flat cross-drive listing has none of -- so the search box narrows
     // the favourites query instead of reaching the service at all.
-    EXPECT_CALL(*client, search(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, search(_, _, _, _, _, _)).Times(0);
     int filtered = 0;
     EXPECT_CALL(*client, listFavourites(_, std::string("kept"), _))
         .WillRepeatedly(
@@ -610,8 +680,8 @@ TEST_F(FolderNavigationControllerTest, GoToFolderStopsBeingOfferedOnceTheListing
     controller->loadRoot();
     flush();
 
-    EXPECT_CALL(*client, search(_, _, std::string("b"), _, _))
-        .WillRepeatedly(InvokeArgument<4>(
+    EXPECT_CALL(*client, search(_, _, std::string("b"), _, _, _))
+        .WillRepeatedly(InvokeArgument<5>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 3)})));
     controller->search(QStringLiteral("b"));
     flush();
@@ -623,8 +693,8 @@ TEST_F(FolderNavigationControllerTest, GoToFolderStopsBeingOfferedOnceTheListing
         .WillRepeatedly(InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(
             std::vector<PathSegment>{{"", 0, true}, {"trip", 2, false}, {"b.jpg", 3, false}})));
     EXPECT_CALL(*client, getChildren(2, _, _))
-        .WillRepeatedly(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(
-            std::vector<FileEntry>{entry("b.jpg", 3)})));
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 3)})));
 
     controller->goToContainingFolder(3, QStringLiteral("b.jpg"));
     flush();
@@ -723,8 +793,8 @@ TEST_F(FolderNavigationControllerTest, UnfavouritingInAFolderStillUpdatesTheRowI
 TEST_F(FolderNavigationControllerTest, SearchActiveFollowsTheQueryAndReportsOnlyRealChanges)
 {
     givenRootListing({entry("a.txt", 1)});
-    EXPECT_CALL(*client, search(_, _, _, _, _))
-        .WillRepeatedly(InvokeArgument<4>(
+    EXPECT_CALL(*client, search(_, _, _, _, _, _))
+        .WillRepeatedly(InvokeArgument<5>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a.txt", 1)})));
     controller->loadRoot();
     flush();

@@ -14,6 +14,20 @@
 #include <set>
 #include <utility>
 
+namespace
+{
+
+// QML hands the filter facets over as ints, so a value outside the enum is reachable
+// from a typo in a binding. Every one of these enums starts at "Any", so falling back
+// to E{} means "this facet narrows nothing" rather than a garbage cast.
+template<typename E>
+E clampEnum(int value, E last)
+{
+    return (value >= 0 && value <= static_cast<int>(last)) ? static_cast<E>(value) : E{};
+}
+
+} // namespace
+
 FolderNavigationController::FolderNavigationController(
     std::shared_ptr<FolderNavigationService> navigationService,
     std::shared_ptr<SearchService> searchService,
@@ -87,7 +101,7 @@ int FolderNavigationController::viewKind() const
 
 bool FolderNavigationController::searchActive() const
 {
-    return !mLastSearchQuery.empty();
+    return !mLastSearchQuery.empty() || !mSearchFilter.isDefault();
 }
 
 void FolderNavigationController::loadRoot()
@@ -335,6 +349,7 @@ void FolderNavigationController::dropSearchForNavigation()
     // lands, and applyResult() clears that flag when it does. Clearing it here would
     // claim the rows are one folder's children while they are still hits.
     mLastSearchQuery.clear();
+    mSearchFilter = SearchFilter{};
     emit searchActiveChanged();
     emit searchCleared();
 }
@@ -343,10 +358,29 @@ void FolderNavigationController::search(QString query)
 {
     const bool wasActive = searchActive();
     mLastSearchQuery = query.toStdString();
+    applySearchCriteria(wasActive);
+}
+
+void FolderNavigationController::setSearchFilter(int nodeType,
+                                                 int category,
+                                                 int createdWithin,
+                                                 bool favouritesOnly)
+{
+    const bool wasActive = searchActive();
+    mSearchFilter =
+        SearchFilter{clampEnum<SearchNodeType>(nodeType, SearchNodeType::Folders),
+                     clampEnum<SearchCategory>(category, SearchCategory::Other),
+                     clampEnum<SearchTimeWindow>(createdWithin, SearchTimeWindow::PastYear),
+                     favouritesOnly};
+    applySearchCriteria(wasActive);
+}
+
+void FolderNavigationController::applySearchCriteria(bool wasActive)
+{
     if (wasActive != searchActive())
         emit searchActiveChanged();
 
-    if (query.isEmpty())
+    if (!searchActive())
     {
         mListingFromSearch = false;
         mFileListModel->setEntries(mLastFolderEntries);
@@ -368,7 +402,7 @@ void FolderNavigationController::runVisibleSearch()
     if (viewKind() == ViewKindEnum::Favourites)
         mService->listFavourites(mSortOrder, mLastSearchQuery, std::move(onSearched));
     else
-        mSearchService->search(mLastSearchQuery, mSortOrder, std::move(onSearched));
+        mSearchService->search(mLastSearchQuery, mSearchFilter, mSortOrder, std::move(onSearched));
 }
 
 void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>> result)
@@ -428,7 +462,7 @@ void FolderNavigationController::setSortOrder(int column, bool ascending)
 
 void FolderNavigationController::refreshVisibleListing(QString revealName)
 {
-    if (!mLastSearchQuery.empty())
+    if (searchActive())
     {
         // revealName is dropped here on purpose: the visible model is a search
         // result, where "the row named X" is not the thing the caller meant.
@@ -591,6 +625,7 @@ void FolderNavigationController::reset()
     mLastFolderEntries.clear();
     const bool wasSearching = searchActive();
     mLastSearchQuery.clear();
+    mSearchFilter = SearchFilter{};
     mListingFromSearch = false;
     mHasLoadedOnce = false;
     mStale = false;

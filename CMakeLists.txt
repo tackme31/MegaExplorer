@@ -80,6 +80,7 @@ add_library(MegaExplorerCore STATIC
     src/core/PinnedFolder.h
     src/core/UploadOutcome.h
     src/core/Result.h
+    src/core/SearchFilter.h
     src/core/SortOrder.h
     src/core/PathSegment.h
     src/core/ViewKind.h
@@ -237,6 +238,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/NodeDropArea.qml
         qml/components/PreviewPane.qml
         qml/components/QuickAccessSection.qml
+        qml/components/SearchFilterPopup.qml
         qml/components/SidePanel.qml
         qml/components/SignOutDialog.qml
         qml/components/SpecialViewsSection.qml
@@ -262,6 +264,7 @@ qt_add_qml_module(MegaExplorerQml
         src/qml/NotificationController.cpp
         src/qml/PreviewController.h
         src/qml/PreviewController.cpp
+        src/qml/SearchFilterEnums.h
         src/qml/ViewKindEnum.h
         src/qml/WindowAgentForeign.h
     RESOURCES

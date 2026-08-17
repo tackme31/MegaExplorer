@@ -11,9 +11,11 @@ public:
     explicit SearchService(std::shared_ptr<IMegaClient> client,
                            std::shared_ptr<FolderNavigationService> navigationService);
 
-    // An empty query fails without reaching the SDK. Callers treat that as "clear
-    // search" and never get here, but the guard keeps direct calls safe.
+    // An empty query with a filter that narrows nothing fails without reaching the
+    // SDK -- that pair would list the whole subtree, which is not what "search" means
+    // here. A filter on its own is a search, so only the pair is refused.
     void search(const std::string& query,
+                const SearchFilter& filter,
                 SortOrder order,
                 std::function<void(Result<std::vector<FileEntry>>)> onDone);
 

@@ -176,12 +176,52 @@ ToolBar {
             // Navigating drops the query C++-side; this field owns its text, so
             // nothing else can empty it. Assigning text does not re-trigger a
             // search: the field is live: false and only its two signals call one.
+            // Same for the filter popup's selections, which C++ drops in the same
+            // breath and cannot reach either.
             Connections {
                 target: tabsController.currentNavigation ?? null
 
                 function onSearchCleared() {
                     searchField.text = "";
+                    filterPopup.reset();
                 }
+            }
+        }
+
+        // Hidden in the favourites listing: the search box there narrows favourites
+        // through IMegaClient::listFavourites, which takes no filter, so the popup
+        // would set state that nothing reads (FolderNavigationController::
+        // runVisibleSearch).
+        ToolbarIconButton {
+            id: filterButton
+
+            visible: tabsController.currentNavigation?.viewKind !== ViewKind.Favourites
+            text: Theme.glyph.filter
+            ToolTip.text: qsTr("Search filters")
+            onClicked: filterPopup.opened ? filterPopup.close() : filterPopup.open()
+
+            // The chip: a filter that is set but whose popup is shut is otherwise
+            // invisible, and a search returning three rows out of a thousand with no
+            // sign of why is the failure mode this whole control has to avoid.
+            Rectangle {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: Theme.spacing.sm
+                width: Theme.spacing.md
+                height: width
+                radius: width / 2
+                color: Theme.color.accent
+                visible: filterPopup.filterActive
+            }
+
+            SearchFilterPopup {
+                id: filterPopup
+
+                navController: tabsController.currentNavigation ?? null
+                // Right-aligned under the button, for the same reason the "More"
+                // menu below is: this sits at the right edge of the window.
+                x: filterButton.width - width
+                y: filterButton.height
             }
         }
 
