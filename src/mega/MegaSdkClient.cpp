@@ -7,6 +7,8 @@
 #include "MegaSdkLogger.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <megaapi.h>
 #include <utility>
@@ -89,6 +91,19 @@ int toMegaUserAttribute(UserAttribute attribute)
         default:
             return mega::MegaApi::USER_ATTR_FIRSTNAME;
     }
+}
+
+// The window the "Recent" screen covers. 30 days is the SDK's own recommendation
+// for getRecentActionsAsync, kept here so both ways of asking agree if the other
+// one is ever added (STUDY_RECENTLY_UPDATED_FILES_SDK_API.md).
+constexpr std::int64_t kRecentWindowDays = 30;
+
+std::int64_t recentWindowStart()
+{
+    const auto now = std::chrono::system_clock::now();
+    return std::chrono::duration_cast<std::chrono::seconds>(
+               (now - std::chrono::hours(24 * kRecentWindowDays)).time_since_epoch())
+        .count();
 }
 
 int toMegaOrder(SortOrder order)
@@ -492,6 +507,37 @@ void MegaSdkClient::listFavourites(SortOrder order,
     filter->byLocationHandle(root->getHandle());
     // Left unset when empty on purpose: MegaSearchFilter's name predicate is skipped
     // entirely for an empty pattern, so byName("") would not mean "match nothing".
+    if (!nameFilter.empty())
+        filter->byName(nameFilter.c_str());
+
+    std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get(), toMegaOrder(order)));
+    onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
+}
+
+void MegaSdkClient::listRecent(SortOrder order,
+                               const std::string& nameFilter,
+                               std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> root = resolveNode(0, true);
+    if (!root)
+    {
+        onDone(Result<std::vector<FileEntry>>::fail(
+            "No root node (not logged in / nodes not fetched)", MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    std::unique_ptr<mega::MegaSearchFilter> filter(mega::MegaSearchFilter::createInstance());
+    // Upper limit 0, which MegaSearchFilter reads as "no bound on that side" rather
+    // than as the epoch -- a clock skewed ahead on the uploading device must not
+    // hide a node from this listing.
+    filter->byCreationTime(recentWindowStart(), 0);
+    filter->byLocationHandle(root->getHandle());
+    // Left unset when empty, for listFavourites' reason.
     if (!nameFilter.empty())
         filter->byName(nameFilter.c_str());
 

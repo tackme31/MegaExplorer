@@ -114,6 +114,18 @@ ColumnLayout {
         }
     }
 
+    // Above Favourites, with the bin left last: the bin is where every file manager
+    // puts it, and the two query screens read as a pair above it.
+    SpecialViewRow {
+        kind: ViewKind.Recents
+        // No atRoot term, for the Favourites row's reason below.
+        current: root.navController ? root.navController.viewKind === ViewKind.Recents : false
+        glyph: Theme.glyph.recent
+        openHere: () => root.navController?.openRecents()
+        openInNewTab: () => tabsController.addRecentsTab()
+        openContextMenu: null
+    }
+
     SpecialViewRow {
         kind: ViewKind.Favourites
         // No atRoot term: the favourites screen cannot be navigated into, and its

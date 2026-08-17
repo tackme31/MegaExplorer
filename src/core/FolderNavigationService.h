@@ -50,6 +50,10 @@ public:
     // is a real subtree, so openFolder() from here stays inside it -- see navigateTo.
     void openRubbish(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
+    // openFavourites' counterpart for the recently-added listing, which is the same
+    // shape of screen: a flat cross-drive query, not a folder.
+    void openRecents(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
     // Peeks the most recent back-stack entry and re-fetches it, popping only on
     // success. Fails in-stack when canGoBack() is false.
     void goBack(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
@@ -74,6 +78,11 @@ public:
     void listFavourites(SortOrder order,
                         const std::string& nameFilter,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
+    // listFavourites' counterpart for the recently-added listing.
+    void listRecent(SortOrder order,
+                    const std::string& nameFilter,
+                    std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     bool canGoBack() const;
 
@@ -107,15 +116,22 @@ public:
 
 private:
     // handle is meaningless while isRoot, the same sentinel nesting isRoot already
-    // has. Both are meaningless for Favourites, which is a flat listing with no
-    // node behind it; for Rubbish, isRoot means the bin's own top level and a
-    // handle names a folder inside it.
+    // has. Both are meaningless for Favourites and Recents, which are flat listings
+    // with no node behind them; for Rubbish, isRoot means the bin's own top level
+    // and a handle names a folder inside it.
     struct Location
     {
         ViewKind kind = ViewKind::CloudDrive;
         bool isRoot = true;
         std::uint64_t handle = 0;
     };
+
+    // Which IMegaClient call reads a given location's listing. Shared by
+    // refreshCurrent() and goBack(), which would otherwise carry the same
+    // screen-kind chain twice and drift apart as screens are added.
+    void fetchListing(const Location& location,
+                      SortOrder order,
+                      std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     // Shared "call -> commit state on success -> onDone" sequence. network is the
     // IMegaClient call already bound to handle/order; onCommit runs only on success

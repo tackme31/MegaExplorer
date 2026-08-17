@@ -79,6 +79,10 @@ public:
                         const std::string& nameFilter,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
+    void listRecent(SortOrder order,
+                    const std::string& nameFilter,
+                    std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
+
     void getRubbishChildren(SortOrder order,
                             std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 

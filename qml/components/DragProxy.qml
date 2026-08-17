@@ -70,9 +70,11 @@ Item {
     // what lets the ghost show the refusal: it never has to ask a drop target, so
     // the entered/exited ordering trap FAVOURITES_VIEW_SPEC.md 7.2 warns about
     // doesn't arise. Refusals that do depend on the target stay unlit, as before.
-    // Spelled as one kind rather than "anything but CloudDrive": that is this
-    // screen's policy, not a fact a later special view would inherit.
-    readonly property bool refusedGesture: root.sourceKind === ViewKind.Favourites && !root.copyMode
+    // Spelled as a list of kinds rather than "anything but CloudDrive": this is each
+    // screen's own policy, not a fact a later special view would inherit.
+    readonly property bool refusedGesture: (root.sourceKind === ViewKind.Favourites
+                                            || root.sourceKind === ViewKind.Recents)
+                                           && !root.copyMode
 
     function sampleCopyMode() {
         const mods = KeyboardState.modifiers();

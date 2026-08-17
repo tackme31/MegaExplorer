@@ -26,6 +26,14 @@ E clampEnum(int value, E last)
     return (value >= 0 && value <= static_cast<int>(last)) ? static_cast<E>(value) : E{};
 }
 
+// The screens whose rows come from all over the drive rather than from one folder:
+// neither matches a (handle, isRoot), so both need the "refresh me on any mutation"
+// treatment and both offer "Go to folder".
+bool isCrossDriveListing(ViewKind kind)
+{
+    return kind == ViewKind::Favourites || kind == ViewKind::Recents;
+}
+
 } // namespace
 
 FolderNavigationController::FolderNavigationController(
@@ -144,6 +152,19 @@ void FolderNavigationController::openRubbish()
 {
     dropSearchForNavigation();
     mService->openRubbish(mSortOrder,
+                          [this, self = shared_from_this()](
+                              Result<std::vector<FileEntry>> result) {
+                              invokeOnGuiThread(this,
+                                                [this, result = std::move(result)]() mutable {
+                                                    applyResult(std::move(result));
+                                                });
+                          });
+}
+
+void FolderNavigationController::openRecents()
+{
+    dropSearchForNavigation();
+    mService->openRecents(mSortOrder,
                           [this, self = shared_from_this()](
                               Result<std::vector<FileEntry>> result) {
                               invokeOnGuiThread(this,
@@ -321,9 +342,8 @@ void FolderNavigationController::publishCrossFolderListing()
     // latched after the user opens a folder from its results (a documented property
     // of search() -- navigation state is left alone), so asking the box would keep
     // claiming "these rows come from elsewhere" about a plain folder listing.
-    mFileListModel->setCrossFolderListing(mListingFromSearch ||
-                                          static_cast<ViewKind>(viewKind()) ==
-                                              ViewKind::Favourites);
+    mFileListModel->setCrossFolderListing(
+        mListingFromSearch || isCrossDriveListing(static_cast<ViewKind>(viewKind())));
 }
 
 bool FolderNavigationController::canPerform(const QString& actionId) const
@@ -336,7 +356,7 @@ bool FolderNavigationController::canPerform(const QString& actionId) const
     const MenuContext selectionContext{kind,
                                        MenuSite::FileSelection,
                                        mFileListModel->selectionSummary(),
-                                       searchActive() || kind == ViewKind::Favourites};
+                                       searchActive() || isCrossDriveListing(kind)};
     return menuActionAllowed(id, selectionContext) ||
            menuActionAllowed(id, folderTargetContext(MenuSite::FolderBackground, kind));
 }
@@ -401,6 +421,8 @@ void FolderNavigationController::runVisibleSearch()
 
     if (viewKind() == ViewKindEnum::Favourites)
         mService->listFavourites(mSortOrder, mLastSearchQuery, std::move(onSearched));
+    else if (viewKind() == ViewKindEnum::Recents)
+        mService->listRecent(mSortOrder, mLastSearchQuery, std::move(onSearched));
     else
         mSearchService->search(mLastSearchQuery, mSearchFilter, mSortOrder, std::move(onSearched));
 }
@@ -601,11 +623,11 @@ void FolderNavigationController::refresh()
 
 void FolderNavigationController::refreshIfShowing(quint64 handle, bool isRoot)
 {
-    // A favourites listing shows no folder, so it matches no (handle, isRoot) --
+    // A cross-drive listing shows no folder, so it matches no (handle, isRoot) --
     // yet being a query over the whole drive, any move or copy can change it.
     // Marked rather than re-read: this tab may be in the background, and one
     // full-drive search per moved node is the refresh storm 5.3 warns about.
-    if (viewKind() == ViewKindEnum::Favourites)
+    if (isCrossDriveListing(static_cast<ViewKind>(viewKind())))
     {
         markStale();
         return;

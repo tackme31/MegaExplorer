@@ -27,8 +27,9 @@
 //        node tree fetchNodes built. Their callers (drag-hover feedback,
 //        QAbstractItemModel::hasChildren) have nowhere to put a callback.
 //      - Of the methods taking onDone, getRootChildren/getChildren/search/
-//        listFavourites/getPath/getNodeInfo run it synchronously on the calling
-//        thread, always -- they too are in-memory reads.
+//        listFavourites/listRecent/getRubbishChildren/getPath/getNodeInfo run it
+//        synchronously on the calling thread, always -- they too are in-memory
+//        reads.
 //        FolderNavigationService's lock-free design rests on this.
 //      - The rest run onDone on an SDK-internal thread, *except* that any
 //        method resolving a handle fails in-stack when that handle is already
@@ -112,6 +113,16 @@ public:
     virtual void listFavourites(SortOrder order,
                                 const std::string& nameFilter,
                                 std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
+
+    // Everything added under the Cloud Drive root in the last 30 days, recursively;
+    // rooting, name filter and contract are listFavourites'.
+    // "Added" is the node's creation time, not its modification time: an upload
+    // carries the local file's mtime, so a freshly uploaded old file would
+    // otherwise never appear here. Folders survive this filter, unlike
+    // MegaSearchFilter's modification-time one.
+    virtual void listRecent(SortOrder order,
+                            const std::string& nameFilter,
+                            std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
     // The Rubbish bin's own top level, same contract as getRootChildren(). Only the
     // top needs its own call: everything below it is an ordinary node, so going

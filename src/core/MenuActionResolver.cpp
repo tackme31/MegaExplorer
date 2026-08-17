@@ -67,7 +67,8 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
     // The four actions a favourites listing withholds -- NewFolder, Cut, Paste,
     // MoveToRubbish -- are exactly the ones needing a destination folder, which a
     // flat cross-drive listing has none of (FAVOURITES_VIEW_SPEC.md 4.1; Cut is a
-    // deferred move, hence its decision 1).
+    // deferred move, hence its decision 1). Recents is the same shape of screen and
+    // withholds the same four.
     static const std::vector<MenuActionSpec> actions = {
         {MenuAction::NewFolder,
          {MenuSite::FolderBackground},
@@ -76,24 +77,24 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          ActionArity::SingleOnly},
         {MenuAction::Download,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::FilesOnly,
          ActionArity::Any},
         {MenuAction::OpenInNewTab,
          {MenuSite::FileSelection, MenuSite::FolderRow},
-         {ViewKind::CloudDrive, ViewKind::Favourites},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         {MenuAction::TogglePin,
          {MenuSite::FileSelection, MenuSite::FolderRow},
-         {ViewKind::CloudDrive, ViewKind::Favourites},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         // SingleOnly: with a mixed selection there is no one label to show, and the
         // resolver can't see the flag that would decide it anyway.
         {MenuAction::ToggleFavourite,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::Any,
          ActionArity::SingleOnly},
         // Cut before Copy, Windows' own order.
@@ -104,7 +105,7 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          ActionArity::Any},
         {MenuAction::Copy,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::Any,
          ActionArity::Any},
         // FoldersOnly/SingleOnly like NewFolder, satisfied the same way:
@@ -118,7 +119,7 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
         // are selected".
         {MenuAction::Rename,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::Any,
          ActionArity::SingleOnly},
         {MenuAction::MoveToRubbish,
@@ -147,18 +148,18 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
         // parents are gone, which is what Restore exists to answer.
         {MenuAction::GoToFolder,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::Any,
          ActionArity::SingleOnly,
          true},
         {MenuAction::SelectAll,
          {MenuSite::FolderBackground},
-         {ViewKind::CloudDrive, ViewKind::Favourites},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         {MenuAction::Refresh,
          {MenuSite::FolderBackground},
-         {ViewKind::CloudDrive, ViewKind::Favourites},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
     };

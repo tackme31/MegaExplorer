@@ -54,6 +54,12 @@ public:
                  std::function<void(Result<std::vector<FileEntry>>)>),
                 (override));
     MOCK_METHOD(void,
+                listRecent,
+                (SortOrder,
+                 const std::string&,
+                 std::function<void(Result<std::vector<FileEntry>>)>),
+                (override));
+    MOCK_METHOD(void,
                 getRubbishChildren,
                 (SortOrder, std::function<void(Result<std::vector<FileEntry>>)>),
                 (override));
