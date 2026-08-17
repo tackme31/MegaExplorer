@@ -895,3 +895,160 @@ TEST(FolderNavigationServiceTest, ListFavouritesForwardsTheNameFilterAndTouchesN
     EXPECT_TRUE(service.currentLocation().isRoot);
     EXPECT_FALSE(service.canGoBack());
 }
+
+// --- Recents, the other location that is not a folder ------------------------
+
+TEST(FolderNavigationServiceTest, OpenRecentsPushesTheCurrentLocationAndSwitchesKind)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> recent{{"added.txt", 5, 1, false, 0, false, false}};
+
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(recent)));
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    // Act
+    service.openRecents(SortOrder{}, onDoneInto(captured));
+
+    // Assert
+    ASSERT_TRUE(captured.doneCalled);
+    EXPECT_TRUE(captured.doneResult.success);
+    EXPECT_EQ(captured.doneResult.value().size(), recent.size());
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::Recents);
+    EXPECT_TRUE(service.canGoBack());
+}
+
+TEST(FolderNavigationServiceTest, OpenRecentsWhileAlreadyThereRefetchesWithoutPushing)
+{
+    // Arrange: the same guard the favourites row relies on -- clicking the side-panel
+    // row from the screen it opens must not stack a repeat for Back to walk down.
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured first, second;
+    service.openRecents(SortOrder{}, onDoneInto(first));
+    ASSERT_TRUE(first.doneResult.success);
+
+    // Act
+    service.openRecents(SortOrder{}, onDoneInto(second));
+
+    // Assert
+    ASSERT_TRUE(second.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::Recents);
+    ASSERT_TRUE(service.canGoBack());
+
+    Captured back;
+    service.goBack(SortOrder{}, onDoneInto(back));
+    ASSERT_TRUE(back.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::CloudDrive);
+    EXPECT_FALSE(service.canGoBack());
+}
+
+TEST(FolderNavigationServiceTest, GoBackReturnsToTheRecentsListingAFolderWasOpenedFrom)
+{
+    // Back has to re-issue the query rather than ask for a folder's children: the
+    // recents listing has no handle to go back to.
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, getChildren(42u, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured opened, entered;
+    service.openRecents(SortOrder{}, onDoneInto(opened));
+    service.openFolder(42, SortOrder{}, onDoneInto(entered));
+    ASSERT_TRUE(entered.doneResult.success);
+
+    // Act
+    Captured back;
+    service.goBack(SortOrder{}, onDoneInto(back));
+
+    // Assert
+    ASSERT_TRUE(back.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::Recents);
+}
+
+TEST(FolderNavigationServiceTest, RefreshCurrentInRecentsReQueriesTheRecents)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_)).Times(0);
+
+    FolderNavigationService service(mockClient);
+    Captured opened;
+    service.openRecents(SortOrder{}, onDoneInto(opened));
+    ASSERT_TRUE(opened.doneResult.success);
+
+    // Act
+    Captured refreshed;
+    service.refreshCurrent(SortOrder{}, onDoneInto(refreshed));
+
+    // Assert
+    ASSERT_TRUE(refreshed.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::Recents);
+}
+
+TEST(FolderNavigationServiceTest, ResolveCurrentPathInRecentsSynthesizesOneNamelessSegment)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, getPath(::testing::_, ::testing::_, ::testing::_)).Times(0);
+
+    FolderNavigationService service(mockClient);
+    Captured opened;
+    service.openRecents(SortOrder{}, onDoneInto(opened));
+    ASSERT_TRUE(opened.doneResult.success);
+
+    // Act
+    CapturedPath captured;
+    service.resolveCurrentPath(onPathDoneInto(captured));
+
+    // Assert: the segment carries its own kind, which is what QML labels it from
+    ASSERT_TRUE(captured.doneResult.success);
+    const std::vector<PathSegment> expected{{"", 0, false, ViewKind::Recents}};
+    EXPECT_EQ(captured.doneResult.value(), expected);
+}
+
+TEST(FolderNavigationServiceTest, ListRecentForwardsTheNameFilterAndTouchesNoState)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "added", ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    // Act
+    service.listRecent(SortOrder{}, "added", onDoneInto(captured));
+
+    // Assert
+    ASSERT_TRUE(captured.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::CloudDrive);
+    EXPECT_TRUE(service.currentLocation().isRoot);
+    EXPECT_FALSE(service.canGoBack());
+}

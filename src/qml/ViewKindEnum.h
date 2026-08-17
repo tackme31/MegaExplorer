@@ -20,6 +20,7 @@ public:
         CloudDrive,
         Favourites,
         Rubbish,
+        Recents,
     };
     Q_ENUM(Kind)
 };
@@ -27,3 +28,4 @@ public:
 static_assert(ViewKindEnum::CloudDrive == static_cast<int>(ViewKind::CloudDrive));
 static_assert(ViewKindEnum::Favourites == static_cast<int>(ViewKind::Favourites));
 static_assert(ViewKindEnum::Rubbish == static_cast<int>(ViewKind::Rubbish));
+static_assert(ViewKindEnum::Recents == static_cast<int>(ViewKind::Recents));

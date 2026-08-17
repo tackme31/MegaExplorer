@@ -188,14 +188,15 @@ ToolBar {
             }
         }
 
-        // Hidden in the favourites listing: the search box there narrows favourites
-        // through IMegaClient::listFavourites, which takes no filter, so the popup
-        // would set state that nothing reads (FolderNavigationController::
-        // runVisibleSearch).
+        // Hidden in the two query listings: the search box there narrows them through
+        // IMegaClient::listFavourites/listRecent, neither of which takes a filter, so
+        // the popup would set state that nothing reads
+        // (FolderNavigationController::runVisibleSearch).
         ToolbarIconButton {
             id: filterButton
 
             visible: tabsController.currentNavigation?.viewKind !== ViewKind.Favourites
+                     && tabsController.currentNavigation?.viewKind !== ViewKind.Recents
             text: Theme.glyph.filter
             ToolTip.text: qsTr("Search filters")
             onClicked: filterPopup.opened ? filterPopup.close() : filterPopup.open()

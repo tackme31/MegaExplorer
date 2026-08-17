@@ -30,6 +30,8 @@ std::optional<ViewKind> toViewKind(int kind)
         return ViewKind::Favourites;
     if (kind == static_cast<int>(ViewKind::Rubbish))
         return ViewKind::Rubbish;
+    if (kind == static_cast<int>(ViewKind::Recents))
+        return ViewKind::Recents;
     return std::nullopt;
 }
 

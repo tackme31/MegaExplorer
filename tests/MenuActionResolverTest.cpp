@@ -559,6 +559,19 @@ TEST(MenuActionResolverTest, DefaultTableOffersOnlySelectAllAndRefreshOnAFavouri
     EXPECT_EQ(result[1], MenuAction::Refresh);
 }
 
+TEST(MenuActionResolverTest, DefaultTableTreatsRecentsExactlyAsFavourites)
+{
+    // Both are flat cross-drive queries, so the four actions needing a destination
+    // folder drop out of both. Compared rather than re-listed: the point is that the
+    // two stay identical, not what the list happens to be today.
+    EXPECT_EQ(resolveMenuActions(fileSelection(1, 0, ViewKind::Recents)),
+              resolveMenuActions(fileSelection(1, 0, ViewKind::Favourites)));
+    EXPECT_EQ(resolveMenuActions(fileSelection(0, 1, ViewKind::Recents)),
+              resolveMenuActions(fileSelection(0, 1, ViewKind::Favourites)));
+    EXPECT_EQ(resolveMenuActions(folderTarget(MenuSite::FolderBackground, ViewKind::Recents)),
+              resolveMenuActions(folderTarget(MenuSite::FolderBackground, ViewKind::Favourites)));
+}
+
 TEST(MenuActionResolverTest, MenuActionAllowedAgreesWithTheResolvedMenu)
 {
     // The keyboard's entry point: same table, same answer, addressed by ID.

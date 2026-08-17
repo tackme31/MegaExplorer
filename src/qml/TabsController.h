@@ -95,6 +95,9 @@ public:
     // Same again for the Rubbish bin.
     Q_INVOKABLE void addRubbishTab();
 
+    // And for the recently-added listing, a query like the favourites one.
+    Q_INVOKABLE void addRecentsTab();
+
     // Clamps currentIndex so it keeps pointing at the same tab, or a neighbour if
     // the active one was closed. Emits lastTabClosed() instead of closing the final
     // tab -- Main.qml closes the window, this class doesn't own it.

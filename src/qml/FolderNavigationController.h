@@ -129,6 +129,10 @@ public:
     // so this navigates rather than re-fetches when a folder inside it is open.
     Q_INVOKABLE void openRubbish();
 
+    // Same again for the recently-added listing, which behaves exactly as the
+    // favourites one does.
+    Q_INVOKABLE void openRecents();
+
     // Whether this tab's screen allows the action with that stable ID right now, for
     // the keyboard shortcuts that stand in for a menu row. The menu itself doesn't
     // need it -- its rows already come from the same resolver.

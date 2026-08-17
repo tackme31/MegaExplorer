@@ -195,6 +195,11 @@ QtObject {
         readonly property string favourite: "\uEB52"        // solid heart
         readonly property string favouriteOutline: "\uEB51" // outline heart
 
+        // Side-panel row for the recently-added listing. Monochrome at 16px, so no
+        // COLR surprise like E80A above; the Segoe MDL2 half of the cmap check was
+        // not re-run, fontTools being absent from this machine (as for filter).
+        readonly property string recent: "\uE81C" // History
+
         // Toast dismiss (S10). No cmap check needed: TabStrip's tab-close and
         // CaptionBar's window-close already paint this one.
         readonly property string close: "\uE8BB" // ChromeClose

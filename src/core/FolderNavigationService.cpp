@@ -108,6 +108,26 @@ void FolderNavigationService::openRubbish(
         std::move(onDone));
 }
 
+void FolderNavigationService::openRecents(
+    SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    if (mCurrent.kind == ViewKind::Recents)
+    {
+        mClient->listRecent(order, "", std::move(onDone));
+        return;
+    }
+
+    runAndCommit(
+        [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
+            mClient->listRecent(order, "", std::move(onFetched));
+        },
+        [this] {
+            mBackStack.push_back(mCurrent);
+            mCurrent = Location{ViewKind::Recents, false, 0};
+        },
+        std::move(onDone));
+}
+
 void FolderNavigationService::goBack(SortOrder order,
                                      std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
@@ -120,14 +140,7 @@ void FolderNavigationService::goBack(SortOrder order,
     Location target = mBackStack.back();
     runAndCommit(
         [this, target, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
-            if (target.kind == ViewKind::Favourites)
-                mClient->listFavourites(order, "", std::move(onFetched));
-            else if (target.kind == ViewKind::Rubbish && target.isRoot)
-                mClient->getRubbishChildren(order, std::move(onFetched));
-            else if (target.isRoot)
-                mClient->getRootChildren(order, std::move(onFetched));
-            else
-                mClient->getChildren(target.handle, order, std::move(onFetched));
+            fetchListing(target, order, std::move(onFetched));
         },
         [this, target] {
             mBackStack.pop_back();
@@ -136,17 +149,27 @@ void FolderNavigationService::goBack(SortOrder order,
         std::move(onDone));
 }
 
+void FolderNavigationService::fetchListing(
+    const Location& location,
+    SortOrder order,
+    std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    if (location.kind == ViewKind::Favourites)
+        mClient->listFavourites(order, "", std::move(onDone));
+    else if (location.kind == ViewKind::Recents)
+        mClient->listRecent(order, "", std::move(onDone));
+    else if (location.kind == ViewKind::Rubbish && location.isRoot)
+        mClient->getRubbishChildren(order, std::move(onDone));
+    else if (location.isRoot)
+        mClient->getRootChildren(order, std::move(onDone));
+    else
+        mClient->getChildren(location.handle, order, std::move(onDone));
+}
+
 void FolderNavigationService::refreshCurrent(
     SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    if (mCurrent.kind == ViewKind::Favourites)
-        mClient->listFavourites(order, "", std::move(onDone));
-    else if (mCurrent.kind == ViewKind::Rubbish && mCurrent.isRoot)
-        mClient->getRubbishChildren(order, std::move(onDone));
-    else if (mCurrent.isRoot)
-        mClient->getRootChildren(order, std::move(onDone));
-    else
-        mClient->getChildren(mCurrent.handle, order, std::move(onDone));
+    fetchListing(mCurrent, order, std::move(onDone));
 }
 
 void FolderNavigationService::listChildrenOf(
@@ -169,6 +192,14 @@ void FolderNavigationService::listFavourites(
     mClient->listFavourites(order, nameFilter, std::move(onDone));
 }
 
+void FolderNavigationService::listRecent(
+    SortOrder order,
+    const std::string& nameFilter,
+    std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    mClient->listRecent(order, nameFilter, std::move(onDone));
+}
+
 bool FolderNavigationService::canGoBack() const
 {
     return !mBackStack.empty();
@@ -188,14 +219,14 @@ FolderNavigationService::CurrentLocation FolderNavigationService::currentLocatio
 void FolderNavigationService::resolveCurrentPath(
     std::function<void(Result<std::vector<PathSegment>>)> onDone)
 {
-    // The favourites listing has no ancestor chain to resolve: it is one synthesized
+    // Neither flat listing has an ancestor chain to resolve: each is one synthesized
     // segment, deliberately nameless so QML owns the label like it does the root's
     // (FAVOURITES_VIEW_SPEC.md 3.3, amended -- src/core links no Qt, so a literal
     // here could never be translated).
-    if (mCurrent.kind == ViewKind::Favourites)
+    if (mCurrent.kind == ViewKind::Favourites || mCurrent.kind == ViewKind::Recents)
     {
-        onDone(Result<std::vector<PathSegment>>::ok(
-            {PathSegment{"", 0, false, ViewKind::Favourites}}));
+        onDone(
+            Result<std::vector<PathSegment>>::ok({PathSegment{"", 0, false, mCurrent.kind}}));
         return;
     }
     // The bin's own top is synthesized for the same reason, and marked isRoot so

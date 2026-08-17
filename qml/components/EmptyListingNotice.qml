@@ -17,6 +17,7 @@ ColumnLayout {
 
     readonly property var listModel: root.navController?.fileListModel ?? null
     readonly property bool favourites: root.navController?.viewKind === ViewKind.Favourites
+    readonly property bool recents: root.navController?.viewKind === ViewKind.Recents
     readonly property bool searching: root.navController?.searchActive ?? false
 
     // No "has it loaded yet" guard: a listing is an in-memory read that lands
@@ -31,10 +32,20 @@ ColumnLayout {
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
         color: Theme.color.textSecondary
-        text: root.searching ? (root.favourites ? qsTr("No favourites match your search") : qsTr(
-                                                      "No items match your search")) : (
-                                   root.favourites ? qsTr("No favourites yet") : qsTr(
-                                                         "This folder is empty"))
+        text: {
+            if (root.searching) {
+                if (root.favourites)
+                    return qsTr("No favourites match your search");
+                if (root.recents)
+                    return qsTr("No recent items match your search");
+                return qsTr("No items match your search");
+            }
+            if (root.favourites)
+                return qsTr("No favourites yet");
+            if (root.recents)
+                return qsTr("Nothing was added in the last 30 days");
+            return qsTr("This folder is empty");
+        }
     }
 
     Label {
@@ -42,7 +53,9 @@ ColumnLayout {
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
         color: Theme.color.textSecondary
-        visible: !root.searching
+        // Nothing on the Recent screen: no action a user can take makes an item
+        // recent, so there is no instruction to give.
+        visible: !root.searching && !root.recents
         // The menu rows' own wording, not a second copy of it: the two would
         // drift apart the first time either is reworded.
         text: root.favourites ? qsTr("Right-click a file or folder and choose \"%1\".").arg(

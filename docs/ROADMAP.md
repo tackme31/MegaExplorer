@@ -54,7 +54,6 @@
 
 | 状態 | 項目 | サイズ | メモ |
 |---|---|---|---|
-| todo | 最近追加された項目のビュー | M | 特殊画面の枠組みを再利用。使う API の選定は `docs/investigations/STUDY_RECENTLY_UPDATED_FILES_SDK_API.md`（3系統から用途で選ぶ、と結論済み） |
 | todo | リンクの共有 | M | `MegaApi::exportNode` で発行、`disableExport` で停止。停止の導線も同時に作る |
 | todo | 設定画面 | M | ハンバーガーメニューから開くダイアログ。テーマと言語の選択 |
 | todo | フォルダを指定した貼り付け・移動 | M | フォルダ行・ツリー・クイックアクセスへの「貼り付け」と、コンテキストメニューの「移動先を選択」。今はドラッグ&ドロップでしかできない |
@@ -70,8 +69,9 @@
 | todo | 転送の並列化 | M | ダウンロード・アップロードを並列に走らせる。**「ステータスバーの転送進捗UI変更」の後に実装する** |
 | todo | 上書き確認ダイアログのファイル名一覧の出し方を変える | M | 現状は全件をカンマ区切りで並べるため、対象が多いと確認しきれず視認性も悪い。単一なら従来どおりファイル名を表示、複数なら `N file(s)` をクリッカブルにして、クリックで**ファイルアイコン＋ファイル名のリスト**を出す二次ダイアログを開く。名前衝突まわりでダイアログ本文が全面的に変わるのを待っていたが、**その前提は済んだので着手してよい**（`evolve/025`〜`036`） |
 | todo | `ILocalFileSystem::listDirectory()` に失敗の伝え方を持たせる | S | `evolve/033` のレビューで出た穴。読めないディレクトリと空のディレクトリが同じ「空の一覧」で返るので、アップロードの「スキップ」が衝突枝を歩き直すとき（`UploadScanService::addToPlan()`）に、生き残るはずのファイルが**無言で落ちる**——走査側の同じ失敗は「訊かない」で済むのに、こちらはトーストもログも出ない。`std::optional<std::vector<LocalEntry>>` か `Result<...>` に変え、`addToPlan()` を失敗を返せる形にする。発生頻度は低いが、落ちたことが誰にも分からないのが問題 |
-| todo | お気に入り一覧でも詳細検索フィルタを効かせる | S | `evolve/038` が残した穴。詳細検索のフィルタは `IMegaClient::search` にだけ通っていて、お気に入り画面の検索欄が使う `listFavourites` は受け取らない。今はボタン自体を隠して「効かないものを出さない」で凌いでいるが、種別・カテゴリ・日時の 3 つはお気に入りでも意味がある（お気に入りフラグだけが冗長）。`listFavourites` に `const SearchFilter&` を足し、`MegaSdkClient` 側の `applySearchFilter()` を呼ぶだけ——ただしモックの引数が 1 つ増えるので `FolderNavigation{Service,Controller}Test` / `TabsControllerTest` の `EXPECT_CALL` 約 20 箇所の機械的な追随が要る |
+| todo | お気に入り一覧と「最近」一覧でも詳細検索フィルタを効かせる | S | `evolve/038` が残した穴で、`evolve/039` の「最近」画面も同じ形になった（`listRecent` もフィルタを受け取らないので、そちらもボタンを隠してある）。詳細検索のフィルタは `IMegaClient::search` にだけ通っていて、お気に入り画面の検索欄が使う `listFavourites` は受け取らない。今はボタン自体を隠して「効かないものを出さない」で凌いでいるが、種別・カテゴリ・日時の 3 つはお気に入りでも意味がある（お気に入りフラグだけが冗長）。`listFavourites` と `listRecent` に `const SearchFilter&` を足し、`MegaSdkClient` 側の `applySearchFilter()` を呼ぶだけ——ただしモックの引数が 1 つ増えるので `FolderNavigation{Service,Controller}Test` / `TabsControllerTest` の `EXPECT_CALL` 約 20 箇所の機械的な追随が要る |
 | todo | 同一アップロード内の同名**フォルダ**同士の衝突を数える | S | `evolve/035` が残した穴。ファイル側は済んだが、1 回のドロップに同名のローカルフォルダが 2 つあり（別の場所から掴んだ `photos` と `photos`）、**宛先に `photos` が無い**とき、走査はどちらにも降りないので中のファイルの衝突が 1 件も出ない。実際には SDK が 2 つ目を 1 つ目に再帰マージし、同名ファイルに版が積まれる。降りるには「まだ MEGA に存在しないフォルダ」をローカル同士で突き合わせる必要があり、`scanLevel` の「MEGA のハンドルを親にして降りる」形に乗らない（ハンドルがまだ無い）——そこが設計判断なので別項目にした。宛先に `photos` が**ある**場合は両方降りるので既に正しい（`PlanTakesApartEveryCopyOfAMergingFolderName`） |
+| todo | 「最近」画面を既定で新しい順に並べる | S | `evolve/039` が残した穴。ソート順はウィンドウ全体で 1 つ（`Main.qml` の `sortColumn`）で、`FileTableView` の `Component.onCompleted` がタブ生成のたびに `setSortOrder()` でそれを流し込むため、`openRecents()` 側で画面固有の既定を入れても上書きされる。結果、「最近」画面の初期表示は名前昇順になる（絞り込みは作成日時の 30 日窓なので中身は正しい）。直すには**画面ごとのソート状態**か、`SortKey` への `CreationTime` 追加＋列見出しとの対応づけが要る。**どちらも既存のソート設計に手を入れるので S/M の見極めから** |
 
 ---
 
