@@ -405,30 +405,3 @@ predate this section, prune them by the same test in the same edit. R7 in `docs/
 already swept `src/` and `main.cpp` once under this rule (3049 → 1832 comment lines);
 `src/app/Logging.cpp` is the worked example there — 45 comment lines to 20. `tests/` was left out of
 that sweep, so it is the one tree where pre-rule comments are still expected.
-
-## Git: every write goes through `scripts/git_unlock.sh`
-
-This repo intermittently leaves a stale `.git/index.lock` behind, so a later `git add`/`commit`/
-`checkout` fails with `Unable to create '.git/index.lock': File exists` while nothing is actually
-running. That is normal here, not an incident. **Chain the unlock script ahead of every git write**,
-so a non-zero exit stops the write instead of you reacting to a failure afterwards:
-
-```
-bash scripts/git_unlock.sh && git commit -F - <<'EOF'
-...
-EOF
-```
-
-The script prints one line and removes the lock only when nothing can plausibly be holding it (no
-`git.exe` running, lock at least 10s old), so running it unconditionally is the intended use — don't
-inspect anything by hand first. **Never `rm` the lock yourself**: doing that under a live git process
-corrupts the index, which is the whole reason those two checks exist.
-
-| Output | Exit | Meaning |
-| --- | --- | --- |
-| `no lock` | 0 | Nothing to do; the git command runs. |
-| `removed stale lock (Ns old)` | 0 | Cleared; the git command runs. |
-| `git.exe is running -- lock left alone` | 1 | A real operation is live. Wait, re-run. |
-| `lock is Ns old -- too fresh to call stale` | 1 | Same: wait, re-run. |
-
-Windows/Git Bash only. Rationale for each check is in the script's own header comment.

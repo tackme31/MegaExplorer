@@ -23,9 +23,8 @@
 上の原則が効くのは **1.〜4. の設計判断だけ**。次の 4 つは今までどおり中止・`blocked`・報告に回す:
 
 - **0. の事前チェック**（クリーンツリー / `whoami` / Serena）。判断ではなく前提条件。
-- **ループ自身の機構を変える判断** — このファイル、`scripts/loop_verify.sh`、
-  `scripts/git_unlock.sh`、drive ゲート。壊すと以降の全周が死に、ループ自身では復旧できない。
-  git 的に可逆でも実質は不可逆。
+- **ループ自身の機構を変える判断** — このファイル、`scripts/loop_verify.sh`、drive ゲート。
+  壊すと以降の全周が死に、ループ自身では復旧できない。git 的に可逆でも実質は不可逆。
 - **製品スコープが動く判断** — 機能の追加・削除、out of scope への接近。ROADMAP の行が求めて
   いない範囲へ出るなら、それは人間の判断。
 - **検証の迂回** — 「この案なので警告 1 件は許容」は無い。3. は判断で緩められない。
@@ -50,10 +49,10 @@ git status --porcelain
 ### 0-2. `evolve/NNN` ブランチを切る（master 上で作業しない）
 
 ```
-bash scripts/git_unlock.sh && git fetch origin --quiet
+git fetch origin --quiet
 n=$(git branch -a --list '*evolve/[0-9][0-9][0-9]' | grep -oE '[0-9]{3}$' | sort -n | tail -1)
 next=$(printf '%03d' $((10#${n:-0} + 1)))
-bash scripts/git_unlock.sh && git switch -c "evolve/$next" master
+git switch -c "evolve/$next" master
 ```
 
 **枝を切る前に、未マージの `evolve/NNN` が残っていないか見る:**
@@ -178,7 +177,7 @@ bash scripts/loop_verify.sh
 **同じ原因で 2 回連続して失敗したら深追いしない:**
 
 ```
-bash scripts/git_unlock.sh && git stash
+git stash
 ```
 
 → その項目を `docs/ROADMAP.md` で `blocked` にし、メモ欄に失敗の原因を書く → **その 1 行の変更
@@ -286,17 +285,16 @@ PYTHONIOENCODING=utf-8 python "$lint" <変更したファイル>
 **複数案から選んだ判断の理由を書く場所はここ**——`roadmap-done.md` のメモ欄は 1 行に収める。
 
 ```
-bash scripts/git_unlock.sh && git add <変更したファイルを名指しで>
-bash scripts/git_unlock.sh && git commit -F - <<'EOF'
+git add <変更したファイルを名指しで>
+git commit -F - <<'EOF'
 <subject>
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
-bash scripts/git_unlock.sh && git push -u origin HEAD
+git push -u origin HEAD
 ```
 
-**すべての git ライトの前に `scripts/git_unlock.sh` を挟む**（このリポは stale な `index.lock` を
-断続的に残す。`CLAUDE.md` の「Git」節）。`git add -A` / `git add .` は使わず名指しで。
+`git add -A` / `git add .` は使わず名指しで。
 
 ### 6-2. master へ取り込む
 
@@ -305,9 +303,8 @@ bash scripts/git_unlock.sh && git push -u origin HEAD
 直る。ループ側の担保は 3. の単体テストと GUI 確認まで、と割り切る。
 
 ```
-bash scripts/git_unlock.sh && git switch master
-bash scripts/git_unlock.sh && git merge --ff-only "evolve/$next" \
-    || { bash scripts/git_unlock.sh && git merge --no-edit "evolve/$next"; }
+git switch master
+git merge --ff-only "evolve/$next" || git merge --no-edit "evolve/$next"
 ```
 
 `--ff-only` が拒否されるのは、その周が走っている間に人間が `docs/REQUESTS.md` を commit したとき
@@ -318,7 +315,7 @@ bash scripts/git_unlock.sh && git merge --ff-only "evolve/$next" \
 通ったら push する:
 
 ```
-bash scripts/git_unlock.sh && git push origin master
+git push origin master
 ```
 
 **`evolve/NNN` は消さない。** revert の入口であり、次の周の番号計算もブランチ名から行うため。
@@ -326,7 +323,7 @@ bash scripts/git_unlock.sh && git push origin master
 **衝突したら自力で解決しない**（マージは機械的でも、解決は設計判断になる）:
 
 ```
-bash scripts/git_unlock.sh && git merge --abort
+git merge --abort
 ```
 
 → `evolve/NNN` は push 済みのまま残す → 7. の報告に「衝突したので master へ入っていない」と衝突
