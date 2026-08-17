@@ -66,6 +66,12 @@ public:
     void
     setFavourite(std::uint64_t handle, bool favourite, std::function<void(Result<void>)> onDone);
 
+    // Hands back the node's public link, minting one if it has none
+    // (IMegaClient::exportNode). removeLink is its inverse and succeeds on a node
+    // that never had a link.
+    void exportLink(std::uint64_t handle, std::function<void(Result<std::string>)> onDone);
+    void removeLink(std::uint64_t handle, std::function<void(Result<void>)> onDone);
+
     // "Would move() be accepted?", answered without an API round-trip so a drag
     // hovering over a drop target can query it continuously. Failures carry a
     // MegaErrorCodes.h code (kENoEnt / kECircular / kEAccess), not just text.

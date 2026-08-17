@@ -164,6 +164,35 @@ private:
     std::function<void(Result<std::string>)> mOnDone;
 };
 
+// TextResultListener's twin for MegaRequest::TYPE_EXPORT, which parks its answer in
+// getLink() rather than getText().
+class LinkResultListener : public mega::MegaRequestListener
+{
+public:
+    explicit LinkResultListener(std::function<void(Result<std::string>)> onDone)
+        : mOnDone(std::move(onDone))
+    {}
+
+    void
+    onRequestFinish(mega::MegaApi* /*api*/, mega::MegaRequest* request, mega::MegaError* e) override
+    {
+        int code = e->getErrorCode();
+        if (code == mega::MegaError::API_OK)
+        {
+            const char* link = request->getLink();
+            mOnDone(Result<std::string>::ok(link ? link : std::string()));
+        }
+        else
+        {
+            mOnDone(Result<std::string>::fail(e->getErrorString(), code));
+        }
+        delete this;
+    }
+
+private:
+    std::function<void(Result<std::string>)> mOnDone;
+};
+
 class AccountDetailsListener : public mega::MegaRequestListener
 {
 public:

@@ -9,7 +9,10 @@
 #include "GuiThread.h"
 #include "NotificationController.h"
 
+#include <QClipboard>
+#include <QCoreApplication>
 #include <QDebug>
+#include <QGuiApplication>
 #include <QLocale>
 #include <QString>
 #include <QVariantMap>
@@ -163,6 +166,65 @@ void FileMutationController::setEntryFavourite(quint64 handle, bool favourite)
                 }
                 mNavigation->applyFavouriteChange(handle, favourite);
                 emit favouriteChanged(handle, favourite);
+            });
+        });
+}
+
+void FileMutationController::copyLinkToClipboard(quint64 handle)
+{
+    mBusy->begin();
+    mFileOps->exportLink(
+        static_cast<std::uint64_t>(handle),
+        [this, self = shared_from_this()](Result<std::string> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() {
+                mBusy->end();
+                if (!result.success)
+                {
+                    qCWarning(lcFileOps)
+                        << "exportLink failed:" << QString::fromStdString(result.errorMessage)
+                        << "code=" << result.errorCode;
+                    mNotifications->notifyError(QStringLiteral("copyLink"),
+                                                result.errorCode,
+                                                QString::fromStdString(result.errorMessage));
+                    return;
+                }
+                // An export that succeeds with no URL would otherwise blank the
+                // clipboard while claiming the link was copied.
+                if (result.value().empty())
+                {
+                    mNotifications->notifyError(QStringLiteral("copyLinkEmpty"));
+                    return;
+                }
+                // Via the cast, not a bare QGuiApplication::clipboard(): the unit-test
+                // binary runs on a plain QCoreApplication, where building a QClipboard
+                // finds no platform integration to talk to.
+                if (qobject_cast<QGuiApplication*>(QCoreApplication::instance()) != nullptr)
+                    QGuiApplication::clipboard()->setText(
+                        QString::fromStdString(result.value()));
+                mNotifications->notifyOperation(QStringLiteral("copyLink"), 1, 0);
+            });
+        });
+}
+
+void FileMutationController::removeLink(quint64 handle)
+{
+    mBusy->begin();
+    mFileOps->removeLink(
+        static_cast<std::uint64_t>(handle),
+        [this, self = shared_from_this()](Result<void> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() {
+                mBusy->end();
+                if (!result.success)
+                {
+                    qCWarning(lcFileOps)
+                        << "removeLink failed:" << QString::fromStdString(result.errorMessage)
+                        << "code=" << result.errorCode;
+                    mNotifications->notifyError(QStringLiteral("removeLink"),
+                                                result.errorCode,
+                                                QString::fromStdString(result.errorMessage));
+                    return;
+                }
+                mNotifications->notifyOperation(QStringLiteral("removeLink"), 1, 0);
             });
         });
 }

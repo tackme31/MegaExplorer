@@ -97,6 +97,20 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::Any,
          ActionArity::SingleOnly},
+        // SingleOnly for a reason the other two SingleOnly actions don't have: the
+        // clipboard holds one string, so a multi-selection could only leave the last
+        // link there. Rubbish is left out -- a binned node's link is not something
+        // to hand anyone.
+        {MenuAction::CopyLink,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         ActionTarget::Any,
+         ActionArity::SingleOnly},
+        {MenuAction::RemoveLink,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         ActionTarget::Any,
+         ActionArity::SingleOnly},
         // Cut before Copy, Windows' own order.
         {MenuAction::Cut,
          {MenuSite::FileSelection},
@@ -213,6 +227,10 @@ const char* menuActionId(MenuAction action)
             return "togglePin";
         case MenuAction::ToggleFavourite:
             return "toggleFavourite";
+        case MenuAction::CopyLink:
+            return "copyLink";
+        case MenuAction::RemoveLink:
+            return "removeLink";
         case MenuAction::Cut:
             return "cut";
         case MenuAction::Copy:

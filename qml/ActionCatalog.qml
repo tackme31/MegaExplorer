@@ -102,6 +102,23 @@ QtObject {
                                             "trigger": ctx => ctx.mutations.setEntryFavourite(
                                                                   ctx.handle, !ctx.favourited)
                                         },
+                                        // ctx: handle, mutations
+                                        "copyLink": {
+                                            "icon": ctx => Theme.glyph.menu.copyLink,
+                                            // "Copy" rather than "Get": the link ends
+                                            // up on the clipboard either way, and the
+                                            // item is offered whether or not one
+                                            // already exists.
+                                            "label": ctx => qsTr("Copy link"),
+                                            "trigger": ctx => ctx.mutations.copyLinkToClipboard(
+                                                                  ctx.handle)
+                                        },
+                                        // ctx: handle, mutations
+                                        "removeLink": {
+                                            "icon": ctx => Theme.glyph.menu.removeLink,
+                                            "label": ctx => qsTr("Remove link"),
+                                            "trigger": ctx => ctx.mutations.removeLink(ctx.handle)
+                                        },
                                         // ctx: entries, navController
                                         "cut": {
                                             "icon": ctx => Theme.glyph.menu.cut,

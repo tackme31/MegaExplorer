@@ -266,9 +266,15 @@ TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
     FileListModel modelSingle;
     modelSingle.setEntries(makeEntries(3));
     modelSingle.selectRow(0, 0);
-    EXPECT_EQ(
-        modelSingle.availableActions(),
-        (QStringList{"download", "toggleFavourite", "cut", "copy", "rename", "moveToRubbish"}));
+    EXPECT_EQ(modelSingle.availableActions(),
+              (QStringList{"download",
+                           "toggleFavourite",
+                           "copyLink",
+                           "removeLink",
+                           "cut",
+                           "copy",
+                           "rename",
+                           "moveToRubbish"}));
 
     FileListModel modelMulti;
     modelMulti.setEntries(makeEntries(3));
@@ -613,14 +619,21 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
     FileListModel model;
     model.setEntries(makeEntries(3));
     model.selectRow(0, Qt::NoModifier);
-    ASSERT_EQ(
-        model.availableActions(),
-        (QStringList{"download", "toggleFavourite", "cut", "copy", "rename", "moveToRubbish"}));
+    ASSERT_EQ(model.availableActions(),
+              (QStringList{"download",
+                           "toggleFavourite",
+                           "copyLink",
+                           "removeLink",
+                           "cut",
+                           "copy",
+                           "rename",
+                           "moveToRubbish"}));
 
     model.setViewKind(ViewKind::Favourites);
 
-    EXPECT_EQ(model.availableActions(),
-              (QStringList{"download", "toggleFavourite", "copy", "rename"}));
+    EXPECT_EQ(
+        model.availableActions(),
+        (QStringList{"download", "toggleFavourite", "copyLink", "removeLink", "copy", "rename"}));
 }
 
 TEST(FileListModelTest, SetViewKindNotifiesOnlyOnAChange)

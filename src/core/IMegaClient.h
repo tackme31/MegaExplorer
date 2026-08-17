@@ -296,6 +296,18 @@ public:
                                   bool favourite,
                                   std::function<void(Result<void>)> onDone) = 0;
 
+    // Issues -- or re-reads -- the node's public link, handing back the URL. Safe to
+    // call on a node that already has one: MEGA returns the existing link rather than
+    // minting a second, so this doubles as "get the link" and no caller has to know
+    // which of the two it is doing.
+    virtual void exportNode(std::uint64_t handle,
+                            std::function<void(Result<std::string>)> onDone) = 0;
+
+    // exportNode's inverse. Reports success for a node that has no link, so a caller
+    // whose view of the export state is stale still ends up where it asked to be.
+    virtual void disableExport(std::uint64_t handle,
+                               std::function<void(Result<void>)> onDone) = 0;
+
     // Whether moveNode() with the same arguments would be accepted, as a pure
     // in-memory check -- a drag hovering over a drop target queries it per mouse
     // move. Callers branch on errorCode, never errorMessage (MegaErrorCodes.h):

@@ -217,6 +217,38 @@ TEST(FileOperationServiceTest, PropagatesASetFavouriteFailure)
     EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kENoEnt);
 }
 
+TEST(FileOperationServiceTest, ExportLinkHandsBackTheUrlTheSdkReturned)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, exportNode(11u, _))
+        .WillOnce(InvokeArgument<1>(Result<std::string>::ok("https://mega.nz/file/abc#key")));
+    int calls = 0;
+    Result<std::string> got = Result<std::string>::fail("unset", 0);
+
+    service.exportLink(11, [&](Result<std::string> r) {
+        ++calls;
+        got = std::move(r);
+    });
+
+    ASSERT_EQ(calls, 1);
+    ASSERT_TRUE(got.success);
+    EXPECT_EQ(got.value(), "https://mega.nz/file/abc#key");
+}
+
+TEST(FileOperationServiceTest, RemoveLinkPassesThroughToDisableExport)
+{
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, disableExport(11u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
+    Capture captured;
+
+    service.removeLink(11, captured.sink());
+
+    ASSERT_EQ(captured.calls, 1);
+    EXPECT_TRUE(captured.result.success);
+}
+
 TEST(FileOperationServiceTest, MovePassesThroughOnceCanMoveAccepts)
 {
     auto client = std::make_shared<MockMegaClient>();

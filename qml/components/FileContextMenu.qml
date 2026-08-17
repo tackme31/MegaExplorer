@@ -13,8 +13,9 @@ ActionMenu {
 
     required property var navController
 
-    // Only toggleFavourite needs it here; the rest of this site's actions reach
-    // their targets through singletons or the request*() callbacks below.
+    // Needed by toggleFavourite and the two link actions; the rest of this site's
+    // actions reach their targets through singletons or the request*() callbacks
+    // below.
     required property var mutController
 
     // Delegated to the owning view rather than handled in ActionCatalog.qml:

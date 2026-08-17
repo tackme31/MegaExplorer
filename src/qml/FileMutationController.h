@@ -65,6 +65,19 @@ public:
     // announced to the other tabs through favouriteChanged below.
     Q_INVOKABLE void setEntryFavourite(quint64 handle, bool favourite);
 
+    // Puts the node's public link on the system clipboard, creating the link first if
+    // it has none -- so this is both "share this" and "give me that link again", and
+    // the menu needs no export-state flag to pick between them.
+    //
+    // The clipboard write happens here rather than in QML because Qt Quick exposes no
+    // clipboard API at all.
+    Q_INVOKABLE void copyLinkToClipboard(quint64 handle);
+
+    // Stops the sharing copyLinkToClipboard started. Silent about whether a link
+    // existed: IMegaClient::disableExport reports success either way, so a stale menu
+    // cannot produce a failure toast for a node that was already unshared.
+    Q_INVOKABLE void removeLink(quint64 handle);
+
     // One SDK call per handle, tallied once through
     // NotificationController::notifyOperation.
     //

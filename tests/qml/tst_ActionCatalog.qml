@@ -65,6 +65,16 @@ TestCase {
                         expected: "Open in new tab"
                     },
                     {
+                        tag: "copyLink",
+                        id: "copyLink",
+                        expected: "Copy link"
+                    },
+                    {
+                        tag: "removeLink",
+                        id: "removeLink",
+                        expected: "Remove link"
+                    },
+                    {
                         tag: "toggleFavourite",
                         id: "toggleFavourite",
                         expected: "Add to Favourites"
@@ -151,6 +161,16 @@ TestCase {
                         expected: Theme.glyph.menu.openInNewTab
                     },
                     {
+                        tag: "copyLink",
+                        id: "copyLink",
+                        expected: Theme.glyph.menu.copyLink
+                    },
+                    {
+                        tag: "removeLink",
+                        id: "removeLink",
+                        expected: Theme.glyph.menu.removeLink
+                    },
+                    {
                         tag: "toggleFavourite",
                         id: "toggleFavourite",
                         expected: Theme.glyph.menu.toggleFavourite
@@ -222,12 +242,20 @@ TestCase {
 
     // ---- isEnabled ---------------------------------------------------------
 
-    // Ten of the twelve entries declare no `enabled` lambda and are always on.
+    // Twelve of the fourteen entries declare no `enabled` lambda and are always on.
     function test_isEnabled_data() {
         return [
                     {
                         tag: "newFolder",
                         id: "newFolder"
+                    },
+                    {
+                        tag: "copyLink",
+                        id: "copyLink"
+                    },
+                    {
+                        tag: "removeLink",
+                        id: "removeLink"
                     },
                     {
                         tag: "download",
@@ -385,6 +413,28 @@ TestCase {
         compare(received[0][0], 42);
         compare(received[0][1], true);
         compare(received[1][1], false);
+    }
+
+    // Both link entries hand the primary handle straight to the mutation
+    // controller: neither reads a sampled export state, because none exists.
+    function test_trigger_linkActionsCallMutationsWithTheHandle() {
+        let copied = [];
+        let removed = [];
+        const ctx = fullCtx();
+        ctx.mutations = {
+            "copyLinkToClipboard": function (handle) {
+                copied.push(handle);
+            },
+            "removeLink": function (handle) {
+                removed.push(handle);
+            }
+        };
+
+        ActionCatalog.trigger("copyLink", ctx);
+        ActionCatalog.trigger("removeLink", ctx);
+
+        compare(copied, [42]);
+        compare(removed, [42]);
     }
 
     function test_trigger_refreshCallsNavController() {
