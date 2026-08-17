@@ -77,6 +77,8 @@ TEST(FileOperationServiceTest, PassesAValidNameStraightThrough)
 {
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
+    EXPECT_CALL(*client, siblingNameTaken(11u, std::string("Report v2.pdf")))
+        .WillOnce(Return(Result<bool>::ok(false)));
     EXPECT_CALL(*client, renameNode(11u, std::string("Report v2.pdf"), _))
         .WillOnce(InvokeArgument<2>(Result<void>::ok()));
     Capture captured;
@@ -93,6 +95,7 @@ TEST(FileOperationServiceTest, AcceptsNamesWithLeadingOrTrailingSpaces)
     // layer's business, so whatever the user typed reaches the SDK verbatim.
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
+    EXPECT_CALL(*client, siblingNameTaken(_, _)).WillOnce(Return(Result<bool>::ok(false)));
     EXPECT_CALL(*client, renameNode(11u, std::string(" spaced "), _))
         .WillOnce(InvokeArgument<2>(Result<void>::ok()));
     Capture captured;
@@ -106,6 +109,7 @@ TEST(FileOperationServiceTest, PropagatesARenameFailure)
 {
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
+    EXPECT_CALL(*client, siblingNameTaken(_, _)).WillOnce(Return(Result<bool>::ok(false)));
     EXPECT_CALL(*client, renameNode(11u, _, _))
         .WillOnce(InvokeArgument<2>(Result<void>::fail("access denied", -11)));
     Capture captured;
@@ -116,6 +120,41 @@ TEST(FileOperationServiceTest, PropagatesARenameFailure)
     EXPECT_FALSE(captured.result.success);
     EXPECT_EQ(captured.result.errorMessage, "access denied");
     EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kEAccess);
+}
+
+TEST(FileOperationServiceTest, RefusesARenameToANameASiblingAlreadyHas)
+{
+    // kEExist, the code the server uses for a duplicate folder, so the caller can
+    // tell it apart from isValidName()'s kEArgs.
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, siblingNameTaken(11u, std::string("taken.txt")))
+        .WillOnce(Return(Result<bool>::ok(true)));
+    EXPECT_CALL(*client, renameNode(_, _, _)).Times(0);
+    Capture captured;
+
+    service.rename(11, "taken.txt", captured.sink());
+
+    ASSERT_EQ(captured.calls, 1);
+    EXPECT_FALSE(captured.result.success);
+    EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kEExist);
+}
+
+TEST(FileOperationServiceTest, RenamesAnywayWhenTheSiblingCheckItselfFails)
+{
+    // A lookup that broke says nothing about the name, and refusing on it would
+    // make an unreachable node unrenameable for a reason the user can't act on.
+    auto client = std::make_shared<MockMegaClient>();
+    FileOperationService service(client);
+    EXPECT_CALL(*client, siblingNameTaken(_, _))
+        .WillOnce(Return(Result<bool>::fail("gone", MegaErrorCode::kENoEnt)));
+    EXPECT_CALL(*client, renameNode(11u, std::string("b"), _))
+        .WillOnce(InvokeArgument<2>(Result<void>::ok()));
+    Capture captured;
+
+    service.rename(11, "b", captured.sink());
+
+    EXPECT_TRUE(captured.result.success);
 }
 
 TEST(FileOperationServiceTest, MoveToRubbishPassesThrough)

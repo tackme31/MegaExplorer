@@ -40,6 +40,17 @@ void FileOperationService::rename(std::uint64_t handle,
         return;
     }
 
+    // MEGA would accept the duplicate; this app refuses it, because a rename has
+    // nowhere to offer the four answers a copy or move gets. A check that itself
+    // failed is not a refusal -- let the request go and report what the SDK says.
+    const Result<bool> taken = mClient->siblingNameTaken(handle, newName);
+    if (taken.success && taken.value())
+    {
+        onDone(Result<void>::fail("A file or folder of that name is already here",
+                                  MegaErrorCode::kEExist));
+        return;
+    }
+
     mClient->renameNode(handle, newName, std::move(onDone));
 }
 

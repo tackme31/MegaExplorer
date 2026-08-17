@@ -123,6 +123,11 @@ void FileMutationController::renameEntry(quint64 handle, const QString& newName)
                         mNotifications->notifyError(QStringLiteral("renameInvalidName"));
                         return;
                     }
+                    if (result.errorCode == MegaErrorCode::kEExist)
+                    {
+                        mNotifications->notifyError(QStringLiteral("renameNameTaken"));
+                        return;
+                    }
                     qCWarning(lcFileOps)
                         << "rename failed:" << QString::fromStdString(result.errorMessage)
                         << "code=" << result.errorCode;

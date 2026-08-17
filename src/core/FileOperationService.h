@@ -16,7 +16,9 @@ class FileOperationService
 public:
     explicit FileOperationService(std::shared_ptr<IMegaClient> client);
 
-    // Fails in-stack, without touching the SDK, when newName fails isValidName().
+    // Fails in-stack, without touching the SDK, when newName fails isValidName()
+    // (kEArgs) or a sibling already carries it (kEExist -- unlike copy and move,
+    // this app refuses a duplicate rename outright).
     // Callers must skip an unchanged name themselves -- this class can't tell.
     void rename(std::uint64_t handle,
                 const std::string& newName,

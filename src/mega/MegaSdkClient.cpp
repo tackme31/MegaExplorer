@@ -949,6 +949,32 @@ Result<std::vector<FileEntry>> MegaSdkClient::findChildFolders(
     return findChildrenOfType(parentHandle, parentIsRoot, names, mega::MegaNode::TYPE_FOLDER);
 }
 
+Result<bool> MegaSdkClient::siblingNameTaken(std::uint64_t handle, const std::string& name) const
+{
+    if (mShuttingDown)
+        return Result<bool>::fail(kShutDownMessage, kClientShutDownCode);
+    // isRoot false unconditionally: the root has no parent to hold a sibling, and
+    // nothing offers to rename it.
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+        return Result<bool>::fail("No node with the given handle", MegaErrorCode::kENoEnt);
+
+    std::unique_ptr<mega::MegaNode> parent(mApi->getParentNode(node.get()));
+    if (!parent)
+        return Result<bool>::fail("The node has no parent folder", MegaErrorCode::kENoEnt);
+
+    // Both types, unlike findChildrenOfType's single one: MEGA lets a file and a
+    // folder share a name, and this check exists to refuse exactly that.
+    for (const int nodeType : {mega::MegaNode::TYPE_FILE, mega::MegaNode::TYPE_FOLDER})
+    {
+        std::unique_ptr<mega::MegaNode> sibling(
+            mApi->getChildNodeOfType(parent.get(), name.c_str(), nodeType));
+        if (sibling && sibling->getHandle() != node->getHandle())
+            return Result<bool>::ok(true);
+    }
+    return Result<bool>::ok(false);
+}
+
 Result<bool> MegaSdkClient::hasSubfolders(std::uint64_t handle, bool isRoot) const
 {
     if (mShuttingDown)
