@@ -91,12 +91,20 @@ Result<UploadScanService::Scan> UploadScanService::scan(const std::vector<std::s
                                                         std::uint64_t parentHandle,
                                                         bool parentIsRoot) const
 {
+    // One path listed twice would count as its own duplicate, and the skip plan
+    // keys on path, so both copies would then be dropped instead of one. Keyed on
+    // the resolved path rather than the caller's spelling, since that is the key
+    // the plan uses: two spellings of one file differ here but not there.
     std::vector<LocalEntry> topLevel;
     topLevel.reserve(localPaths.size());
+    std::set<std::string> seenPaths;
     for (const std::string& path : localPaths)
     {
         if (std::optional<LocalEntry> entry = mFs->entryFor(path))
-            topLevel.push_back(*entry);
+        {
+            if (seenPaths.insert(entry->path).second)
+                topLevel.push_back(*entry);
+        }
     }
 
     Scan scanned;
@@ -141,13 +149,21 @@ Result<void> UploadScanService::scanLevel(const std::vector<LocalEntry>& entries
         if (!hits.success)
             return Result<void>::fail(hits.errorMessage, hits.errorCode);
         const std::map<std::string, std::uint64_t> existing = handlesByName(hits.value());
+        // The batch's own second copy of a name lands on its first copy, so it
+        // collides even where MEGA holds neither; the first one through is the
+        // survivor, as on the copy/move path (FileMutationController::collidingEntries).
+        std::set<std::string> arriving;
         for (const LocalEntry* local : files)
         {
+            const bool broughtTwice = !arriving.insert(local->name).second;
             const auto hit = existing.find(local->name);
-            if (hit == existing.end())
+            if (hit == existing.end() && !broughtTwice)
                 continue;
-            out.collisions.push_back(
-                UploadCollision{local->path, local->name, parentHandle, parentIsRoot, hit->second});
+            out.collisions.push_back(UploadCollision{local->path,
+                                                     local->name,
+                                                     parentHandle,
+                                                     parentIsRoot,
+                                                     hit == existing.end() ? 0 : hit->second});
         }
     }
 

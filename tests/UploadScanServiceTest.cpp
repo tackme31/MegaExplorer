@@ -28,9 +28,18 @@ public:
         mChildren[entry.path]; // an empty directory still exists
     }
 
+    // Resolves a forward-slash spelling too, the way the real adapter turns a
+    // dropped URL into a native path -- so a test can hand the same file in under
+    // two names, as a QML drop can.
     std::optional<LocalEntry> entryFor(const std::string& path) const override
     {
-        const auto it = mEntries.find(path);
+        std::string native = path;
+        for (char& c : native)
+        {
+            if (c == '/')
+                c = '\\';
+        }
+        const auto it = mEntries.find(native);
         if (it == mEntries.end())
             return std::nullopt;
         return it->second;
@@ -318,6 +327,127 @@ TEST(UploadScanServiceTest, AsksAboutEachNameOnceButAnswersForEveryPathCarryingI
     // First hit per name wins, for both of them.
     EXPECT_EQ(result.value()[0].existingHandle, 31u);
     EXPECT_EQ(result.value()[1].existingHandle, 31u);
+}
+
+TEST(UploadScanServiceTest, ReportsTheSecondCopyOfANameTheUploadBringsTwice)
+{
+    // Nothing on MEGA to land on, yet the two land on each other: whichever arrives
+    // second becomes a version of the first (spec 1-3), so the question is the same
+    // one the destination's own file would raise.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addFile("C:\\a", "x.txt");
+    fs->addFile("C:\\b", "x.txt");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFiles(7, false, std::vector<std::string>{"x.txt"}))
+        .WillOnce(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadCollision>> result =
+        service.findCollisions({"C:\\a\\x.txt", "C:\\b\\x.txt"}, 7, false);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.value().size(), 1u);
+    EXPECT_EQ(result.value()[0].localPath, "C:\\b\\x.txt");
+    EXPECT_EQ(result.value()[0].existingHandle, 0u);
+}
+
+TEST(UploadScanServiceTest, DoesNotCountAFileAndAFolderSharingAName)
+{
+    // Matched by kind, as on the copy/move path: a folder cannot version over a
+    // file, so pairing them would ask a question with no useful answer.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addFile("C:\\a", "x");
+    fs->addDirectory("C:\\b", "x");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFiles(7, false, std::vector<std::string>{"x"}))
+        .WillOnce(::testing::Return(hits({})));
+    EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"x"}))
+        .WillOnce(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadCollision>> result =
+        service.findCollisions({"C:\\a\\x", "C:\\b\\x"}, 7, false);
+
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.value().empty());
+}
+
+TEST(UploadScanServiceTest, TreatsTheSamePathListedTwiceAsOneUpload)
+{
+    // Not a duplicate name -- the same file. Counting it against itself would put
+    // its path in the skip set, and the plan keys on path, so it would go up zero
+    // times instead of once.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addFile("C:\\a", "x.txt");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFiles(7, false, std::vector<std::string>{"x.txt"}))
+        .WillRepeatedly(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadCollision>> result =
+        service.findCollisions({"C:\\a\\x.txt", "C:\\a\\x.txt"}, 7, false);
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.value().empty());
+
+    Result<std::vector<UploadPlanItem>> plan =
+        service.planSkippingCollisions({"C:\\a\\x.txt", "C:\\a\\x.txt"}, 7, false);
+    ASSERT_TRUE(plan.success);
+    ASSERT_EQ(plan.value().size(), 1u);
+    EXPECT_EQ(plan.value()[0].localPath, "C:\\a\\x.txt");
+}
+
+TEST(UploadScanServiceTest, TreatsTwoSpellingsOfOnePathAsOneUpload)
+{
+    // The de-duplication has to key on the resolved path, not on what the caller
+    // typed: everything downstream keys on the resolved one, so two spellings that
+    // survive would both be dropped from the plan rather than one.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addFile("C:\\a", "x.txt");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFiles(7, false, std::vector<std::string>{"x.txt"}))
+        .WillRepeatedly(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadCollision>> result =
+        service.findCollisions({"C:\\a\\x.txt", "C:/a/x.txt"}, 7, false);
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(result.value().empty());
+
+    Result<std::vector<UploadPlanItem>> plan =
+        service.planSkippingCollisions({"C:\\a\\x.txt", "C:/a/x.txt"}, 7, false);
+    ASSERT_TRUE(plan.success);
+    ASSERT_EQ(plan.value().size(), 1u);
+    EXPECT_EQ(plan.value()[0].localPath, "C:\\a\\x.txt");
+}
+
+TEST(UploadScanServiceTest, PlanKeepsTheFirstCopyOfANameTheUploadBringsTwice)
+{
+    // Skip has to leave one behind: dropping both would lose a file the user never
+    // declined, and keeping both is what they just declined.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addFile("C:\\a", "x.txt");
+    fs->addFile("C:\\b", "x.txt");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFiles(7, false, std::vector<std::string>{"x.txt"}))
+        .WillOnce(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadPlanItem>> plan =
+        service.planSkippingCollisions({"C:\\a\\x.txt", "C:\\b\\x.txt"}, 7, false);
+
+    ASSERT_TRUE(plan.success);
+    ASSERT_EQ(plan.value().size(), 1u);
+    EXPECT_EQ(plan.value()[0].localPath, "C:\\a\\x.txt");
 }
 
 TEST(UploadScanServiceTest, PlanLeavesOutEveryCopyOfACollidingName)
