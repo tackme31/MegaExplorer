@@ -247,6 +247,9 @@ QtObject {
             readonly property string goToFolder: "\uE8DE" // MoveToFolder
             readonly property string selectAll: "\uE8B3"     // SelectAll
             readonly property string refresh: glyphSet.refresh
+            // Present in both icon fonts' cmaps (checked 2026-08-17); not yet
+            // looked at drawn at 16px.
+            readonly property string settings: "\uE713"      // Settings
             readonly property string about: "\uE946"         // Info
             readonly property string licenses: "\uE9a4"      // TextBulletListSquare
             readonly property string signOut: "\uE7E8"       // Leave

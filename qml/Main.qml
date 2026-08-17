@@ -122,6 +122,14 @@ ApplicationWindow {
     property bool previewVisible: false
     property real previewPaneWidth: 320
 
+    // The theme the user picked in the settings dialog, as a Qt::ColorScheme
+    // value (Qt.Unknown = follow the OS). Persisted below like the rest, but
+    // deliberately *not* applied from here on startup: main.cpp already read
+    // this same key and applied it before the first frame, and doing it again
+    // once Settings restores the alias would overrun the
+    // MEGAEXPLORER_COLOR_SCHEME override that only main.cpp can see.
+    property int colorSchemePreference: Qt.Unknown
+
     // The currently active tab's TabContentPane, kept in sync by the Binding
     // inside mainContentComponent below and injected into StatusBar.qml, which
     // reads/writes it to drive the view-mode toggle against whichever tab is
@@ -142,6 +150,7 @@ ApplicationWindow {
         property alias treePanelWidth: window.treePanelWidth
         property alias previewVisible: window.previewVisible
         property alias previewPaneWidth: window.previewPaneWidth
+        property alias colorSchemePreference: window.colorSchemePreference
     }
 
     // A window-level Shortcut is fine here, unlike FileTableView's Ctrl+A:
@@ -192,6 +201,7 @@ ApplicationWindow {
         AddressToolBar {
             dragProxy: moveDragProxy
             onAboutRequested: aboutDialog.open()
+            onSettingsRequested: settingsDialog.open()
             onLicensesRequested: licenseDialog.open()
             onSignOutRequested: signOutDialog.open()
         }
@@ -222,6 +232,18 @@ ApplicationWindow {
 
     LicenseDialog {
         id: licenseDialog
+    }
+
+    SettingsDialog {
+        id: settingsDialog
+        colorScheme: window.colorSchemePreference
+        // Applied here and not inside the dialog: styleHints is app-wide state,
+        // and this is the only window. Assigning Qt.Unknown is how QStyleHints
+        // is told to follow the OS again.
+        onColorSchemeSelected: scheme => {
+            window.colorSchemePreference = scheme;
+            Application.styleHints.colorScheme = scheme;
+        }
     }
 
     MissingPinDialog {

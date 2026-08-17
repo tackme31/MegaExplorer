@@ -173,6 +173,11 @@ TestCase {
     }
 
     Component {
+        id: settingsComponent
+        SettingsDialog {}
+    }
+
+    Component {
         id: conflictControllerComponent
 
         QtObject {
@@ -842,5 +847,66 @@ TestCase {
         tryCompare(c.dialog, "opened", true);
         compare(c.dialog.continueLosesData, false);
         tryCompare(buttonNamed(c.dialog, "Continue"), "highlighted", true);
+    }
+
+    // ---- SettingsDialog -------------------------------------------------
+
+    // Main.qml owns the persisted value and the one styleHints write, so the only
+    // logic here is the index <-> Qt::ColorScheme mapping -- and a screenshot
+    // cannot see which row of a closed combo box is current.
+    function test_settings_opensOnTheStoredTheme_data() {
+        return [
+                    {
+                        tag: "system",
+                        scheme: Qt.Unknown,
+                        index: 0
+                    },
+                    {
+                        tag: "light",
+                        scheme: Qt.Light,
+                        index: 1
+                    },
+                    {
+                        tag: "dark",
+                        scheme: Qt.Dark,
+                        index: 2
+                    },
+                    // A value from a hand-edited registry must still leave a row
+                    // selected rather than none.
+                    {
+                        tag: "unrecognized",
+                        scheme: 99,
+                        index: 0
+                    }
+                ];
+    }
+
+    function test_settings_opensOnTheStoredTheme(data) {
+        const dialog = makeDialog(settingsComponent, {
+                                      "colorScheme": data.scheme
+                                  });
+        let picked = [];
+        dialog.colorSchemeSelected.connect(scheme => picked.push(scheme));
+
+        dialog.open();
+
+        tryCompare(dialog, "opened", true);
+        compare(dialog.themeSelector.currentIndex, data.index);
+        // Showing the stored value is not choosing it: an echo here would write
+        // the preference back on every open.
+        compare(picked.length, 0);
+    }
+
+    function test_settings_pickingARowReportsThatScheme() {
+        const dialog = makeDialog(settingsComponent, {});
+        let picked = [];
+        dialog.colorSchemeSelected.connect(scheme => picked.push(scheme));
+
+        dialog.open();
+        tryCompare(dialog, "opened", true);
+        dialog.themeSelector.activated(2);
+
+        compare(picked.length, 1);
+        compare(picked[0], Qt.Dark);
     }
 }
