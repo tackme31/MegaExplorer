@@ -124,6 +124,17 @@ Dialog {
                                                             root.destinationIsRoot);
                 root.close();
             }
+
+            ToolTip {
+                visible: continueButton.hovered
+                delay: 500
+                text: root.continueLine()
+                margins: 6
+                // The style derives both the width and the centring x from
+                // implicitWidth, which for a Text is its *unwrapped* width -- a
+                // whole sentence would leave the window without this cap.
+                implicitWidth: Math.min(implicitContentWidth + leftPadding + rightPadding, 360)
+            }
         }
         Button {
             id: renameButton
@@ -139,8 +150,17 @@ Dialog {
                                                             root.destinationIsRoot);
                 root.close();
             }
+
+            ToolTip {
+                visible: renameButton.hovered
+                delay: 500
+                text: root.renameLine()
+                margins: 6
+                implicitWidth: Math.min(implicitContentWidth + leftPadding + rightPadding, 360)
+            }
         }
         Button {
+            id: skipButton
             text: qsTr("Skip")
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
@@ -152,6 +172,16 @@ Dialog {
                     root.mutController.copySkippingExisting(root.entries, root.destinationHandle,
                                                             root.destinationIsRoot);
                 root.close();
+            }
+
+            ToolTip {
+                // Files-only batches leave skipLine() empty, and an empty tooltip
+                // is a bare frame, not nothing.
+                visible: skipButton.hovered && text !== ""
+                delay: 500
+                text: root.skipLine()
+                margins: 6
+                implicitWidth: Math.min(implicitContentWidth + leftPadding + rightPadding, 360)
             }
         }
         Button {
@@ -202,32 +232,43 @@ Dialog {
         const names = root.conflictingFiles.concat(root.conflictingFolders);
         const lines = [head + "\n" + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "")];
 
-        if (root.operation === "move") {
-            lines.push(qsTr(
-                           "\"Continue\" leaves both: MEGA allows two items with the same name and never merges folders."));
-        } else if (files > 0 && folders > 0) {
-            // Whole sentences per case rather than clauses joined at runtime: a
-            // translator needs the sentence, and there are only five of them.
-            lines.push(root.fileVersioningEnabled ? qsTr(
-                                                        "\"Continue\" keeps the existing files as earlier versions, and leaves two folders with the same name -- MEGA never merges one into another.") :
-                                                    qsTr("\"Continue\" deletes the existing files outright -- file versioning is off for this account, so they cannot be recovered -- and leaves two folders with the same name, since MEGA never merges one into another."));
-        } else if (files > 0) {
-            lines.push(root.fileVersioningEnabled ? qsTr(
-                                                        "\"Continue\" keeps the existing files as earlier versions.") :
-                                                    qsTr("\"Continue\" deletes the existing files outright: file versioning is off for this account, so they do not go to the rubbish bin and cannot be recovered."));
-        } else {
-            lines.push(qsTr(
-                           "\"Continue\" leaves two folders with the same name: MEGA never merges one into another."));
-        }
-        lines.push(root.renameLine());
-        // A folder is skipped whole -- there is no per-child answer here -- which is
-        // not obvious from a list that names only the folder.
-        if (folders > 0)
-            lines.push(qsTr(
-                           "\"Skip\" leaves those folders out entirely, with everything inside them."));
+        // What each answer does lives in that button's tooltip, except the one
+        // wording that announces unrecoverable loss: a warning nobody sees unless
+        // they hover is not a warning.
+        if (root.continueLosesData)
+            lines.push(root.continueLine());
         if (root.unaffectedCount > 0)
             lines.push(root.unaffectedLine());
         return lines.join("\n\n");
+    }
+
+    // Whole sentences per case rather than clauses joined at runtime: a translator
+    // needs the sentence, and there are only five of them.
+    function continueLine() {
+        const files = root.conflictingFiles.length;
+        const folders = root.conflictingFolders.length;
+        if (root.operation === "move")
+            return qsTr(
+                        "\"Continue\" leaves both: MEGA allows two items with the same name and never merges folders.");
+        if (files > 0 && folders > 0)
+            return root.fileVersioningEnabled ? qsTr(
+                                                    "\"Continue\" keeps the existing files as earlier versions, and leaves two folders with the same name -- MEGA never merges one into another.") :
+                                                qsTr("\"Continue\" deletes the existing files outright -- file versioning is off for this account, so they cannot be recovered -- and leaves two folders with the same name, since MEGA never merges one into another.");
+        if (files > 0)
+            return root.fileVersioningEnabled ? qsTr(
+                                                    "\"Continue\" keeps the existing files as earlier versions.") :
+                                                qsTr("\"Continue\" deletes the existing files outright: file versioning is off for this account, so they do not go to the rubbish bin and cannot be recovered.");
+        return qsTr(
+                    "\"Continue\" leaves two folders with the same name: MEGA never merges one into another.");
+    }
+
+    // A folder is skipped whole -- there is no per-child answer here -- which is
+    // not obvious from a list that names only the folder. Empty when nothing but
+    // files collide, since Skip needs no explaining there.
+    function skipLine() {
+        if (root.conflictingFolders.length === 0)
+            return "";
+        return qsTr("\"Skip\" leaves those folders out entirely, with everything inside them.");
     }
 
     // The size rides along only on a copy: a move adds nothing to the account, so

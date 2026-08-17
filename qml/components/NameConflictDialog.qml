@@ -72,12 +72,24 @@ Dialog {
 
     footer: DialogButtonBox {
         Button {
+            id: replaceButton
             text: qsTr("Replace")
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
                 root.uploads.uploadReplacingExisting(root.filePaths, root.destinationHandle,
                                                      root.destinationIsRoot);
                 root.close();
+            }
+
+            ToolTip {
+                visible: replaceButton.hovered
+                delay: 500
+                text: root.replaceLine()
+                margins: 6
+                // The style derives both the width and the centring x from
+                // implicitWidth, which for a Text is its *unwrapped* width -- a
+                // whole sentence would leave the window without this cap.
+                implicitWidth: Math.min(implicitContentWidth + leftPadding + rightPadding, 360)
             }
         }
         Button {
@@ -97,7 +109,7 @@ Dialog {
     }
 
     // Whole sentences per case rather than clauses joined at runtime: a translator
-    // needs the sentence, and there are only six of them.
+    // needs the sentence, and there are only a handful of them.
     function buildMessage() {
         const names = root.conflictNames;
         const head = root.conflictingSize === "" ? qsTr(
@@ -106,9 +118,11 @@ Dialog {
                                                        "%1 file(s) with the same name already exist in the destination (%2):").arg(
                                                        names.length).arg(root.conflictingSize);
         const lines = [head + "\n" + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "")];
-        lines.push(root.fileVersioningEnabled ? qsTr(
-                                                    "\"Replace\" keeps the existing files as earlier versions.") :
-                                                qsTr("\"Replace\" deletes the existing files outright: file versioning is off for this account, so they cannot be recovered."));
+        // Everything Replace does lives in its tooltip, except the one wording
+        // that announces unrecoverable loss: a warning nobody sees unless they
+        // hover is not a warning.
+        if (!root.fileVersioningEnabled)
+            lines.push(root.replaceLine());
         if (root.unaffectedCount > 0)
             lines.push(root.unaffectedSize === "" ? qsTr(
                                                         "The other %1 file(s) are uploaded either way.").arg(
@@ -117,6 +131,12 @@ Dialog {
                                                         root.unaffectedCount).arg(
                                                         root.unaffectedSize));
         return lines.join("\n\n");
+    }
+
+    function replaceLine() {
+        return root.fileVersioningEnabled ? qsTr(
+                                                "\"Replace\" keeps the existing files as earlier versions.") :
+                                            qsTr("\"Replace\" deletes the existing files outright: file versioning is off for this account, so they cannot be recovered.");
     }
 
     // Reassigned rather than push()ed, as in ConfirmUploadDialog.qml.

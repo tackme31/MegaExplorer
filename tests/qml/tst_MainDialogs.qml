@@ -455,6 +455,21 @@ TestCase {
         verify(text.indexOf("other 4") !== -1);
     }
 
+    // With versioning on, Replace is recoverable, so its sentence rides on the
+    // button's tooltip instead of lengthening the body.
+    function test_nameConflict_replaceSentenceLivesOnTheButton() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+
+        uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, "", "", 0, true);
+
+        tryCompare(dialog, "opened", true);
+        verify(dialog.replaceLine().indexOf("earlier versions") !== -1);
+        verify(dialog.contentChildren[0].text.indexOf("\"Replace\"") === -1);
+    }
+
     // Sizes are formatted in C++ and only quoted here, so what this checks is that
     // each one reaches the half of the message it belongs to.
     function test_nameConflict_quotesTheSizeOnBothSidesOfTheQuestion() {
@@ -696,7 +711,10 @@ TestCase {
         tryCompare(buttonNamed(c.dialog, "Continue"), "highlighted", true);
         compare(buttonNamed(c.dialog, "Rename").highlighted, false);
         verify(buttonNamed(c.dialog, "Continue").activeFocus);
-        verify(c.dialog.buildMessage().indexOf("earlier versions") !== -1);
+        // Recoverable, so the sentence rides on Continue's tooltip rather than
+        // the body.
+        verify(c.dialog.continueLine().indexOf("earlier versions") !== -1);
+        verify(c.dialog.buildMessage().indexOf("earlier versions") === -1);
     }
 
     function test_copyConflict_defaultIsRenameWhenVersioningIsOff() {
@@ -788,7 +806,29 @@ TestCase {
                                ], [], ["photos"], ["photos - Copy"], "", "", 42, false);
 
         tryCompare(c.dialog, "opened", true);
-        verify(c.dialog.buildMessage().indexOf("with everything inside them") !== -1);
+        verify(c.dialog.skipLine().indexOf("with everything inside them") !== -1);
+        verify(c.dialog.buildMessage().indexOf("with everything inside them") === -1);
+    }
+
+    // The per-answer sentences moved onto the buttons they describe; what stays in
+    // the body is the question, plus the one wording that announces unrecoverable
+    // loss (covered by the versioning-off cases above).
+    function test_copyConflict_answerSentencesLiveOnTheButtons() {
+        const c = makeCopyConflict(true);
+
+        c.mut.copyNameConflict([
+                                   {}
+                               ], ["a.txt"], [], ["a - Copy.txt"], "", "", 42, false);
+
+        tryCompare(c.dialog, "opened", true);
+        const body = c.dialog.buildMessage();
+        verify(c.dialog.renameLine().indexOf("a - Copy.txt") !== -1);
+        verify(body.indexOf("\"Rename\"") === -1);
+        verify(body.indexOf("\"Continue\"") === -1);
+        // Still says what collided, or the dialog would ask nothing at all.
+        verify(body.indexOf("a.txt") !== -1);
+        // Files only, so Skip has nothing extra to explain.
+        compare(c.dialog.skipLine(), "");
     }
 
     // Neither does a move: moveNode overwrites nothing, whatever the setting says.
