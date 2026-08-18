@@ -51,6 +51,10 @@ class FolderNavigationController : public QObject,
     // Same derivation again. int rather than ViewKindEnum::Kind so this header keeps
     // its Qt-free core includes; QML compares against ViewKind.CloudDrive either way.
     Q_PROPERTY(int viewKind READ viewKind NOTIFY breadcrumbChanged)
+    // Whether the column header may pick this tab's order. False on Recents, which
+    // is defined by its own order (newest first) and has nothing to say sorted any
+    // other way. Same derivation as viewKind, hence the shared NOTIFY.
+    Q_PROPERTY(bool canSort READ canSort NOTIFY breadcrumbChanged)
     // Whether a search query or an advanced-search filter is narrowing what the model
     // holds, so an empty listing can say which kind of empty it is. Its own NOTIFY:
     // the query changes without the location doing so.
@@ -91,6 +95,7 @@ public:
     bool atRoot() const;
     quint64 currentHandle() const;
     int viewKind() const;
+    bool canSort() const;
     bool searchActive() const;
 
     // Not Q_INVOKABLE: QML reaches the root load through

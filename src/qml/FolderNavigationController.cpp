@@ -126,6 +126,11 @@ int FolderNavigationController::viewKind() const
     return mBreadcrumb.last().toMap().value(QStringLiteral("kind")).toInt();
 }
 
+bool FolderNavigationController::canSort() const
+{
+    return viewKind() != ViewKindEnum::Recents;
+}
+
 bool FolderNavigationController::searchActive() const
 {
     return !mLastSearchQuery.empty() || !mSearchFilter.isDefault();
@@ -510,15 +515,26 @@ void FolderNavigationController::restoreUserSortOrder()
 
 void FolderNavigationController::setSortOrder(int column, bool ascending)
 {
-    // A new tab's FileTableView restores the window-wide order from
-    // Component.onCompleted, which QML gives no ordering guarantee against the
-    // openRecents() that created the tab -- so once a screen has stated its own
-    // order, that startup restore is dropped rather than allowed to win. Echoing
-    // back is what keeps the header from showing the order that was just refused.
-    // One-shot: the restore only ever arrives once, and leaving the guard armed
-    // would swallow the user's own header clicks until a listing lands -- which a
-    // failed first fetch never does.
-    if (!mHasLoadedOnce && mSortOrderSetByView)
+    // Two ways to refuse, and both are needed because they cover different halves
+    // of entering Recents.
+    //
+    // canSort() is the screen's own rule and holds for as long as the tab is there;
+    // it is also what the header binds to, so a refusal here means something other
+    // than a header click asked.
+    //
+    // mSortOrderSetByView covers the gap before that: openRecents() states its
+    // order synchronously, but the view kind only flips when the listing lands, so
+    // canSort() still reads the previous screen until then. A new tab's
+    // FileTableView restores the window-wide order from Component.onCompleted,
+    // which QML gives no ordering guarantee against that -- and letting it through
+    // would not just lose Recents' order, it would clear mSortOrderBeforeView and
+    // leak the wrong order into the next screen too.
+    //
+    // Echoing back is what keeps the header from showing the order that was just
+    // refused. The mSortOrderSetByView half is one-shot: the restore only ever
+    // arrives once, and leaving it armed would swallow the user's own header
+    // clicks until a listing lands -- which a failed first fetch never does.
+    if (!canSort() || mSortOrderSetByView)
     {
         mSortOrderSetByView = false;
         emit sortOrderReset(columnForSortKey(mSortOrder.key), mSortOrder.ascending);
