@@ -50,6 +50,11 @@ TestCase {
         ConfirmPermanentDeleteDialog {}
     }
 
+    Component {
+        id: confirmRemoveLinkComponent
+        ConfirmRemoveLinkDialog {}
+    }
+
     // A QtObject, not a JS object literal: Connections.target is typed QObject*,
     // so a plain JS object lands there as null, the dialog never opens and the
     // tests that assert on what it called would pass on their own emptiness.
@@ -153,6 +158,7 @@ TestCase {
         QtObject {
             property var lastRubbishHandles: null
             property var lastDeleteHandles: null
+            property var lastRemoveLinkHandle: null
 
             function moveHandlesToRubbish(handles) {
                 lastRubbishHandles = handles;
@@ -160,6 +166,10 @@ TestCase {
 
             function deleteHandlesPermanently(handles) {
                 lastDeleteHandles = handles;
+            }
+
+            function removeLink(handle) {
+                lastRemoveLinkHandle = handle;
             }
         }
     }
@@ -681,6 +691,57 @@ TestCase {
         dialog.accept();
 
         compare(mut.lastDeleteHandles, [1, 2]);
+    }
+
+    // ---- ConfirmRemoveLinkDialog ----------------------------------------
+
+    // Single-target, unlike the two above: the action is offered on one node
+    // only, so the dialog samples the first entry and nothing else.
+    function test_confirmRemoveLink_acceptRemovesTheSampledHandle() {
+        const nav = makeSelection(["a.txt"]);
+        const mut = createTemporaryObject(mutControllerComponent, testCase);
+        verify(mut !== null);
+        const dialog = makeDialog(confirmRemoveLinkComponent, {
+                                      "navController": nav,
+                                      "mutController": mut
+                                  });
+
+        dialog.confirm();
+        nav.entries = [];
+        dialog.accept();
+
+        compare(mut.lastRemoveLinkHandle, 1);
+    }
+
+    // Cancel is the reason this dialog exists at all: the link has to survive it.
+    function test_confirmRemoveLink_rejectKeepsTheLink() {
+        const nav = makeSelection(["a.txt"]);
+        const mut = createTemporaryObject(mutControllerComponent, testCase);
+        verify(mut !== null);
+        const dialog = makeDialog(confirmRemoveLinkComponent, {
+                                      "navController": nav,
+                                      "mutController": mut
+                                  });
+
+        dialog.confirm();
+        dialog.reject();
+
+        compare(mut.lastRemoveLinkHandle, null);
+    }
+
+    // An empty selection must not open a prompt naming nothing.
+    function test_confirmRemoveLink_confirmWithNoSelectionDoesNotOpen() {
+        const nav = makeSelection([]);
+        const mut = createTemporaryObject(mutControllerComponent, testCase);
+        verify(mut !== null);
+        const dialog = makeDialog(confirmRemoveLinkComponent, {
+                                      "navController": nav,
+                                      "mutController": mut
+                                  });
+
+        dialog.confirm();
+
+        compare(dialog.opened, false);
     }
 
     // ---- CopyConflictDialog --------------------------------------------

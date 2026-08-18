@@ -322,6 +322,7 @@ Item {
         onRenameRequested: root.beginRename()
         onMoveToRubbishRequested: confirmRubbishDialog.confirm()
         onDeletePermanentlyRequested: confirmPermanentDeleteDialog.confirm()
+        onRemoveLinkRequested: confirmRemoveLinkDialog.confirm()
     }
 
     FolderBackgroundMenu {
@@ -340,6 +341,12 @@ Item {
 
     ConfirmPermanentDeleteDialog {
         id: confirmPermanentDeleteDialog
+        navController: root.navController
+        mutController: root.mutController
+    }
+
+    ConfirmRemoveLinkDialog {
+        id: confirmRemoveLinkDialog
         navController: root.navController
         mutController: root.mutController
     }
