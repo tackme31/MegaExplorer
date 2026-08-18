@@ -940,3 +940,88 @@ TEST_F(FolderNavigationControllerTest, LeavingRecentsPutsTheUsersOwnSortOrderBac
     EXPECT_EQ(rootOrders[1].key, SortKey::Size);
     EXPECT_TRUE(rootOrders[1].ascending);
 }
+
+TEST_F(FolderNavigationControllerTest, ASortArrivingBeforeTheRecentsListingIsRefusedToo)
+{
+    std::vector<SortOrder> rootOrders;
+    EXPECT_CALL(*client, getRootChildren(_, _))
+        .WillRepeatedly(
+            Invoke([&rootOrders](SortOrder order,
+                                 std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                rootOrders.push_back(order);
+                onDone(Result<std::vector<FileEntry>>::ok(
+                    std::vector<FileEntry>{entry("a.txt", 1)}));
+            }));
+    EXPECT_CALL(*client, getPath(_, _, _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{})));
+    std::vector<SortOrder> recentOrders;
+    EXPECT_CALL(*client, listRecent(_, std::string(), _))
+        .WillRepeatedly(
+            Invoke([&recentOrders](SortOrder order,
+                                   const std::string&,
+                                   std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                recentOrders.push_back(order);
+                onDone(Result<std::vector<FileEntry>>::ok(
+                    std::vector<FileEntry>{entry("b.txt", 2)}));
+            }));
+
+    controller->setSortOrder(2, true);
+    controller->loadRoot();
+    flush();
+
+    // openRecents() states its order synchronously but the view kind only flips
+    // when the listing lands, so canSort() is still true right here -- and a tab
+    // opened straight onto Recents pushes its restored order into exactly this gap.
+    controller->openRecents();
+    controller->setSortOrder(0, true);
+    flush();
+
+    ASSERT_EQ(recentOrders.size(), 1u);
+    EXPECT_EQ(recentOrders[0].key, SortKey::ModificationTime);
+    EXPECT_FALSE(recentOrders[0].ascending);
+
+    // The refused click must not have taken the user's own order down with it.
+    controller->loadRoot();
+    flush();
+    ASSERT_EQ(rootOrders.size(), 2u);
+    EXPECT_EQ(rootOrders[1].key, SortKey::Size);
+    EXPECT_TRUE(rootOrders[1].ascending);
+}
+
+TEST_F(FolderNavigationControllerTest, RecentsRefusesASortOrderTheHeaderAsksFor)
+{
+    std::vector<SortOrder> used;
+    EXPECT_CALL(*client, listRecent(_, std::string(), _))
+        .WillRepeatedly(
+            Invoke([&used](SortOrder order,
+                           const std::string&,
+                           std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                used.push_back(order);
+                onDone(Result<std::vector<FileEntry>>::ok(
+                    std::vector<FileEntry>{entry("a.txt", 1)}));
+            }));
+
+    EXPECT_TRUE(controller->canSort());
+    controller->openRecents();
+    flush();
+    EXPECT_FALSE(controller->canSort());
+
+    int resetColumn = -1;
+    bool resetAscending = true;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::sortOrderReset,
+                     controller.get(),
+                     [&resetColumn, &resetAscending](int column, bool ascending) {
+                         resetColumn = column;
+                         resetAscending = ascending;
+                     });
+
+    controller->setSortOrder(2, true);
+    flush();
+
+    // Refused, and the header told what it actually got -- not left showing Size.
+    EXPECT_EQ(resetColumn, 1);
+    EXPECT_FALSE(resetAscending);
+    EXPECT_EQ(used.size(), 1u);
+}

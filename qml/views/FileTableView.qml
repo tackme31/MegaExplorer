@@ -79,6 +79,12 @@ ColumnLayout {
     readonly property bool showFavouriteMarkers: root.navController?.viewKind
                                                  !== ViewKind.Favourites
 
+    // Which screens let the header pick the order is C++'s call (canSort), so the
+    // rule lives in one place; here it only decides whether the cells behave like
+    // buttons. The chevron stays visible either way -- it reports the order the
+    // rows are actually in, which is true on Recents too.
+    readonly property bool sortable: root.navController?.canSort ?? true
+
     // Row under a point given in tableView (viewport) coordinates, -1 past the
     // last row and -1 anywhere right of the last column: that strip is empty
     // space, not part of the row. Reverses S6a-a, which had clamped x into the
@@ -219,6 +225,8 @@ ColumnLayout {
     // Same column same click: toggle direction. Different column: switch to
     // it, reset to ascending (Explorer's convention).
     function requestSort(column) {
+        if (!root.sortable)
+            return;
         if (root.sortColumn === column)
             root.sortAscending = !root.sortAscending;
         else {
@@ -340,7 +348,7 @@ ColumnLayout {
             // Windows) foreground, producing invisible white-on-white text.
             // transparent lets the real themed background show through,
             // same as the row delegate below.
-            color: headerHover.hovered ? Theme.color.subtleHover : "transparent"
+            color: headerHover.hovered && root.sortable ? Theme.color.subtleHover : "transparent"
 
             // A header cell sorts on click, and nothing else here said so.
             HoverHandler {
@@ -400,6 +408,7 @@ ColumnLayout {
             // suppresses click-drag panning, not delivery to child handlers.
             TapHandler {
                 acceptedButtons: Qt.LeftButton
+                enabled: root.sortable
                 onTapped: root.requestSort(headerCell.column)
             }
         }
