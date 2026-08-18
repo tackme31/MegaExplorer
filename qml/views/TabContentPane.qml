@@ -82,13 +82,12 @@ ColumnLayout {
         });
     }
 
-    // Single entry point both child views' activateRequested funnels into --
-    // mirrors the old window.activateEntry() this replaces.
+    // Single entry point both child views' activateRequested funnels into.
+    // Files are inert on purpose -- double-click used to download and misfired
+    // too easily, so name/sizeBytes go unused and downloading is context-menu only.
     function activate(isFolder, handle, name, sizeBytes) {
         if (isFolder)
             pane.navController.openFolder(handle);
-        else
-            downloadController.downloadFile(handle, name, sizeBytes);
     }
 
     // Plain Item, not the StackLayout itself: a StackLayout treats every Item
