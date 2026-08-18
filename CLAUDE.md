@@ -118,8 +118,8 @@ Tips:
 ## What this project is
 
 Windows-Explorer-like desktop client for MEGA cloud storage — thumbnail grid, search,
-double-click-to-open (gaps in official MEGAsync). Not a sync client: only a one-shot background
-refresh when a folder is opened, no continuous watching.
+double-click-to-open folders (gaps in official MEGAsync). Not a sync client: only a one-shot
+background refresh when a folder is opened, no continuous watching.
 
 - No MEGA app key required (dropped 2023) — pass `nullptr` to `MegaApi`'s constructor
   (`meganz/sdk` issue #2706).
