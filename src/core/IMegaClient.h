@@ -118,8 +118,7 @@ public:
     // rooting, name filter and contract are listFavourites'.
     // "Added" is the node's creation time, not its modification time: an upload
     // carries the local file's mtime, so a freshly uploaded old file would
-    // otherwise never appear here. Folders survive this filter, unlike
-    // MegaSearchFilter's modification-time one.
+    // otherwise never appear here. Files only -- folders are excluded.
     virtual void listRecent(SortOrder order,
                             const std::string& nameFilter,
                             std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
