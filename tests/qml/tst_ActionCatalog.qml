@@ -367,6 +367,11 @@ TestCase {
                         tag: "moveToRubbish",
                         id: "moveToRubbish",
                         callback: "requestMoveToRubbish"
+                    },
+                    {
+                        tag: "removeLink",
+                        id: "removeLink",
+                        callback: "requestRemoveLink"
                     }
                 ];
     }
@@ -415,26 +420,22 @@ TestCase {
         compare(received[1][1], false);
     }
 
-    // Both link entries hand the primary handle straight to the mutation
-    // controller: neither reads a sampled export state, because none exists.
-    function test_trigger_linkActionsCallMutationsWithTheHandle() {
+    // Hands the primary handle straight to the mutation controller, reading no
+    // sampled export state because none exists. Its counterpart removeLink is
+    // deliberately not here: that one goes through requestRemoveLink() above,
+    // since the view owns the confirmation.
+    function test_trigger_copyLinkCallsMutationsWithTheHandle() {
         let copied = [];
-        let removed = [];
         const ctx = fullCtx();
         ctx.mutations = {
             "copyLinkToClipboard": function (handle) {
                 copied.push(handle);
-            },
-            "removeLink": function (handle) {
-                removed.push(handle);
             }
         };
 
         ActionCatalog.trigger("copyLink", ctx);
-        ActionCatalog.trigger("removeLink", ctx);
 
         compare(copied, [42]);
-        compare(removed, [42]);
     }
 
     function test_trigger_refreshCallsNavController() {

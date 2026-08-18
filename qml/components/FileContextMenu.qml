@@ -13,9 +13,8 @@ ActionMenu {
 
     required property var navController
 
-    // Needed by toggleFavourite and the two link actions; the rest of this site's
-    // actions reach their targets through singletons or the request*() callbacks
-    // below.
+    // Needed by toggleFavourite and copyLink; the rest of this site's actions
+    // reach their targets through singletons or the request*() callbacks below.
     required property var mutController
 
     // Delegated to the owning view rather than handled in ActionCatalog.qml:
@@ -24,6 +23,7 @@ ActionMenu {
     signal renameRequested
     signal moveToRubbishRequested
     signal deletePermanentlyRequested
+    signal removeLinkRequested
 
     // Sampled by sampleActions() below, never bound to availableActions: that
     // property is notified by selectionChanged, and the Instantiator behind
@@ -73,7 +73,8 @@ ActionMenu {
             "mutations": root.mutController,
             "requestRename": () => root.renameRequested(),
             "requestMoveToRubbish": () => root.moveToRubbishRequested(),
-            "requestDeletePermanently": () => root.deletePermanentlyRequested()
+            "requestDeletePermanently": () => root.deletePermanentlyRequested(),
+            "requestRemoveLink": () => root.removeLinkRequested()
         };
     }
 }

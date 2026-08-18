@@ -113,11 +113,15 @@ QtObject {
                                             "trigger": ctx => ctx.mutations.copyLinkToClipboard(
                                                                   ctx.handle)
                                         },
-                                        // ctx: handle, mutations
+                                        // ctx: requestRemoveLink(). Routed via the
+                                        // view's confirmation like moveToRubbish,
+                                        // not straight to the controller like
+                                        // copyLink above: removing the link revokes
+                                        // access for everyone already holding it.
                                         "removeLink": {
                                             "icon": ctx => Theme.glyph.menu.removeLink,
                                             "label": ctx => qsTr("Remove link"),
-                                            "trigger": ctx => ctx.mutations.removeLink(ctx.handle)
+                                            "trigger": ctx => ctx.requestRemoveLink()
                                         },
                                         // ctx: entries, navController
                                         "cut": {
