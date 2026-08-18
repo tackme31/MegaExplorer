@@ -536,6 +536,9 @@ void MegaSdkClient::listRecent(SortOrder order,
     // than as the epoch -- a clock skewed ahead on the uploading device must not
     // hide a node from this listing.
     filter->byCreationTime(recentWindowStart(), 0);
+    // Files only: this is a listing of recently added files, and a folder's creation
+    // time would drag its whole subtree's container into it.
+    filter->byNodeType(mega::MegaNode::TYPE_FILE);
     filter->byLocationHandle(root->getHandle());
     // Left unset when empty, for listFavourites' reason.
     if (!nameFilter.empty())
