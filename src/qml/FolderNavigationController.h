@@ -9,6 +9,7 @@
 #include <QVariantList>
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -243,6 +244,12 @@ signals:
     // so switching view mode doesn't land somewhere else.
     void revealRowRequested(int row);
 
+    // The screen this tab moved to imposed its own order (Recents opens newest
+    // first), so the column header has to follow. Deliberately not routed into the
+    // window-wide last-write-wins value the views persist: that one is the user's
+    // starting point for new tabs, which a screen default must not rewrite.
+    void sortOrderReset(int column, bool ascending);
+
 private:
     void applyResult(Result<std::vector<FileEntry>> result, const QString& revealName = QString());
     void applySearchResult(Result<std::vector<FileEntry>> result);
@@ -275,6 +282,16 @@ private:
     // Records that what this tab shows no longer matches the account, for
     // refreshIfStale() to act on later.
     void markStale();
+
+    // Installs the order the screen of that ViewKind imposes on itself and tells the
+    // header about it. No-op while the tab is already on that screen, so re-clicking
+    // the side panel's row doesn't throw away a sort the user picked there.
+    void applyViewSortOrder(int kind, SortOrder order);
+
+    // Undoes applyViewSortOrder() when the tab navigates away, so a screen's own
+    // default doesn't follow the user into the next folder. Called by every
+    // navigation entry point except the one that imposes an order.
+    void restoreUserSortOrder();
 
     // Resolves the current location's ancestor chain, so the breadcrumb tracks the
     // folder hierarchy rather than navigation history. Emits breadcrumbChanged only
@@ -309,6 +326,14 @@ private:
     // QML's Component.onCompleted restores the persisted sort before login has ever
     // run; this guards that startup setSortOrder() from re-fetching and erroring.
     bool mHasLoadedOnce = false;
+    // A screen imposed its own order (applyViewSortOrder) before that startup
+    // restore arrived. A new tab's FileTableView completes and openRecents() runs
+    // in an order QML gives no guarantee about, so without this the restored
+    // window-wide order can land last and undo the screen's default.
+    bool mSortOrderSetByView = false;
+    // The order that was in effect before a screen imposed its own, put back when
+    // the tab leaves that screen. Unset once the user picks an order themselves.
+    std::optional<SortOrder> mSortOrderBeforeView = std::nullopt;
     // Set by a fan-out this tab couldn't apply in place; cleared by the re-read.
     bool mStale = false;
     // Publishes busy() and owns the delay before a spinner appears. Shared because
