@@ -34,6 +34,25 @@ bool isCrossDriveListing(ViewKind kind)
     return kind == ViewKind::Favourites || kind == ViewKind::Recents;
 }
 
+// Recents answers "what turned up lately", so the window-wide default every other
+// screen starts from (name, ascending) is never the order that screen wants.
+constexpr SortOrder kRecentsOrder{SortKey::ModificationTime, false};
+
+// Inverse of setSortOrder()'s mapping, for telling the header which column won.
+int columnForSortKey(SortKey key)
+{
+    switch (key)
+    {
+        case SortKey::ModificationTime:
+            return 1;
+        case SortKey::Size:
+            return 2;
+        case SortKey::Name:
+            break;
+    }
+    return 0;
+}
+
 } // namespace
 
 FolderNavigationController::FolderNavigationController(
@@ -115,6 +134,7 @@ bool FolderNavigationController::searchActive() const
 void FolderNavigationController::loadRoot()
 {
     dropSearchForNavigation();
+    restoreUserSortOrder();
     mService->openRoot(mSortOrder,
                        [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
@@ -126,6 +146,7 @@ void FolderNavigationController::loadRoot()
 void FolderNavigationController::openFolder(quint64 handle)
 {
     dropSearchForNavigation();
+    restoreUserSortOrder();
     mService->openFolder(static_cast<std::uint64_t>(handle),
                          mSortOrder,
                          [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
@@ -138,6 +159,7 @@ void FolderNavigationController::openFolder(quint64 handle)
 void FolderNavigationController::openFavourites()
 {
     dropSearchForNavigation();
+    restoreUserSortOrder();
     mService->openFavourites(mSortOrder,
                              [this, self = shared_from_this()](
                                  Result<std::vector<FileEntry>> result) {
@@ -151,6 +173,7 @@ void FolderNavigationController::openFavourites()
 void FolderNavigationController::openRubbish()
 {
     dropSearchForNavigation();
+    restoreUserSortOrder();
     mService->openRubbish(mSortOrder,
                           [this, self = shared_from_this()](
                               Result<std::vector<FileEntry>> result) {
@@ -164,6 +187,7 @@ void FolderNavigationController::openRubbish()
 void FolderNavigationController::openRecents()
 {
     dropSearchForNavigation();
+    applyViewSortOrder(ViewKindEnum::Recents, kRecentsOrder);
     mService->openRecents(mSortOrder,
                           [this, self = shared_from_this()](
                               Result<std::vector<FileEntry>> result) {
@@ -179,6 +203,7 @@ void FolderNavigationController::goBack()
     if (!canGoBack())
         return;
     dropSearchForNavigation();
+    restoreUserSortOrder();
     mService->goBack(mSortOrder,
                      [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                          invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
@@ -213,6 +238,7 @@ void FolderNavigationController::navigateToKind(quint64 handle,
                                                 const QString& revealName)
 {
     dropSearchForNavigation();
+    restoreUserSortOrder();
     mService->navigateTo(static_cast<std::uint64_t>(handle),
                          isRoot,
                          kind,
@@ -456,8 +482,49 @@ void FolderNavigationController::refreshCurrentFolder(QString revealName)
         });
 }
 
+void FolderNavigationController::applyViewSortOrder(int kind, SortOrder order)
+{
+    if (viewKind() == kind)
+        return;
+    mSortOrderSetByView = true;
+    if (!mSortOrderBeforeView)
+        mSortOrderBeforeView = mSortOrder;
+    if (mSortOrder.key == order.key && mSortOrder.ascending == order.ascending)
+        return;
+    mSortOrder = order;
+    emit sortOrderReset(columnForSortKey(order.key), order.ascending);
+}
+
+void FolderNavigationController::restoreUserSortOrder()
+{
+    mSortOrderSetByView = false;
+    if (!mSortOrderBeforeView)
+        return;
+    const SortOrder restored = *mSortOrderBeforeView;
+    mSortOrderBeforeView.reset();
+    if (mSortOrder.key == restored.key && mSortOrder.ascending == restored.ascending)
+        return;
+    mSortOrder = restored;
+    emit sortOrderReset(columnForSortKey(restored.key), restored.ascending);
+}
+
 void FolderNavigationController::setSortOrder(int column, bool ascending)
 {
+    // A new tab's FileTableView restores the window-wide order from
+    // Component.onCompleted, which QML gives no ordering guarantee against the
+    // openRecents() that created the tab -- so once a screen has stated its own
+    // order, that startup restore is dropped rather than allowed to win. Echoing
+    // back is what keeps the header from showing the order that was just refused.
+    // One-shot: the restore only ever arrives once, and leaving the guard armed
+    // would swallow the user's own header clicks until a listing lands -- which a
+    // failed first fetch never does.
+    if (!mHasLoadedOnce && mSortOrderSetByView)
+    {
+        mSortOrderSetByView = false;
+        emit sortOrderReset(columnForSortKey(mSortOrder.key), mSortOrder.ascending);
+        return;
+    }
+
     switch (column)
     {
         case 1:
@@ -472,6 +539,8 @@ void FolderNavigationController::setSortOrder(int column, bool ascending)
             break;
     }
     mSortOrder.ascending = ascending;
+    // The user chose for themselves, so there is no screen default left to undo.
+    mSortOrderBeforeView.reset();
 
     // Called once at startup with the Settings-restored value, before
     // loadRoot() has ever run (see mHasLoadedOnce's declaration) -- just
@@ -650,6 +719,7 @@ void FolderNavigationController::reset()
     mSearchFilter = SearchFilter{};
     mListingFromSearch = false;
     mHasLoadedOnce = false;
+    mSortOrderSetByView = false;
     mStale = false;
     mBreadcrumb.clear();
     publishViewKind();

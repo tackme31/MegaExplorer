@@ -817,3 +817,126 @@ TEST_F(FolderNavigationControllerTest, SearchActiveFollowsTheQueryAndReportsOnly
     EXPECT_FALSE(controller->searchActive());
     EXPECT_EQ(changes, 2);
 }
+
+TEST_F(FolderNavigationControllerTest, RecentsOpensNewestFirstRatherThanInTheWindowWideOrder)
+{
+    std::vector<SortOrder> used;
+    EXPECT_CALL(*client, listRecent(_, std::string(), _))
+        .WillRepeatedly(
+            Invoke([&used](SortOrder order,
+                           const std::string&,
+                           std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                used.push_back(order);
+                onDone(Result<std::vector<FileEntry>>::ok(
+                    std::vector<FileEntry>{entry("a.txt", 1)}));
+            }));
+
+    int resetColumn = -1;
+    bool resetAscending = true;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::sortOrderReset,
+                     controller.get(),
+                     [&resetColumn, &resetAscending](int column, bool ascending) {
+                         resetColumn = column;
+                         resetAscending = ascending;
+                     });
+
+    controller->openRecents();
+    flush();
+
+    ASSERT_EQ(used.size(), 1u);
+    EXPECT_EQ(used[0].key, SortKey::ModificationTime);
+    EXPECT_FALSE(used[0].ascending);
+    // The header has to be told, or it keeps pointing at Name ascending.
+    EXPECT_EQ(resetColumn, 1);
+    EXPECT_FALSE(resetAscending);
+}
+
+TEST_F(FolderNavigationControllerTest, TheStartupSortRestoreDoesNotUndoTheRecentsDefault)
+{
+    std::vector<SortOrder> used;
+    EXPECT_CALL(*client, listRecent(_, std::string(), _))
+        .WillRepeatedly(
+            Invoke([&used](SortOrder order,
+                           const std::string&,
+                           std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                used.push_back(order);
+                onDone(Result<std::vector<FileEntry>>::ok(
+                    std::vector<FileEntry>{entry("a.txt", 1)}));
+            }));
+
+    int resets = 0;
+    int resetColumn = -1;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::sortOrderReset,
+                     controller.get(),
+                     [&resets, &resetColumn](int column, bool) {
+                         ++resets;
+                         resetColumn = column;
+                     });
+
+    controller->openRecents();
+    // QML gives no ordering guarantee between openRecents() and the new tab's
+    // FileTableView pushing the persisted window-wide order in, so the case where
+    // the restore lands second has to lose -- and be told that it lost.
+    controller->setSortOrder(0, true);
+    flush();
+    EXPECT_EQ(resets, 2);
+    EXPECT_EQ(resetColumn, 1);
+
+    controller->refresh();
+    flush();
+
+    ASSERT_EQ(used.size(), 2u);
+    EXPECT_EQ(used[1].key, SortKey::ModificationTime);
+    EXPECT_FALSE(used[1].ascending);
+}
+
+TEST_F(FolderNavigationControllerTest, LeavingRecentsPutsTheUsersOwnSortOrderBack)
+{
+    std::vector<SortOrder> rootOrders;
+    EXPECT_CALL(*client, getRootChildren(_, _))
+        .WillRepeatedly(
+            Invoke([&rootOrders](SortOrder order,
+                                 std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                rootOrders.push_back(order);
+                onDone(Result<std::vector<FileEntry>>::ok(
+                    std::vector<FileEntry>{entry("a.txt", 1)}));
+            }));
+    EXPECT_CALL(*client, getPath(_, _, _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{})));
+    EXPECT_CALL(*client, listRecent(_, std::string(), _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.txt", 2)})));
+
+    // The window-wide order this tab started from.
+    controller->setSortOrder(2, true);
+    controller->loadRoot();
+    flush();
+    ASSERT_EQ(rootOrders.size(), 1u);
+    EXPECT_EQ(rootOrders[0].key, SortKey::Size);
+
+    controller->openRecents();
+    flush();
+
+    int resetColumn = -1;
+    bool resetAscending = false;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::sortOrderReset,
+                     controller.get(),
+                     [&resetColumn, &resetAscending](int column, bool ascending) {
+                         resetColumn = column;
+                         resetAscending = ascending;
+                     });
+
+    // Recents' newest-first must not follow the user into the next screen.
+    controller->loadRoot();
+    flush();
+
+    EXPECT_EQ(resetColumn, 2);
+    EXPECT_TRUE(resetAscending);
+    ASSERT_EQ(rootOrders.size(), 2u);
+    EXPECT_EQ(rootOrders[1].key, SortKey::Size);
+    EXPECT_TRUE(rootOrders[1].ascending);
+}

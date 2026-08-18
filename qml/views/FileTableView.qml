@@ -153,6 +153,12 @@ ColumnLayout {
     property int sortColumn: 0
     property bool sortAscending: true
 
+    // Set only while the controller's own screen default (Recents opens newest
+    // first) is being copied in, to keep that copy from travelling out through
+    // sortOrderChanged into the window-wide persisted order -- that value is the
+    // user's starting point for new tabs, not somewhere a screen may write.
+    property bool applyingViewSortOrder: false
+
     // -1 = user has never explicitly resized this column (unset). In that
     // case columnWidthFor() below falls back to defaultColumnWidths. real to
     // match TableView.setColumnWidth()/explicitColumnWidth()'s numeric type.
@@ -164,8 +170,10 @@ ColumnLayout {
     // this file's top comment). Also fires once during Component.onCompleted
     // below when the initial* values differ from the literal defaults above
     // -- a harmless, idempotent echo of the value this tab just read.
-    onSortColumnChanged: root.sortOrderChanged(root.sortColumn, root.sortAscending)
-    onSortAscendingChanged: root.sortOrderChanged(root.sortColumn, root.sortAscending)
+    onSortColumnChanged: if (!root.applyingViewSortOrder)
+                             root.sortOrderChanged(root.sortColumn, root.sortAscending)
+    onSortAscendingChanged: if (!root.applyingViewSortOrder)
+                                root.sortOrderChanged(root.sortColumn, root.sortAscending)
     onColumnWidthNameChanged: root.columnWidthsChanged(root.columnWidthName,
                                                        root.columnWidthModified,
                                                        root.columnWidthSize)
@@ -505,6 +513,15 @@ ColumnLayout {
             target: root.navController
             function onRevealRowRequested(row) {
                 Qt.callLater(viewInput.revealRow, row);
+            }
+
+            // The tab moved to a screen that picks its own order; the header
+            // follows without the value escaping to the window-wide one.
+            function onSortOrderReset(column, ascending) {
+                root.applyingViewSortOrder = true;
+                root.sortColumn = column;
+                root.sortAscending = ascending;
+                root.applyingViewSortOrder = false;
             }
         }
 
