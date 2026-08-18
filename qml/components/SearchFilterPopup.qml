@@ -196,7 +196,7 @@ Popup {
             // Apply before C++ hears about it.
             Button {
                 Layout.fillWidth: true
-                text: qsTr("Clear filters")
+                text: qsTr("Clear")
                 enabled: root.pendingActive
                 onClicked: root.clearPending()
             }
