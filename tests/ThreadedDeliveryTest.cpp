@@ -184,7 +184,7 @@ TEST(ThreadedDeliveryTest, DownloadControllerEmitsOnTheGuiThreadWhenCompletionAr
         &controller,
         &DownloadController::downloadFinished,
         &controller,
-        [&emittedOn, &finished](bool, QString, QString, bool) {
+        [&emittedOn, &finished](bool, QString, QString) {
             emittedOn.store(QThread::currentThread());
             finished.store(true);
         },
@@ -196,7 +196,7 @@ TEST(ThreadedDeliveryTest, DownloadControllerEmitsOnTheGuiThreadWhenCompletionAr
 
     // Act: the transfer completes on a thread the GUI never touches
     delivery.deliver([onDone]() {
-        onDone(Result<DownloadOutcome>::ok(DownloadOutcome{"C:\\tmp\\a.txt", false}));
+        onDone(Result<DownloadOutcome>::ok(DownloadOutcome{"C:\\tmp\\a.txt"}));
     });
     delivery.joinAll();
 

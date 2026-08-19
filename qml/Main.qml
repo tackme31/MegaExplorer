@@ -494,8 +494,8 @@ ApplicationWindow {
 
     Connections {
         target: downloadController
-        function onDownloadFinished(success, fileName, localPath, alreadyPresent) {
-            toastStack.showDownload(success, fileName, localPath, alreadyPresent);
+        function onDownloadFinished(success, fileName, localPath) {
+            toastStack.showDownload(success, fileName, localPath);
         }
     }
 

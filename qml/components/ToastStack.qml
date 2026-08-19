@@ -78,26 +78,20 @@ Item {
             toastModel.remove(0);
     }
 
-    // alreadyPresent means the SDK skipped the transfer because an identical
-    // file was already there -- without saying so the generic "completed"
-    // message is indistinguishable from an overwrite.
-    //
     // The failure branch names the file and stops there: the SDK's reason for
     // it is an English sentence that never gets translated, and it stays in
     // DownloadController's qCWarning (R5-10).
-    function describeDownload(success, fileName, alreadyPresent) {
+    function describeDownload(success, fileName) {
         if (!success)
             return qsTr("Couldn't download %1").arg(fileName);
-        if (alreadyPresent)
-            return qsTr("%1 is already downloaded").arg(fileName);
         return qsTr("%1 downloaded").arg(fileName);
     }
 
     // Success gets an "Open" button wired to DownloadController::openFile();
     // failure shows only the message, mirroring the "no auto-open" rule this
     // feature is built around.
-    function showDownload(success, fileName, localPath, alreadyPresent) {
-        const text = root.describeDownload(success, fileName, alreadyPresent);
+    function showDownload(success, fileName, localPath) {
+        const text = root.describeDownload(success, fileName);
         root.push(text, success ? qsTr("Open") : "", localPath);
     }
 

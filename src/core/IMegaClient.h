@@ -146,8 +146,9 @@ public:
     // callback: onProgress may fire zero or more times, onDone exactly once.
     // DownloadOutcome::localPath is the path the SDK *actually* wrote
     // (MegaTransfer::getPath()), which differs from destinationPath when a name
-    // collision made the SDK rename the file; alreadyPresent instead means the
-    // SDK fingerprinted an identical file there and skipped the download.
+    // collision made the SDK suffix the leaf with "(1)". A name already taken never
+    // cancels the download: MegaSdkClient asks for COLLISION_CHECK_ASSUMEDIFFERENT
+    // so even a byte-identical file is fetched again under a free name.
     virtual void download(
         std::uint64_t handle,
         const std::string& destinationPath,

@@ -73,7 +73,7 @@ TEST(DownloadServiceTest, EnqueueSuccessNotifiesJobFinishedWithCompletedStateAnd
     auto mockClient = std::make_shared<MockMegaClient>();
     EXPECT_CALL(*mockClient, download(5, std::string("/tmp/a.txt"), ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<3>(
-            Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a (1).txt", false})));
+            Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a (1).txt"})));
 
     DownloadService service(mockClient);
     bool finishedCalled = false;
@@ -92,32 +92,7 @@ TEST(DownloadServiceTest, EnqueueSuccessNotifiesJobFinishedWithCompletedStateAnd
     EXPECT_EQ(finished.id, id);
     EXPECT_EQ(finished.state, DownloadState::Completed);
     EXPECT_EQ(finished.resolvedLocalPath, "/tmp/a (1).txt");
-    EXPECT_FALSE(finished.alreadyPresent);
     EXPECT_FALSE(service.currentJob().has_value());
-}
-
-TEST(DownloadServiceTest, EnqueueSuccessSurfacesAlreadyPresentWhenSdkSkippedIdenticalFile)
-{
-    // Arrange: an identical (fingerprint-matching) file already exists locally,
-    // so the SDK completes without writing any bytes -- see
-    // MegaApiImpl::CompleteFileDownloadBySkip.
-    auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<3>(
-            Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt", true})));
-
-    DownloadService service(mockClient);
-    DownloadJob finished;
-    service.setOnJobFinished([&](DownloadJob job) {
-        finished = std::move(job);
-    });
-
-    // Act
-    service.enqueue(1, "a.txt", "/tmp/a.txt", 100);
-
-    // Assert
-    EXPECT_EQ(finished.state, DownloadState::Completed);
-    EXPECT_TRUE(finished.alreadyPresent);
 }
 
 TEST(DownloadServiceTest, EnqueueFailurePropagatesErrorMessageCodeAndState)
@@ -154,7 +129,7 @@ TEST(DownloadServiceTest, ProgressCallbackForwardsBytesBeforeCompletion)
         .WillOnce(
             ::testing::DoAll(::testing::InvokeArgument<2>(std::uint64_t{50}, std::uint64_t{100}),
                              ::testing::InvokeArgument<3>(Result<DownloadOutcome>::ok(
-                                 DownloadOutcome{"/tmp/a.txt", false}))));
+                                 DownloadOutcome{"/tmp/a.txt"}))));
 
     DownloadService service(mockClient);
     std::vector<DownloadJob> progressSnapshots;
@@ -219,7 +194,7 @@ TEST(DownloadServiceTest, SecondEnqueueWhileFirstActiveDoesNotStartImmediatelyTh
     EXPECT_EQ(jobsBefore[1].state, DownloadState::Queued);
 
     // Act: finish job 1
-    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt", false}));
+    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt"}));
 
     // Assert: job 2 auto-started (download() was called for it, captured via
     // SaveArg above -- onDone2 would still be unset otherwise)
@@ -357,11 +332,11 @@ TEST(DownloadServiceTest, MixedSuccessAndFailureQueueKeepsPerJobResultFieldsSepa
 
     // Act: success, then failure, then success -- each one auto-advancing to
     // the next (an unstarted job's onDone would still be unset).
-    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a (1).txt", false}));
+    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a (1).txt"}));
     ASSERT_TRUE(static_cast<bool>(onDone2));
     onDone2(Result<DownloadOutcome>::fail("network error", 2));
     ASSERT_TRUE(static_cast<bool>(onDone3));
-    onDone3(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/c.txt", true}));
+    onDone3(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/c.txt"}));
 
     // Assert: notified in enqueue order, and the failure in the middle left no
     // trace on the job behind it
@@ -380,7 +355,6 @@ TEST(DownloadServiceTest, MixedSuccessAndFailureQueueKeepsPerJobResultFieldsSepa
     EXPECT_EQ(finished[2].id, id3);
     EXPECT_EQ(finished[2].state, DownloadState::Completed);
     EXPECT_EQ(finished[2].resolvedLocalPath, "/tmp/c.txt");
-    EXPECT_TRUE(finished[2].alreadyPresent);
     EXPECT_TRUE(finished[2].errorMessage.empty());
     EXPECT_EQ(finished[2].errorCode, 0);
 
@@ -411,7 +385,7 @@ TEST(DownloadServiceTest, CompletionArrivingAfterTheQueueDrainedIsIgnored)
     });
 
     service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
-    onDone(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt", false}));
+    onDone(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt"}));
     ASSERT_EQ(finishedCount, 1);
     ASSERT_TRUE(service.jobs().empty());
 
@@ -448,7 +422,7 @@ TEST(DownloadServiceTest, StaleProgressFromAFinishedJobDoesNotTouchTheNextJob)
 
     service.enqueue(1, "a.txt", "/tmp/a.txt", 10);
     const std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 999);
-    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt", false}));
+    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt"}));
 
     // Act: job 1's transfer reports progress after it has already finished
     onProgress1(50, 100);
@@ -481,7 +455,7 @@ TEST(DownloadServiceTest, StaleCompletionFromAFinishedJobDoesNotFinishTheNextJob
 
     const std::uint64_t id1 = service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
     const std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 0);
-    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt", false}));
+    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt"}));
     ASSERT_EQ(finished.size(), 1u);
     EXPECT_EQ(finished[0].id, id1);
 

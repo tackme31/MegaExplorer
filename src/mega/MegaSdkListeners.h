@@ -308,13 +308,6 @@ public:
             const char* path = transfer->getPath();
             DownloadOutcome outcome;
             outcome.localPath = path ? path : std::string();
-            // The SDK has no public getter for "was this collision-skipped". Inferred
-            // from MegaApiImpl::CompleteFileDownloadBySkip, which zeroes
-            // transferredBytes when it completes a transfer by skipping an
-            // identical-fingerprint file: a genuine download always has
-            // transferredBytes == totalBytes > 0 here.
-            outcome.alreadyPresent =
-                transfer->getTransferredBytes() == 0 && transfer->getTotalBytes() > 0;
             mOnDone(Result<DownloadOutcome>::ok(std::move(outcome)));
         }
         else
@@ -329,8 +322,7 @@ private:
     std::function<void(Result<DownloadOutcome>)> mOnDone;
 };
 
-// Same shape as DownloadListener, minus the alreadyPresent inference (see
-// UploadOutcome.h for why there is no upload equivalent of it).
+// Same shape as DownloadListener.
 class UploadListener : public mega::MegaTransferListener
 {
 public:

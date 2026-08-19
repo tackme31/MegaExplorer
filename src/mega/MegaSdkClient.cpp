@@ -582,7 +582,11 @@ void MegaSdkClient::download(std::uint64_t handle,
                         /*appData*/ nullptr,
                         /*startFirst*/ false,
                         cancelTokenRaw,
-                        mega::MegaTransfer::COLLISION_CHECK_FINGERPRINT,
+                        // ASSUMEDIFFERENT, not FINGERPRINT: the check decides whether the
+                        // SDK skips an identical file outright, and a skip writes nothing,
+                        // so the user who asked for a download gets no new file. Assuming
+                        // difference always downloads and lets NEW_WITH_N suffix "(1)".
+                        mega::MegaTransfer::COLLISION_CHECK_ASSUMEDIFFERENT,
                         mega::MegaTransfer::COLLISION_RESOLUTION_NEW_WITH_N,
                         /*undelete*/ false,
                         listener);
