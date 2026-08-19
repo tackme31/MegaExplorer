@@ -464,6 +464,76 @@ TEST_F(TabsControllerTest, MoveTabDoesNotEmitCountChanged)
     EXPECT_EQ(emissions, 0);
 }
 
+TEST_F(TabsControllerTest, DuplicateTabInsertsToTheRightAndFocusesTheCopy)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+    tabs->addTab();
+    QObject* first = tabs->data(tabs->index(0), TabsController::NavigationRole).value<QObject*>();
+    QObject* second = tabs->data(tabs->index(1), TabsController::NavigationRole).value<QObject*>();
+
+    tabs->duplicateTab(0);
+
+    EXPECT_EQ(tabs->count(), 4);
+    // A copy, not the same tab twice: each tab owns its navigation scope.
+    EXPECT_EQ(tabs->data(tabs->index(0), TabsController::NavigationRole).value<QObject*>(), first);
+    EXPECT_NE(tabs->data(tabs->index(1), TabsController::NavigationRole).value<QObject*>(), first);
+    EXPECT_EQ(tabs->data(tabs->index(2), TabsController::NavigationRole).value<QObject*>(), second);
+    EXPECT_EQ(tabs->currentIndex(), 1);
+    EXPECT_EQ(tabs->currentNavigation(),
+              tabs->data(tabs->index(1), TabsController::NavigationRole).value<QObject*>());
+}
+
+TEST_F(TabsControllerTest, DuplicatingBeforeTheActiveTabStillLeavesItAddressable)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+    tabs->addTab(); // index 2, active
+    QObject* wasActive = tabs->currentNavigation();
+
+    tabs->duplicateTab(0);
+
+    // The previously active tab slid one row right; the copy takes the focus.
+    EXPECT_EQ(tabs->data(tabs->index(3), TabsController::NavigationRole).value<QObject*>(),
+              wasActive);
+    EXPECT_EQ(tabs->currentIndex(), 1);
+}
+
+TEST_F(TabsControllerTest, DuplicateTabCopiesTheScreenAndNotJustTheFolder)
+{
+    EXPECT_CALL(*client, listFavourites(_, _, _))
+        .WillRepeatedly(Invoke([](SortOrder,
+                                  const std::string&,
+                                  std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            onDone(Result<std::vector<FileEntry>>::ok({}));
+        }));
+    auto tabs = makeController();
+    tabs->addFavouritesTab();
+    flushQueuedEvents();
+    flushQueuedEvents();
+    ASSERT_EQ(tabs->data(tabs->index(1), TabsController::ViewKindRole).toInt(),
+              ViewKindEnum::Favourites);
+
+    tabs->duplicateTab(1);
+    flushQueuedEvents();
+    flushQueuedEvents();
+
+    EXPECT_EQ(tabs->data(tabs->index(2), TabsController::ViewKindRole).toInt(),
+              ViewKindEnum::Favourites);
+}
+
+TEST_F(TabsControllerTest, DuplicatingAnOutOfRangeIndexIsANoOp)
+{
+    auto tabs = makeController();
+    tabs->addTab();
+
+    tabs->duplicateTab(-1);
+    tabs->duplicateTab(2);
+
+    EXPECT_EQ(tabs->count(), 2);
+    EXPECT_EQ(tabs->currentIndex(), 1);
+}
+
 TEST_F(TabsControllerTest, LoadRootAllCollapsesToOneTab)
 {
     auto tabs = makeController();

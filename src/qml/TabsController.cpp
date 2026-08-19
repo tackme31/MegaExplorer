@@ -189,6 +189,60 @@ void TabsController::addRecentsTab()
     mTabs.back().navigation->openRecents();
 }
 
+void TabsController::duplicateTab(int index)
+{
+    if (index < 0 || index >= static_cast<int>(mTabs.size()))
+        return;
+
+    // Only the location is copied -- not the back stack, the search or the
+    // selection, all of which stay with the tab that was right-clicked.
+    const FolderNavigationController& source =
+        *mTabs[static_cast<std::size_t>(index)].navigation;
+    const ViewKind kind = static_cast<ViewKind>(source.viewKind());
+    const quint64 handle = source.currentHandle();
+    const bool atRoot = source.atRoot();
+
+    const int row = index + 1;
+    beginInsertRows(QModelIndex(), row, row);
+    mTabs.insert(mTabs.begin() + row, createTab());
+    endInsertRows();
+    emit countChanged();
+
+    // Inserting at or above the active tab shifts its row without changing which
+    // tab it is. No signal is owed for that on its own, and setCurrentIndex below
+    // always lands on a different row than the corrected one, so it still emits.
+    if (row <= mCurrentIndex)
+        ++mCurrentIndex;
+
+    FolderNavigationController* navigation = mTabs[static_cast<std::size_t>(row)].navigation.get();
+    switch (kind)
+    {
+        case ViewKind::CloudDrive:
+            if (atRoot)
+                navigation->loadRoot();
+            else
+                navigation->openFolder(handle);
+            break;
+        case ViewKind::Favourites:
+            navigation->openFavourites();
+            break;
+        case ViewKind::Rubbish:
+            // A folder inside the bin goes through navigateToKind, not openFolder:
+            // the latter commits ViewKind::CloudDrive, which would offer the live
+            // tree's actions on rubbish nodes.
+            if (atRoot)
+                navigation->openRubbish();
+            else
+                navigation->navigateToKind(handle, false, ViewKind::Rubbish);
+            break;
+        case ViewKind::Recents:
+            navigation->openRecents();
+            break;
+    }
+
+    setCurrentIndex(row);
+}
+
 void TabsController::closeTab(int index)
 {
     if (index < 0 || index >= static_cast<int>(mTabs.size()))
