@@ -130,6 +130,12 @@ ApplicationWindow {
     // MEGAEXPLORER_COLOR_SCHEME override that only main.cpp can see.
     property int colorSchemePreference: Qt.Unknown
 
+    // The local folder that stands in for the MEGA root, as a native path; empty
+    // means nothing is linked. Persisted here like the theme, and pushed into
+    // localFolderController below -- C++ owns no copy of its own, so there is one
+    // place this value can come from.
+    property string localRootFolder: ""
+
     // The currently active tab's TabContentPane, kept in sync by the Binding
     // inside mainContentComponent below and injected into StatusBar.qml, which
     // reads/writes it to drive the view-mode toggle against whichever tab is
@@ -151,6 +157,16 @@ ApplicationWindow {
         property alias previewVisible: window.previewVisible
         property alias previewPaneWidth: window.previewPaneWidth
         property alias colorSchemePreference: window.colorSchemePreference
+        property alias localRootFolder: window.localRootFolder
+    }
+
+    // Pushed rather than read: LocalFolderController keeps no persisted copy, so
+    // this is what carries the restored Settings value into C++ at startup and
+    // every change after it.
+    Binding {
+        target: localFolderController
+        property: "localRoot"
+        value: window.localRootFolder
     }
 
     // A window-level Shortcut is fine here, unlike FileTableView's Ctrl+A:
@@ -244,6 +260,8 @@ ApplicationWindow {
             window.colorSchemePreference = scheme;
             Application.styleHints.colorScheme = scheme;
         }
+        localRootFolder: window.localRootFolder
+        onLocalRootFolderSelected: path => window.localRootFolder = path
     }
 
     MissingPinDialog {

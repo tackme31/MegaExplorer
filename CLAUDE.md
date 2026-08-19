@@ -121,6 +121,10 @@ Windows-Explorer-like desktop client for MEGA cloud storage — thumbnail grid, 
 double-click-to-open folders (gaps in official MEGAsync). Not a sync client: only a one-shot
 background refresh when a folder is opened, no continuous watching.
 
+Settings can point one **local folder** at the MEGA root, which the right-click "Open local
+location" uses to reveal an item in Explorer. It is a naming convention and nothing else —
+nothing compares the two trees, nothing copies between them, and it must not grow into one.
+
 - No MEGA app key required (dropped 2023) — pass `nullptr` to `MegaApi`'s constructor
   (`meganz/sdk` issue #2706).
 - Licensing: app is **MIT** (relicensed from GPLv3 on 2026-08-07). Qt is used under **LGPLv3**, so

@@ -5,6 +5,7 @@
 #include "core/FileOperationService.h"
 #include "core/FolderNavigationService.h"
 #include "core/FolderTreeService.h"
+#include "core/LocalLinkService.h"
 #include "core/PreviewService.h"
 #include "core/QuickAccessService.h"
 #include "core/SearchService.h"
@@ -24,6 +25,7 @@
 #include "qml/FolderNavigationController.h"
 #include "qml/FolderTreeModel.h"
 #include "qml/GuiThread.h"
+#include "qml/LocalFolderController.h"
 #include "qml/NotificationController.h"
 #include "qml/PreviewController.h"
 #include "qml/PreviewImageProvider.h"
@@ -108,8 +110,11 @@ int main(int argc, char* argv[])
 
     auto downloadService = std::make_shared<DownloadService>(client);
     auto uploadService = std::make_shared<UploadService>(client);
-    auto uploadScanService =
-        std::make_shared<UploadScanService>(client, std::make_shared<QtLocalFileSystem>());
+    auto localFileSystem = std::make_shared<QtLocalFileSystem>();
+    auto uploadScanService = std::make_shared<UploadScanService>(client, localFileSystem);
+    // Shared like the services above: the linked local folder is one app-wide
+    // setting, not per-tab state.
+    auto localLinkService = std::make_shared<LocalLinkService>(client, localFileSystem);
     // Shared across every tab: handle-keyed cache, no per-tab state. What is
     // inherently per-tab lives in tabFactory below instead.
     auto thumbnailService = std::make_shared<ThumbnailService>(client);
@@ -133,6 +138,7 @@ int main(int argc, char* argv[])
     AuthController authController(authService);
     AccountController accountController(accountService);
     PreviewController previewController(previewService, previewImageStore);
+    LocalFolderController localFolderController(localLinkService, &notifications);
 
     // The one account read that cannot be lazy: the copy-conflict dialog words its
     // warning from it and has no round-trip to wait for once it is open. Logging out
@@ -194,6 +200,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("clipboardController", &clipboard);
     engine.rootContext()->setContextProperty("accountController", &accountController);
     engine.rootContext()->setContextProperty("previewController", &previewController);
+    engine.rootContext()->setContextProperty("localFolderController", &localFolderController);
     // The engine takes ownership of the provider, which is why the bytes it serves
     // live in previewImageStore rather than in the provider itself.
     engine.addImageProvider(QStringLiteral("megapreview"),

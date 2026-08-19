@@ -4,13 +4,14 @@ import QtQuick
 // Main.qml/AboutDialog.qml.
 import QtQuick.Controls.FluentWinUI3
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 
 // App-wide preferences, opened from the More menu. One instance for the whole
 // app, in Main.qml -- which also owns the persisted value and is the only place
 // that applies it, so this file decides nothing beyond "which item is showing".
 //
-// Only the theme so far. A language selector belongs here too, but nothing in
+// A language selector belongs here too, but nothing in
 // the app is translated yet (no .ts files, no QTranslator), so the row would
 // have exactly one choice; it lands with the i18n item on docs/ROADMAP.md.
 Dialog {
@@ -23,6 +24,17 @@ Dialog {
     // Main.qml owns both the persisted property and the styleHints write, the
     // same division AboutDialog.qml uses for licensesRequested.
     signal colorSchemeSelected(int scheme)
+
+    // The local folder standing in for the MEGA root, as a native path; empty
+    // means nothing is linked. Owned and persisted by Main.qml like colorScheme.
+    property string localRootFolder: ""
+
+    // Empty path means "unlinked" -- one signal, so the two answers cannot drift
+    // apart in the caller.
+    signal localRootFolderSelected(string path)
+
+    // Exposed for tst_MainDialogs.qml, like themeSelector above.
+    property alias localFolderField: localFolderField
 
     // The ComboBox's own order. Index and scheme are kept apart because the
     // scheme values are not contiguous with the row order in general.
@@ -66,5 +78,45 @@ Dialog {
             // back as one.
             onActivated: index => root.colorSchemeSelected(root.schemeOrder[index])
         }
+
+        Label {
+            text: qsTr("Local folder")
+        }
+
+        RowLayout {
+            spacing: Theme.spacing.sm
+
+            TextField {
+                id: localFolderField
+                Layout.minimumWidth: 200
+                Layout.fillWidth: true
+                // Display only: the path is picked with the folder chooser, so
+                // typing one would be a second, unvalidated way in.
+                readOnly: true
+                text: root.localRootFolder
+                placeholderText: qsTr("Not linked")
+            }
+
+            Button {
+                text: qsTr("Choose…")
+                onClicked: folderChooser.open()
+            }
+
+            Button {
+                text: qsTr("Clear")
+                enabled: root.localRootFolder !== ""
+                onClicked: root.localRootFolderSelected("")
+            }
+        }
+    }
+
+    // Nothing about the chosen folder is checked against the MEGA tree: the link
+    // is a naming convention, and verifying it would mean walking both trees on
+    // every change.
+    FolderDialog {
+        id: folderChooser
+        title: qsTr("Choose the local folder for your MEGA root")
+        onAccepted: root.localRootFolderSelected(
+                        localFolderController.pathFromUrl(folderChooser.selectedFolder))
     }
 }

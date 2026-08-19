@@ -57,6 +57,19 @@ QtObject {
                                                 }
                                             }
                                         },
+                                        // ctx: handle, localFolderLinked
+                                        "openLocalLocation": {
+                                            "icon": ctx => Theme.glyph.menu.openLocalLocation,
+                                            "label": ctx => qsTr("Open local location"),
+                                            // Hidden rather than greyed, unlike
+                                            // paste below: greying advertises a
+                                            // feature to everyone who never linked
+                                            // a folder, and the C++ resolver has no
+                                            // axis for an app-wide setting.
+                                            "available": ctx => ctx.localFolderLinked === true,
+                                            "trigger": ctx => localFolderController.openLocation(
+                                                          ctx.handle)
+                                        },
                                         // ctx: handle, isRoot
                                         "openInNewTab": {
                                             "icon": ctx => Theme.glyph.menu.openInNewTab,
@@ -242,6 +255,21 @@ QtObject {
         if (entry === undefined)
             return false;
         return entry.enabled === undefined ? true : entry.enabled(ctx) === true;
+    }
+
+    // Whether the action should appear at all, as opposed to appear greyed --
+    // `enabled` above answers the latter. Only for conditions the C++ resolver
+    // cannot see, i.e. app-wide state that no MenuContext axis carries; anything
+    // derivable from the selection belongs in MenuActionResolver's table instead.
+    //
+    // Entries without an `available` are always shown, and an unknown ID stays in
+    // the list so ActionMenu.qml can render it as the disabled "None" row rather
+    // than silently swallowing a catalog gap.
+    function isAvailable(actionId, ctx) {
+        const entry = root.entries[actionId];
+        if (entry === undefined)
+            return true;
+        return entry.available === undefined ? true : entry.available(ctx) === true;
     }
 
     function trigger(actionId, ctx) {

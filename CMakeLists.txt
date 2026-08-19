@@ -112,6 +112,8 @@ add_library(MegaExplorerCore STATIC
     src/core/PreviewService.cpp
     src/core/FolderTreeService.h
     src/core/FolderTreeService.cpp
+    src/core/LocalLinkService.h
+    src/core/LocalLinkService.cpp
     src/core/QuickAccessService.h
     src/core/QuickAccessService.cpp
     src/core/AccountService.h
@@ -161,6 +163,8 @@ add_library(MegaExplorerQml STATIC
     src/qml/FolderTreeModel.cpp
     src/qml/QuickAccessModel.h
     src/qml/QuickAccessModel.cpp
+    src/qml/LocalFolderController.h
+    src/qml/LocalFolderController.cpp
 )
 
 qt_add_executable(appMegaExplorer

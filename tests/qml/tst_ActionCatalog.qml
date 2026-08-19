@@ -26,6 +26,7 @@ TestCase {
             "pinned": false,
             "favourited": false,
             "canPaste": true,
+            "localFolderLinked": true,
             "entries": [
                 {
                     "handle": 1,
@@ -58,6 +59,11 @@ TestCase {
                         tag: "download",
                         id: "download",
                         expected: "Download"
+                    },
+                    {
+                        tag: "openLocalLocation",
+                        id: "openLocalLocation",
+                        expected: "Open local location"
                     },
                     {
                         tag: "openInNewTab",
@@ -242,7 +248,8 @@ TestCase {
 
     // ---- isEnabled ---------------------------------------------------------
 
-    // Twelve of the fourteen entries declare no `enabled` lambda and are always on.
+    // Every entry but togglePin and paste declares no `enabled` lambda and is
+    // always on. Listed rather than counted: a count goes stale silently.
     function test_isEnabled_data() {
         return [
                     {
@@ -324,6 +331,35 @@ TestCase {
         const enabled = ActionCatalog.isEnabled("paste", {});
         compare(enabled, false);
         verify(enabled !== undefined);
+    }
+
+    // ---- isAvailable -------------------------------------------------------
+
+    // Only openLocalLocation declares one; everything else is shown whenever the
+    // C++ resolver offered it.
+    function test_isAvailable_defaultsToShown() {
+        compare(ActionCatalog.isAvailable("download", fullCtx()), true);
+        compare(ActionCatalog.isAvailable("copyLink", fullCtx()), true);
+    }
+
+    function test_isAvailable_openLocalLocationFollowsTheLink() {
+        const ctx = fullCtx();
+        ctx.localFolderLinked = true;
+        compare(ActionCatalog.isAvailable("openLocalLocation", ctx), true);
+        ctx.localFolderLinked = false;
+        compare(ActionCatalog.isAvailable("openLocalLocation", ctx), false);
+    }
+
+    // Same `=== true` reason as isEnabled's paste case: a site that builds a ctx
+    // without the field must hide the item, not show it on an undefined.
+    function test_isAvailable_openLocalLocationHiddenWithoutTheField() {
+        compare(ActionCatalog.isAvailable("openLocalLocation", {}), false);
+    }
+
+    // Opposite default to isEnabled's: an ID the catalog has no entry for must
+    // survive the filter so ActionMenu.qml can render its disabled "None" row.
+    function test_isAvailable_unknownIdStaysInTheList() {
+        compare(ActionCatalog.isAvailable("nosuch", fullCtx()), true);
     }
 
     // ---- the unknown-ID contract ------------------------------------------
