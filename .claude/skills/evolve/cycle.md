@@ -193,7 +193,7 @@ git stash
 `drive`（実マウス・キーボードの乗っ取り）は、**確認内容ごとに 1 回だけ許可を取る**:
 
 ```
-d="${LOCALAPPDATA//\\//}/MegaExplorerLoop/drive-allowed"
+d="$(cygpath -u "$LOCALAPPDATA")/MegaExplorerLoop/drive-allowed"
 [ -f "$d" ] && [ "$(date +%s)" -lt "$(tr -dc 0-9 < "$d")" ] && echo flag || echo ask
 ```
 

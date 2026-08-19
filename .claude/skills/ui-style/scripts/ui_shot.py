@@ -314,6 +314,29 @@ def enum_candidate_windows(pid: int | None = None) -> list[int]:
     return found
 
 
+def popup_windows(main_hwnd: int) -> list[int]:
+    """Other visible top-level windows of the same process. A Qt Quick Menu
+    defaults to Popup.Window on desktop, so it lives in its own window and
+    PrintWindow on the main hwnd returns a shot with the menu missing -- an
+    image that is not uniform, so _is_blank cannot catch it."""
+    pid = _pid_of(main_hwnd)
+    found: list[int] = []
+
+    def cb(hwnd, _lparam):
+        if hwnd == main_hwnd or not user32.IsWindowVisible(hwnd):
+            return True
+        if _pid_of(hwnd) != pid:
+            return True
+        w, h = _client_size(hwnd)
+        if w < 8 or h < 8:
+            return True
+        found.append(hwnd)
+        return True
+
+    user32.EnumWindows(WNDENUMPROC(cb), 0)
+    return found
+
+
 def find_window(required: bool = True) -> int | None:
     """Resolve the app window: remembered hwnd first, then pid, then a scan."""
     session = load_session()
@@ -486,16 +509,20 @@ def capture_screen(hwnd: int, full_window: bool) -> Image.Image | None:
 
 
 def capture(hwnd: int, method: str, full_window: bool) -> tuple[Image.Image, str]:
+    label = "screen"
     if method in ("auto", "print"):
-        img = capture_printwindow(hwnd, full_window)
-        if img is not None and not _is_blank(img):
-            return img, "print"
-        if method == "print":
-            die("PrintWindow capture failed or came back blank (try --method screen)")
+        if method == "auto" and popup_windows(hwnd):
+            label = "screen-popup"
+        else:
+            img = capture_printwindow(hwnd, full_window)
+            if img is not None and not _is_blank(img):
+                return img, "print"
+            if method == "print":
+                die("PrintWindow capture failed or came back blank (try --method screen)")
     img = capture_screen(hwnd, full_window)
     if img is None:
         die("screen capture failed")
-    return img, "screen"
+    return img, label
 
 
 def bring_to_front(hwnd: int) -> bool:
@@ -1218,11 +1245,13 @@ def add_theme_option(parser) -> None:
     )
 
 
-def add_shot_options(parser) -> None:
+def add_shot_options(parser, default_method: str = "auto") -> None:
     parser.add_argument("--crop", type=crop_type, help="x,y,w,h in screenshot pixels")
     parser.add_argument("--max-width", type=int, default=0, help="downscale if wider than this")
     parser.add_argument("--grid", type=int, default=0, help="overlay a measuring grid every N px")
-    parser.add_argument("--method", choices=["auto", "print", "screen"], default="auto")
+    parser.add_argument(
+        "--method", choices=["auto", "print", "screen"], default=default_method
+    )
     parser.add_argument("--delay", type=int, default=0, help="wait N ms before capturing")
 
 
@@ -1294,7 +1323,9 @@ def main() -> None:
     )
     p.add_argument("steps", help='";"-separated, e.g. "click 400,300 right; wait 400; shot menu"')
     p.add_argument("--no-countdown", action="store_true")
-    add_shot_options(p)
+    # Driving already requires the window to be frontmost for SendInput, so
+    # capture_screen's one drawback does not apply here.
+    add_shot_options(p, default_method="screen")
     p.set_defaults(func=do_drive)
 
     p = subparsers.add_parser("restore-settings", help="rewind the registry from a stale backup")

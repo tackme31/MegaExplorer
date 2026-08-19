@@ -42,7 +42,7 @@ recoverable afterwards.
 | `--crop x,y,w,h` | Crop in screenshot pixels. Clamped to the capture; errors if fully outside. |
 | `--max-width N` | Downscale if wider than N. Prefer `--crop`. |
 | `--grid N` | Overlay a magenta measuring grid every N px, labelled every 5th line. |
-| `--method auto\|print\|screen` | Capture backend, default `auto`. |
+| `--method auto\|print\|screen` | Capture backend, default `auto` — but `screen` for `drive`, which needs the window frontmost anyway. |
 | `--delay MS` | Sleep before capturing (e.g. let an animation finish). |
 | `--window` | `shot`/`cycle` only: capture the extended frame bounds (DWM shadow, rounded corners) instead of the client area. |
 
@@ -55,6 +55,14 @@ D3D-composited Qt Quick window — it falls back to `screen`: raise the window
 and `BitBlt` from the desktop DC. The chosen backend is reported as `method=`.
 If you ever see `method=screen`, the window must stay visible and unobstructed;
 `method=print` has no such constraint.
+
+`auto` also skips `PrintWindow` outright when the app owns another visible
+top-level window, reporting `method=screen-popup`. A Qt Quick `Menu` defaults to
+`Popup.Window` on desktop, so it renders in its own window and `PrintWindow` on
+the main one returns the app **without the menu** — an image that is not
+uniform, so the blank check above cannot catch it. Dialogs, tooltips and
+ComboBox popups default to `Popup.Item` and do appear in a `print` capture.
+`--method print` opts out of the detection, and is then wrong for menus.
 
 `--window` uses `DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)`, not
 `GetWindowRect` — the app is frameless via QWindowKit and those two rects differ.
