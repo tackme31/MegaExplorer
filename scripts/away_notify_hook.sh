@@ -4,26 +4,24 @@
 # .claude/settings.local.json; one script for both events, dispatched on
 # hook_event_name below.
 #
-# Two gates, and only the second one is in this file. The settings entry carries
-# a matcher naming the notification types that need a human answer
-# (permission_prompt, agent_needs_input and the two elicitation dialogs), because
-# Notification is not the permission-only event it reads as: it also fires for
-# idle_prompt, agent_completed and auth_success, none of which anyone has to
-# answer. Without that matcher a backgrounded subagent finishing pushed an
-# "awaiting approval" notice to the phone with nothing waiting on approval.
+# It covers the prompts Claude cannot announce itself -- a first-time command, an
+# MCP dialog -- since Claude is blocked while one is open. Prompts Claude raises
+# on purpose (drive permission) are announced by calling ntfy-send.sh directly,
+# and nothing here gates drive.
 #
-# This file holds the other gate, which no matcher can express: the loop runs in
-# auto mode, so almost nothing prompts during a cycle -- but a permission dialog
-# has no expiry, so the rare one that does appear parks the cycle until someone
-# comes back, and the next cron fire never lands either. Meanwhile the same
-# types fire for every ordinary interactive approval (plan mode, a first-time
-# command), which is pure noise while you are sitting there reading them. Hence
-# an idle test: what makes a prompt worth a push is that nobody is watching it.
+# Two gates, and only the second one is in this file. The settings entry carries a
+# matcher naming the notification types that need a human answer (permission_prompt,
+# agent_needs_input and the two elicitation dialogs), because Notification is not
+# the permission-only event it reads as: it also fires for idle_prompt,
+# agent_completed and auth_success, none of which anyone has to answer.
 #
-# UserPromptSubmit stamps the last time the human actually spoke. Within the
-# window below they are present and the terminal is in front of them; past it,
-# assume the chair is empty. No stamp at all is treated as away, since a
-# cron-fired turn can raise a prompt without anyone having typed first.
+# This file holds the other gate, which no matcher can express: the same types fire
+# for every ordinary interactive approval, which is noise while you are sitting
+# there reading them. What makes a prompt worth a push is that nobody is watching
+# it. UserPromptSubmit stamps the last time the human actually spoke; within the
+# window below they are present, past it assume the chair is empty. No stamp at all
+# is treated as away, since a cron-fired turn can raise a prompt without anyone
+# having typed first.
 set -uo pipefail
 
 IDLE_SECONDS=600
@@ -36,6 +34,13 @@ payload=$(cat)
 event=$(printf '%s' "$payload" | jq -r '.hook_event_name // ""' 2>/dev/null)
 
 if [ "$event" = "UserPromptSubmit" ]; then
+    # Task-completion notices arrive as injected prompts, so stamping them would
+    # report a human at the desk in the middle of an unattended run.
+    head=$(printf '%s' "$payload" | jq -r '.prompt // ""' 2>/dev/null \
+        | sed -e 's/^[[:space:]]*//' | head -c 40)
+    case "$head" in
+        '<task-notification>'*) exit 0 ;;
+    esac
     mkdir -p "$dir" && date +%s > "$stamp"
     exit 0
 fi
