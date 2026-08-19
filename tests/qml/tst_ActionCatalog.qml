@@ -7,8 +7,9 @@ import MegaExplorer
 // nothing is instantiated and no C++ instance is involved.
 //
 // Not covered: the trigger lambdas of download / openInNewTab / togglePin /
-// cut / copy. Those five name the downloadController / tabsController /
-// quickAccessModel / clipboardController context properties directly, and
+// cut / copy / properties. Those six name the downloadController /
+// tabsController / quickAccessModel / clipboardController /
+// propertiesController context properties directly, and
 // main.cpp is the only thing that ever sets those; reaching them from here
 // would mean C++ test doubles injected through QUICK_TEST_MAIN_WITH_SETUP.
 // That is a gap, not a decision -- see R4-5 in docs/REFACTOR_PLANS.md.
@@ -124,6 +125,11 @@ TestCase {
                         tag: "refresh",
                         id: "refresh",
                         expected: "Refresh"
+                    },
+                    {
+                        tag: "properties",
+                        id: "properties",
+                        expected: "Properties"
                     }
                 ];
     }

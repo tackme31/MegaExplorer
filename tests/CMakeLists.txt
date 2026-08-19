@@ -25,6 +25,8 @@ add_executable(MegaExplorerTests
     TextPreviewDecoderTest.cpp
     FolderTreeServiceTest.cpp
     LocalLinkServiceTest.cpp
+    NodeDetailsServiceTest.cpp
+    PropertiesControllerTest.cpp
     FileOperationServiceTest.cpp
     FolderNavigationControllerTest.cpp
     FileMutationControllerTest.cpp

@@ -792,6 +792,34 @@ void MegaSdkClient::getNodeInfo(std::uint64_t handle, std::function<void(Result<
     onDone(Result<NodeInfo>::ok(std::move(info)));
 }
 
+void MegaSdkClient::getFolderInfo(std::uint64_t handle,
+                                  bool isRoot,
+                                  std::function<void(Result<FolderInfo>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<FolderInfo>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, isRoot);
+    if (!node)
+    {
+        onDone(Result<FolderInfo>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / node deleted)",
+            MegaErrorCode::kENoEnt));
+        return;
+    }
+    // Checked here rather than left to the SDK: getFolderInfo on a file finishes
+    // with API_OK and an all-zero MegaFolderInfo, which reads as an empty folder.
+    if (!node->isFolder())
+    {
+        onDone(Result<FolderInfo>::fail("Not a folder", MegaErrorCode::kEArgs));
+        return;
+    }
+
+    mApi->getFolderInfo(node.get(), new megasdk::FolderInfoListener(std::move(onDone)));
+}
+
 void MegaSdkClient::renameNode(std::uint64_t handle,
                                const std::string& newName,
                                std::function<void(Result<void>)> onDone)

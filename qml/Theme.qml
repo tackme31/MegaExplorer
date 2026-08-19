@@ -262,6 +262,10 @@ QtObject {
             readonly property string about: "\uE946"         // Info
             readonly property string licenses: "\uE9a4"      // TextBulletListSquare
             readonly property string signOut: "\uE7E8"       // Leave
+            // Reuses the About entry's Info glyph: both open a read-only panel of
+            // facts, and an unverified Segoe code point renders as a box. Whether it
+            // earns one of its own is a /ui-style question.
+            readonly property string properties: about
         }
     }
 

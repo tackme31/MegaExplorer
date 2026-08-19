@@ -86,6 +86,7 @@ add_library(MegaExplorerCore STATIC
     src/core/ViewKind.h
     src/core/AccountInfo.h
     src/core/AccountPlan.h
+    src/core/FolderInfo.h
     src/core/UserAttribute.h
     src/core/MenuAction.h
     src/core/MenuActionResolver.h
@@ -118,6 +119,8 @@ add_library(MegaExplorerCore STATIC
     src/core/QuickAccessService.cpp
     src/core/AccountService.h
     src/core/AccountService.cpp
+    src/core/NodeDetailsService.h
+    src/core/NodeDetailsService.cpp
 )
 target_include_directories(MegaExplorerCore PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src)
 # Every other target gets C++17 from Qt's interface requirement; this one links
@@ -165,6 +168,8 @@ add_library(MegaExplorerQml STATIC
     src/qml/QuickAccessModel.cpp
     src/qml/LocalFolderController.h
     src/qml/LocalFolderController.cpp
+    src/qml/PropertiesController.h
+    src/qml/PropertiesController.cpp
 )
 
 qt_add_executable(appMegaExplorer
@@ -242,6 +247,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/NewFolderDialog.qml
         qml/components/NodeDropArea.qml
         qml/components/PreviewPane.qml
+        qml/components/PropertiesDialog.qml
         qml/components/QuickAccessSection.qml
         qml/components/SearchFilterPopup.qml
         qml/components/SettingsDialog.qml

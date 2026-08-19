@@ -94,6 +94,10 @@ public:
                 (std::uint64_t, std::function<void(Result<NodeInfo>)>),
                 (override));
     MOCK_METHOD(void,
+                getFolderInfo,
+                (std::uint64_t, bool, std::function<void(Result<FolderInfo>)>),
+                (override));
+    MOCK_METHOD(void,
                 renameNode,
                 (std::uint64_t, const std::string&, std::function<void(Result<void>)>),
                 (override));

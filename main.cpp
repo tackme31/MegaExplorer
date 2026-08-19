@@ -6,6 +6,7 @@
 #include "core/FolderNavigationService.h"
 #include "core/FolderTreeService.h"
 #include "core/LocalLinkService.h"
+#include "core/NodeDetailsService.h"
 #include "core/PreviewService.h"
 #include "core/QuickAccessService.h"
 #include "core/SearchService.h"
@@ -28,6 +29,7 @@
 #include "qml/LocalFolderController.h"
 #include "qml/NotificationController.h"
 #include "qml/PreviewController.h"
+#include "qml/PropertiesController.h"
 #include "qml/PreviewImageProvider.h"
 #include "qml/PreviewImageStore.h"
 #include "qml/QuickAccessModel.h"
@@ -126,6 +128,9 @@ int main(int argc, char* argv[])
     auto fileOperationService = std::make_shared<FileOperationService>(client);
     auto authService = std::make_shared<AuthService>(client, sessionStore);
     auto accountService = std::make_shared<AccountService>(client);
+    // Shared for the same reason as previewService: one information dialog is open
+    // at a time for the whole window.
+    auto nodeDetailsService = std::make_shared<NodeDetailsService>(client);
     // Declared before the controllers that hold non-owning pointers to it, since
     // stack locals are destroyed in reverse order. That covers the stack-allocated
     // holders only: a per-tab controller kept alive past tab close by an in-flight
@@ -139,6 +144,7 @@ int main(int argc, char* argv[])
     AccountController accountController(accountService);
     PreviewController previewController(previewService, previewImageStore);
     LocalFolderController localFolderController(localLinkService, &notifications);
+    PropertiesController propertiesController(nodeDetailsService);
 
     // The one account read that cannot be lazy: the copy-conflict dialog words its
     // warning from it and has no round-trip to wait for once it is open. Logging out
@@ -201,6 +207,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("accountController", &accountController);
     engine.rootContext()->setContextProperty("previewController", &previewController);
     engine.rootContext()->setContextProperty("localFolderController", &localFolderController);
+    engine.rootContext()->setContextProperty("propertiesController", &propertiesController);
     // The engine takes ownership of the provider, which is why the bytes it serves
     // live in previewImageStore rather than in the provider itself.
     engine.addImageProvider(QStringLiteral("megapreview"),

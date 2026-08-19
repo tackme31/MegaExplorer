@@ -63,6 +63,9 @@ enum class MenuAction
     // the same thing.
     SelectAll,
     Refresh,
+    // Last in the vocabulary because it is last in every menu, as in Explorer.
+    // Offered in the Rubbish bin too: it only reads.
+    Properties,
 };
 
 // Which right-click site a menu is being built for. A site decides *membership*

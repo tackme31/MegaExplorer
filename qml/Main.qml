@@ -271,6 +271,10 @@ ApplicationWindow {
         quickAccess: quickAccessModel
     }
 
+    PropertiesDialog {
+        properties: propertiesController
+    }
+
     ConfirmUploadDialog {
         uploads: uploadController
     }

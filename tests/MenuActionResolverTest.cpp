@@ -265,7 +265,7 @@ TEST(MenuActionResolverTest, EmptySelectionYieldsNoActions)
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(1, 0));
-    ASSERT_EQ(result.size(), 10u);
+    ASSERT_EQ(result.size(), 11u);
     EXPECT_EQ(result[0], MenuAction::Download);
     EXPECT_EQ(result[1], MenuAction::OpenLocalFile);
     EXPECT_EQ(result[2], MenuAction::OpenLocalLocation);
@@ -276,6 +276,7 @@ TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
     EXPECT_EQ(result[7], MenuAction::Copy);
     EXPECT_EQ(result[8], MenuAction::Rename);
     EXPECT_EQ(result[9], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[10], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForMultipleFiles)
@@ -381,7 +382,7 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsOpenLocalLocationWhereNoOneIte
 TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(0, 1));
-    ASSERT_EQ(result.size(), 10u);
+    ASSERT_EQ(result.size(), 11u);
     EXPECT_EQ(result[0], MenuAction::OpenLocalLocation);
     EXPECT_EQ(result[1], MenuAction::OpenInNewTab);
     EXPECT_EQ(result[2], MenuAction::TogglePin);
@@ -392,6 +393,7 @@ TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
     EXPECT_EQ(result[7], MenuAction::Copy);
     EXPECT_EQ(result[8], MenuAction::Rename);
     EXPECT_EQ(result[9], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[10], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, TogglePinIdIsStable)
@@ -637,7 +639,7 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     // never move, and cut is a deferred move (its decision 1).
     const std::vector<MenuAction> result =
         resolveMenuActions(fileSelection(1, 0, ViewKind::Favourites));
-    ASSERT_EQ(result.size(), 8u);
+    ASSERT_EQ(result.size(), 9u);
     EXPECT_EQ(result[0], MenuAction::Download);
     EXPECT_EQ(result[1], MenuAction::OpenLocalFile);
     EXPECT_EQ(result[2], MenuAction::OpenLocalLocation);
@@ -646,6 +648,7 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     EXPECT_EQ(result[5], MenuAction::RemoveLink);
     EXPECT_EQ(result[6], MenuAction::Copy);
     EXPECT_EQ(result[7], MenuAction::Rename);
+    EXPECT_EQ(result[8], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableStillOffersOpenInNewTabAndTogglePinInFavourites)
@@ -691,6 +694,43 @@ TEST(MenuActionResolverTest, MenuActionAllowedAgreesWithTheResolvedMenu)
     EXPECT_TRUE(menuActionAllowed("paste", folderTarget(MenuSite::FolderBackground)));
     EXPECT_FALSE(
         menuActionAllowed("paste", folderTarget(MenuSite::FolderBackground, ViewKind::Favourites)));
+}
+
+TEST(MenuActionResolverTest, PropertiesIdIsStable)
+{
+    EXPECT_STREQ(menuActionId(MenuAction::Properties), "properties");
+}
+
+TEST(MenuActionResolverTest, DefaultTableOffersPropertiesForOneItemInEveryView)
+{
+    // The one selection action the bin keeps: it only reads, and a binned node's
+    // size and original location are exactly what gets looked up there.
+    for (ViewKind kind : {ViewKind::CloudDrive,
+                          ViewKind::Favourites,
+                          ViewKind::Recents,
+                          ViewKind::Rubbish})
+    {
+        EXPECT_TRUE(contains(resolveMenuActions(fileSelection(1, 0, kind)),
+                             MenuAction::Properties))
+            << static_cast<int>(kind);
+        EXPECT_TRUE(contains(resolveMenuActions(fileSelection(0, 1, kind)),
+                             MenuAction::Properties))
+            << static_cast<int>(kind);
+        // One node, one dialog -- a multi-selection has nothing to describe.
+        EXPECT_FALSE(contains(resolveMenuActions(fileSelection(2, 0, kind)),
+                              MenuAction::Properties))
+            << static_cast<int>(kind);
+    }
+}
+
+TEST(MenuActionResolverTest, DefaultTableNeverOffersPropertiesOnFixedTargetSites)
+{
+    // Those sites name the folder a view shows or a tree row, both of which the
+    // breadcrumb already identifies -- there is no row whose facts are in question.
+    EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)),
+                          MenuAction::Properties));
+    EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)),
+                          MenuAction::Properties));
 }
 
 TEST(MenuActionResolverTest, MenuActionAllowedRejectsAnUnknownId)
