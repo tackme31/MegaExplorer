@@ -57,12 +57,36 @@ const std::unordered_set<std::string>& mediaExtensions()
 // readable.
 const std::unordered_set<std::string>& textExtensions()
 {
+    // "ts" is deliberately absent: mediaExtensions() claims it for MPEG-TS and is
+    // consulted first, so adding it here would be dead. A TypeScript file therefore
+    // lands on "no preview available" rather than showing its source.
     static const std::unordered_set<std::string> extensions{
-        "txt", "md",   "markdown", "json", "log",  "xml", "csv", "tsv",  "ini",
-        "cfg", "conf", "yaml",     "yml",  "toml", "sql", "svg", "html", "htm",
-        "css", "scss", "c",        "cc",   "cpp",  "cxx", "h",   "hpp",  "hxx",
-        "cs",  "java", "js",       "ts",   "jsx",  "tsx", "py",  "rb",   "go",
-        "rs",  "php",  "sh",       "bat",  "ps1",  "qml", "pro", "pri",  "cmake"};
+        // Plain text, documents and markup
+        "txt", "md", "markdown", "rst", "adoc", "asciidoc", "tex", "bib", "log",
+        // Structured data
+        "json", "json5", "jsonc", "jsonl", "ndjson", "ipynb", "xml", "plist", "csv",
+        "tsv", "yaml", "yml", "toml", "ini", "cfg", "conf", "properties", "env", "reg",
+        // Web
+        "html", "htm", "xhtml", "css", "scss", "sass", "less", "svg", "vue", "svelte",
+        "ejs", "erb", "hbs", "graphql", "gql", "proto",
+        // Build and project files
+        "cmake", "pro", "pri", "qbs", "qrc", "ui", "rc", "gradle", "mk", "dockerfile",
+        "sln", "csproj", "vcxproj", "vbproj", "props", "targets",
+        // C family
+        "c", "cc", "cpp", "cxx", "h", "hpp", "hxx", "m", "mm", "cs", "vb", "vbs",
+        // JVM
+        "java", "kt", "kts", "scala", "sbt", "groovy", "clj", "cljs",
+        // Scripting
+        "js", "jsx", "tsx", "coffee", "py", "rb", "php", "pl", "pm", "lua", "tcl",
+        "r", "jl", "awk", "qml", "gd",
+        // Shells
+        "sh", "bash", "zsh", "fish", "bat", "cmd", "ps1", "psm1", "psd1",
+        // Everything else with a mainstream text form
+        "go", "rs", "swift", "dart", "zig", "nim", "v", "hs", "ex", "exs", "erl",
+        "hrl", "ml", "mli", "fs", "fsx", "el", "lisp", "scm", "d", "pas", "f90",
+        "asm", "vhd", "vhdl", "sql",
+        // Patches, subtitles and playlists
+        "diff", "patch", "po", "pot", "srt", "vtt", "m3u", "m3u8"};
     return extensions;
 }
 
