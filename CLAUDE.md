@@ -235,38 +235,33 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   which auto-logs-in from the saved session, so a production session would put real files in front
   of destructive checks — and in `.screenshots/`. Every cycle aborts unless `megatool whoami`
   matches `MEGAEXPLORER_TEST_ACCOUNT`.
-- `scripts/drive_gate.cmd` + `scripts/drive_gate_hook.sh` — `ui_shot.py drive` hijacks the real
-  mouse and keyboard, so a `PreToolUse` hook **asks** before every run. An **expiring** flag file
-  under `%LOCALAPPDATA%\MegaExplorerLoop\`, written by the desktop shortcuts (`drive ON 6h/8h/12h`,
-  `drive OFF`), waives that prompt. It means **"nobody is here to answer"**, not "permission": an
-  interactive session can always use `drive` by approving it, flag or no flag — and **one approval
-  covers the whole session**, recorded by the hook's `PostToolUse` half (which only fires when the
-  tool actually ran). Without that, every step re-asks: a hook's `ask` overrides Claude Code's own
-  don't-ask-again, and each `drive` step is a different command string anyway. **`/evolve` follows
-  the same rule** — a cycle a human is watching asks and proceeds on approval; the flag is only
-  needed when nobody is there to answer. What must never happen is asking nobody: a permission
-  dialog has no expiry, so an unattended cycle that reached one would hang the loop until someone
-  returns. So with no flag and no session approval, **presence decides between asking and
-  refusing**, read off the `last-user-prompt` stamp and 10-minute window that
-  `scripts/away_notify_hook.sh` already maintains — the hook denies instead of asking, and
-  `/evolve` makes the same check before calling `drive` at all. Don't lock the workstation while
-  the flag is set:
-  `SendInput` goes to the secure desktop and never reaches the app.
+- `scripts/drive_gate.cmd` — `ui_shot.py drive` hijacks the real mouse and keyboard, so permission
+  is taken **once per thing being verified**: Claude pushes what it is about to check through
+  `scripts/ntfy-send.sh`, then raises its own question and waits. That one answer covers every
+  `drive` call belonging to that check — two states of the same screen, a `drag` and the shot after
+  it — while a different grain (re-checking after a review fix, another feature) asks again. A
+  refusal means the point is handed to the human as "needs checking on a real run" instead. An
+  **expiring** flag file under `%LOCALAPPDATA%\MegaExplorerLoop\`, written by the desktop shortcuts
+  (`drive ON 6h/8h/12h`, `drive OFF`), skips the asking: it means **"nobody is here to answer"**,
+  not "permission". Without it an unattended cycle that wants `drive` stops until someone answers —
+  accepted deliberately, because the stalled cycle leaves a dirty tree and the next cron fire then
+  aborts on its clean-tree check instead of redoing the work. Cover the windows where nobody can
+  answer with the shortcut, and don't lock the workstation while the flag is set: `SendInput` goes
+  to the secure desktop and never reaches the app.
 - `scripts/ntfy-send.sh` — how the loop reaches a phone. Claude Code's built-in push reports success
-  and mostly doesn't deliver, so it isn't used. Two callers: Claude, at the end of a cycle, and
-  `scripts/away_notify_hook.sh` — a `Notification` hook that pushes a prompt waiting on a human
-  answer, because Claude is blocked at that point and cannot notify anyone itself. **Two gates, and
-  they live in different places.** The settings entry carries a `matcher` naming the types that
-  actually need answering (`permission_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog`)
-  — `Notification` is not the permission-only event its name suggests, it also fires for
-  `idle_prompt`, `agent_completed` and `auth_success`, and without the matcher a backgrounded
-  subagent finishing pushed an "awaiting approval" notice with nothing waiting on approval. The
-  script holds the other gate, which no matcher can express: it only pushes when **nobody is at the
-  desk**, since a `UserPromptSubmit` hook stamps the last time you typed and anything within 10
-  minutes of that is treated as "you are looking at the terminal". Without *that* gate it pushed on
-  every ordinary approval — plan mode, a first-time command — which is noise you are already reading
-  on screen. Both hooks live in the gitignored `.claude/settings.local.json`, so a fresh clone has to
-  re-add them, matcher included.
+  and mostly doesn't deliver, so it isn't used. Two callers: Claude — at the end of a cycle, and
+  ahead of every question it raises itself — and `scripts/away_notify_hook.sh`, a `Notification`
+  hook covering the prompts Claude cannot announce (a first-time command, an MCP dialog) because it
+  is blocked while one is open. **Two gates, and they live in different places.** The settings entry
+  carries a `matcher` naming the types that actually need answering
+  (`permission_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog`) — `Notification`
+  is not the permission-only event its name suggests, it also fires for `idle_prompt`,
+  `agent_completed` and `auth_success`. The script holds the other gate, which no matcher can
+  express: it only pushes when **nobody is at the desk**, since a `UserPromptSubmit` hook stamps the
+  last time you typed and anything within 10 minutes of that is treated as "you are looking at the
+  terminal". That stamp ignores injected `<task-notification>` prompts, which report a human present
+  in the middle of an unattended cycle. Both hooks live in the gitignored
+  `.claude/settings.local.json`, so a fresh clone has to re-add them, matcher included.
 
 Secrets: `MEGAEXPLORER_TEST_ACCOUNT` and `NTFY_TOPIC` live in the gitignored
 `.claude/settings.local.json` `env` block; `MEGAEXPLORER_TEST_PASSWORD` is a Windows user

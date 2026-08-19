@@ -18,7 +18,7 @@ python .claude/skills/ui-style/scripts/ui_shot.py
 | `close [--force] [--keep-settings]` | `WM_CLOSE`, wait up to 12s, then rewind the registry snapshot. |
 | `resize WxH` / `move X,Y` | Adjust the live window. `resize` compensates for the non-client delta so the *client* area matches. |
 | `info` | Window handle/title/class, pid, client size, screen origin, DPI scale, foreground flag, whether a settings backup is pending. |
-| `drive "STEPS"` | Inject input. **Ask the user first.** |
+| `drive "STEPS"` | Inject input. **Ask the user first** — one answer per check, see SKILL.md. |
 | `restore-settings` | Rewind the registry from a stale backup left by an interrupted run. |
 
 ## Light/dark (`launch`, `cycle`)

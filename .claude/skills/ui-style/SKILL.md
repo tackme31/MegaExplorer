@@ -64,15 +64,19 @@ screenshot px. On a 100% display they are the same number.
 `... shot x --grid 8` overlays a labelled measuring grid — use it when judging
 padding/spacing numerically rather than guessing from a plain capture.
 
-## Driving the UI — ask first
+## Driving the UI — ask once per check
 
 `drive` injects real mouse and keyboard input, so it **takes over the user's
-machine for a few seconds**. It is deliberately excluded from this skill's
-pre-approved tools.
+machine for a few seconds**.
 
-> Before running `drive`, ask the user for permission in chat and wait for a
-> reply. Never run it unannounced, and batch everything into one call so a
-> single approval covers the whole sequence.
+> Before the first `drive` of a check, push what you are about to verify with
+> `scripts/ntfy-send.sh`, then ask the user and wait for the answer. That answer
+> covers every `drive` call belonging to that check, so don't ask again for the
+> next state or the next shot of the same thing. A different grain — verifying
+> again after a fix, moving to another feature — asks once more. On a refusal,
+> stop calling `drive` and hand the point to the user as something to check by
+> hand. The `drive ON` desktop shortcut (`scripts/drive_gate.cmd`) means nobody
+> is there to answer; while it is set, run `drive` without asking or pushing.
 
 ```
 python .claude/skills/ui-style/scripts/ui_shot.py drive "click 400,300 right; wait 400; shot ctxmenu"
