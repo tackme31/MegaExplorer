@@ -85,6 +85,9 @@ ApplicationWindow {
         window.visible = true;
         window.width = restoredWidth;
         window.height = restoredHeight;
+
+        if (authController.authState === AuthController.LoggedIn)
+            window.loadSignedInContent();
     }
 
     // 0 = list, 1 = grid. Persisted below via Settings (alias, so every
@@ -502,14 +505,28 @@ ApplicationWindow {
         }
     }
 
+    // Guard, not a live path: main.cpp starts the session restore before this file is
+    // built, and only the queued GUI-thread hop keeps LoggedIn from landing before the
+    // handler below exists -- which a signal handler could never see. The flag is what
+    // stops the two entry points loading the tree twice.
+    property bool signedInContentLoaded: false
+
+    function loadSignedInContent(): void {
+        if (window.signedInContentLoaded)
+            return;
+        window.signedInContentLoaded = true;
+        tabsController.loadRootAll();
+        folderTreeModel.reload();
+        quickAccessModel.reload();
+    }
+
     Connections {
         target: authController
         function onAuthStateChanged() {
             if (authController.authState === AuthController.LoggedIn) {
-                tabsController.loadRootAll();
-                folderTreeModel.reload();
-                quickAccessModel.reload();
+                window.loadSignedInContent();
             } else if (authController.authState === AuthController.LoggedOut) {
+                window.signedInContentLoaded = false;
                 tabsController.resetAll();
                 folderTreeModel.reset();
                 quickAccessModel.reset();

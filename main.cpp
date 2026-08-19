@@ -213,9 +213,12 @@ int main(int argc, char* argv[])
             QCoreApplication::exit(-1);
         },
         Qt::QueuedConnection);
-    engine.loadFromModule("MegaExplorer", "Main");
-
+    // Before loadFromModule, not after: the SDK's ~1.5s of fastLogin+fetchNodes runs
+    // on its own thread, so behind the ~3.75s QML build the two add up instead of
+    // overlapping (docs/investigations/STUDY_STARTUP_LATENCY.md).
     authController.restoreSession();
+
+    engine.loadFromModule("MegaExplorer", "Main");
 
     const int exitCode = app.exec();
 
