@@ -249,6 +249,8 @@ QVariantList FileListModel::selectedEntries() const
         map.insert(QStringLiteral("sizeBytes"), static_cast<qulonglong>(entry.sizeBytes));
         map.insert(QStringLiteral("isFolder"), entry.isFolder);
         map.insert(QStringLiteral("isFavourite"), entry.isFavourite);
+        map.insert(QStringLiteral("modificationTime"),
+                   static_cast<qlonglong>(entry.modificationTime));
         result.append(map);
     }
     return result;

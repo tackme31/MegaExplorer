@@ -1,6 +1,7 @@
 #pragma once
 #include "core/AccountInfo.h"
 #include "core/DownloadOutcome.h"
+#include "core/FolderInfo.h"
 #include "core/MegaErrorCodes.h"
 #include "core/Result.h"
 #include "core/UploadOutcome.h"
@@ -19,7 +20,7 @@
 namespace megasdk
 {
 
-// Listener lifetime, once for all seven classes below: each one is `new`ed at
+// Listener lifetime, once for every class below: each one is `new`ed at
 // the call site, handed to MegaApi, and deletes itself from its finish
 // callback. That is the only correct arrangement here -- the SDK never deletes
 // listeners (megaapi_impl.cpp:18032,18192 delete the request/transfer, never
@@ -232,6 +233,55 @@ public:
 
 private:
     std::function<void(Result<AccountInfo>)> mOnDone;
+};
+
+class FolderInfoListener : public mega::MegaRequestListener
+{
+public:
+    explicit FolderInfoListener(std::function<void(Result<FolderInfo>)> onDone)
+        : mOnDone(std::move(onDone))
+    {}
+
+    void
+    onRequestFinish(mega::MegaApi* /*api*/, mega::MegaRequest* request, mega::MegaError* e) override
+    {
+        int code = e->getErrorCode();
+        if (code == mega::MegaError::API_OK)
+        {
+            // getMegaFolderInfo() does NOT transfer ownership, unlike
+            // getMegaAccountDetails() right above (megaapi.h) -- the SDK frees it with
+            // the request, so wrapping it in a unique_ptr here is a double free.
+            const mega::MegaFolderInfo* info = request->getMegaFolderInfo();
+            if (info)
+            {
+                FolderInfo folder;
+                // All three are signed in the SDK and documented as counts/sums, so a
+                // negative can only mean the folder went away mid-walk.
+                folder.fileCount =
+                    info->getNumFiles() > 0 ? static_cast<std::uint64_t>(info->getNumFiles()) : 0;
+                folder.folderCount = info->getNumFolders() > 0
+                                         ? static_cast<std::uint64_t>(info->getNumFolders())
+                                         : 0;
+                folder.sizeBytes = info->getCurrentSize() > 0
+                                       ? static_cast<std::uint64_t>(info->getCurrentSize())
+                                       : 0;
+                mOnDone(Result<FolderInfo>::ok(folder));
+            }
+            else
+            {
+                mOnDone(Result<FolderInfo>::fail("Folder info missing from response",
+                                                 MegaErrorCode::kEInternal));
+            }
+        }
+        else
+        {
+            mOnDone(Result<FolderInfo>::fail(e->getErrorString(), code));
+        }
+        delete this;
+    }
+
+private:
+    std::function<void(Result<FolderInfo>)> mOnDone;
 };
 
 class DownloadListener : public mega::MegaTransferListener

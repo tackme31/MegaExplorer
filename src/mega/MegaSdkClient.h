@@ -122,6 +122,10 @@ public:
 
     void getNodeInfo(std::uint64_t handle, std::function<void(Result<NodeInfo>)> onDone) override;
 
+    void getFolderInfo(std::uint64_t handle,
+                       bool isRoot,
+                       std::function<void(Result<FolderInfo>)> onDone) override;
+
     void renameNode(std::uint64_t handle,
                     const std::string& newName,
                     std::function<void(Result<void>)> onDone) override;

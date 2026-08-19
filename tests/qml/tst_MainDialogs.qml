@@ -3,8 +3,8 @@ import QtTest
 import MegaExplorer
 
 // R6-4. The dialogs Main.qml used to declare inline and now instantiates
-// from qml/components/: NameConflictDialog, MissingPinDialog, and since the
-// copy/move conflict rework CopyConflictDialog. All of them
+// from qml/components/: NameConflictDialog, MissingPinDialog, since the
+// copy/move conflict rework CopyConflictDialog, and PropertiesDialog. All of them
 // wire themselves to their controller's signal, so nothing outside
 // them opens them -- which means every failure mode here is silent. A mistyped
 // handler name makes the dialog simply never appear; Replace and Skip swapped
@@ -185,6 +185,34 @@ TestCase {
     Component {
         id: settingsComponent
         SettingsDialog {}
+    }
+
+    Component {
+        id: propertiesComponent
+        PropertiesDialog {}
+    }
+
+    // Mirrors PropertiesController's QML-facing surface. Every value is a plain
+    // property because the real one publishes them all through one changed()
+    // signal, which QML re-reads on assignment here just the same.
+    Component {
+        id: propertiesControllerComponent
+
+        QtObject {
+            signal showRequested
+
+            property string name: "a.jpg"
+            property bool isFolder: false
+            property var sizeBytes: 1024
+            property string formattedSize: "1.0 KiB"
+            property var modificationTime: 0
+            property string parentPath: ""
+            property int rootKind: 0
+            property int fileCount: -1
+            property int folderCount: -1
+            property bool loading: false
+            property bool failed: false
+        }
     }
 
     Component {
@@ -611,6 +639,57 @@ TestCase {
         dialog.reject();
 
         compare(quickAccess.unpinCount, 0);
+    }
+
+    // ---- PropertiesDialog ----------------------------------------------
+
+    function makeProperties() {
+        const controller = createTemporaryObject(propertiesControllerComponent, testCase);
+        verify(controller !== null);
+        return controller;
+    }
+
+    function test_properties_signalOpensTheDialog() {
+        failOnWarning(/Connections/);
+        const controller = makeProperties();
+        const dialog = makeDialog(propertiesComponent, {
+                                      "properties": controller
+                                  });
+
+        controller.showRequested();
+
+        tryCompare(dialog, "opened", true);
+    }
+
+    // The root is named here, not in C++: ViewLabels owns every screen the app
+    // invented, and a binned node would otherwise read as a Cloud Drive one.
+    function test_properties_locationNamesTheRootItEndedAt_data() {
+        return [
+                    {
+                        tag: "cloudDrive",
+                        rootKind: ViewKind.CloudDrive,
+                        parentPath: "/photos",
+                        expected: "Cloud Drive/photos"
+                    },
+                    {
+                        tag: "rubbish",
+                        rootKind: ViewKind.Rubbish,
+                        parentPath: "",
+                        expected: "Rubbish bin"
+                    }
+                ];
+    }
+
+    function test_properties_locationNamesTheRootItEndedAt(data) {
+        const controller = makeProperties();
+        const dialog = makeDialog(propertiesComponent, {
+                                      "properties": controller
+                                  });
+
+        controller.rootKind = data.rootKind;
+        controller.parentPath = data.parentPath;
+
+        compare(dialog.locationText, data.expected);
     }
 
     // ---- ConfirmRubbishDialog / ConfirmPermanentDeleteDialog -----------

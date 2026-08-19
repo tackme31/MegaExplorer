@@ -2,6 +2,7 @@
 #include "AccountInfo.h"
 #include "DownloadOutcome.h"
 #include "FileEntry.h"
+#include "FolderInfo.h"
 #include "NodeInfo.h"
 #include "PathSegment.h"
 #include "RestoreTarget.h"
@@ -230,6 +231,15 @@ public:
     // in the Rubbish bin, so check NodeInfo::inCloud for that.
     virtual void getNodeInfo(std::uint64_t handle,
                              std::function<void(Result<NodeInfo>)> onDone) = 0;
+
+    // Recursive file/folder counts and byte total of a folder. The one read here
+    // that is a request rather than an in-memory query, so onDone arrives on an
+    // SDK thread and it does not belong in the synchronous list at the top of this
+    // file -- subtreeSize() stays the cheap answer when only the bytes are wanted.
+    // Fails on a file: MegaApi::getFolderInfo has nothing to report for one.
+    virtual void getFolderInfo(std::uint64_t handle,
+                               bool isRoot,
+                               std::function<void(Result<FolderInfo>)> onDone) = 0;
 
     // First of the mutating calls -- everything above only reads. All are real API
     // round-trips and must follow a successful fetchNodes().

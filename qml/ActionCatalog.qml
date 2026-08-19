@@ -20,7 +20,8 @@ import QtQuick
 //   handle, isRoot, name  the single primary target (the clicked row, or the
 //                         first selected entry, or the folder a view shows)
 //   pinned                whether that target is already in Quick access
-//   entries               every target, as {handle, name, sizeBytes, isFolder}
+//   entries               every target, as {handle, name, sizeBytes, isFolder,
+//                         isFavourite, modificationTime}
 //   request*()            callbacks into the view/tab that opened the menu,
 //                         for actions driving an Item no singleton can reach
 //                         (the inline rename field, ConfirmRubbishDialog,
@@ -232,6 +233,20 @@ QtObject {
                                             "icon": ctx => Theme.glyph.menu.refresh,
                                             "label": ctx => qsTr("Refresh"),
                                             "trigger": ctx => ctx.navController.refresh()
+                                        },
+                                        // ctx: entries. Straight to the app-wide
+                                        // controller rather than a request*(): the
+                                        // dialog is one instance in Main.qml, so no
+                                        // per-view Item has to be reached.
+                                        "properties": {
+                                            "icon": ctx => Theme.glyph.menu.properties,
+                                            "label": ctx => qsTr("Properties"),
+                                            "trigger": ctx => propertiesController.show(
+                                                          ctx.entries[0].handle,
+                                                          ctx.entries[0].name,
+                                                          ctx.entries[0].isFolder,
+                                                          ctx.entries[0].sizeBytes,
+                                                          ctx.entries[0].modificationTime)
                                         }
                                     })
 

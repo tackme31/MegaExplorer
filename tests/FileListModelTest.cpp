@@ -276,7 +276,8 @@ TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
                            "cut",
                            "copy",
                            "rename",
-                           "moveToRubbish"}));
+                           "moveToRubbish",
+                           "properties"}));
 
     FileListModel modelMulti;
     modelMulti.setEntries(makeEntries(3));
@@ -631,7 +632,8 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
                            "cut",
                            "copy",
                            "rename",
-                           "moveToRubbish"}));
+                           "moveToRubbish",
+                           "properties"}));
 
     model.setViewKind(ViewKind::Favourites);
 
@@ -643,7 +645,8 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
                            "copyLink",
                            "removeLink",
                            "copy",
-                           "rename"}));
+                           "rename",
+                           "properties"}));
 }
 
 TEST(FileListModelTest, SetViewKindNotifiesOnlyOnAChange)
