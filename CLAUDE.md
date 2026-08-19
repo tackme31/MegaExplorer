@@ -86,6 +86,11 @@ reasons to skip it.
 Serena's connection occasionally times out on session start; `/mcp` reconnects it. If it stays
 down, say so rather than silently falling back to whole-file reads.
 
+Rewrote a file whole from a script rather than editing it in place? Check `git diff --stat` before
+committing: a whole-file diff means the newlines or the encoding were rewritten too, and the real
+change is buried in it. `.gitattributes` normalises line endings at commit time, so that class of
+accident is noise rather than damage — but it still has to be spotted.
+
 ## Tooling: use `ast-outline` on the docs, not `Read`
 
 The companion docs above are long — `docs/DESIGN_IMPROVEMENT.md` alone is ~15k tokens, and
