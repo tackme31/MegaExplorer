@@ -5,12 +5,13 @@
 #include <QString>
 #include <QUrl>
 
+#include <functional>
 #include <memory>
 
 class NotificationController;
 
-// The one local folder that stands in for the MEGA root, plus the "show this node
-// in Explorer" action built on it.
+// The one local folder that stands in for the MEGA root, plus the two actions built
+// on it: show this node in Explorer, and open it with its associated program.
 //
 // The path is owned and persisted by Main.qml's Settings item and pushed in here,
 // the same division the colour-scheme preference uses -- this class resolves and
@@ -42,10 +43,22 @@ public:
     // is the same toast, since the answer is always to revisit the setting.
     Q_INVOKABLE void openLocation(quint64 handle);
 
+    // Opens the node's local counterpart with whatever program Windows associates
+    // with it. A resolution failure is the same toast as openLocation's, pointing
+    // back at the setting; a shell that refuses the file is a different one.
+    Q_INVOKABLE void openFile(quint64 handle);
+
 signals:
     void localRootChanged();
 
 private:
+    // Shared by both invokables: resolve on an SDK thread, hop to the GUI thread,
+    // toast `resolveFailToast` if there is nothing to act on. `act` reports its own
+    // failure, since only it knows what refused.
+    void withLocalPath(quint64 handle,
+                       QString resolveFailToast,
+                       std::function<void(const QString&)> act);
+
     std::shared_ptr<LocalLinkService> mService;
     NotificationController* mNotifications;
     QString mLocalRoot;

@@ -363,6 +363,9 @@ Item {
             // the wrong folder was chosen or the item was never downloaded -- and
             // only the user can tell those apart.
         case "openLocalLocation":
+            // Shared with openLocalFile: both fail at the same step, and the answer
+            // is the same. A file the shell then refuses to open is "openFile".
+        case "openLocalFile":
             text = qsTr("Couldn't find this item locally — check the linked folder in Settings");
             break;
         case "uploadSkipFailed":

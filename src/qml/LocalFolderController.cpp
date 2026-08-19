@@ -4,8 +4,12 @@
 #include "GuiThread.h"
 #include "NotificationController.h"
 
+#include <QDesktopServices>
 #include <QDir>
 #include <QProcess>
+#include <QUrl>
+
+#include <utility>
 
 namespace
 {
@@ -59,24 +63,46 @@ QString LocalFolderController::pathFromUrl(const QUrl& url) const
 
 void LocalFolderController::openLocation(quint64 handle)
 {
+    withLocalPath(handle, QStringLiteral("openLocalLocation"), [this](const QString& path) {
+        if (!revealInExplorer(path))
+        {
+            qCWarning(lcApp) << "failed to start explorer.exe for" << path;
+            mNotifications->notifyError(QStringLiteral("openLocalLocation"));
+        }
+    });
+}
+
+void LocalFolderController::openFile(quint64 handle)
+{
+    withLocalPath(handle, QStringLiteral("openLocalFile"), [this](const QString& path) {
+        if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
+        {
+            qCWarning(lcApp) << "failed to open local file:" << path;
+            mNotifications->notifyError(QStringLiteral("openFile"));
+        }
+    });
+}
+
+void LocalFolderController::withLocalPath(quint64 handle,
+                                          QString resolveFailToast,
+                                          std::function<void(const QString&)> act)
+{
     mService->resolveLocalPath(
         static_cast<std::uint64_t>(handle),
         mLocalRoot.toStdString(),
-        [this](Result<std::string> result) {
-            invokeOnGuiThread(this, [this, result = std::move(result)] {
-                if (!result.success)
-                {
-                    qCWarning(lcApp) << "no local location for this item:"
-                                     << QString::fromStdString(result.errorMessage);
-                    mNotifications->notifyError(QStringLiteral("openLocalLocation"));
-                    return;
-                }
-                if (!revealInExplorer(QString::fromStdString(result.value())))
-                {
-                    qCWarning(lcApp) << "failed to start explorer.exe for"
-                                     << QString::fromStdString(result.value());
-                    mNotifications->notifyError(QStringLiteral("openLocalLocation"));
-                }
-            });
+        [this, resolveFailToast = std::move(resolveFailToast), act = std::move(act)](
+            Result<std::string> result) {
+            invokeOnGuiThread(
+                this,
+                [this, resolveFailToast, act, result = std::move(result)] {
+                    if (!result.success)
+                    {
+                        qCWarning(lcApp) << "no local counterpart for this item:"
+                                         << QString::fromStdString(result.errorMessage);
+                        mNotifications->notifyError(resolveFailToast);
+                        return;
+                    }
+                    act(QString::fromStdString(result.value()));
+                });
         });
 }
