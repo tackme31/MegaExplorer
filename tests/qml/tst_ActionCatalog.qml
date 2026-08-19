@@ -61,6 +61,11 @@ TestCase {
                         expected: "Download"
                     },
                     {
+                        tag: "openLocalFile",
+                        id: "openLocalFile",
+                        expected: "Open local file"
+                    },
+                    {
                         tag: "openLocalLocation",
                         id: "openLocalLocation",
                         expected: "Open local location"
@@ -335,8 +340,8 @@ TestCase {
 
     // ---- isAvailable -------------------------------------------------------
 
-    // Only openLocalLocation declares one; everything else is shown whenever the
-    // C++ resolver offered it.
+    // Only the two local-folder entries declare one; everything else is shown
+    // whenever the C++ resolver offered it.
     function test_isAvailable_defaultsToShown() {
         compare(ActionCatalog.isAvailable("download", fullCtx()), true);
         compare(ActionCatalog.isAvailable("copyLink", fullCtx()), true);
@@ -350,10 +355,19 @@ TestCase {
         compare(ActionCatalog.isAvailable("openLocalLocation", ctx), false);
     }
 
+    function test_isAvailable_openLocalFileFollowsTheLink() {
+        const ctx = fullCtx();
+        ctx.localFolderLinked = true;
+        compare(ActionCatalog.isAvailable("openLocalFile", ctx), true);
+        ctx.localFolderLinked = false;
+        compare(ActionCatalog.isAvailable("openLocalFile", ctx), false);
+    }
+
     // Same `=== true` reason as isEnabled's paste case: a site that builds a ctx
     // without the field must hide the item, not show it on an undefined.
     function test_isAvailable_openLocalLocationHiddenWithoutTheField() {
         compare(ActionCatalog.isAvailable("openLocalLocation", {}), false);
+        compare(ActionCatalog.isAvailable("openLocalFile", {}), false);
     }
 
     // Opposite default to isEnabled's: an ID the catalog has no entry for must

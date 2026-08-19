@@ -80,6 +80,14 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::FilesOnly,
          ActionArity::Any},
+        // SingleOnly, unlike Download above: each handle resolves through its own
+        // asynchronous getPath, so a multi-selection with no local counterpart would
+        // answer with one toast per item.
+        {MenuAction::OpenLocalFile,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         ActionTarget::FilesOnly,
+         ActionArity::SingleOnly},
         // SingleOnly: Explorer selects one item per window, so a multi-selection
         // could only reveal the last of them. Rubbish is left out -- a binned node
         // has no counterpart under the linked folder.
@@ -229,6 +237,8 @@ const char* menuActionId(MenuAction action)
             return "newFolder";
         case MenuAction::Download:
             return "download";
+        case MenuAction::OpenLocalFile:
+            return "openLocalFile";
         case MenuAction::OpenLocalLocation:
             return "openLocalLocation";
         case MenuAction::OpenInNewTab:

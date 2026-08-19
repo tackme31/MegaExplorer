@@ -216,8 +216,9 @@ QtObject {
             readonly property string newFolder: "\uE8F4"     // NewFolder
             readonly property string download: "\uE896"      // Download
             // Not yet checked against either icon font's cmap, nor drawn at 16px --
-            // a code point missing from the font renders as a box. Both are
+            // a code point missing from the font renders as a box. All three are
             // /ui-style's to settle, as with the unverified glyphs below.
+            readonly property string openLocalFile: "\uE8E5"     // OpenFile
             readonly property string openLocalLocation: "\uE838" // FolderOpen
             readonly property string openInNewTab: "\uE8A7"  // OpenInNewWindow
             readonly property string pin: glyphSet.pin

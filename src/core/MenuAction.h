@@ -10,6 +10,10 @@ enum class MenuAction
 {
     NewFolder,
     Download,
+    // Opens the item's counterpart inside the linked local folder with whatever
+    // program Windows associates with it. Files only: the shell's answer for a
+    // folder is an Explorer window, which is what OpenLocalLocation already gives.
+    OpenLocalFile,
     // Shows the item's counterpart inside the local folder linked to the MEGA root,
     // selected in Explorer. Offered whether or not that counterpart exists: the link
     // is a naming convention nothing verifies, and the resolver cannot see the

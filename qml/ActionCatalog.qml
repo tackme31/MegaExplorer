@@ -58,6 +58,17 @@ QtObject {
                                             }
                                         },
                                         // ctx: handle, localFolderLinked
+                                        "openLocalFile": {
+                                            "icon": ctx => Theme.glyph.menu.openLocalFile,
+                                            "label": ctx => qsTr("Open local file"),
+                                            // Hidden without a linked folder, for
+                                            // the same reason as openLocalLocation
+                                            // below.
+                                            "available": ctx => ctx.localFolderLinked === true,
+                                            "trigger": ctx => localFolderController.openFile(
+                                                          ctx.handle)
+                                        },
+                                        // ctx: handle, localFolderLinked
                                         "openLocalLocation": {
                                             "icon": ctx => Theme.glyph.menu.openLocalLocation,
                                             "label": ctx => qsTr("Open local location"),
