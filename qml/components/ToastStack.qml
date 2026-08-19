@@ -358,6 +358,13 @@ Item {
         case "copyLinkEmpty":
             text = qsTr("MEGA returned no link — nothing was copied");
             break;
+            // Fixed sentence, and it names the setting rather than the path: the
+            // link is a naming convention nothing verifies, so a miss means either
+            // the wrong folder was chosen or the item was never downloaded -- and
+            // only the user can tell those apart.
+        case "openLocalLocation":
+            text = qsTr("Couldn't find this item locally — check the linked folder in Settings");
+            break;
         case "uploadSkipFailed":
             text = qsTr("Couldn't check the destination — nothing was uploaded");
             break;

@@ -46,7 +46,11 @@ ActionMenu {
     // this ordering is correctness, not the elision fix it looks like.)
     function sampleActions() {
         root.context = root.buildContext();
-        root.actionIds = root.navController.fileListModel.availableActions;
+        // Filtered here rather than bound into ActionMenu.qml's Instantiator: the
+        // model there would then re-evaluate on the context assignment above too,
+        // rebuilding every MenuItem twice per open.
+        root.actionIds = root.navController.fileListModel.availableActions.filter(
+                    actionId => ActionCatalog.isAvailable(actionId, root.context));
     }
 
     function buildContext() {
@@ -68,6 +72,9 @@ ActionMenu {
             // Sampled, not bound, for the same reason as pinned above: the model
             // can only change the answer while the menu is closed.
             "favourited": entries.length === 1 && entries[0].isFavourite === true,
+            // Sampled like pinned/favourited above, and it can only change while
+            // the menu is closed -- the settings dialog is modal.
+            "localFolderLinked": localFolderController.linked,
             "entries": entries,
             "navController": root.navController,
             "mutations": root.mutController,

@@ -10,6 +10,12 @@ enum class MenuAction
 {
     NewFolder,
     Download,
+    // Shows the item's counterpart inside the local folder linked to the MEGA root,
+    // selected in Explorer. Offered whether or not that counterpart exists: the link
+    // is a naming convention nothing verifies, and the resolver cannot see the
+    // filesystem. Whether a folder is linked at all is QML's to ask (ActionCatalog's
+    // `available`), since the setting is app-wide and no MenuContext axis carries it.
+    OpenLocalLocation,
     OpenInNewTab,
     // One action, not a Pin/Unpin pair: the resolver sees only counts and a site, so
     // it can't know whether the folder is already pinned. QML picks the label.
