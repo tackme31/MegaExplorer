@@ -243,6 +243,14 @@ RowLayout {
                     onTapped: tabsController.closeTab(tabButton.index)
                 }
 
+                // Right-click opens the tab menu, additive in the same way. The
+                // menu itself lives at the strip's root, not here: one Popup per
+                // delegate is the mistake ActionMenu.qml documents.
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    onTapped: tabMenu.popupFor(tabButton.index)
+                }
+
                 // Drag-to-reorder (Phase 22b), built exactly like the
                 // quick-access pin reorder: target is null, so the tab itself
                 // never leaves its slot -- only the ghost and the insertion
@@ -442,6 +450,29 @@ RowLayout {
         text: "+"
         focusPolicy: Qt.NoFocus
         onClicked: tabsController.addTab()
+    }
+
+    // Deliberately not an ActionMenu: that one's vocabulary is
+    // MenuActionResolver's node actions, every one of which is resolved from a
+    // selection summary and a ViewKind scope. A tab row has neither.
+    Menu {
+        id: tabMenu
+
+        // The row the menu was opened on, filled in immediately before opening
+        // and bound to nothing -- the same rule ActionMenu.qml's `context`
+        // states: a menu must not retarget itself while it is up.
+        property int targetIndex: -1
+
+        function popupFor(index: int) {
+            tabMenu.targetIndex = index;
+            tabMenu.popup();
+        }
+
+        IconMenuItem {
+            text: qsTr("Duplicate tab")
+            glyph: Theme.glyph.menu.duplicateTab
+            onTriggered: tabsController.duplicateTab(tabMenu.targetIndex)
+        }
     }
 
     // Fluent's TabBar.contentItem is a ListView, and its click-drag panning

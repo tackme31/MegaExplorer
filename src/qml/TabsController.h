@@ -98,6 +98,11 @@ public:
     // And for the recently-added listing, a query like the favourites one.
     Q_INVOKABLE void addRecentsTab();
 
+    // Opens a second tab on the same screen as `index`, immediately to its right
+    // and focused -- browser/Explorer "Duplicate tab". The copy takes the location
+    // only, not the back stack, the search or the selection.
+    Q_INVOKABLE void duplicateTab(int index);
+
     // Clamps currentIndex so it keeps pointing at the same tab, or a neighbour if
     // the active one was closed. Emits lastTabClosed() instead of closing the final
     // tab -- Main.qml closes the window, this class doesn't own it.

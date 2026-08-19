@@ -221,6 +221,10 @@ QtObject {
             readonly property string openLocalFile: "\uE8E5"     // OpenFile
             readonly property string openLocalLocation: "\uE838" // FolderOpen
             readonly property string openInNewTab: "\uE8A7"  // OpenInNewWindow
+            // The tab strip's right-click menu is not an ActionCatalog site, but
+            // its row's icon is picked here anyway, so this block stays the one
+            // place a menu glyph is chosen.
+            readonly property string duplicateTab: "\uE8C8"    // Copy
             readonly property string pin: glyphSet.pin
             readonly property string unpin: "\uE77A"         // Unpin
             // One glyph for both directions, unlike pin/unpin above: the font
