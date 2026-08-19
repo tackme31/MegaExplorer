@@ -14,7 +14,8 @@ import MegaExplorer
 // can invalidate it (navigating, which drops the search) arrives as searchCleared.
 //
 // The four controls hold a *pending* edit and the applied* properties below hold
-// what C++ is searching with; the only crossings are apply() and revertPending().
+// what C++ is searching with; the only crossings are apply(), clearFilter() and
+// revertPending().
 // A ComboBox writes its own currentIndex when the user picks a row, and any write
 // destroys a binding assigned to that property -- so the two sides are kept in step
 // by assignment, and no binding is ever assigned to currentIndex/checked.
@@ -94,15 +95,33 @@ Popup {
         favouriteCheck.checked = root.appliedFavourite;
     }
 
-    function clearPending() {
+    // Clear commits, like Apply does: leaving it pending made the two buttons disagree
+    // about when the results move, and "no filter" was then only reachable by clicking
+    // Apply a second time.
+    function clearFilter() {
+        // apply()'s guard, and it has to come before the control writes: clearing them
+        // without the mirror would disable this button (pendingActive) while the chip
+        // still shows the filter as applied (filterActive), with no way back.
+        if (!root.navController)
+            return;
         typeBox.currentIndex = SearchNodeType.Any;
         categoryBox.currentIndex = SearchCategory.Any;
         timeBox.currentIndex = SearchTimeWindow.Any;
         favouriteCheck.checked = false;
+        // Nothing applied means C++ already holds this empty filter, and re-pushing it
+        // would re-run a search that blocks the GUI thread.
+        if (!root.filterActive)
+            return;
+        root.appliedType = SearchNodeType.Any;
+        root.appliedCategory = SearchCategory.Any;
+        root.appliedTime = SearchTimeWindow.Any;
+        root.appliedFavourite = false;
+        root.navController.setSearchFilter(root.appliedType, root.appliedCategory, root.appliedTime,
+                                           root.appliedFavourite);
     }
 
-    // The one way anything here reaches C++: every facet is pushed together, so C++
-    // never sees a half-applied filter and only re-runs the search once.
+    // Every facet is pushed together, so C++ never sees a half-applied filter and only
+    // re-runs the search once.
     function apply() {
         // navController is null only during the login/logout transition, and the
         // funnel button stays visible through it -- committing the mirror there would
@@ -192,13 +211,13 @@ Popup {
             Layout.fillWidth: true
             spacing: Theme.spacing.sm
 
-            // Clears the selections only; like every other control here it waits for
-            // Apply before C++ hears about it.
+            // Stays open afterwards: unlike Apply this is a "start over" step, and the
+            // user is as likely to pick new facets as to leave.
             Button {
                 Layout.fillWidth: true
                 text: qsTr("Clear")
                 enabled: root.pendingActive
-                onClicked: root.clearPending()
+                onClicked: root.clearFilter()
             }
 
             Button {

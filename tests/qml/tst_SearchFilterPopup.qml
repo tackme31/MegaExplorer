@@ -2,9 +2,9 @@ import QtQuick
 import QtTest
 import MegaExplorer
 
-// The advanced-search facets. Since Apply became the only way a selection reaches
-// C++, this file is the net under a failure mode a screenshot cannot see: a facet
-// that pushes early re-runs a blocking search on every pick, and one that never
+// The advanced-search facets. Since Apply and Clear became the only ways a selection
+// reaches C++, this file is the net under a failure mode a screenshot cannot see: a
+// facet that pushes early re-runs a blocking search on every pick, and one that never
 // pushes leaves the funnel button doing nothing at all. Both look identical in a
 // still image of the popup.
 //
@@ -116,23 +116,37 @@ TestCase {
         compare(f.nav.calls, 1);
     }
 
-    function test_clearFiltersWaitsForApplyLikeEveryOtherControl() {
+    function test_clearDropsTheAppliedFilterWithoutASecondApply() {
         const f = makePopup();
 
         pick(f.popup, SearchNodeType.Files, SearchCategory.Audio, SearchTimeWindow.Any, false);
         f.popup.apply();
-        f.popup.clearPending();
+        f.popup.open();
+        tryCompare(f.popup, "opened", true);
+        f.popup.clearFilter();
 
-        compare(f.nav.calls, 1);
-        verify(f.popup.filterActive);
-        verify(!f.popup.pendingActive);
-
-        f.popup.apply();
-
+        // Unlike Apply, Clear is a "start over" step and leaves the popup up.
+        compare(f.popup.opened, true);
         compare(f.nav.calls, 2);
         compare(f.nav.lastType, SearchNodeType.Any);
         compare(f.nav.lastCategory, SearchCategory.Any);
+        compare(f.nav.lastTime, SearchTimeWindow.Any);
         compare(f.nav.lastFavourite, false);
+        verify(!f.popup.filterActive);
+        verify(!f.popup.pendingActive);
+        verify(!f.popup.dirty);
+    }
+
+    // The other half of the same button: with nothing applied the cleared filter is
+    // the one C++ already holds, and pushing it re-runs a search for no change.
+    function test_clearWithNothingAppliedPushesNothing() {
+        const f = makePopup();
+
+        pick(f.popup, SearchNodeType.Files, SearchCategory.Audio, SearchTimeWindow.PastDay, true);
+        f.popup.clearFilter();
+
+        compare(f.nav.calls, 0);
+        verify(!f.popup.pendingActive);
         verify(!f.popup.filterActive);
     }
 
@@ -148,6 +162,21 @@ TestCase {
         popup.apply();
 
         verify(!popup.filterActive);
+    }
+
+    // Clear reaches C++ too, so it needs the same net as Apply: clearing the controls
+    // while the mirror stands would disable Clear over a filter the chip still shows.
+    function test_clearWithNoControllerChangesNothing() {
+        const popup = createTemporaryObject(popupComponent, testCase, {
+                                                "navController": null
+                                            });
+        verify(popup);
+
+        pick(popup, SearchNodeType.Files, SearchCategory.Audio, SearchTimeWindow.PastDay, true);
+        popup.clearFilter();
+
+        verify(popup.pendingActive);
+        compare(popup.typeSelector.currentIndex, SearchNodeType.Files);
     }
 
     function test_pickingFoldersDropsTheCategory() {
