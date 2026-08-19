@@ -3,6 +3,11 @@
 > **状態: 調査のみ。コード変更なし。** 常駐化（アプリをプロセスとして生かし続ける）を検討する
 > 前提として、起動のどこに時間が溶けているかを実測した。**結論は「6.5秒のうち MEGA 由来は
 > 1.5秒だけで、残り4.8秒は QML のオブジェクト生成」**。どのロードマップ項目にも紐づいていない。
+>
+> **2026-08-19 追記1 あり。以下の本文は Debug ビルド限定の数字**として読むこと。Release で測り直すと
+> 初回描画まで0.82秒・ファイル一覧まで約1.5秒で、体感の「数秒」はほぼ全部ビルド構成由来だった。
+> あわせて本文の「9ダイアログの生成に0.7秒」は誤りで、正体は `window.visible = true` の1行。
+> → [追記1](#追記12026-08-19-release-で測り直した結果)
 
 ## 結論
 
@@ -99,3 +104,62 @@ SDK のログ行と同じ時間軸で並べられる。これが今回いちば�
   `Theme.qml` などのシングルトン / qwindowkit）は割れていない。ここを割るなら `qmlprofiler`。
 - コールドスタート（OS のファイルキャッシュが冷えた状態）は1回だけ観測しており、DLL ロードが
   24ms → 283ms に伸びた。それ以外の区間は変わらなかった。
+
+## 追記1（2026-08-19）: Release で測り直した結果
+
+`restoreSession()` を `loadFromModule()` の前に出すコミット（c56f52d、本文の削減案の1つ目）を入れた
+あとも「ウィンドウが開くまで数秒」の体感が残ったので、同じ手口で測り直した。本文が「未確認」に
+挙げていた2点 — Release で測っていない / `loadFromModule` の3.0秒が割れていない — がどちらも潰れ、
+結論が変わっている。
+
+計測は本文の手順に2つ足しただけ。**`engine.loadFromModule()` を一時的に `QQmlComponent` の
+`loadFromModule()` + `create()` に割る**と、型解決とオブジェクト生成が分かれる。その手前で
+`setData()` の捨てコンポーネントを4つ作れば、`QtQuick` / `QtQuick.Controls` / `FluentWinUI3` /
+`Layouts+QtCore` の各 import を単独で計れる。QML 側は45ファイル全部の root に
+`Component.onCompleted` の1行をスクリプトで挿し、終わったら `git checkout` で戻した。
+
+**Release は `CMakePresets.json` に手を入れずに取れる。** VS ジェネレータはマルチ構成なので
+`cmake --build build/msvc-debug --config Release --target appMegaExplorer` の1コマンドで済み、vcpkg も
+Qt も release 側が既に入っているため再構成もいらない（`build/msvc-debug/Release/` に出る）。実行時は
+`PATH` に Qt の `bin` と vcpkg の `bin`（`debug/bin` ではない）を通す。
+
+| 区間 | Debug | Release |
+| --- | ---: | ---: |
+| プロセス生成 → `main()` | 234 ms | 27 ms |
+| `QGuiApplication` 〜 サービス／エンジン構築（`MegaApi` ctor 含む） | 93 ms | 51 ms |
+| `import QtQuick` + `QtQuick.Controls` | 286 ms | 51 ms |
+| `import QtQuick.Controls.FluentWinUI3` | 809 ms | 47 ms |
+| 自モジュール45ファイルの型解決 | 692 ms | 56 ms |
+| `Theme` / `LoginView` / `Main` 本体の生成 | 656 ms | 72 ms |
+| **`window.visible = true`** | 約500 ms | **496 ms** |
+| **初回フレーム描画まで（合計）** | **5047 ms** | **820 ms** |
+| ログイン後 UI の構築 | 909 ms | 638 ms |
+| ファイル一覧デリゲート（`FileIcon` ×52 ほか） | 762 ms | 上に含む |
+| ファイル一覧が出るまで（合計） | 約6.5 s | 約1.5 s |
+
+読み方が3点ある。
+
+**体感の数秒は Debug ビルドのコストが支配項。** QML の型解決と import は Release で1桁縮む
+（1.8秒 → 0.15秒）。常駐化を検討する前に、まず Release/RelWithDebInfo のプリセットを足すのが
+コード変更ゼロで最も効く手になる。
+
+**本文の「9ダイアログの生成に0.7秒」は撤回する。** ダイアログ9個の `Component.onCompleted` は実測で
+3ms 以内に固まっており、その0.7秒の正体は `Main.qml` の `Component.onCompleted` にある
+`window.visible = true` の1行（Release で496ms）だった。root の `onCompleted` が子より先に発火して
+見えるため、直後に並ぶ子の完了ログをダイアログの生成コストと読み違えていた。**したがって
+「ダイアログを `Loader` に落とす」削減案は効かない**。本文の「合計3.2秒削れる」も再計算が要る。
+
+**`visible = true` の496msは Debug と Release でほぼ同値**、つまり QML ではなく OS 側の仕事
+（HWND 生成、QWindowKit のフレーム乗っ取り、RHI/D3D11 の初期化）。ここは常駐化以外に動かす手がない。
+
+MEGA 側は LOGIN 0.98秒 + FETCH_NODES 0.53秒で、どちらも QML の型解決中に終わっている。**c56f52d は
+狙いどおり効いており、MEGA はもう律速ではない。**
+
+副産物として、`FileIcon` が52個作られていることが分かった。ファイル26件に対して `FileTableView` と
+`FileGridView` の両方がデリゲートを作っており、`StackLayout` が非表示側も生かしているため。Debug の
+最後の0.76秒の相当部分がこれ。
+
+### 追記1時点での未確認
+
+- Release のコールドスタートは測っていない（Debug のコールドは本文のとおり DLL ロードのみ伸びる）。
+- Release プリセットはまだ無い。この追記の数字は手動の `--config Release` で得たもの。
