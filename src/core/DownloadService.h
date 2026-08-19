@@ -28,9 +28,6 @@ struct DownloadJob
     std::string resolvedLocalPath; // actual local path once Completed; may differ
                                    // from destinationPath (collision-rename); empty
                                    // until then
-    bool alreadyPresent = false;   // once Completed: true if an identical file was
-                                   // already at destinationPath and the SDK skipped
-                                   // the transfer instead of downloading/renaming it
     DownloadState state = DownloadState::Queued;
     std::uint64_t transferredBytes = 0;
     std::uint64_t totalBytes = 0; // seeded from enqueue()'s expectedTotalBytes,

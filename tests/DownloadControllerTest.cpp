@@ -61,9 +61,9 @@ void flush()
     flushQueuedEvents();
 }
 
-Result<DownloadOutcome> saved(const char* localPath, bool alreadyPresent = false)
+Result<DownloadOutcome> saved(const char* localPath)
 {
-    return Result<DownloadOutcome>::ok(DownloadOutcome{localPath, alreadyPresent});
+    return Result<DownloadOutcome>::ok(DownloadOutcome{localPath});
 }
 
 class DownloadControllerTest : public ::testing::Test
@@ -96,15 +96,11 @@ protected:
         QObject::connect(controller.get(),
                          &DownloadController::downloadFinished,
                          controller.get(),
-                         [this](bool success,
-                                QString fileName,
-                                QString localPath,
-                                bool alreadyPresent) {
+                         [this](bool success, QString fileName, QString localPath) {
                              ++finishedCalls;
                              lastSuccess = success;
                              lastFileName = fileName;
                              lastLocalPath = localPath;
-                             lastAlreadyPresent = alreadyPresent;
                          });
         QObject::connect(
             controller.get(), &DownloadController::downloadActiveChanged, controller.get(), [this] {
@@ -150,7 +146,6 @@ protected:
     bool lastSuccess = false;
     QString lastFileName;
     QString lastLocalPath;
-    bool lastAlreadyPresent = false;
     int activeChanges = 0;
     int errorCalls = 0;
 };
@@ -210,17 +205,15 @@ TEST_F(DownloadControllerTest, SuccessReportsTheSavedLeafNameNotTheRequestedName
     ASSERT_EQ(finishedCalls, 1);
     EXPECT_TRUE(lastSuccess);
     EXPECT_EQ(lastFileName, QStringLiteral("photo (1).jpg"));
-    EXPECT_FALSE(lastAlreadyPresent);
 }
 
-TEST_F(DownloadControllerTest, SuccessForwardsTheResolvedPathAndTheAlreadyPresentFlag)
+TEST_F(DownloadControllerTest, SuccessForwardsTheResolvedPath)
 {
     controller->downloadFile(1, "photo.jpg", 0);
-    finish(saved("C:\\Downloads\\photo.jpg", true));
+    finish(saved("C:\\Downloads\\photo.jpg"));
 
     ASSERT_EQ(finishedCalls, 1);
     EXPECT_EQ(lastLocalPath, QStringLiteral("C:\\Downloads\\photo.jpg"));
-    EXPECT_TRUE(lastAlreadyPresent);
 }
 
 // The SDK's "network error" must not appear on the signal at all: the snackbar

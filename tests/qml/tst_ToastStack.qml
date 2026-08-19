@@ -375,21 +375,11 @@ TestCase {
                     {
                         tag: "failure",
                         success: false,
-                        already: false,
                         expected: "Couldn't download a.txt"
-                    },
-                    // Without this wording a skipped transfer is indistinguishable from
-                    // an overwrite.
-                    {
-                        tag: "alreadyPresent",
-                        success: true,
-                        already: true,
-                        expected: "a.txt is already downloaded"
                     },
                     {
                         tag: "downloaded",
                         success: true,
-                        already: false,
                         expected: "a.txt downloaded"
                     }
                 ];
@@ -397,14 +387,7 @@ TestCase {
 
     function test_describeDownload(data) {
         const toast = makeToast();
-        compare(toast.describeDownload(data.success, "a.txt", data.already), data.expected);
-    }
-
-    // alreadyPresent is only consulted on success -- a failed transfer reports
-    // the error either way.
-    function test_describeDownload_failureIgnoresAlreadyPresent() {
-        const toast = makeToast();
-        compare(toast.describeDownload(false, "a.txt", true), "Couldn't download a.txt");
+        compare(toast.describeDownload(data.success, "a.txt"), data.expected);
     }
 
     // ---- show*: only that composing and pushing are still connected --------
@@ -435,7 +418,7 @@ TestCase {
     function test_showDownload_pushes() {
         const toast = makeToast();
         const before = toast.nextSeq;
-        toast.showDownload(true, "a.txt", "C:/tmp/a.txt", false);
+        toast.showDownload(true, "a.txt", "C:/tmp/a.txt");
         compare(toast.nextSeq, before + 1);
     }
 }

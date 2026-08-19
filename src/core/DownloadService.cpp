@@ -257,7 +257,6 @@ void DownloadService::startNextIfIdle()
                     if (result.success)
                     {
                         mActive->resolvedLocalPath = result.value().localPath;
-                        mActive->alreadyPresent = result.value().alreadyPresent;
                     }
                     else
                     {

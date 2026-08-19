@@ -47,16 +47,10 @@ public:
 signals:
     void downloadActiveChanged();
 
-    // Once per finished job, success or failure. localPath and alreadyPresent are
-    // only meaningful on success. No reason field: a failure says only "couldn't
-    // download <name>", so the SDK's English text stops at the qCWarning.
-    //
-    // alreadyPresent means the SDK found a fingerprint-identical file already there
-    // and skipped the transfer, letting the snackbar say "already downloaded" rather
-    // than implying a fresh file. On success fileName is the *actual* saved leaf
-    // name, which a collision can make differ from the requested one -- echoing the
-    // requested name would read as if the existing file got overwritten.
-    void downloadFinished(bool success, QString fileName, QString localPath, bool alreadyPresent);
+    // Once per finished job, success or failure. localPath is meaningful only on
+    // success, where it is the path actually written -- a name already taken at the
+    // destination gets a "(1)" suffix rather than blocking the download.
+    void downloadFinished(bool success, QString fileName, QString localPath);
 
 private:
     void refreshActiveJob();

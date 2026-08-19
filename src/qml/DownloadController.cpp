@@ -50,8 +50,7 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
             }
             emit downloadFinished(job.state == DownloadState::Completed,
                                   displayName,
-                                  QString::fromStdString(job.resolvedLocalPath),
-                                  job.alreadyPresent);
+                                  QString::fromStdString(job.resolvedLocalPath));
             refreshActiveJob(); // reflect whatever's now at the front (or nothing)
         });
     });
