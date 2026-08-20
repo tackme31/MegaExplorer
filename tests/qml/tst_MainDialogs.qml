@@ -1104,4 +1104,30 @@ TestCase {
         compare(picked.length, 1);
         compare(picked[0], Qt.Dark);
     }
+
+    // ---- StandardButtonLabels ------------------------------------------
+
+    // Dialog.standardButtons words its buttons from Qt's own catalogue, which
+    // follows the OS language, so in an English-locale test run the wording is
+    // already right and asserting it proves nothing. Overwriting the text first
+    // is what makes this a test of pin() rather than of the runner's locale.
+    function test_standardButtons_arePinnedToEnglish() {
+        const nav = makeSelection(["a.txt"]);
+        const mut = createTemporaryObject(mutControllerComponent, testCase);
+        verify(mut !== null);
+        const dialog = makeDialog(confirmRubbishComponent, {
+                                      "navController": nav,
+                                      "mutController": mut
+                                  });
+        const box = dialog.footer;
+        verify(box !== null);
+        compare(box.count, 2);
+        for (var i = 0; i < box.count; ++i)
+            box.itemAt(i).text = "translated elsewhere";
+
+        StandardButtonLabels.pin(box);
+
+        verify(buttonNamed(dialog, "Yes") !== null);
+        verify(buttonNamed(dialog, "Cancel") !== null);
+    }
 }

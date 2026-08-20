@@ -36,6 +36,7 @@ Dialog {
     anchors.centerIn: Overlay.overlay
     modal: true
     standardButtons: Dialog.Yes | Dialog.Cancel
+    Component.onCompleted: StandardButtonLabels.pin(footer)
     title: qsTr("Remove link?")
 
     // A Popup takes its content's *implicit* width, and a Text's implicit width

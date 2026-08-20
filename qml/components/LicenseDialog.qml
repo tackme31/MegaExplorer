@@ -23,6 +23,7 @@ Dialog {
     modal: true
     title: qsTr("Open source licenses")
     standardButtons: Dialog.Close
+    Component.onCompleted: StandardButtonLabels.pin(footer)
 
     width: Math.min(Overlay.overlay.width * 0.9, 900)
     height: Math.min(Overlay.overlay.height * 0.85, 620)
