@@ -136,6 +136,8 @@ ColumnLayout {
     // Wrapped in qsTr(), same as columnLabels above, so a Japanese .ts file
     // can later supply the equivalent Japanese Explorer format (typically
     // 24-hour, no AM/PM -- e.g. "yyyy/MM/dd H:mm") without any change here.
+    //
+    // PropertiesDialog carries an identical copy of this string; change both.
     readonly property string modifiedDateFormat: qsTr("M/d/yyyy h:mm AP")
 
     // Arbitrary picks, not derived from any content measurement -- just
