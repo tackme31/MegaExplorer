@@ -75,6 +75,38 @@ void UploadService::cancelAll()
     }
 }
 
+void UploadService::cancel(std::uint64_t jobId)
+{
+    std::optional<UploadJob> dropped;
+    std::function<void(UploadJob)> onJobFinished;
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        onJobFinished = mOnJobFinished;
+        if (mActive && mActive->id == jobId)
+        {
+            // Same two reasons as DownloadService::cancel(): the generation is bumped
+            // only for the active job, and the client call stays under the lock so the
+            // queue behind this job cannot promote itself into the abort.
+            ++mCancelGeneration;
+            mClient->cancelUpload();
+            return;
+        }
+        for (auto it = mPending.begin(); it != mPending.end(); ++it)
+        {
+            if (it->id != jobId)
+                continue;
+            dropped = std::move(*it);
+            mPending.erase(it);
+            break;
+        }
+    }
+
+    if (!dropped || !onJobFinished)
+        return;
+    dropped->state = UploadState::Cancelled;
+    onJobFinished(*dropped);
+}
+
 Result<void> UploadService::canUploadTo(std::uint64_t parentHandle, bool parentIsRoot) const
 {
     return mClient->checkUpload(parentHandle, parentIsRoot);

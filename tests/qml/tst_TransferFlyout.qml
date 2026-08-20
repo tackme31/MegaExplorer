@@ -142,12 +142,15 @@ TestCase {
         compare(flyout.summaryText(), data.expected);
     }
 
-    function addRow(stub, direction, name, state, progress) {
+    function addRow(stub, direction, name, state, progress, jobId) {
         stub.append({
                         "direction": direction,
                         "name": name,
                         "state": state,
-                        "progress": progress
+                        "progress": progress,
+                        // Defaulted so the callers that do not care which job a row
+                        // names stay five-argument.
+                        "jobId": jobId === undefined ? stub.count + 1 : jobId
                     });
     }
 
@@ -305,6 +308,32 @@ TestCase {
         button.clicked();
 
         compare(spy.count, 1);
+    }
+
+    // One row's stop has to name its queue as well as its id: the two services
+    // number their jobs independently, so 22 means two different transfers.
+    function test_aRowCancelNamesItsOwnQueueAndJob() {
+        const stub = createTemporaryObject(stubComponent, testCase);
+        const flyout = makeFlyout(stub);
+        const spy = createTemporaryObject(spyComponent, testCase, {
+                                              "target": flyout,
+                                              "signalName": "cancelRequested"
+                                          });
+
+        addRow(stub, TransferDirection.Download, "a.bin", TransferState.Active, 0.5, 11);
+        addRow(stub, TransferDirection.Upload, "b.bin", TransferState.Queued, 0, 22);
+        addRow(stub, TransferDirection.Download, "c.bin", TransferState.Completed, 1, 33);
+        flyout.show();
+        flyout.toggleExpanded();
+        waitForRendering(flyout);
+
+        // A settled row has nothing left to stop.
+        verify(!findChild(flyout, "cancelRowButton2").visible);
+
+        findChild(flyout, "cancelRowButton1").clicked();
+        compare(spy.count, 1);
+        compare(spy.signalArguments[0][0], TransferDirection.Upload);
+        compare(spy.signalArguments[0][1], 22);
     }
 
     function test_stateText_data() {

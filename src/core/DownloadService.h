@@ -93,6 +93,13 @@ public:
     // SDK can say when its transfer actually stopped.
     void cancelAll();
 
+    // Stops one job by the id enqueue() returned, leaving the rest of the queue
+    // running. A pending job never starts and reports Cancelled from inside this
+    // call; the active one is aborted through IMegaClient::cancelDownload and
+    // reports later from the SDK thread, exactly as cancelAll() does. An id that
+    // already finished is a no-op, so a stale row in the UI cannot stop anything.
+    void cancel(std::uint64_t jobId);
+
     // The already-queued guard, without jobs()'s whole-queue copy -- that would be
     // O(N^2) when a caller loops it once per handle to bulk-enqueue a selection.
     bool hasJobForHandle(std::uint64_t handle) const;

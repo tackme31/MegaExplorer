@@ -155,6 +155,12 @@ void UploadController::cancelUploads()
     refreshActiveJob(); // pending jobs are gone already; the active one clears later
 }
 
+void UploadController::cancelJob(quint64 jobId)
+{
+    mService->cancel(jobId);
+    refreshActiveJob(); // a dropped pending job is gone already; the active one clears later
+}
+
 bool UploadController::isUploadingTo(quint64 handle, bool isRoot) const
 {
     return mBatch.pendingByDestination.find(Destination{handle, isRoot}) !=

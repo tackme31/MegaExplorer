@@ -60,6 +60,10 @@ Rectangle {
     // still stands up in a test given nothing but a model stub.
     signal cancelAllRequested
 
+    // One row's stop. The direction goes with it because the two services number
+    // their jobs independently, so the id alone does not say which queue to ask.
+    signal cancelRequested(direction: int, jobId: var)
+
     // Split out of the Label below so the wording can be tested without reaching
     // into the layout, the same split ToastStack.qml's describe* functions are.
     function summaryText(): string {
@@ -262,12 +266,19 @@ Rectangle {
             spacing: Theme.spacing.sm
             model: root.transfers
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: ScrollBar {
+                id: rowScrollBar
+            }
 
             delegate: Item {
                 id: transferRow
 
-                width: rowList.width
+                // Stops short of the scrollbar rather than running under it: an
+                // overlaid ScrollBar takes the clicks aimed at the row's cancel
+                // button, which sits in the same few pixels, and pages the list
+                // instead. Reserved unconditionally -- keying it off the bar's own
+                // `visible` would make the row width depend on contentHeight.
+                width: rowList.width - rowScrollBar.width
                 implicitHeight: rowLayout.implicitHeight
                 height: implicitHeight
 
@@ -317,6 +328,19 @@ Rectangle {
                         color: model.state === TransferState.Failed ? Theme.color.danger : Theme.color.textSecondary
                         font.pixelSize: Theme.font.caption
                         text: root.stateText(model.state, model.progress)
+                    }
+
+                    FlyoutIconButton {
+                        // Indexed so a test can name one row's button; findChild
+                        // would otherwise always hand back the first row's.
+                        objectName: "cancelRowButton" + index
+                        Layout.alignment: Qt.AlignVCenter
+                        // Only a row that can still be stopped. A settled row's job
+                        // is gone from the service, so the click would be swallowed.
+                        visible: model.state === TransferState.Queued || model.state === TransferState.Active
+                        text: Theme.glyph.close
+                        ToolTip.text: qsTr("Cancel")
+                        onClicked: root.cancelRequested(model.direction, model.jobId)
                     }
                 }
             }

@@ -31,6 +31,8 @@ QVariant TransferListModel::data(const QModelIndex& index, int role) const
     {
         case DirectionRole:
             return static_cast<int>(row.direction);
+        case JobIdRole:
+            return static_cast<qulonglong>(row.jobId);
         case NameRole:
             return row.name;
         case StateRole:
@@ -50,6 +52,7 @@ QHash<int, QByteArray> TransferListModel::roleNames() const
 {
     return {
         {DirectionRole, "direction"},
+        {JobIdRole, "jobId"},
         {NameRole, "name"},
         {StateRole, "state"},
         {ProgressRole, "progress"},
