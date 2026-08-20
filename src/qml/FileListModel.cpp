@@ -55,9 +55,11 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
             // download flow depends on the actual numeric value).
             return entry.isFolder
                        ? QString()
-                       : QLocale::system().formattedDataSize(static_cast<qint64>(entry.sizeBytes),
-                                                             1,
-                                                             QLocale::DataSizeTraditionalFormat);
+                       // c() not system(): the unit word is locale data, and the UI
+                       // is English-only.
+                       : QLocale::c().formattedDataSize(static_cast<qint64>(entry.sizeBytes),
+                                                        1,
+                                                        QLocale::DataSizeTraditionalFormat);
         case SelectedRole:
             return mSelectedHandles.count(static_cast<quint64>(entry.handle)) > 0;
         default:

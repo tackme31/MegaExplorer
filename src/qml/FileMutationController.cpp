@@ -36,9 +36,10 @@ QString sizeText(std::uint64_t bytes)
 {
     if (bytes == 0)
         return QString();
-    return QLocale::system().formattedDataSize(static_cast<qint64>(bytes),
-                                               1,
-                                               QLocale::DataSizeTraditionalFormat);
+    // c() not system(): the unit word is locale data, and the UI is English-only.
+    return QLocale::c().formattedDataSize(static_cast<qint64>(bytes),
+                                          1,
+                                          QLocale::DataSizeTraditionalFormat);
 }
 } // namespace
 

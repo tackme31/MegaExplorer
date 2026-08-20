@@ -48,10 +48,18 @@ Dialog {
     }
 
     function sizeText(): string {
+        // Under one KiB formattedSize is already the exact byte count (the
+        // formatter is 1024-based), so the bracketed repeat would say the same
+        // number twice.
+        if (root.properties.sizeBytes < 1024)
+            return root.properties.formattedSize;
+        // A named locale, not Qt.locale(): the controller already words the unit in
+        // English, so grouping the exact count by the system's rules would mix two
+        // conventions in one line.
         return qsTr("%1 (%2 bytes)").arg(root.properties.formattedSize).arg(Number(
                                                                                 root.properties.sizeBytes).toLocaleString(
-                                                                                Qt.locale(), "f",
-                                                                                0));
+                                                                                Qt.locale("en_US"),
+                                                                                "f", 0));
     }
 
     GridLayout {

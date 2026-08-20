@@ -261,7 +261,8 @@ QString AuthController::fetchProgressText() const
 {
     if (mTotalBytes == 0)
         return QString();
-    const QLocale locale = QLocale::system();
+    // c() not system(): the unit word is locale data, and the UI is English-only.
+    const QLocale locale = QLocale::c();
     return QStringLiteral("%1 / %2").arg(
         locale.formattedDataSize(
             static_cast<qint64>(mTransferredBytes), 1, QLocale::DataSizeTraditionalFormat),
