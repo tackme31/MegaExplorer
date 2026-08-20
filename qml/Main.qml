@@ -504,8 +504,8 @@ ApplicationWindow {
         function onErrorOccurred(context, reason, rawMessage) {
             toastStack.showError(context, reason, rawMessage);
         }
-        function onOperationFinished(context, succeeded, failed) {
-            toastStack.showOperation(context, succeeded, failed);
+        function onOperationFinished(context, succeeded, failed, undo) {
+            toastStack.showOperation(context, succeeded, failed, undo);
         }
     }
 

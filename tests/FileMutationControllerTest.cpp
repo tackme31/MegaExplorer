@@ -1,6 +1,7 @@
 #include "qml/FileMutationController.h"
 
 #include "core/MegaErrorCodes.h"
+#include "core/ViewKind.h"
 #include "MockMegaClient.h"
 #include "qml/BusyState.h"
 #include "qml/ClipboardController.h"
@@ -91,11 +92,12 @@ protected:
         QObject::connect(notifications.get(),
                          &NotificationController::operationFinished,
                          notifications.get(),
-                         [this](QString context, int succeeded, int failed) {
+                         [this](QString context, int succeeded, int failed, QVariantMap undo) {
                              ++operationCalls;
                              lastContext = context;
                              lastSucceeded = succeeded;
                              lastFailed = failed;
+                             lastUndo = undo;
                          });
         QObject::connect(notifications.get(),
                          &NotificationController::errorOccurred,
@@ -213,6 +215,18 @@ protected:
                 Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{})));
     }
 
+    // Overrides givenRootListing's empty path with one carrying a real handle:
+    // the undo a move offers is withheld for the synthesized locations
+    // (favourites, recents, the bin's top), which are exactly the ones whose
+    // breadcrumb handle is 0.
+    void givenCurrentFolderHandle(std::uint64_t handle)
+    {
+        const PathSegment here{"here", handle, true, ViewKind::CloudDrive};
+        EXPECT_CALL(*client, getPath(_, _, _))
+            .WillRepeatedly(InvokeArgument<2>(
+                Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{here})));
+    }
+
     // A queued invoke can post another one (the refetch a mutation triggers),
     // so one drain isn't necessarily enough.
     static void flush()
@@ -246,6 +260,7 @@ protected:
     QString lastErrorRaw;
     int lastSucceeded = 0;
     int lastFailed = 0;
+    QVariantMap lastUndo;
     int conflictCalls = 0;
     QVariantList lastConflictEntries;
     QStringList lastConflictFiles;
@@ -585,6 +600,92 @@ TEST_F(FileMutationControllerTest, MoveEntriesToDoesNothingWithAnEmptyDrop)
 
     EXPECT_EQ(operationCalls, 0);
     EXPECT_EQ(rootFetches - fetchesBefore, 0);
+}
+
+TEST_F(FileMutationControllerTest, MoveHandlesToRubbishOffersRestoreAsItsUndo)
+{
+    givenRootListing({entry("a", 1), entry("b", 2)});
+    controller->loadRoot();
+    flush();
+    model()->selectAll();
+
+    EXPECT_CALL(*client, moveToRubbish(_, _))
+        .Times(2)
+        .WillRepeatedly(InvokeArgument<1>(Result<void>::ok()));
+
+    mutations->moveHandlesToRubbish(selectedHandles());
+    flush();
+
+    EXPECT_EQ(lastUndo.value(QStringLiteral("action")).toString(), QStringLiteral("restore"));
+    EXPECT_EQ(static_cast<int>(lastUndo.value(QStringLiteral("handles")).toList().size()), 2);
+}
+
+TEST_F(FileMutationControllerTest, MoveEntriesToOffersTheReverseMoveAsItsUndo)
+{
+    givenRootListing({entry("a", 1)});
+    givenCurrentFolderHandle(7u);
+    controller->loadRoot();
+    flush();
+    givenChildrenOf(99u, {});
+
+    EXPECT_CALL(*client, moveNode(1u, 99u, false, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->moveEntriesTo(clipboardEntries({entry("a", 1)}), 99, false);
+    flush();
+    flush();
+
+    EXPECT_EQ(lastUndo.value(QStringLiteral("action")).toString(), QStringLiteral("move"));
+    // The two ends swapped: the undo moves back to where the drag started.
+    EXPECT_EQ(lastUndo.value(QStringLiteral("target")).toULongLong(), 7u);
+    EXPECT_TRUE(lastUndo.value(QStringLiteral("targetIsRoot")).toBool());
+    EXPECT_EQ(lastUndo.value(QStringLiteral("source")).toULongLong(), 99u);
+    EXPECT_FALSE(lastUndo.value(QStringLiteral("sourceIsRoot")).toBool());
+    const QVariantList undoEntries = lastUndo.value(QStringLiteral("entries")).toList();
+    ASSERT_EQ(static_cast<int>(undoEntries.size()), 1);
+    EXPECT_EQ(undoEntries.first().toMap().value(QStringLiteral("handle")).toULongLong(), 1u);
+}
+
+TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoWhenTheSourceIsNotAFolder)
+{
+    // givenRootListing leaves the breadcrumb empty, which is the shape the
+    // favourites and recents screens have on purpose: handle 0, so there is
+    // nowhere to put the nodes back.
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+    givenChildrenOf(99u, {});
+
+    EXPECT_CALL(*client, moveNode(1u, 99u, false, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->moveEntriesTo(clipboardEntries({entry("a", 1)}), 99, false);
+    flush();
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_TRUE(lastUndo.isEmpty());
+}
+
+TEST_F(FileMutationControllerTest, MoveUndoLeavesOutTheEntriesThatWereSkipped)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    givenChildrenOf(7u, {entry("a.txt", 90)});
+
+    EXPECT_CALL(*client, moveNode(1u, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, moveNode(2u, 7u, false, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->moveSkippingExisting(
+        clipboardEntries({entry("a.txt", 1), entry("b.txt", 2)}), 7, false, 5, false);
+    flush();
+    flush();
+
+    const QVariantList undoEntries = lastUndo.value(QStringLiteral("entries")).toList();
+    ASSERT_EQ(static_cast<int>(undoEntries.size()), 1);
+    EXPECT_EQ(undoEntries.first().toMap().value(QStringLiteral("handle")).toULongLong(), 2u);
 }
 
 TEST_F(FileMutationControllerTest, CanDropHandlesOnRejectsUnlessEveryHandlePasses)

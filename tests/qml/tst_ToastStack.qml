@@ -406,6 +406,52 @@ TestCase {
         compare(toast.nextSeq, before + 1);
     }
 
+    // ---- undoOffered: which outcomes get an Undo button --------------------
+
+    function test_undoOffered_data() {
+        return [
+                    {
+                        tag: "wholeBatchSucceeded",
+                        failed: 0,
+                        undo: {
+                            "action": "restore",
+                            "handles": [1]
+                        },
+                        expected: true
+                    },
+                    // A partial failure has no single inverse: the tally says how
+                    // many moved, never which ones.
+                    {
+                        tag: "partialFailure",
+                        failed: 1,
+                        undo: {
+                            "action": "restore",
+                            "handles": [1]
+                        },
+                        expected: false
+                    },
+                    // Every other context reaches showOperation with no payload,
+                    // and an empty map is what C++ sends then.
+                    {
+                        tag: "noPayload",
+                        failed: 0,
+                        undo: undefined,
+                        expected: false
+                    },
+                    {
+                        tag: "emptyPayload",
+                        failed: 0,
+                        undo: {},
+                        expected: false
+                    }
+                ];
+    }
+
+    function test_undoOffered(data) {
+        const toast = makeToast();
+        compare(toast.undoOffered(data.failed, data.undo), data.expected);
+    }
+
     // The empty string from describeOperation has to stop the push, not produce
     // a blank toast.
     function test_showOperation_silentForUnknownContext() {

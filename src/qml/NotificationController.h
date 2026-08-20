@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QString>
+#include <QVariantMap>
 
 #include <QtQml/qqmlregistration.h>
 
@@ -45,13 +46,21 @@ public:
 
     // Outcome of a bulk operation, reported once per user action rather than per
     // item. Same convention: context selects the sentence, the counts fill it in.
-    void notifyOperation(const QString& context, int succeeded, int failed);
+    //
+    // undo, when non-empty, describes the inverse of what just happened, keyed by
+    // "action" -- structure again, not wording. It is carried on this signal rather
+    // than a separate one so the toast has it at the moment it is built; nothing
+    // stores it, so only the toast still on screen can offer it.
+    void notifyOperation(const QString& context,
+                         int succeeded,
+                         int failed,
+                         const QVariantMap& undo = {});
 
 signals:
     // rawMessage is empty unless reason is Unknown.
     void
     errorOccurred(QString context, NotificationController::ErrorReason reason, QString rawMessage);
-    void operationFinished(QString context, int succeeded, int failed);
+    void operationFinished(QString context, int succeeded, int failed, QVariantMap undo);
 
 private:
     static ErrorReason classify(int errorCode);

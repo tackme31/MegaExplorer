@@ -36,7 +36,10 @@ void NotificationController::notifyError(const QString& context)
     emit errorOccurred(context, Unknown, QString());
 }
 
-void NotificationController::notifyOperation(const QString& context, int succeeded, int failed)
+void NotificationController::notifyOperation(const QString& context,
+                                             int succeeded,
+                                             int failed,
+                                             const QVariantMap& undo)
 {
-    emit operationFinished(context, succeeded, failed);
+    emit operationFinished(context, succeeded, failed, undo);
 }

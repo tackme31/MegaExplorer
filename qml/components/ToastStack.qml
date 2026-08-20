@@ -53,10 +53,20 @@ Item {
         id: toastModel
     }
 
+    // Undo payloads by seq, off to the side rather than in toastModel: a
+    // ListModel turns a nested object into a nested model of its own, which the
+    // "entries" list inside one of these would not survive.
+    //
+    // This object *is* the whole memory of what can be undone -- when the card
+    // goes, so does the payload, which is what keeps this from becoming an undo
+    // history.
+    property var undoPayloads: ({})
+
     // Cards are identified by seq, never by index: a card removes itself from
     // the end of its own fade-out, by which time an unrelated dismissal may
     // have shifted every index below it.
     function dismiss(seq) {
+        delete root.undoPayloads[seq];
         for (let i = 0; i < toastModel.count; ++i) {
             if (toastModel.get(i).seq === seq) {
                 toastModel.remove(i);
@@ -65,17 +75,22 @@ Item {
         }
     }
 
-    function push(text, actionText, actionPath) {
+    function push(text, actionText, actionPath, undo) {
+        const seq = root.nextSeq++;
+        if (undo)
+            root.undoPayloads[seq] = undo;
         toastModel.append({
-                              "seq": root.nextSeq++,
+                              "seq": seq,
                               "text": text,
                               "actionText": actionText,
                               "actionPath": actionPath
                           });
         // Drop the oldest rather than queue it: a queue delays the newest
         // outcome, which is the one worth reading.
-        while (toastModel.count > Theme.toast.maxVisible)
+        while (toastModel.count > Theme.toast.maxVisible) {
+            delete root.undoPayloads[toastModel.get(0).seq];
             toastModel.remove(0);
+        }
     }
 
     // The failure branch names the file and stops there: the SDK's reason for
@@ -205,15 +220,38 @@ Item {
         return text;
     }
 
+    // Whether the batch just reported may offer to be taken back. Withheld on a
+    // partial failure: the inverse would then be issued for items that never
+    // moved, and C++ counts outcomes without saying which handle each belongs
+    // to.
+    function undoOffered(failed, undo) {
+        return failed === 0 && !!undo && undo.action !== undefined;
+    }
+
+    // Runs the inverse C++ described in the payload. Issued against whichever
+    // tab is current rather than the one that started it: both operations name
+    // their nodes by handle, and the tab that ran them may since have closed.
+    function runUndo(undo) {
+        const mutations = tabsController.currentMutations;
+        if (!mutations)
+            return;
+        if (undo.action === "restore")
+            mutations.restoreHandles(undo.handles);
+        else if (undo.action === "move")
+            mutations.moveIgnoringExisting(undo.entries, undo.target, undo.targetIsRoot,
+                                           undo.source, undo.sourceIsRoot);
+    }
+
     // Bulk-operation outcomes, fed by
-    // notificationController.operationFinished(context, succeeded, failed).
-    // No Undo button: a Rubbish-bin undo is finally expressible since Phase
-    // 14a added a general move, but it would need the pre-move parent of every
-    // item in the batch, which nothing records.
-    function showOperation(context, succeeded, failed) {
+    // notificationController.operationFinished(context, succeeded, failed, undo).
+    // undo is empty for every context but the two that have an inverse (a move
+    // and a rubbishing); it carries no wording, only what to call.
+    function showOperation(context, succeeded, failed, undo) {
         const text = root.describeOperation(context, succeeded, failed);
-        if (text !== "")
-            root.push(text, "", "");
+        if (text === "")
+            return;
+        const undoable = root.undoOffered(failed, undo);
+        root.push(text, undoable ? qsTr("Undo") : "", "", undoable ? undo : null);
     }
 
     // Appends the reason C++ folded the errorCode into to the clause naming
@@ -483,7 +521,12 @@ Item {
                         text: card.actionText
                         visible: card.actionText !== ""
                         onClicked: {
-                            downloadController.openFile(card.actionPath);
+                            // Read before the dismissal below, which drops it.
+                            const undo = root.undoPayloads[card.seq];
+                            if (undo)
+                                root.runUndo(undo);
+                            else
+                                downloadController.openFile(card.actionPath);
                             root.dismiss(card.seq);
                         }
                     }

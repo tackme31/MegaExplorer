@@ -292,13 +292,21 @@ void FileMutationController::moveHandlesToRubbish(const QVariantList& handles)
     const quint64 source = mNavigation->currentHandle();
     const bool sourceIsRoot = mNavigation->atRoot();
 
-    auto batch = mBulk.start("moveToRubbish",
-                             static_cast<int>(handles.size()),
-                             {},
-                             [this, source, sourceIsRoot](int succeeded, int) {
-                                 if (succeeded > 0)
-                                     emit nodesRemoved(source, sourceIsRoot);
-                             });
+    // The inverse needs no record of where the nodes were: MEGA stores the folder
+    // each one was binned from, which restoreHandles reads back.
+    QVariantMap undo;
+    undo.insert(QStringLiteral("action"), QStringLiteral("restore"));
+    undo.insert(QStringLiteral("handles"), handles);
+
+    auto batch = mBulk.start(
+        "moveToRubbish",
+        static_cast<int>(handles.size()),
+        {},
+        [this, source, sourceIsRoot](int succeeded, int) {
+            if (succeeded > 0)
+                emit nodesRemoved(source, sourceIsRoot);
+        },
+        undo);
 
     for (const QVariant& handle : handles)
     {
@@ -556,11 +564,17 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
     };
     std::vector<PlannedMove> plan;
     plan.reserve(entries.size());
+    // The same entries the plan issues, kept in NodeRef form for the undo payload
+    // below -- a skipped entry never left, so offering to move it back would be a
+    // move the user did not make.
+    std::vector<NodeRef> issued;
+    issued.reserve(entries.size());
     for (std::size_t i = 0; i < entries.size(); ++i)
     {
         const NodeRef& entry = entries[i];
         if (colliding[i] && onConflict == MoveConflict::Skip)
             continue;
+        issued.push_back(entry);
         if (colliding[i] && onConflict == MoveConflict::Rename)
         {
             const std::string chosen =
@@ -579,6 +593,22 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
 
     clearClipboardIfSpentBy(entries);
 
+    // The inverse is the same call with the two ends swapped, so the toast needs no
+    // machinery of its own. Withheld when the source is one of the synthesized
+    // locations (favourites, recents, the bin's own top), which carry handle 0 and
+    // are not somewhere a node can be moved back to. A Rename answer is not undone:
+    // the name it picked stays, only the folder goes back.
+    QVariantMap undo;
+    if (source != 0)
+    {
+        undo.insert(QStringLiteral("action"), QStringLiteral("move"));
+        undo.insert(QStringLiteral("entries"), ClipboardController::toVariantList(issued));
+        undo.insert(QStringLiteral("target"), source);
+        undo.insert(QStringLiteral("targetIsRoot"), sourceIsRoot);
+        undo.insert(QStringLiteral("source"), target);
+        undo.insert(QStringLiteral("sourceIsRoot"), targetIsRoot);
+    }
+
     auto batch =
         mBulk.start("move",
                     static_cast<int>(plan.size()),
@@ -586,7 +616,8 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
                     [this, target, targetIsRoot, source, sourceIsRoot](int succeeded, int) {
                         if (succeeded > 0)
                             emit nodesMoved(target, targetIsRoot, source, sourceIsRoot);
-                    });
+                    },
+                    undo);
 
     for (const PlannedMove& planned : plan)
         moveOne(planned.handle, target, targetIsRoot, planned.newName, batch);
