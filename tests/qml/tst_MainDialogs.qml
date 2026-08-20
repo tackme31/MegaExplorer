@@ -721,6 +721,32 @@ TestCase {
         compare(dialog.sizeText(), data.expected);
     }
 
+    // The dialog used to print the timestamp with toLocaleString(), which on a
+    // Japanese system read "2019年2月13日 23:10:23" while the Date modified column
+    // beside it read "2/13/2019 11:10 PM". Asserting the shape rather than an exact
+    // string keeps the test off the runner's timezone.
+    function test_properties_modifiedMatchesTheListingFormat() {
+        const controller = makeProperties();
+        const dialog = makeDialog(propertiesComponent, {
+                                      "properties": controller
+                                  });
+
+        controller.modificationTime = 1550099423;
+
+        verify(/^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2} [AP]M$/.test(dialog.modifiedText()));
+    }
+
+    function test_properties_modifiedIsUnknownWithoutAStamp() {
+        const controller = makeProperties();
+        const dialog = makeDialog(propertiesComponent, {
+                                      "properties": controller
+                                  });
+
+        controller.modificationTime = 0;
+
+        compare(dialog.modifiedText(), "Unknown");
+    }
+
     // ---- ConfirmRubbishDialog / ConfirmPermanentDeleteDialog -----------
 
     function test_confirmDelete_staysInsideTheWindowOnALongName_data() {

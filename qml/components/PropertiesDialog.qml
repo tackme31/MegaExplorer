@@ -28,6 +28,10 @@ Dialog {
 
     readonly property real valueWidth: Math.min(360, root.maxWidth - 160)
 
+    // Must stay identical to FileTableView's modifiedDateFormat -- qsTr's context is
+    // the QML type, so a .ts file translates the two copies separately.
+    readonly property string modifiedDateFormat: qsTr("M/d/yyyy h:mm AP")
+
     // Root label plus the folder chain under it, e.g. "Cloud Drive/Photos".
     // ViewLabels rather than a string in C++: naming a screen the app invented is
     // QML's half of the split (see ViewLabels.qml).
@@ -60,6 +64,13 @@ Dialog {
                                                                                 root.properties.sizeBytes).toLocaleString(
                                                                                 Qt.locale("en_US"),
                                                                                 "f", 0));
+    }
+
+    function modifiedText(): string {
+        if (root.properties.modificationTime <= 0)
+            return qsTr("Unknown");
+        return Qt.formatDateTime(new Date(root.properties.modificationTime * 1000),
+                                 root.modifiedDateFormat);
     }
 
     GridLayout {
@@ -126,10 +137,7 @@ Dialog {
         }
         Label {
             visible: !root.properties.isFolder
-            text: root.properties.modificationTime > 0 ? new Date(root.properties.modificationTime
-                                                                  * 1000).toLocaleString(Qt.locale(
-                                                                                             )) : qsTr(
-                                                             "Unknown")
+            text: root.modifiedText()
         }
     }
 
