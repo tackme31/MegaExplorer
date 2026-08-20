@@ -1,6 +1,8 @@
 #pragma once
 #include "core/Result.h"
 
+#include <QVariantMap>
+
 #include <functional>
 #include <memory>
 
@@ -35,7 +37,8 @@ public:
               const char* context,
               int count,
               std::function<void()> refresh,
-              std::function<void(int, int)> onComplete);
+              std::function<void(int, int)> onComplete,
+              QVariantMap undo);
 
         BulkOperationRunner& mRunner;
         // Names the operation in the log and the notification, so it must outlive the
@@ -46,6 +49,7 @@ public:
         int mFailed = 0;
         std::function<void()> mRefresh;
         std::function<void(int, int)> mOnComplete;
+        QVariantMap mUndo;
     };
 
     // defaultRefresh is what a batch re-reads when it doesn't bring its own.
@@ -64,10 +68,14 @@ public:
     // refresh overrides the default "re-read what this tab is showing" -- a Ctrl+drop
     // onto another folder has nothing to re-read here. onComplete runs after the
     // refresh and the notification; both may be empty.
+    //
+    // undo rides along untouched to NotificationController::notifyOperation; see
+    // there for what it means.
     std::shared_ptr<Batch> start(const char* context,
                                  int count,
                                  std::function<void()> refresh = {},
-                                 std::function<void(int, int)> onComplete = {});
+                                 std::function<void(int, int)> onComplete = {},
+                                 QVariantMap undo = {});
 
 private:
     BusyState& mBusy;

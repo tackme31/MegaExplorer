@@ -12,9 +12,10 @@ BulkOperationRunner::Batch::Batch(BulkOperationRunner& runner,
                                   const char* context,
                                   int count,
                                   std::function<void()> refresh,
-                                  std::function<void(int, int)> onComplete)
+                                  std::function<void(int, int)> onComplete,
+                                  QVariantMap undo)
     : mRunner(runner), mContext(context), mRemaining(count), mRefresh(std::move(refresh)),
-      mOnComplete(std::move(onComplete))
+      mOnComplete(std::move(onComplete)), mUndo(std::move(undo))
 {}
 
 void BulkOperationRunner::Batch::settle(const Result<void>& result)
@@ -39,7 +40,10 @@ void BulkOperationRunner::Batch::settle(const Result<void>& result)
         mRefresh();
     else
         mRunner.mDefaultRefresh();
-    mRunner.mNotifications.notifyOperation(QString::fromLatin1(mContext), mSucceeded, mFailed);
+    mRunner.mNotifications.notifyOperation(QString::fromLatin1(mContext),
+                                           mSucceeded,
+                                           mFailed,
+                                           mUndo);
     if (mOnComplete)
         mOnComplete(mSucceeded, mFailed);
 }
@@ -54,7 +58,8 @@ std::shared_ptr<BulkOperationRunner::Batch>
 BulkOperationRunner::start(const char* context,
                            int count,
                            std::function<void()> refresh,
-                           std::function<void(int, int)> onComplete)
+                           std::function<void(int, int)> onComplete,
+                           QVariantMap undo)
 {
     Q_ASSERT(count > 0);
 
@@ -64,6 +69,6 @@ BulkOperationRunner::start(const char* context,
     // make_shared can't reach the private constructor, and the batch is small
     // enough that the extra allocation the two-step form costs is irrelevant
     // next to the N server round-trips it is about to track.
-    return std::shared_ptr<Batch>(
-        new Batch(*this, context, count, std::move(refresh), std::move(onComplete)));
+    return std::shared_ptr<Batch>(new Batch(
+        *this, context, count, std::move(refresh), std::move(onComplete), std::move(undo)));
 }
