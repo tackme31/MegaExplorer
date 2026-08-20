@@ -7,7 +7,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 // Explorer 11's status bar (extracted from Main.qml in R6-3): the item/selection
-// count, the download and upload progress pairs, and the view-mode toggle.
+// count, the view-mode toggle and the preview-pane toggle. Transfers are not
+// here -- they moved to TransferFlyout.qml.
 // Loaded by Main.qml's footer: slot only while signed in.
 ToolBar {
     id: root
@@ -77,70 +78,12 @@ ToolBar {
                                                                                   countLabel.listModel.count)
         }
 
-        // Every item in this row states its own vertical placement: none of them
-        // can fill a 28px band, and a RowLayout's default for that case is not
-        // something to lean on (S8a).
-        Label {
-            Layout.fillWidth: true
-            Layout.alignment: Qt.AlignVCenter
-            visible: downloadController.downloadActive
-            elide: Text.ElideMiddle
-            font.pixelSize: Theme.font.caption
-            text: downloadController.activeFileName
-        }
-        ProgressBar {
-            Layout.preferredWidth: 160
-            Layout.alignment: Qt.AlignVCenter
-            visible: downloadController.downloadActive
-            from: 0
-            to: 1
-            value: downloadController.activeProgress
-        }
-        // Stops the whole download queue, not just the file named to its left --
-        // the row has no per-job list to hang a narrower cancel off, and a serial
-        // queue would only start the next file anyway.
-        StatusIconButton {
-            text: Theme.glyph.close
-            ToolTip.text: qsTr("Cancel downloads")
-            visible: downloadController.downloadActive
-            onClicked: downloadController.cancelDownloads()
-        }
-
-        // Uploads run on their own serial queue alongside downloads, so both
-        // pairs can be showing at once. "n remaining" is the only progress cue a
-        // serial queue offers beyond the active file.
-        Label {
-            Layout.fillWidth: true
-            Layout.alignment: Qt.AlignVCenter
-            visible: uploadController.uploadActive
-            elide: Text.ElideMiddle
-            font.pixelSize: Theme.font.caption
-            text: uploadController.pendingCount > 1 ? qsTr("↑ %1 (%2 remaining)").arg(
-                                                          uploadController.activeFileName).arg(
-                                                          uploadController.pendingCount - 1) : qsTr(
-                                                          "↑ %1").arg(
-                                                          uploadController.activeFileName)
-        }
-        ProgressBar {
-            Layout.preferredWidth: 160
-            Layout.alignment: Qt.AlignVCenter
-            visible: uploadController.uploadActive
-            from: 0
-            to: 1
-            value: uploadController.activeProgress
-        }
-        StatusIconButton {
-            text: Theme.glyph.close
-            ToolTip.text: qsTr("Cancel uploads")
-            visible: uploadController.uploadActive
-            onClicked: uploadController.cancelUploads()
-        }
-
-        // Keeps the view-mode buttons right-aligned when the transfer groups
-        // above are hidden (RowLayout excludes invisible items).
+        // Pushes the view-mode buttons to the right edge. All that is left
+        // between them and the item count since the transfer pairs -- file name,
+        // progress bar, cancel -- moved to TransferFlyout.qml, which shows the
+        // whole queue instead of whichever file happened to be in flight.
         Item {
             Layout.fillWidth: true
-            visible: !downloadController.downloadActive && !uploadController.uploadActive
         }
 
         // Reads/writes the injected currentPane (the active tab's pane), not

@@ -28,6 +28,7 @@ ToolBar {
     // relays instead of taking one object injection each -- Main.qml owns them,
     // so opening one is its call, not ours (AboutDialog.qml makes the same
     // argument for its own licensesRequested).
+    signal transfersRequested
     signal settingsRequested
     signal aboutRequested
     signal licensesRequested
@@ -320,6 +321,14 @@ ToolBar {
                 // IconMenuItem, not MenuItem, for the leading glyph -- same rows
                 // as a context menu gets, so the two kinds of menu don't
                 // disagree about whether items have icons.
+                // The only way back to the transfer flyout once it has been
+                // hidden or has taken itself away.
+                IconMenuItem {
+                    text: qsTr("Transfers")
+                    glyph: Theme.glyph.menu.transfers
+                    onTriggered: root.transfersRequested()
+                }
+                MenuSeparator {}
                 IconMenuItem {
                     text: qsTr("Settings")
                     glyph: Theme.glyph.menu.settings
