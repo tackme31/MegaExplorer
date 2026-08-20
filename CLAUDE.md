@@ -242,8 +242,10 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   matches `MEGAEXPLORER_TEST_ACCOUNT`.
 - `scripts/drive_gate.cmd` — `ui_shot.py drive` hijacks the real mouse and keyboard, so permission
   is taken **once per thing being verified**: Claude pushes what it is about to check through
-  `scripts/ntfy-send.sh`, then raises its own question and waits. That one answer covers every
-  `drive` call belonging to that check — two states of the same screen, a `drag` and the shot after
+  `scripts/ntfy-send.sh`, then pauses so the question can be raised and waits for the answer — the
+  cycle runs in a subagent, which has no `AskUserQuestion`, so it ends its turn with a
+  `DRIVE-PERMISSION-REQUEST` block and the loop session asks on its behalf and resumes it. That one
+  answer covers every `drive` call belonging to that check — two states of the same screen, a `drag` and the shot after
   it — while a different grain (re-checking after a review fix, another feature) asks again. A
   refusal means the point is handed to the human as "needs checking on a real run" instead. An
   **expiring** flag file under `%LOCALAPPDATA%\MegaExplorerLoop\`, written by the desktop shortcuts
