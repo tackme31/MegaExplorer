@@ -501,6 +501,13 @@ ApplicationWindow {
     TransferFlyout {
         id: transferFlyout
         transfers: transferListModel
+        // Both queues unconditionally: the panel merges them into one list, so
+        // "Cancel all" cannot mean one direction. Either call is a no-op when its
+        // own queue is empty, toast included.
+        onCancelAllRequested: {
+            downloadController.cancelDownloads();
+            uploadController.cancelUploads();
+        }
     }
 
     Connections {

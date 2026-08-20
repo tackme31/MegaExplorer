@@ -204,6 +204,13 @@ QtObject {
         // CaptionBar's window-close already paint this one.
         readonly property string close: "\uE8BB" // ChromeClose
 
+        // Direction markers on the transfer flyout's rows. Download is the code
+        // point the More menu already paints; Upload is its neighbour in the same
+        // font block and has not been drawn yet -- an absent code point renders as
+        // a box, so /ui-style still has to confirm it.
+        readonly property string transferDown: "\uE896" // Download
+        readonly property string transferUp: "\uE898"   // Upload
+
         // Menu-row leading icons. One entry per context-menu action ID (the
         // same IDs ActionCatalog.qml keys on) plus the three "More" menu rows,
         // so picking an icon is an edit here and nowhere else.
@@ -214,7 +221,7 @@ QtObject {
         // viewList above) -- do both when the final set is settled on.
         readonly property QtObject menu: QtObject {
             readonly property string newFolder: "\uE8F4"     // NewFolder
-            readonly property string download: "\uE896"      // Download
+            readonly property string download: glyphSet.transferDown
             // Not yet checked against either icon font's cmap, nor drawn at 16px --
             // a code point missing from the font renders as a box. All three are
             // /ui-style's to settle, as with the unverified glyphs below.
@@ -361,6 +368,10 @@ QtObject {
         // than toast.dismissMs: a toast has a sentence to read, this one has a bar
         // that has already reached the end.
         readonly property int idleHideMs: 3000
+        // Ceiling on the expanded flyout's row list in a window tall enough to
+        // grant it. A short window clamps the whole panel instead, and the list is
+        // what gives way there.
+        readonly property int listMaxHeight: 240
     }
 
     // Transition durations. Distinct from toast.dismissMs above, which is a
