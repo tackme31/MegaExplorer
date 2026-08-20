@@ -55,7 +55,8 @@ QString sizeText(qint64 bytes)
 {
     if (bytes <= 0)
         return QString();
-    return QLocale::system().formattedDataSize(bytes, 1, QLocale::DataSizeTraditionalFormat);
+    // c() not system(): the unit word is locale data, and the UI is English-only.
+    return QLocale::c().formattedDataSize(bytes, 1, QLocale::DataSizeTraditionalFormat);
 }
 
 } // namespace

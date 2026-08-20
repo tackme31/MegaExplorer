@@ -692,6 +692,35 @@ TestCase {
         compare(dialog.locationText, data.expected);
     }
 
+    function test_properties_sizeDropsTheExactCountWhenItIsAlreadyShown_data() {
+        return [
+                    {
+                        tag: "underOneKiB",
+                        sizeBytes: 12,
+                        formattedSize: "12 bytes",
+                        expected: "12 bytes"
+                    },
+                    {
+                        tag: "quantified",
+                        sizeBytes: 1234,
+                        formattedSize: "1.2 kB",
+                        expected: "1.2 kB (1,234 bytes)"
+                    }
+                ];
+    }
+
+    function test_properties_sizeDropsTheExactCountWhenItIsAlreadyShown(data) {
+        const controller = makeProperties();
+        const dialog = makeDialog(propertiesComponent, {
+                                      "properties": controller
+                                  });
+
+        controller.sizeBytes = data.sizeBytes;
+        controller.formattedSize = data.formattedSize;
+
+        compare(dialog.sizeText(), data.expected);
+    }
+
     // ---- ConfirmRubbishDialog / ConfirmPermanentDeleteDialog -----------
 
     function test_confirmDelete_staysInsideTheWindowOnALongName_data() {

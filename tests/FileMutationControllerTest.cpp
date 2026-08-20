@@ -1473,7 +1473,7 @@ TEST_F(FileMutationControllerTest, CopyConflictPricesTheCollidingAndSurvivingHal
     // Compared against the same formatter the controller uses: what is under test
     // is which bytes landed in which half, not the units.
     ASSERT_EQ(conflictCalls, 1);
-    const QLocale locale = QLocale::system();
+    const QLocale locale = QLocale::c();
     EXPECT_EQ(lastConflictSize,
               locale.formattedDataSize(2048, 1, QLocale::DataSizeTraditionalFormat));
     EXPECT_EQ(lastConflictUnaffectedSize,

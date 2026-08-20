@@ -257,7 +257,8 @@ QString AccountController::storageText() const
     // Traditional (1024-based, "GB"-labelled) rather than SI, because that is what
     // MEGA itself quotes: 16106127360 bytes is "15 GB" on MEGA's own site, not SI's
     // 16.1 GB.
-    const QLocale locale = QLocale::system();
+    // c() not system(): the unit word is locale data, and the UI is English-only.
+    const QLocale locale = QLocale::c();
     const QString used = locale.formattedDataSize(
         static_cast<qint64>(mStorageUsedBytes), 1, QLocale::DataSizeTraditionalFormat);
     if (mStorageMaxBytes == 0)
