@@ -68,13 +68,16 @@ UploadController::UploadController(std::shared_ptr<UploadService> service,
     : QObject(parent), mService(std::move(service)), mScan(std::move(scan)),
       mNotifications(notifications)
 {
-    mService->setOnProgress([this](UploadJob) {
-        invokeOnGuiThread(this, [this] {
+    mService->setOnProgress([this](UploadJob job) {
+        invokeOnGuiThread(this, [this, job = std::move(job)]() mutable {
+            emit jobChanged(job);
             refreshActiveJob();
         });
     });
     mService->setOnJobFinished([this](UploadJob job) {
         invokeOnGuiThread(this, [this, job = std::move(job)]() mutable {
+            emit jobChanged(job);
+            publishQueue(); // whatever was promoted in its place is Active now
             --mBatch.pendingJobs;
             const Destination destination{static_cast<quint64>(job.parentHandle), job.parentIsRoot};
             if (job.state == UploadState::Completed)
@@ -399,6 +402,7 @@ void UploadController::enqueuePlan(const std::vector<UploadPlanItem>& plan)
                           item.parentIsRoot,
                           isFolderUpload(info) ? 0u : static_cast<std::uint64_t>(info.size()));
     }
+    publishQueue();
     refreshActiveJob(); // already on the GUI thread here (called from QML)
 }
 
@@ -406,6 +410,12 @@ void UploadController::refreshActiveJob()
 {
     mActiveJob = mService->currentJob();
     emit uploadActiveChanged();
+}
+
+void UploadController::publishQueue()
+{
+    for (const UploadJob& job : mService->jobs())
+        emit jobChanged(job);
 }
 
 void UploadController::flushBatchIfDone()

@@ -102,6 +102,12 @@ public:
 signals:
     void uploadActiveChanged();
 
+    // One snapshot per job whenever that job's state or progress moves, queued jobs
+    // included. TransferListModel is the consumer; nothing else may assume a job is
+    // reported only once, and a cancelled or failed job is reported here as well as
+    // through the batch notification.
+    void jobChanged(const UploadJob& job);
+
     // Membership only -- not emitted per file, since nothing binds to the count.
     void activeDestinationsChanged();
 
@@ -192,6 +198,12 @@ private:
     collisionsFor(const QStringList& localPaths, quint64 target, bool targetIsRoot) const;
 
     void refreshActiveJob();
+
+    // Emits jobChanged for every job still in the queue. Called where the queue
+    // itself moves (a new batch enqueued, a job finishing) rather than on every
+    // progress tick, which already carries the one job it is about.
+    void publishQueue();
+
     void flushBatchIfDone();
 
     // The only two places pendingByDestination changes: each job is retained once and
