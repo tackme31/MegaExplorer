@@ -318,11 +318,28 @@ TEST_F(TransferListModelTest, RoleNamesAreTheOnesQmlBindsTo)
 {
     const QHash<int, QByteArray> names = model->roleNames();
     EXPECT_EQ(names.value(TransferListModel::DirectionRole), QByteArray("direction"));
+    EXPECT_EQ(names.value(TransferListModel::JobIdRole), QByteArray("jobId"));
     EXPECT_EQ(names.value(TransferListModel::NameRole), QByteArray("name"));
     EXPECT_EQ(names.value(TransferListModel::StateRole), QByteArray("state"));
     EXPECT_EQ(names.value(TransferListModel::ProgressRole), QByteArray("progress"));
     EXPECT_EQ(names.value(TransferListModel::TransferredBytesRole), QByteArray("transferredBytes"));
     EXPECT_EQ(names.value(TransferListModel::TotalBytesRole), QByteArray("totalBytes"));
+}
+
+TEST_F(TransferListModelTest, TheJobIdRoleNamesTheOneRowACancelStops)
+{
+    downloads->downloadFile(7, "a.txt", 100);
+    downloads->downloadFile(8, "b.txt", 200);
+    downloads->downloadFile(9, "c.txt", 300);
+
+    // Act: the middle row, through the same call the flyout's row button makes
+    downloads->cancelJob(role(1, TransferListModel::JobIdRole).toULongLong());
+    flush();
+
+    ASSERT_EQ(model->rowCount(), 3);
+    EXPECT_EQ(role(0, TransferListModel::StateRole).toInt(), TransferStateEnum::Active);
+    EXPECT_EQ(role(1, TransferListModel::StateRole).toInt(), TransferStateEnum::Cancelled);
+    EXPECT_EQ(role(2, TransferListModel::StateRole).toInt(), TransferStateEnum::Queued);
 }
 
 } // namespace

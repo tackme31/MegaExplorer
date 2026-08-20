@@ -602,3 +602,78 @@ TEST(UploadServiceTest, CancelAllDropsPendingJobsAndAbortsTheActiveTransfer)
     EXPECT_EQ(finished[1].state, UploadState::Cancelled);
     EXPECT_EQ(service.queueLength(), 0u);
 }
+
+TEST(UploadServiceTest, CancelDropsOneQueuedJobAndLeavesTheRestOfTheQueueAlone)
+{
+    auto mockClient = makeClient();
+    std::function<void(Result<UploadOutcome>)> onDone1;
+    EXPECT_CALL(*mockClient,
+                upload(std::string("/tmp/a.txt"), ::testing::_, ::testing::_, ::testing::_,
+                       ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&onDone1));
+    EXPECT_CALL(*mockClient, cancelUpload()).Times(0);
+
+    UploadService service(mockClient);
+    std::vector<UploadJob> finished;
+    service.setOnJobFinished([&](UploadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    const std::uint64_t id1 = service.enqueue("/tmp/a.txt", "a.txt", 7, false, 10);
+    const std::uint64_t id2 = service.enqueue("/tmp/b.txt", "b.txt", 7, false, 10);
+    const std::uint64_t id3 = service.enqueue("/tmp/c.txt", "c.txt", 7, false, 10);
+
+    // Act
+    service.cancel(id2);
+
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished[0].id, id2);
+    EXPECT_EQ(finished[0].state, UploadState::Cancelled);
+
+    const std::vector<UploadJob> remaining = service.jobs();
+    ASSERT_EQ(remaining.size(), 2u);
+    EXPECT_EQ(remaining[0].id, id1);
+    EXPECT_EQ(remaining[0].state, UploadState::Active);
+    EXPECT_EQ(remaining[1].id, id3);
+    EXPECT_EQ(remaining[1].state, UploadState::Queued);
+}
+
+TEST(UploadServiceTest, CancellingTheActiveJobAbortsItAndTheQueueBehindItCarriesOn)
+{
+    auto mockClient = makeClient();
+    std::function<void(Result<UploadOutcome>)> onDone1;
+    EXPECT_CALL(*mockClient,
+                upload(std::string("/tmp/a.txt"), ::testing::_, ::testing::_, ::testing::_,
+                       ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&onDone1));
+    EXPECT_CALL(*mockClient,
+                upload(std::string("/tmp/b.txt"), ::testing::_, ::testing::_, ::testing::_,
+                       ::testing::_));
+    EXPECT_CALL(*mockClient, cancelUpload());
+
+    UploadService service(mockClient);
+    std::vector<UploadJob> finished;
+    service.setOnJobFinished([&](UploadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    const std::uint64_t id1 = service.enqueue("/tmp/a.txt", "a.txt", 7, false, 10);
+    const std::uint64_t id2 = service.enqueue("/tmp/b.txt", "b.txt", 7, false, 10);
+
+    // Act
+    service.cancel(id1);
+
+    EXPECT_TRUE(finished.empty()); // the SDK still has to acknowledge the abort
+    EXPECT_EQ(service.queueLength(), 2u);
+
+    ASSERT_TRUE(onDone1);
+    onDone1(Result<UploadOutcome>::fail("Transfer cancelled", MegaErrorCode::kEIncomplete));
+
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished[0].id, id1);
+    EXPECT_EQ(finished[0].state, UploadState::Cancelled);
+    const std::optional<UploadJob> active = service.currentJob();
+    ASSERT_TRUE(active.has_value());
+    EXPECT_EQ(active->id, id2);
+    EXPECT_EQ(active->state, UploadState::Active);
+}

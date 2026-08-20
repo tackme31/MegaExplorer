@@ -95,6 +95,11 @@ public:
     // request to stop, not to undo.
     Q_INVOKABLE void cancelUploads();
 
+    // Mirrors DownloadController::cancelJob() -- one row, no toast. The batch
+    // counters need nothing extra: a Cancelled job is already tallied as neither
+    // succeeded nor failed.
+    Q_INVOKABLE void cancelJob(quint64 jobId);
+
     // Not QML-facing: TabsController folds this into a tab's busy role, since an
     // upload has no owning tab to drive FolderNavigationController::busy.
     bool isUploadingTo(quint64 handle, bool isRoot) const;

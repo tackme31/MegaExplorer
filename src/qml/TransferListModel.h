@@ -43,6 +43,9 @@ public:
     enum Roles
     {
         DirectionRole = Qt::UserRole + 1, // TransferDirection.Download / .Upload
+        // Only meaningful together with DirectionRole: the two services number their
+        // jobs independently, so ids collide across directions.
+        JobIdRole,
         NameRole,
         StateRole, // TransferState.*
         ProgressRole,

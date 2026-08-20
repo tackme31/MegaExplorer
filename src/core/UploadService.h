@@ -72,6 +72,10 @@ public:
     // per-dropped-job guarantee UploadController's batch counters depend on.
     void cancelAll();
 
+    // Mirrors DownloadService::cancel() -- see there for the lock discipline the
+    // active-job branch needs.
+    void cancel(std::uint64_t jobId);
+
     // Synchronous pre-checks straight through to IMegaClient: a hovering drag needs
     // its answer immediately.
     Result<void> canUploadTo(std::uint64_t parentHandle, bool parentIsRoot) const;

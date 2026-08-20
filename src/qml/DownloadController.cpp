@@ -117,6 +117,12 @@ void DownloadController::cancelDownloads()
     refreshActiveJob(); // pending jobs are gone already; the active one clears later
 }
 
+void DownloadController::cancelJob(quint64 jobId)
+{
+    mService->cancel(jobId);
+    refreshActiveJob(); // a dropped pending job is gone already; the active one clears later
+}
+
 void DownloadController::openFile(QString localPath)
 {
     if (!QDesktopServices::openUrl(QUrl::fromLocalFile(localPath)))

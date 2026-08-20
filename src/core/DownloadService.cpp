@@ -159,6 +159,43 @@ void DownloadService::cancelAll()
     }
 }
 
+void DownloadService::cancel(std::uint64_t jobId)
+{
+    std::optional<DownloadJob> dropped;
+    std::function<void(DownloadJob)> onJobFinished;
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        onJobFinished = mOnJobFinished;
+        if (mActive && mActive->id == jobId)
+        {
+            // Only an active-job cancel bumps the generation: it is what
+            // startNextIfIdle()'s re-assert reads, so bumping it for a pending job
+            // would abort whichever transfer happened to be starting just then.
+            ++mCancelGeneration;
+            // Held across the client call, unlike cancelAll(): the rest of the queue
+            // is still here, so releasing first would let this job finish and promote
+            // the next one straight into the abort. Safe only because cancelDownload()
+            // just sets a shared flag and re-enters nothing -- don't hoist a call that
+            // does more out here.
+            mClient->cancelDownload();
+            return;
+        }
+        for (auto it = mPending.begin(); it != mPending.end(); ++it)
+        {
+            if (it->id != jobId)
+                continue;
+            dropped = std::move(*it);
+            mPending.erase(it);
+            break;
+        }
+    }
+
+    if (!dropped || !onJobFinished)
+        return;
+    dropped->state = DownloadState::Cancelled;
+    onJobFinished(*dropped);
+}
+
 bool DownloadService::hasJobForHandle(std::uint64_t handle) const
 {
     std::lock_guard<std::mutex> lock(mMutex);

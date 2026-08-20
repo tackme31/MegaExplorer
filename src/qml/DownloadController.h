@@ -40,6 +40,11 @@ public:
     // acknowledge the abort, leaving the button looking dead in the meantime.
     Q_INVOKABLE void cancelDownloads();
 
+    // Stops the one queued or active download named by a TransferListModel row's
+    // jobId. No toast, unlike cancelDownloads(): the row the click landed on turns
+    // to "Cancelled" in place, and one toast per clicked row would stack.
+    Q_INVOKABLE void cancelJob(quint64 jobId);
+
     // Opens the file with the OS default application. Only ever from the snackbar's
     // "Open" button -- never auto-invoked.
     Q_INVOKABLE void openFile(QString localPath);

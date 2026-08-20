@@ -508,6 +508,13 @@ ApplicationWindow {
             downloadController.cancelDownloads();
             uploadController.cancelUploads();
         }
+        // A single row, unlike the button above, names exactly one queue.
+        onCancelRequested: (direction, jobId) => {
+            if (direction === TransferDirection.Upload)
+                uploadController.cancelJob(jobId);
+            else
+                downloadController.cancelJob(jobId);
+        }
     }
 
     Connections {

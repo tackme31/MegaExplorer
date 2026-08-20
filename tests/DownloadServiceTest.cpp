@@ -541,3 +541,100 @@ TEST(DownloadServiceTest, CancelArrivingWhileAJobIsStartingIsReAssertedOnceItsTo
 
     service.enqueue(1, "a.txt", "/tmp/a.txt", 10);
 }
+
+TEST(DownloadServiceTest, CancelDropsOneQueuedJobAndLeavesTheRestOfTheQueueAlone)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<DownloadOutcome>)> onDone1;
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<3>(&onDone1));
+    // Nothing is in flight for this cancel to abort, and no other download() may
+    // start: the two jobs left keep their places.
+    EXPECT_CALL(*mockClient, cancelDownload()).Times(0);
+
+    DownloadService service(mockClient);
+    std::vector<DownloadJob> finished;
+    service.setOnJobFinished([&](DownloadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    const std::uint64_t id1 = service.enqueue(1, "a.txt", "/tmp/a.txt", 10);
+    const std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 10);
+    const std::uint64_t id3 = service.enqueue(3, "c.txt", "/tmp/c.txt", 10);
+
+    // Act
+    service.cancel(id2);
+
+    // Assert: one notification for the dropped job, exactly as cancelAll() gives
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished[0].id, id2);
+    EXPECT_EQ(finished[0].state, DownloadState::Cancelled);
+
+    const std::vector<DownloadJob> remaining = service.jobs();
+    ASSERT_EQ(remaining.size(), 2u);
+    EXPECT_EQ(remaining[0].id, id1);
+    EXPECT_EQ(remaining[0].state, DownloadState::Active);
+    EXPECT_EQ(remaining[1].id, id3);
+    EXPECT_EQ(remaining[1].state, DownloadState::Queued);
+}
+
+TEST(DownloadServiceTest, CancellingTheActiveJobAbortsItAndTheQueueBehindItCarriesOn)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<DownloadOutcome>)> onDone1;
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<3>(&onDone1));
+    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_));
+    EXPECT_CALL(*mockClient, cancelDownload());
+
+    DownloadService service(mockClient);
+    std::vector<DownloadJob> finished;
+    service.setOnJobFinished([&](DownloadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    const std::uint64_t id1 = service.enqueue(1, "a.txt", "/tmp/a.txt", 10);
+    const std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 10);
+
+    // Act
+    service.cancel(id1);
+
+    // Nothing has finished yet -- only the SDK can say when the transfer stopped.
+    EXPECT_TRUE(finished.empty());
+    EXPECT_EQ(service.jobs().size(), 2u);
+
+    ASSERT_TRUE(onDone1);
+    onDone1(Result<DownloadOutcome>::fail("Transfer cancelled", MegaErrorCode::kEIncomplete));
+
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished[0].id, id1);
+    EXPECT_EQ(finished[0].state, DownloadState::Cancelled);
+    // The job behind it starts, which is the whole difference from cancelAll().
+    const std::optional<DownloadJob> active = service.currentJob();
+    ASSERT_TRUE(active.has_value());
+    EXPECT_EQ(active->id, id2);
+    EXPECT_EQ(active->state, DownloadState::Active);
+}
+
+TEST(DownloadServiceTest, CancelOfAnIdThatAlreadyFinishedNeitherNotifiesNorReachesTheClient)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(
+            Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt"})));
+    EXPECT_CALL(*mockClient, cancelDownload()).Times(0);
+
+    DownloadService service(mockClient);
+    int finishedCount = 0;
+    service.setOnJobFinished([&](DownloadJob) {
+        ++finishedCount;
+    });
+
+    const std::uint64_t id = service.enqueue(1, "a.txt", "/tmp/a.txt", 10);
+    ASSERT_EQ(finishedCount, 1);
+
+    // Act: a row left over in the UI after its job settled
+    service.cancel(id);
+
+    EXPECT_EQ(finishedCount, 1); // still exactly one completion for that job
+}
