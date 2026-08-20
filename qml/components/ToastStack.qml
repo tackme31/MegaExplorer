@@ -31,9 +31,15 @@ Item {
     // function of height, the stack keeps its bottom edge pinned as cards
     // animate in and out.
     x: parent ? parent.width - width - Theme.toast.margin : 0
-    y: parent ? parent.height - height - Theme.toast.margin : 0
+    y: parent ? parent.height - height - Theme.toast.margin - root.bottomInset : 0
     width: column.width
     height: column.height
+
+    // Room claimed below by TransferFlyout.qml, which owns this corner while it
+    // is showing. Only one item may compute the corner's coordinates -- three
+    // that each did is what S10 above was about -- so this stack yields upward
+    // instead of pinning itself independently.
+    property int bottomInset: 0
 
     // Every card is this wide. Sizing each one to its own text would either
     // left-align cards of different widths in the column or feed the card's

@@ -219,6 +219,7 @@ ApplicationWindow {
 
         AddressToolBar {
             dragProxy: moveDragProxy
+            onTransfersRequested: transferFlyout.show()
             onAboutRequested: aboutDialog.open()
             onSettingsRequested: settingsDialog.open()
             onLicensesRequested: licenseDialog.open()
@@ -490,6 +491,16 @@ ApplicationWindow {
     ToastStack {
         id: toastStack
         maxFilesPerUpload: uploadController.maxFilesPerUpload
+        // The flyout below owns the bottom-right corner while it is up; the
+        // toasts sit above it rather than computing the corner a second time.
+        bottomInset: transferFlyout.reservedHeight
+    }
+
+    // Same parenting argument as the stack above, and declared after it so it
+    // takes the corner the stack is now offset from.
+    TransferFlyout {
+        id: transferFlyout
+        transfers: transferListModel
     }
 
     Connections {

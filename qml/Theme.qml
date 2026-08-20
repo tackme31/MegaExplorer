@@ -262,6 +262,11 @@ QtObject {
             readonly property string about: "\uE946"         // Info
             readonly property string licenses: "\uE9a4"      // TextBulletListSquare
             readonly property string signOut: "\uE7E8"       // Leave
+            // Reuses the Download arrow rather than taking a code point of its
+            // own: this row opens a panel covering both directions, and an
+            // unverified Segoe code point renders as a box. A glyph that says
+            // "both ways" is a /ui-style question.
+            readonly property string transfers: download
             // Reuses the About entry's Info glyph: both open a read-only panel of
             // facts, and an unverified Segoe code point renders as a box. Whether it
             // earns one of its own is a /ui-style question.
@@ -349,6 +354,13 @@ QtObject {
         // Beyond this the oldest card is dropped rather than queued: a stack
         // tall enough to reach the toolbar stops being a notification.
         readonly property int maxVisible: 3
+    }
+
+    readonly property QtObject transfer: QtObject {
+        // How long the transfer flyout lingers once nothing is in flight. Shorter
+        // than toast.dismissMs: a toast has a sentence to read, this one has a bar
+        // that has already reached the end.
+        readonly property int idleHideMs: 3000
     }
 
     // Transition durations. Distinct from toast.dismissMs above, which is a

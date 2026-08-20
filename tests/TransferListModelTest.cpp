@@ -249,6 +249,71 @@ TEST_F(TransferListModelTest, UploadProgressAndCompletionReachTheRow)
     EXPECT_EQ(role(0, TransferListModel::StateRole).toInt(), TransferStateEnum::Completed);
 }
 
+// The run summary is what the minimized transfer flyout reads: "9 / 41" plus one
+// bar for both directions.
+TEST_F(TransferListModelTest, ARunCoversEveryJobStillInFlight)
+{
+    EXPECT_FALSE(model->runActive());
+    EXPECT_EQ(model->runTotal(), 0);
+
+    downloads->downloadFile(7, "a.txt", 100);
+    downloads->downloadFile(8, "b.txt", 200);
+
+    EXPECT_TRUE(model->runActive());
+    EXPECT_EQ(model->runTotal(), 2);
+    EXPECT_EQ(model->runFinished(), 0);
+}
+
+TEST_F(TransferListModelTest, RunProgressAveragesTheRowsInTheRun)
+{
+    downloads->downloadFile(7, "a.txt", 100);
+    downloads->downloadFile(8, "b.txt", 200);
+    ASSERT_TRUE(static_cast<bool>(downloadProgress));
+    downloadProgress(40, 100);
+    flush();
+
+    // 0.4 for the active row, 0.0 for the queued one.
+    EXPECT_DOUBLE_EQ(model->runProgress(), 0.2);
+}
+
+TEST_F(TransferListModelTest, ASettledRunIsNotCountedIntoTheNextOne)
+{
+    downloads->downloadFile(7, "a.txt", 100);
+    ASSERT_TRUE(static_cast<bool>(downloadDone));
+    DownloadDone done = downloadDone;
+    done(Result<DownloadOutcome>::ok(DownloadOutcome{"C:/dl/a.txt"}));
+    flush();
+
+    EXPECT_FALSE(model->runActive());
+    EXPECT_EQ(model->runTotal(), 1);
+    EXPECT_EQ(model->runFinished(), 1);
+    EXPECT_DOUBLE_EQ(model->runProgress(), 1.0);
+
+    // The finished row stays in the list, but the next burst starts its own run --
+    // otherwise the denominator would only ever grow.
+    downloads->downloadFile(8, "b.txt", 200);
+    EXPECT_EQ(model->rowCount(), 2);
+    EXPECT_TRUE(model->runActive());
+    EXPECT_EQ(model->runTotal(), 1);
+    EXPECT_EQ(model->runFinished(), 0);
+}
+
+// A cancelled or failed job settles the run just as a completed one does: the
+// flyout has to be able to take itself away.
+TEST_F(TransferListModelTest, CancelledAndFailedRowsSettleTheRun)
+{
+    downloads->downloadFile(7, "a.txt", 100);
+    downloads->downloadFile(8, "b.txt", 200);
+    downloads->cancelDownloads();
+    DownloadDone done = downloadDone;
+    done(Result<DownloadOutcome>::fail("cancelled", 2));
+    flush();
+
+    EXPECT_EQ(model->runTotal(), 2);
+    EXPECT_EQ(model->runFinished(), 2);
+    EXPECT_FALSE(model->runActive());
+}
+
 TEST_F(TransferListModelTest, RoleNamesAreTheOnesQmlBindsTo)
 {
     const QHash<int, QByteArray> names = model->roleNames();
