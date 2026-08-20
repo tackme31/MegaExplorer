@@ -16,13 +16,16 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
                                        QObject* parent)
     : QObject(parent), mService(std::move(service)), mNotifications(notifications)
 {
-    mService->setOnProgress([this](DownloadJob) {
-        invokeOnGuiThread(this, [this] {
+    mService->setOnProgress([this](DownloadJob job) {
+        invokeOnGuiThread(this, [this, job = std::move(job)]() mutable {
+            emit jobChanged(job);
             refreshActiveJob();
         });
     });
     mService->setOnJobFinished([this](DownloadJob job) {
         invokeOnGuiThread(this, [this, job = std::move(job)]() mutable {
+            emit jobChanged(job);
+            publishQueue(); // whatever was promoted in its place is Active now
             // The user asked for this one to stop, and cancelDownloads() has already
             // said so once for the whole queue. Reporting it again per job would
             // stack N toasts on one click, all of them phrased as failures.
@@ -100,6 +103,7 @@ void DownloadController::downloadFile(quint64 handle, QString name, quint64 size
                       name.toStdString(),
                       destinationPath.toStdString(),
                       static_cast<std::uint64_t>(sizeBytes));
+    publishQueue();
     refreshActiveJob(); // already on the GUI thread here (called from QML)
 }
 
@@ -149,4 +153,10 @@ void DownloadController::refreshActiveJob()
 {
     mActiveJob = mService->currentJob();
     emit downloadActiveChanged();
+}
+
+void DownloadController::publishQueue()
+{
+    for (const DownloadJob& job : mService->jobs())
+        emit jobChanged(job);
 }

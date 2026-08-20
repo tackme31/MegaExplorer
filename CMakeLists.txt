@@ -170,6 +170,8 @@ add_library(MegaExplorerQml STATIC
     src/qml/LocalFolderController.cpp
     src/qml/PropertiesController.h
     src/qml/PropertiesController.cpp
+    src/qml/TransferListModel.h
+    src/qml/TransferListModel.cpp
 )
 
 qt_add_executable(appMegaExplorer
@@ -278,6 +280,7 @@ qt_add_qml_module(MegaExplorerQml
         src/qml/PreviewController.h
         src/qml/PreviewController.cpp
         src/qml/SearchFilterEnums.h
+        src/qml/TransferEnums.h
         src/qml/ViewKindEnum.h
         src/qml/WindowAgentForeign.h
     RESOURCES

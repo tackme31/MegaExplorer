@@ -35,6 +35,7 @@
 #include "qml/QuickAccessModel.h"
 #include "qml/TabsController.h"
 #include "qml/ThumbnailController.h"
+#include "qml/TransferListModel.h"
 #include "qml/UploadController.h"
 
 #include <QDebug>
@@ -145,6 +146,7 @@ int main(int argc, char* argv[])
     PreviewController previewController(previewService, previewImageStore);
     LocalFolderController localFolderController(localLinkService, &notifications);
     PropertiesController propertiesController(nodeDetailsService);
+    TransferListModel transferListModel(&downloadController, &uploadController);
 
     // The one account read that cannot be lazy: the copy-conflict dialog words its
     // warning from it and has no round-trip to wait for once it is open. Logging out
@@ -208,6 +210,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("previewController", &previewController);
     engine.rootContext()->setContextProperty("localFolderController", &localFolderController);
     engine.rootContext()->setContextProperty("propertiesController", &propertiesController);
+    engine.rootContext()->setContextProperty("transferListModel", &transferListModel);
     // The engine takes ownership of the provider, which is why the bytes it serves
     // live in previewImageStore rather than in the provider itself.
     engine.addImageProvider(QStringLiteral("megapreview"),

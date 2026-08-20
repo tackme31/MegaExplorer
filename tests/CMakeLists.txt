@@ -46,6 +46,7 @@ add_executable(MegaExplorerTests
     NotificationControllerTest.cpp
     AuthControllerTest.cpp
     DownloadControllerTest.cpp
+    TransferListModelTest.cpp
     ThreadedDeliveryTest.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/WindowsSessionStore.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/QSettingsPinnedFolderStore.cpp

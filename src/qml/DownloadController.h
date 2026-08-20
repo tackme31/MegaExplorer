@@ -47,6 +47,12 @@ public:
 signals:
     void downloadActiveChanged();
 
+    // One snapshot per job whenever that job's state or progress moves, queued jobs
+    // included. TransferListModel is the consumer; nothing else may assume a job is
+    // reported only once, and a cancelled or failed job is reported here as well as
+    // through downloadFinished.
+    void jobChanged(const DownloadJob& job);
+
     // Once per finished job, success or failure. localPath is meaningful only on
     // success, where it is the path actually written -- a name already taken at the
     // destination gets a "(1)" suffix rather than blocking the download.
@@ -54,6 +60,11 @@ signals:
 
 private:
     void refreshActiveJob();
+
+    // Emits jobChanged for every job still in the queue. Called where the queue
+    // itself moves (a new enqueue, a job finishing) rather than on every progress
+    // tick, which already carries the one job it is about.
+    void publishQueue();
     QString computeDestinationPath(const QString& fileName) const;
 
     std::shared_ptr<DownloadService> mService;
