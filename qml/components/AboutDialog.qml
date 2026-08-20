@@ -26,6 +26,7 @@ Dialog {
     modal: true
     title: qsTr("About MegaExplorer")
     standardButtons: Dialog.Close
+    Component.onCompleted: StandardButtonLabels.pin(footer)
 
     ColumnLayout {
         spacing: Theme.spacing.md

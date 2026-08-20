@@ -38,6 +38,7 @@ Dialog {
     modal: true
     title: qsTr("Confirm upload")
     standardButtons: Dialog.Ok | Dialog.Cancel
+    Component.onCompleted: StandardButtonLabels.pin(footer)
 
     onAccepted: root.uploads.uploadConfirmed(root.filePaths, root.destinationHandle,
                                              root.destinationIsRoot)

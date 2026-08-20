@@ -31,6 +31,7 @@ Dialog {
     anchors.centerIn: Overlay.overlay
     modal: true
     standardButtons: Dialog.Yes | Dialog.Cancel
+    Component.onCompleted: StandardButtonLabels.pin(footer)
     title: qsTr("Folder no longer exists")
 
     // A Popup takes its content's *implicit* width, and a Text's implicit width

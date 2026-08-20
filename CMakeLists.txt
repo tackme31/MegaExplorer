@@ -198,7 +198,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/licenses/licenses.cmake)
 # qmldir -- this property does, and it has to be set before the module is
 # created.
 set_source_files_properties(qml/Theme.qml qml/ActionCatalog.qml qml/ViewLabels.qml
-                            qml/FileTypeIcons.qml
+                            qml/FileTypeIcons.qml qml/StandardButtonLabels.qml
                             PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(MegaExplorerQml
@@ -214,6 +214,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/Main.qml
         qml/ActionCatalog.qml
         qml/FileTypeIcons.qml
+        qml/StandardButtonLabels.qml
         qml/Theme.qml
         qml/ViewLabels.qml
         qml/components/AboutDialog.qml

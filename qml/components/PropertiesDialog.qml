@@ -20,6 +20,7 @@ Dialog {
     modal: true
     title: qsTr("Properties")
     standardButtons: Dialog.Close
+    Component.onCompleted: StandardButtonLabels.pin(footer)
 
     // Same cap as MissingPinDialog: a Popup takes its content's *implicit* width,
     // and a long name or path would otherwise drag the frame past the window edge.

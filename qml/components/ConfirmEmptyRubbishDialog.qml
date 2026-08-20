@@ -22,6 +22,7 @@ Dialog {
     anchors.centerIn: Overlay.overlay
     modal: true
     standardButtons: Dialog.Yes | Dialog.Cancel
+    Component.onCompleted: StandardButtonLabels.pin(footer)
     title: qsTr("Empty Rubbish bin?")
 
     Label {

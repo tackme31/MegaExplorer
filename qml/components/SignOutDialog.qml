@@ -19,6 +19,7 @@ Dialog {
     anchors.centerIn: Overlay.overlay
     modal: true
     standardButtons: Dialog.Yes | Dialog.Cancel
+    Component.onCompleted: StandardButtonLabels.pin(footer)
 
     // Neither DownloadService nor UploadService has a cancel API yet, so an
     // in-flight transfer is simply aborted by logout(). Warn about it up

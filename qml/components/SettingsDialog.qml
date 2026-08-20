@@ -54,6 +54,7 @@ Dialog {
     modal: true
     title: qsTr("Settings")
     standardButtons: Dialog.Close
+    Component.onCompleted: StandardButtonLabels.pin(footer)
 
     // Read once per open rather than bound: ComboBox assigns currentIndex
     // imperatively when the user picks a row, which would break a binding here
