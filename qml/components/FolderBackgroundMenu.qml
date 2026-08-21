@@ -21,7 +21,12 @@ ActionMenu {
     // holds, not something a singleton catalog entry can reach.
     signal emptyRubbishRequested
 
-    actionIds: MenuActions.forSite(MenuActions.FolderBackground, root.navController.viewKind)
+    // The ternary is not redundant: a tab's controllers are destroyed before the
+    // views holding this menu are, so the binding re-evaluates once against a null
+    // navController on the way out.
+    actionIds: root.navController
+        ? MenuActions.forSite(MenuActions.FolderBackground, root.navController.viewKind)
+        : []
 
     onAboutToShow: {
         root.context = {

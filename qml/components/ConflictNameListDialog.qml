@@ -32,11 +32,21 @@ Dialog {
     // list rather than an empty frame. That floor is why the height needs its own
     // clamp as well: when it wins, list + chrome is taller than the window, and
     // only this line stops the frame growing past it (the list scrolls instead).
-    readonly property real maxWidth: Overlay.overlay.width - 48
+    //
+    // Guarded, unlike the sibling dialogs': this is the one declared inside
+    // another Dialog, so these first evaluate while the outer popup still has no
+    // window and Overlay.overlay is null. The attached property notifies when the
+    // overlay arrives, so the fallbacks only have to be harmless, not right.
+    readonly property Item overlayItem: Overlay.overlay
+    readonly property real maxWidth: root.overlayItem ? root.overlayItem.width - 48 : 0
     readonly property real maxListHeight: Math.max(Theme.rowHeight.compact * 3,
-                                                   Overlay.overlay.height - 160)
+                                                   root.overlayItem
+                                                       ? root.overlayItem.height - 160
+                                                       : 0)
     width: Math.min(implicitWidth, maxWidth)
-    height: Math.min(implicitHeight, Overlay.overlay.height - 48)
+    height: root.overlayItem
+        ? Math.min(implicitHeight, root.overlayItem.height - 48)
+        : implicitHeight
 
     ListView {
         id: list
