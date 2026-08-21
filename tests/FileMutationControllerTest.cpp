@@ -155,6 +155,14 @@ protected:
                              lastMoveConflictSourceIsRoot = sourceIsRoot;
                          });
 
+        QObject::connect(mutations.get(),
+                         &FileMutationController::duplicateNamesRejected,
+                         mutations.get(),
+                         [this](QVariantList entries) {
+                             ++duplicateCalls;
+                             lastDuplicateEntries = entries;
+                         });
+
         // Result<void>::success defaults to
         // false, so an unstubbed paste pre-check *refuses* rather than merely
         // doing nothing. A test that wants it to fail sets its own EXPECT_CALL.
@@ -279,6 +287,8 @@ protected:
     bool lastMoveConflictDestinationIsRoot = false;
     quint64 lastMoveConflictSource = 0;
     bool lastMoveConflictSourceIsRoot = false;
+    int duplicateCalls = 0;
+    QVariantList lastDuplicateEntries;
 };
 
 } // namespace
@@ -1315,7 +1325,9 @@ TEST_F(FileMutationControllerTest, PasteIntoTheFolderTheEntriesLiveInDuplicatesW
 TEST_F(FileMutationControllerTest, PasteDoesNotHandOutTheSameGeneratedNameTwice)
 {
     // MEGA allows duplicate siblings, so two clipboard entries really can share
-    // a name -- and neither may be given the name the other just claimed.
+    // a name -- and neither may be given the name the other just claimed. Not
+    // refused as a duplicate set, because both already live in the destination:
+    // each duplicates against its own node (SPEC_NAME_CONFLICT_COPY_MOVE 3-5).
     givenRootListing({entry("a.txt", 5), entry("a.txt", 6)});
     controller->loadRoot();
     flush();
@@ -1408,11 +1420,11 @@ TEST_F(FileMutationControllerTest, CopyRenamingExistingRenamesOnlyWhatCollided)
     EXPECT_EQ(lastSucceeded, 2);
 }
 
-TEST_F(FileMutationControllerTest, PasteAsksAboutTwoClipboardEntriesThatShareAName)
+TEST_F(FileMutationControllerTest, PasteRefusesTwoClipboardEntriesThatShareAName)
 {
-    // Nothing of that name is in the destination, but the second copy lands on
-    // the first and would stack as a version of it (SPEC_NAME_CONFLICT_COPY_MOVE
-    // 5-3). It used to be renamed without asking.
+    // Nothing of that name is in the destination, but the second copy would land
+    // on the first and stack as a version of it. Refused outright rather than
+    // asked about, so the conflict dialog never sees it.
     givenRootListing({});
     controller->loadRoot();
     flush();
@@ -1424,33 +1436,55 @@ TEST_F(FileMutationControllerTest, PasteAsksAboutTwoClipboardEntriesThatShareANa
     flush();
     flush();
 
-    ASSERT_EQ(conflictCalls, 1);
-    EXPECT_EQ(lastConflictFiles, QStringList{QStringLiteral("a.txt")});
-    EXPECT_EQ(lastConflictRenamedTo, QStringList{QStringLiteral("a - Copy.txt")});
+    EXPECT_EQ(conflictCalls, 0);
+    ASSERT_EQ(duplicateCalls, 1);
+    ASSERT_EQ(lastDuplicateEntries.size(), 1);
+    EXPECT_EQ(lastDuplicateEntries.first().toMap().value(QStringLiteral("name")).toString(),
+              QStringLiteral("a.txt"));
 }
 
-TEST_F(FileMutationControllerTest, CopyRenamingKeepsTwoEntriesThatShareANameApart)
+TEST_F(FileMutationControllerTest, PasteNamesARepeatedNameOnceHoweverManyBringIt)
 {
+    // The report is a list of names, so a third copy would only repeat a line
+    // already in it.
     givenRootListing({});
     controller->loadRoot();
     flush();
-    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("a.txt", 6)}), 7, false);
+    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("a.txt", 6), entry("a.txt", 7)}),
+                    8,
+                    false);
+
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
 
     mutations->paste();
     flush();
     flush();
-    ASSERT_EQ(conflictCalls, 1);
 
-    EXPECT_CALL(*client, copyNode(5u, _, _, std::string(), _))
+    ASSERT_EQ(duplicateCalls, 1);
+    EXPECT_EQ(lastDuplicateEntries.size(), 1);
+}
+
+TEST_F(FileMutationControllerTest, PasteLetsASharedNameThroughWhenTheKindsDiffer)
+{
+    // A file and a folder of one name can neither version nor merge into each
+    // other, so they are not each other's duplicate.
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    clipboard->copy(clipboardEntries({entry("a", 5), entry("a", 6, true)}), 7, false);
+
+    // Names left open: the folder's is decided by uniqueCopyName, whose set is
+    // keyed by name alone, and what it picks is not what this test is about.
+    EXPECT_CALL(*client, copyNode(5u, _, _, _, _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-    EXPECT_CALL(*client, copyNode(6u, _, _, std::string("a - Copy.txt"), _))
+    EXPECT_CALL(*client, copyNode(6u, _, _, _, _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
-    mutations->copyRenamingExisting(
-        lastConflictEntries, lastConflictDestination, lastConflictDestinationIsRoot);
+    mutations->paste();
     flush();
     flush();
 
+    EXPECT_EQ(duplicateCalls, 0);
     EXPECT_EQ(lastSucceeded, 2);
 }
 
@@ -2202,27 +2236,23 @@ TEST_F(FileMutationControllerTest, MoveRenamingExistingRenamesOnlyWhatCollided)
     EXPECT_EQ(lastSucceeded, 3);
 }
 
-TEST_F(FileMutationControllerTest, MoveRenamingExistingKeepsTwoCollidingEntriesApart)
+TEST_F(FileMutationControllerTest, MoveRenamingExistingRefusesASetThatBringsOneNameTwice)
 {
-    // Both entries want the same free name, so the first has to claim it before
-    // the second picks -- MEGA would accept two identical names without complaint.
+    // The refusal sits in the batch, not in the entry point, so the answers to a
+    // question raised about something else cannot smuggle a duplicate set past it.
     givenRootListing({});
     controller->loadRoot();
     flush();
     givenChildrenOf(7u, {entry("a.txt", 90)});
 
-    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(1u, 7u, false, "a (2).txt", _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(2u, 7u, false, "a (3).txt", _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(_, _, _, _, _)).Times(0);
 
     mutations->moveRenamingExisting(
         clipboardEntries({entry("a.txt", 1), entry("a.txt", 2)}), 7, false, 0, true);
     flush();
     flush();
 
-    EXPECT_EQ(lastSucceeded, 2);
+    EXPECT_EQ(duplicateCalls, 1);
 }
 
 TEST_F(FileMutationControllerTest, MoveRenamingExistingDodgesTheBatchsOwnUnrenamedArrivals)
@@ -2266,11 +2296,11 @@ TEST_F(FileMutationControllerTest, MoveConflictAnnouncesTheNameRenamingWouldUse)
     EXPECT_EQ(lastMoveConflictRenamedTo, QStringList{QStringLiteral("a (2).txt")});
 }
 
-TEST_F(FileMutationControllerTest, MoveEntriesToAsksAboutTwoEntriesThatShareAName)
+TEST_F(FileMutationControllerTest, MoveEntriesToRefusesTwoEntriesThatShareAName)
 {
-    // The destination holds neither, but the second lands on the first
-    // (SPEC_NAME_CONFLICT_COPY_MOVE 5-3) -- and MEGA would take the duplicate
-    // without complaint, so nothing downstream would notice.
+    // The destination holds neither, but the second would land beside the first
+    // and MEGA takes the duplicate without complaint, so nothing downstream would
+    // notice. Refused rather than asked about.
     givenRootListing({});
     controller->loadRoot();
     flush();
@@ -2282,10 +2312,11 @@ TEST_F(FileMutationControllerTest, MoveEntriesToAsksAboutTwoEntriesThatShareANam
     flush();
     flush();
 
-    ASSERT_EQ(moveConflictCalls, 1);
-    // Only the second is counted: the first still lands on a free name.
-    EXPECT_EQ(lastMoveConflictFiles, QStringList{QStringLiteral("a.txt")});
-    EXPECT_EQ(lastMoveConflictRenamedTo, QStringList{QStringLiteral("a (2).txt")});
+    EXPECT_EQ(moveConflictCalls, 0);
+    ASSERT_EQ(duplicateCalls, 1);
+    ASSERT_EQ(lastDuplicateEntries.size(), 1);
+    EXPECT_EQ(lastDuplicateEntries.first().toMap().value(QStringLiteral("name")).toString(),
+              QStringLiteral("a.txt"));
 }
 
 TEST_F(FileMutationControllerTest, MoveEntriesToLetsASharedNameThroughWhenTheKindsDiffer)
@@ -2309,47 +2340,6 @@ TEST_F(FileMutationControllerTest, MoveEntriesToLetsASharedNameThroughWhenTheKin
 
     EXPECT_EQ(moveConflictCalls, 0);
     EXPECT_EQ(lastSucceeded, 2);
-}
-
-TEST_F(FileMutationControllerTest, MoveRenamingKeepsTwoEntriesThatShareANameApart)
-{
-    givenRootListing({});
-    controller->loadRoot();
-    flush();
-    givenChildrenOf(7u, std::vector<FileEntry>{});
-
-    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(1u, 7u, false, "", _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(2u, 7u, false, "a (2).txt", _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-
-    mutations->moveRenamingExisting(
-        clipboardEntries({entry("a.txt", 1), entry("a.txt", 2)}), 7, false, 0, true);
-    flush();
-    flush();
-
-    EXPECT_EQ(lastSucceeded, 2);
-}
-
-TEST_F(FileMutationControllerTest, MoveSkippingLeavesOutOnlyTheSecondOfTwoSharedNames)
-{
-    givenRootListing({});
-    controller->loadRoot();
-    flush();
-    givenChildrenOf(7u, std::vector<FileEntry>{});
-
-    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(2u, _, _, _, _)).Times(0);
-    EXPECT_CALL(*client, moveNode(1u, 7u, false, "", _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-
-    mutations->moveSkippingExisting(
-        clipboardEntries({entry("a.txt", 1), entry("a.txt", 2)}), 7, false, 0, true);
-    flush();
-    flush();
-
-    EXPECT_EQ(lastSucceeded, 1);
 }
 
 TEST_F(FileMutationControllerTest, MoveIgnoringExistingReportsAMoveTheSdkWouldRefuse)
