@@ -77,10 +77,11 @@ protected:
         // itself. Cardinality is deliberately open: the duplicate-suppression
         // tests are *about* the call count, so they assert on transferCalls
         // where the failure message names what was actually being tested.
-        EXPECT_CALL(*client, download(_, _, _, _))
+        EXPECT_CALL(*client, download(_, _, _, _, _))
             .Times(AnyNumber())
             .WillRepeatedly(Invoke([this](std::uint64_t,
                                           const std::string& destination,
+                                          std::uint64_t,
                                           ProgressCallback progress,
                                           DoneCallback done) {
                 ++transferCalls;
@@ -164,12 +165,16 @@ TEST_F(DownloadControllerTest, SecondRequestForAnActiveHandleIsIgnored)
 
 TEST_F(DownloadControllerTest, SecondRequestForAQueuedHandleIsIgnored)
 {
-    controller->downloadFile(1, "a.txt", 0); // starts
-    controller->downloadFile(2, "b.txt", 0); // waits behind it
-    controller->downloadFile(2, "b.txt", 0);
+    // The repeated handle has to be genuinely waiting, so fill every slot first.
+    for (quint64 handle = 1; handle <= DownloadService::kMaxConcurrent; ++handle)
+        controller->downloadFile(handle, QStringLiteral("a%1.txt").arg(handle), 0);
+    const quint64 waiting = DownloadService::kMaxConcurrent + 1;
+    controller->downloadFile(waiting, "b.txt", 0);
+    controller->downloadFile(waiting, "b.txt", 0);
 
-    EXPECT_EQ(service->jobs().size(), 2u);
-    EXPECT_EQ(transferCalls, 1); // job 2 has not been handed to the SDK yet
+    EXPECT_EQ(service->jobs().size(), DownloadService::kMaxConcurrent + 1);
+    // The waiting job has not been handed to the SDK yet, once or twice.
+    EXPECT_EQ(transferCalls, static_cast<int>(DownloadService::kMaxConcurrent));
 }
 
 // The guard keys on handle, not name: two different nodes may legitimately
@@ -303,15 +308,22 @@ TEST_F(DownloadControllerTest, CompletionClearsTheActiveJob)
     EXPECT_DOUBLE_EQ(controller->activeProgress(), 0.0);
 }
 
-TEST_F(DownloadControllerTest, ActiveJobAdvancesToTheNextQueuedFile)
+TEST_F(DownloadControllerTest, AQueuedFileIsPromotedWhenARunningOneFinishes)
 {
-    controller->downloadFile(1, "a.txt", 0);
-    controller->downloadFile(2, "b.txt", 0);
+    for (quint64 handle = 1; handle <= DownloadService::kMaxConcurrent; ++handle)
+        controller->downloadFile(handle, QStringLiteral("a%1.txt").arg(handle), 0);
+    controller->downloadFile(99, "b.txt", 0); // waits behind them
 
-    finish(saved("C:\\Downloads\\a.txt"));
+    // The fixture keeps the *last* started transfer's callbacks, so this finishes
+    // the job that filled the last slot.
+    finish(saved("C:\\Downloads\\a4.txt"));
 
     EXPECT_TRUE(controller->downloadActive());
-    EXPECT_EQ(controller->activeFileName(), QStringLiteral("b.txt"));
+    EXPECT_EQ(transferCalls, static_cast<int>(DownloadService::kMaxConcurrent) + 1);
+    const std::vector<DownloadJob> jobs = service->jobs();
+    ASSERT_EQ(jobs.size(), DownloadService::kMaxConcurrent);
+    EXPECT_EQ(jobs.back().name, "b.txt");
+    EXPECT_EQ(jobs.back().state, DownloadState::Active);
 }
 
 // --- destination path ------------------------------------------------------

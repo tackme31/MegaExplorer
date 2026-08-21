@@ -2,6 +2,8 @@
 
 #include "MegaErrorCodes.h"
 
+#include <algorithm>
+
 UploadService::UploadService(std::shared_ptr<IMegaClient> client) : mClient(std::move(client)) {}
 
 std::uint64_t UploadService::enqueue(const std::string& localPath,
@@ -27,19 +29,41 @@ std::uint64_t UploadService::enqueue(const std::string& localPath,
     return id;
 }
 
+UploadJob* UploadService::activeJob(std::uint64_t jobId)
+{
+    for (UploadJob& job : mActive)
+    {
+        if (job.id == jobId)
+            return &job;
+    }
+    return nullptr;
+}
+
+void UploadService::dropActive(std::uint64_t jobId)
+{
+    mActive.erase(std::remove_if(mActive.begin(),
+                                 mActive.end(),
+                                 [jobId](const UploadJob& job) {
+                                     return job.id == jobId;
+                                 }),
+                  mActive.end());
+    mCancelRequested.erase(jobId);
+}
+
 std::optional<UploadJob> UploadService::currentJob() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    return mActive;
+    if (mActive.empty())
+        return std::nullopt;
+    return mActive.front();
 }
 
 std::vector<UploadJob> UploadService::jobs() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
     std::vector<UploadJob> all;
-    all.reserve(mPending.size() + (mActive ? 1 : 0));
-    if (mActive)
-        all.push_back(*mActive);
+    all.reserve(mPending.size() + mActive.size());
+    all.insert(all.end(), mActive.begin(), mActive.end());
     all.insert(all.end(), mPending.begin(), mPending.end());
     return all;
 }
@@ -47,24 +71,27 @@ std::vector<UploadJob> UploadService::jobs() const
 std::size_t UploadService::queueLength() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    return mPending.size() + (mActive ? 1 : 0);
+    return mPending.size() + mActive.size();
 }
 
 void UploadService::cancelAll()
 {
     std::deque<UploadJob> dropped;
+    std::vector<std::uint64_t> activeIds;
     std::function<void(UploadJob)> onJobFinished;
-    bool hadActive = false;
     {
         std::lock_guard<std::mutex> lock(mMutex);
-        ++mCancelGeneration;
         dropped.swap(mPending);
-        hadActive = mActive.has_value();
+        for (const UploadJob& job : mActive)
+        {
+            activeIds.push_back(job.id);
+            mCancelRequested.insert(job.id);
+        }
         onJobFinished = mOnJobFinished;
     }
 
-    if (hadActive)
-        mClient->cancelUpload();
+    for (std::uint64_t id : activeIds)
+        mClient->cancelUpload(id);
 
     if (!onJobFinished)
         return;
@@ -79,26 +106,33 @@ void UploadService::cancel(std::uint64_t jobId)
 {
     std::optional<UploadJob> dropped;
     std::function<void(UploadJob)> onJobFinished;
+    bool wasActive = false;
     {
         std::lock_guard<std::mutex> lock(mMutex);
         onJobFinished = mOnJobFinished;
-        if (mActive && mActive->id == jobId)
+        if (activeJob(jobId))
         {
-            // Same two reasons as DownloadService::cancel(): the generation is bumped
-            // only for the active job, and the client call stays under the lock so the
-            // queue behind this job cannot promote itself into the abort.
-            ++mCancelGeneration;
-            mClient->cancelUpload();
-            return;
+            mCancelRequested.insert(jobId);
+            wasActive = true;
         }
-        for (auto it = mPending.begin(); it != mPending.end(); ++it)
+        else
         {
-            if (it->id != jobId)
-                continue;
-            dropped = std::move(*it);
-            mPending.erase(it);
-            break;
+            for (auto it = mPending.begin(); it != mPending.end(); ++it)
+            {
+                if (it->id != jobId)
+                    continue;
+                dropped = std::move(*it);
+                mPending.erase(it);
+                break;
+            }
         }
+    }
+
+    // Outside the lock, for the same reason as DownloadService::cancel().
+    if (wasActive)
+    {
+        mClient->cancelUpload(jobId);
+        return;
     }
 
     if (!dropped || !onJobFinished)
@@ -136,14 +170,11 @@ void UploadService::startNextIfIdle()
     // (200 files dropped onto a folder just deleted elsewhere): the destination
     // re-validation below, and upload() itself when the parent no longer resolves.
     // The second returns through onDone's startNextIfIdle(), which the mAdvancing
-    // trampoline turns into another turn here rather than a nested frame.
+    // guard turns into another turn here rather than a nested frame.
     {
         std::lock_guard<std::mutex> lock(mMutex);
         if (mAdvancing)
-        {
-            mAdvanceRequested = true;
             return;
-        }
         mAdvancing = true;
     }
 
@@ -153,23 +184,21 @@ void UploadService::startNextIfIdle()
         std::string localPath;
         std::uint64_t parentHandle;
         bool parentIsRoot;
-        std::uint64_t generationAtStart;
         {
             std::lock_guard<std::mutex> lock(mMutex);
-            mAdvanceRequested = false;
-            if (mActive || mPending.empty())
+            if (mActive.size() >= kMaxConcurrent || mPending.empty())
             {
                 mAdvancing = false;
                 return;
             }
-            mActive = std::move(mPending.front());
+            UploadJob job = std::move(mPending.front());
             mPending.pop_front();
-            mActive->state = UploadState::Active;
-            id = mActive->id;
-            localPath = mActive->localPath;
-            parentHandle = mActive->parentHandle;
-            parentIsRoot = mActive->parentIsRoot;
-            generationAtStart = mCancelGeneration;
+            job.state = UploadState::Active;
+            id = job.id;
+            localPath = job.localPath;
+            parentHandle = job.parentHandle;
+            parentIsRoot = job.parentIsRoot;
+            mActive.push_back(std::move(job));
         }
 
         // The destination may have been deleted between the drop and this
@@ -181,20 +210,27 @@ void UploadService::startNextIfIdle()
             UploadJob snapshot;
             {
                 std::lock_guard<std::mutex> lock(mMutex);
-                // Nothing can steal mActive here -- no transfer has started, so no
-                // SDK thread knows this job yet -- but checked anyway, so no path
+                // Nothing can steal this entry here -- no transfer has started, so no
+                // SDK thread knows this job yet -- but looked up anyway, so no path
                 // writes mActive without naming which job it means.
-                if (!mActive || mActive->id != id)
+                UploadJob* job = activeJob(id);
+                if (!job)
                 {
                     mAdvancing = false; // every exit past the flag must clear it
                     return;
                 }
-                mActive->state = UploadState::Failed;
-                mActive->errorMessage = allowed.errorMessage;
-                mActive->errorCode = allowed.errorCode;
-                snapshot = *mActive;
+                // A cancel that landed during the checkUpload() round-trip named a
+                // transfer that had not started, so it reached nothing and nothing
+                // else will report it. Calling the rejection a failure here would
+                // count the user's own stop as an error and stack a second toast on
+                // the one cancelAll() already raised.
+                job->state =
+                    mCancelRequested.count(id) != 0 ? UploadState::Cancelled : UploadState::Failed;
+                job->errorMessage = allowed.errorMessage;
+                job->errorCode = allowed.errorCode;
+                snapshot = *job;
                 onJobFinished = mOnJobFinished;
-                mActive.reset();
+                dropActive(id);
             }
             if (onJobFinished)
                 onJobFinished(snapshot);
@@ -205,6 +241,7 @@ void UploadService::startNextIfIdle()
             localPath,
             parentHandle,
             parentIsRoot,
+            id,
             [this, id](std::uint64_t transferred, std::uint64_t total) {
                 std::function<void(UploadJob)> onProgress;
                 UploadJob snapshot;
@@ -213,11 +250,12 @@ void UploadService::startNextIfIdle()
                     // Not ours: this job already finished (or was cancelled) and
                     // the SDK is still delivering. Writing here would land on
                     // whichever job was promoted in its place.
-                    if (!mActive || mActive->id != id)
+                    UploadJob* job = activeJob(id);
+                    if (!job)
                         return;
-                    mActive->transferredBytes = transferred;
-                    mActive->totalBytes = total;
-                    snapshot = *mActive;
+                    job->transferredBytes = transferred;
+                    job->totalBytes = total;
+                    snapshot = *job;
                     onProgress = mOnProgress;
                 }
                 if (onProgress)
@@ -228,53 +266,42 @@ void UploadService::startNextIfIdle()
                 UploadJob snapshot;
                 {
                     std::lock_guard<std::mutex> lock(mMutex);
-                    if (!mActive || mActive->id != id)
+                    UploadJob* job = activeJob(id);
+                    if (!job)
                         return; // same as onProgress above
-                    // Same kEIncomplete rule as DownloadService -- see the comment there.
-                    mActive->state = result.success ? UploadState::Completed
-                                     : result.errorCode == MegaErrorCode::kEIncomplete
-                                         ? UploadState::Cancelled
-                                         : UploadState::Failed;
+                    // Same kEIncomplete and same cancel-wins rule as DownloadService
+                    // -- see the comment there.
+                    job->state = result.success ? UploadState::Completed
+                                 : (result.errorCode == MegaErrorCode::kEIncomplete ||
+                                    mCancelRequested.count(id) != 0)
+                                     ? UploadState::Cancelled
+                                     : UploadState::Failed;
                     if (result.success)
                     {
-                        mActive->nodeHandle = result.value().nodeHandle;
+                        job->nodeHandle = result.value().nodeHandle;
                     }
                     else
                     {
-                        mActive->errorMessage = result.errorMessage;
-                        mActive->errorCode = result.errorCode;
+                        job->errorMessage = result.errorMessage;
+                        job->errorCode = result.errorCode;
                     }
-                    snapshot = *mActive;
+                    snapshot = *job;
                     onJobFinished = mOnJobFinished;
-                    mActive.reset();
+                    dropActive(id);
                 }
                 if (onJobFinished)
                     onJobFinished(snapshot);
                 startNextIfIdle(); // auto-advance; mMutex isn't held here
             });
 
-        // A synchronous failure has already run the whole onDone above by now,
-        // and its startNextIfIdle() only set the flag -- so keep looping here
-        // instead of letting it recurse. A genuinely in-flight transfer leaves
-        // the flag clear and this call ends. Both branches must share one lock:
-        // splitting them lets a completion land in between, set the flag, and
-        // find nobody left to act on it.
         bool cancelRaced = false;
-        bool finished = false;
         {
             std::lock_guard<std::mutex> lock(mMutex);
             // Same re-assert as DownloadService, and the window is wider here: the
             // blocking checkUpload() above sits inside it too.
-            cancelRaced = mActive.has_value() && mCancelGeneration != generationAtStart;
-            if (!mAdvanceRequested)
-            {
-                mAdvancing = false;
-                finished = true;
-            }
+            cancelRaced = activeJob(id) != nullptr && mCancelRequested.count(id) != 0;
         }
         if (cancelRaced)
-            mClient->cancelUpload();
-        if (finished)
-            return;
+            mClient->cancelUpload(id);
     }
 }

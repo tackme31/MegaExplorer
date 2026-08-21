@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 
 enum class DownloadState
@@ -36,27 +37,28 @@ struct DownloadJob
     int errorCode = 0; // only meaningful when state == Failed; mirrors Result<T>::errorCode
 };
 
-// Serializes downloads one at a time over IMegaClient::download: a job starts
-// immediately if nothing is active, otherwise waits for everything ahead of it to
-// finish (succeed or fail).
+// Runs up to kMaxConcurrent downloads over IMegaClient::download: a job starts
+// immediately while there is a free slot, otherwise waits for one to open.
 //
 // Unlike the other core services this one's state really is touched from two
 // threads: enqueue() comes from the GUI thread while download()'s callbacks may
-// fire from an SDK-internal thread. Two invariants keep that safe, both enforced
-// structurally rather than by convention:
-//
-//  - At most one active job, because mActive is an optional rather than a position
-//    in a container -- no code can mistake a waiting job for the running one.
-//  - A callback only writes to its own job: the id is captured by value at start
-//    and re-checked against mActive->id on arrival. A future cancel(jobId) needs
-//    this, since cancelling lets the SDK deliver a late callback that would
-//    otherwise corrupt whichever job was promoted in its place.
+// fire from an SDK-internal thread. The invariant that keeps that safe is enforced
+// structurally rather than by convention: a callback only ever writes to its own
+// job, because the id is captured by value at start and looked up in mActive on
+// arrival. cancel(jobId) needs this, since cancelling lets the SDK deliver a late
+// callback that would otherwise corrupt whichever job was promoted in its place.
 //
 // Completed/failed jobs are dropped once their onJobFinished fires -- this is a
 // live queue, not a download history.
 class DownloadService
 {
 public:
+    // How many transfers this service lets run at once. Chosen small on purpose:
+    // MEGA's per-connection throughput is the bottleneck rather than the client, so
+    // a handful of streams saturates a home link while keeping each row's progress
+    // readable and the SDK's connection pool out of trouble.
+    static constexpr std::size_t kMaxConcurrent = 4;
+
     explicit DownloadService(std::shared_ptr<IMegaClient> client);
 
     // Turns a MEGA node name into something that can only be a leaf inside the
@@ -77,14 +79,16 @@ public:
                           const std::string& destinationPath,
                           std::uint64_t expectedTotalBytes);
 
-    // A copy under the lock, not a reference: the completion callback runs on an SDK
-    // thread and can clear mActive at any moment.
+    // The longest-running active job, or nothing when none is running. A copy under
+    // the lock, not a reference: the completion callback runs on an SDK thread and
+    // can drop it at any moment.
     std::optional<DownloadJob> currentJob() const;
 
-    // The full live queue: active job first, then pending ones in enqueue order.
+    // The full live queue: active jobs first, in the order they started, then pending
+    // ones in enqueue order.
     std::vector<DownloadJob> jobs() const;
 
-    // Empties the queue: pending jobs are dropped without ever starting and the
+    // Empties the queue: pending jobs are dropped without ever starting and every
     // active transfer is aborted through IMegaClient::cancelDownload. Every dropped
     // job still reports through onJobFinished exactly once, with state Cancelled --
     // callers counting jobs in flight must not have to special-case this.
@@ -111,32 +115,38 @@ public:
     void setOnJobFinished(std::function<void(DownloadJob)> onJobFinished);
 
 private:
-    // Promotes mPending.front() into mActive, then keeps going while jobs keep
-    // finishing inside this call. Takes mMutex itself rather than requiring the
+    // Fills every free slot from the front of mPending, then keeps going while jobs
+    // keep finishing inside this call. Takes mMutex itself rather than requiring the
     // caller to hold it: download() can run onDone before it returns, so holding the
     // lock across it would self-deadlock.
     void startNextIfIdle();
 
+    // mMutex must be held. Null once the job has finished and been dropped.
+    DownloadJob* activeJob(std::uint64_t jobId);
+
+    // mMutex must be held. Frees the slot and forgets any cancel asked for it.
+    // Invalidates every pointer activeJob() handed out.
+    void dropActive(std::uint64_t jobId);
+
     std::shared_ptr<IMegaClient> mClient;
     mutable std::mutex mMutex;
     std::uint64_t mNextId = 1;
-    std::optional<DownloadJob> mActive; // the one in-flight job, if any
-    std::deque<DownloadJob> mPending;   // not yet started, in enqueue order
+    std::vector<DownloadJob> mActive; // in-flight, at most kMaxConcurrent, start order
+    std::deque<DownloadJob> mPending; // not yet started, in enqueue order
     std::function<void(DownloadJob)> mOnProgress;
     std::function<void(DownloadJob)> mOnJobFinished;
 
-    // Re-entrancy trampoline for startNextIfIdle(): an in-stack failure makes
-    // onDone's auto-advance nest one frame per queued job -- 200 selected files
-    // against a folder deleted elsewhere is 200 frames, on a thread whose stack size
-    // this app doesn't control. A nested call now just asks the running loop to go
-    // round again. Both flags live under mMutex.
+    // Re-entrancy guard for startNextIfIdle(): an in-stack failure makes onDone's
+    // auto-advance nest one frame per queued job -- 200 selected files against a
+    // folder deleted elsewhere is 200 frames, on a thread whose stack size this app
+    // doesn't control. A nested call returns immediately instead; the loop that owns
+    // the flag re-reads the queue every turn, so it picks the work up anyway.
     bool mAdvancing = false;
-    bool mAdvanceRequested = false;
 
-    // Bumped by cancelAll(). Read to answer "did a cancel arrive while this job was
-    // still starting?", which the has-an-active-job test cannot answer on its own:
-    // a job becomes mActive before IMegaClient::download() has created the SDK-side
-    // cancel token, so a cancel landing in that window reaches the *previous*
-    // transfer's token and the new transfer would run on regardless.
-    std::uint64_t mCancelGeneration = 0;
+    // Ids whose cancel may not have reached the SDK yet. A job is in mActive before
+    // IMegaClient::download() has created its cancel token, so a cancel landing in
+    // that window names a transfer the client has never heard of and does nothing;
+    // startNextIfIdle() re-asserts it from here once the call returns. Entries are
+    // dropped when the job finishes.
+    std::set<std::uint64_t> mCancelRequested;
 };

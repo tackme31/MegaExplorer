@@ -6,6 +6,47 @@
 #include <algorithm>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <string>
+
+namespace
+{
+
+constexpr std::size_t kSlots = DownloadService::kMaxConcurrent;
+
+using DownloadDone = std::function<void(Result<DownloadOutcome>)>;
+
+// Captures each transfer's onDone instead of invoking it, so the test decides when
+// a job finishes; expectedCalls also pins how many transfers may start at all.
+void expectCapturedDownloads(MockMegaClient& client,
+                             std::vector<DownloadDone>& onDone,
+                             std::size_t expectedCalls)
+{
+    EXPECT_CALL(client,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(static_cast<int>(expectedCalls))
+        .WillRepeatedly(
+            ::testing::Invoke([&onDone](std::uint64_t,
+                                        const std::string&,
+                                        std::uint64_t,
+                                        std::function<void(std::uint64_t, std::uint64_t)>,
+                                        DownloadDone done) {
+                onDone.push_back(std::move(done));
+            }));
+}
+
+// Handles and names run 1..count, so a test can name a job by its ordinal.
+std::vector<std::uint64_t> enqueueMany(DownloadService& service, std::size_t count)
+{
+    std::vector<std::uint64_t> ids;
+    for (std::size_t i = 1; i <= count; ++i)
+    {
+        const std::string name = "f" + std::to_string(i) + ".txt";
+        ids.push_back(service.enqueue(i, name, "/tmp/" + name, 10));
+    }
+    return ids;
+}
+
+} // namespace
 
 TEST(DownloadServiceTest, SafeLocalFileNameKeepsOnlyTheLeafOfATraversalName)
 {
@@ -71,8 +112,9 @@ TEST(DownloadServiceTest, EnqueueSuccessNotifiesJobFinishedWithCompletedStateAnd
 {
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, download(5, std::string("/tmp/a.txt"), ::testing::_, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<3>(
+    EXPECT_CALL(*mockClient,
+                download(5, std::string("/tmp/a.txt"), ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<4>(
             Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a (1).txt"})));
 
     DownloadService service(mockClient);
@@ -99,8 +141,9 @@ TEST(DownloadServiceTest, EnqueueFailurePropagatesErrorMessageCodeAndState)
 {
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<3>(Result<DownloadOutcome>::fail("network error", 2)));
+    EXPECT_CALL(*mockClient,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<4>(Result<DownloadOutcome>::fail("network error", 2)));
 
     DownloadService service(mockClient);
     bool finishedCalled = false;
@@ -125,11 +168,12 @@ TEST(DownloadServiceTest, ProgressCallbackForwardsBytesBeforeCompletion)
 {
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(*mockClient,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(
-            ::testing::DoAll(::testing::InvokeArgument<2>(std::uint64_t{50}, std::uint64_t{100}),
-                             ::testing::InvokeArgument<3>(Result<DownloadOutcome>::ok(
-                                 DownloadOutcome{"/tmp/a.txt"}))));
+            ::testing::DoAll(::testing::InvokeArgument<3>(std::uint64_t{50}, std::uint64_t{100}),
+                             ::testing::InvokeArgument<4>(
+                                 Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt"}))));
 
     DownloadService service(mockClient);
     std::vector<DownloadJob> progressSnapshots;
@@ -151,7 +195,8 @@ TEST(DownloadServiceTest, EnqueueSeedsTotalBytesFromExpectedTotalBytesBeforeFirs
     // Arrange: mocked download() doesn't invoke either callback, so this
     // observes state exactly as enqueue() left it.
     auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_));
+    EXPECT_CALL(*mockClient,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_));
 
     DownloadService service(mockClient);
 
@@ -164,67 +209,64 @@ TEST(DownloadServiceTest, EnqueueSeedsTotalBytesFromExpectedTotalBytesBeforeFirs
     EXPECT_EQ(job->totalBytes, 12345u);
 }
 
-TEST(DownloadServiceTest, SecondEnqueueWhileFirstActiveDoesNotStartImmediatelyThenAutoStarts)
+TEST(DownloadServiceTest, EnqueuePastTheConcurrencyLimitWaitsThenAutoStarts)
 {
-    // Arrange: capture both calls' callbacks instead of invoking them, so we
-    // can control exactly when each transfer "finishes".
+    // Arrange: capture every call's onDone instead of invoking it, so we control
+    // exactly when each transfer "finishes".
     auto mockClient = std::make_shared<MockMegaClient>();
-    std::function<void(Result<DownloadOutcome>)> onDone1;
-    std::function<void(Result<DownloadOutcome>)> onDone2;
-
-    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::DoAll(::testing::SaveArg<3>(&onDone1)));
-    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::DoAll(::testing::SaveArg<3>(&onDone2)));
+    std::vector<DownloadDone> onDone;
+    expectCapturedDownloads(*mockClient, onDone, kSlots + 1);
 
     DownloadService service(mockClient);
 
-    // Act: enqueue both while nothing has finished yet
-    std::uint64_t id1 = service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
-    std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 0);
+    // Act: fill every slot, then one more
+    const std::vector<std::uint64_t> ids = enqueueMany(service, kSlots + 1);
 
-    // Assert: only job 1 started; job 2 is queued and IMegaClient::download
-    // was never called for it (onDone2 is still unset)
-    ASSERT_FALSE(static_cast<bool>(onDone2));
-    auto jobsBefore = service.jobs();
-    ASSERT_EQ(jobsBefore.size(), 2u);
-    EXPECT_EQ(jobsBefore[0].id, id1);
-    EXPECT_EQ(jobsBefore[0].state, DownloadState::Active);
-    EXPECT_EQ(jobsBefore[1].id, id2);
-    EXPECT_EQ(jobsBefore[1].state, DownloadState::Queued);
+    // Assert: the last one is queued and IMegaClient::download was never called
+    // for it -- only kSlots onDones have been captured
+    ASSERT_EQ(onDone.size(), kSlots);
+    const std::vector<DownloadJob> before = service.jobs();
+    ASSERT_EQ(before.size(), kSlots + 1);
+    for (std::size_t i = 0; i < kSlots; ++i)
+    {
+        EXPECT_EQ(before[i].id, ids[i]);
+        EXPECT_EQ(before[i].state, DownloadState::Active);
+    }
+    EXPECT_EQ(before.back().id, ids.back());
+    EXPECT_EQ(before.back().state, DownloadState::Queued);
 
-    // Act: finish job 1
-    onDone1(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt"}));
+    // Act: free one slot
+    onDone.front()(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt"}));
 
-    // Assert: job 2 auto-started (download() was called for it, captured via
-    // SaveArg above -- onDone2 would still be unset otherwise)
-    ASSERT_TRUE(static_cast<bool>(onDone2));
-    auto jobsAfter = service.jobs();
-    ASSERT_EQ(jobsAfter.size(), 1u);
-    EXPECT_EQ(jobsAfter[0].id, id2);
-    EXPECT_EQ(jobsAfter[0].state, DownloadState::Active);
+    // Assert: the waiting job was promoted into it
+    ASSERT_EQ(onDone.size(), kSlots + 1);
+    const std::vector<DownloadJob> after = service.jobs();
+    ASSERT_EQ(after.size(), kSlots);
+    EXPECT_EQ(after.back().id, ids.back());
+    EXPECT_EQ(after.back().state, DownloadState::Active);
 }
 
 TEST(DownloadServiceTest, HasJobForHandleFindsQueuedJob)
 {
-    // Arrange: never invoke the download() callback, so both jobs stay put
-    // (one active, one queued) -- hasJobForHandle must find either.
+    // Arrange: never invoke the download() callback, so the jobs stay put -- the
+    // slots full and one waiting behind them. hasJobForHandle must find either.
     auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .Times(1);
+    std::vector<DownloadDone> onDone;
+    expectCapturedDownloads(*mockClient, onDone, kSlots);
 
     DownloadService service(mockClient);
-    service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
-    service.enqueue(2, "b.txt", "/tmp/b.txt", 0);
+    enqueueMany(service, kSlots + 1);
 
-    EXPECT_TRUE(service.hasJobForHandle(1));
-    EXPECT_TRUE(service.hasJobForHandle(2));
+    EXPECT_TRUE(service.hasJobForHandle(1));                                      // active
+    EXPECT_TRUE(service.hasJobForHandle(static_cast<std::uint64_t>(kSlots)));     // active
+    EXPECT_TRUE(service.hasJobForHandle(static_cast<std::uint64_t>(kSlots) + 1)); // queued
 }
 
 TEST(DownloadServiceTest, HasJobForHandleReturnsFalseForUnknownHandle)
 {
     auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_));
+    EXPECT_CALL(*mockClient,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_));
 
     DownloadService service(mockClient);
     service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
@@ -232,28 +274,26 @@ TEST(DownloadServiceTest, HasJobForHandleReturnsFalseForUnknownHandle)
     EXPECT_FALSE(service.hasJobForHandle(999));
 }
 
-TEST(DownloadServiceTest, JobsReturnsActiveJobFirstThenQueuedJobsInOrder)
+TEST(DownloadServiceTest, JobsReturnsActiveJobsFirstThenQueuedJobsInOrder)
 {
-    // Arrange: never invoke the download() callback, so all 3 jobs stay put.
+    // Arrange: never invoke the download() callback, so every job stays put.
     auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_));
+    std::vector<DownloadDone> onDone;
+    expectCapturedDownloads(*mockClient, onDone, kSlots);
 
     DownloadService service(mockClient);
 
     // Act
-    std::uint64_t id1 = service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
-    std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 0);
-    std::uint64_t id3 = service.enqueue(3, "c.txt", "/tmp/c.txt", 0);
+    const std::vector<std::uint64_t> ids = enqueueMany(service, kSlots + 2);
 
     // Assert
-    auto jobs = service.jobs();
-    ASSERT_EQ(jobs.size(), 3u);
-    EXPECT_EQ(jobs[0].id, id1);
-    EXPECT_EQ(jobs[0].state, DownloadState::Active);
-    EXPECT_EQ(jobs[1].id, id2);
-    EXPECT_EQ(jobs[1].state, DownloadState::Queued);
-    EXPECT_EQ(jobs[2].id, id3);
-    EXPECT_EQ(jobs[2].state, DownloadState::Queued);
+    const std::vector<DownloadJob> jobs = service.jobs();
+    ASSERT_EQ(jobs.size(), kSlots + 2);
+    for (std::size_t i = 0; i < jobs.size(); ++i)
+    {
+        EXPECT_EQ(jobs[i].id, ids[i]);
+        EXPECT_EQ(jobs[i].state, i < kSlots ? DownloadState::Active : DownloadState::Queued);
+    }
 }
 
 TEST(DownloadServiceTest, SynchronousFailuresDrainTheQueueWithoutRecursing)
@@ -272,10 +312,12 @@ TEST(DownloadServiceTest, SynchronousFailuresDrainTheQueueWithoutRecursing)
     std::function<void(Result<DownloadOutcome>)> firstOnDone;
     int depth = 0;
     int maxDepth = 0;
-    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<3>(&firstOnDone))
+    EXPECT_CALL(*mockClient,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&firstOnDone))
         .WillRepeatedly(::testing::Invoke([&](std::uint64_t,
                                               const std::string&,
+                                              std::uint64_t,
                                               std::function<void(std::uint64_t, std::uint64_t)>,
                                               std::function<void(Result<DownloadOutcome>)> onDone) {
             ++depth;
@@ -313,12 +355,12 @@ TEST(DownloadServiceTest, MixedSuccessAndFailureQueueKeepsPerJobResultFieldsSepa
     std::function<void(Result<DownloadOutcome>)> onDone1;
     std::function<void(Result<DownloadOutcome>)> onDone2;
     std::function<void(Result<DownloadOutcome>)> onDone3;
-    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<3>(&onDone1));
-    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<3>(&onDone2));
-    EXPECT_CALL(*mockClient, download(3, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<3>(&onDone3));
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&onDone1));
+    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&onDone2));
+    EXPECT_CALL(*mockClient, download(3, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&onDone3));
 
     DownloadService service(mockClient);
     std::vector<DownloadJob> finished;
@@ -370,9 +412,10 @@ TEST(DownloadServiceTest, CompletionArrivingAfterTheQueueDrainedIsIgnored)
     auto mockClient = std::make_shared<MockMegaClient>();
     std::function<void(std::uint64_t, std::uint64_t)> onProgress;
     std::function<void(Result<DownloadOutcome>)> onDone;
-    EXPECT_CALL(*mockClient, download(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(*mockClient,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(
-            ::testing::DoAll(::testing::SaveArg<2>(&onProgress), ::testing::SaveArg<3>(&onDone)));
+            ::testing::DoAll(::testing::SaveArg<3>(&onProgress), ::testing::SaveArg<4>(&onDone)));
 
     DownloadService service(mockClient);
     int finishedCount = 0;
@@ -409,10 +452,10 @@ TEST(DownloadServiceTest, StaleProgressFromAFinishedJobDoesNotTouchTheNextJob)
     auto mockClient = std::make_shared<MockMegaClient>();
     std::function<void(std::uint64_t, std::uint64_t)> onProgress1;
     std::function<void(Result<DownloadOutcome>)> onDone1;
-    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(
-            ::testing::DoAll(::testing::SaveArg<2>(&onProgress1), ::testing::SaveArg<3>(&onDone1)));
-    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_));
+            ::testing::DoAll(::testing::SaveArg<3>(&onProgress1), ::testing::SaveArg<4>(&onDone1)));
+    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_, ::testing::_));
 
     DownloadService service(mockClient);
     std::vector<DownloadJob> progressSnapshots;
@@ -443,9 +486,9 @@ TEST(DownloadServiceTest, StaleCompletionFromAFinishedJobDoesNotFinishTheNextJob
     // running.
     auto mockClient = std::make_shared<MockMegaClient>();
     std::function<void(Result<DownloadOutcome>)> onDone1;
-    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<3>(&onDone1));
-    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_));
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&onDone1));
+    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_, ::testing::_));
 
     DownloadService service(mockClient);
     std::vector<DownloadJob> finished;
@@ -470,14 +513,13 @@ TEST(DownloadServiceTest, StaleCompletionFromAFinishedJobDoesNotFinishTheNextJob
     EXPECT_EQ(remaining[0].state, DownloadState::Active);
 }
 
-TEST(DownloadServiceTest, CancelAllDropsPendingJobsAndAbortsTheActiveTransfer)
+TEST(DownloadServiceTest, CancelAllDropsPendingJobsAndAbortsEveryActiveTransfer)
 {
     auto mockClient = std::make_shared<MockMegaClient>();
-    std::function<void(Result<DownloadOutcome>)> onDone1;
-    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<3>(&onDone1));
-    // The queued job must never reach the SDK, so no second download() is expected.
-    EXPECT_CALL(*mockClient, cancelDownload());
+    std::vector<DownloadDone> onDone;
+    // The queued job must never reach the SDK, so only the running ones count.
+    expectCapturedDownloads(*mockClient, onDone, kSlots);
+    EXPECT_CALL(*mockClient, cancelDownload(::testing::_)).Times(static_cast<int>(kSlots));
 
     DownloadService service(mockClient);
     std::vector<DownloadJob> finished;
@@ -485,24 +527,24 @@ TEST(DownloadServiceTest, CancelAllDropsPendingJobsAndAbortsTheActiveTransfer)
         finished.push_back(std::move(job));
     });
 
-    const std::uint64_t id1 = service.enqueue(1, "a.txt", "/tmp/a.txt", 10);
-    const std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 10);
+    const std::vector<std::uint64_t> ids = enqueueMany(service, kSlots + 1);
 
     // Act
     service.cancelAll();
 
     // Assert: the waiting job reports once, without ever having started
     ASSERT_EQ(finished.size(), 1u);
-    EXPECT_EQ(finished[0].id, id2);
+    EXPECT_EQ(finished[0].id, ids.back());
     EXPECT_EQ(finished[0].state, DownloadState::Cancelled);
 
-    // The active one ends only when the SDK acknowledges the abort, and its
+    // The running ones end only when the SDK acknowledges each abort, and their
     // kEIncomplete is read as cancelled rather than failed.
-    ASSERT_TRUE(onDone1);
-    onDone1(Result<DownloadOutcome>::fail("Transfer cancelled", MegaErrorCode::kEIncomplete));
-    ASSERT_EQ(finished.size(), 2u);
-    EXPECT_EQ(finished[1].id, id1);
-    EXPECT_EQ(finished[1].state, DownloadState::Cancelled);
+    for (std::size_t i = 0; i < kSlots; ++i)
+        onDone[i](Result<DownloadOutcome>::fail("Transfer cancelled", MegaErrorCode::kEIncomplete));
+
+    ASSERT_EQ(finished.size(), kSlots + 1);
+    EXPECT_EQ(finished.back().id, ids[kSlots - 1]);
+    EXPECT_EQ(finished.back().state, DownloadState::Cancelled);
     EXPECT_FALSE(service.currentJob().has_value());
     EXPECT_TRUE(service.jobs().empty());
 }
@@ -510,7 +552,7 @@ TEST(DownloadServiceTest, CancelAllDropsPendingJobsAndAbortsTheActiveTransfer)
 TEST(DownloadServiceTest, CancelAllWithNothingInFlightNeitherCallsTheClientNorNotifies)
 {
     auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, cancelDownload()).Times(0);
+    EXPECT_CALL(*mockClient, cancelDownload(::testing::_)).Times(0);
 
     DownloadService service(mockClient);
     bool notified = false;
@@ -532,12 +574,12 @@ TEST(DownloadServiceTest, CancelArrivingWhileAJobIsStartingIsReAssertedOnceItsTo
     auto mockClient = std::make_shared<MockMegaClient>();
     DownloadService service(mockClient);
 
-    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeWithoutArgs([&] {
             service.cancelAll();
         }));
     // Once from cancelAll() itself, once from the re-assert after download() returns.
-    EXPECT_CALL(*mockClient, cancelDownload()).Times(2);
+    EXPECT_CALL(*mockClient, cancelDownload(::testing::_)).Times(2);
 
     service.enqueue(1, "a.txt", "/tmp/a.txt", 10);
 }
@@ -545,12 +587,11 @@ TEST(DownloadServiceTest, CancelArrivingWhileAJobIsStartingIsReAssertedOnceItsTo
 TEST(DownloadServiceTest, CancelDropsOneQueuedJobAndLeavesTheRestOfTheQueueAlone)
 {
     auto mockClient = std::make_shared<MockMegaClient>();
-    std::function<void(Result<DownloadOutcome>)> onDone1;
-    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<3>(&onDone1));
-    // Nothing is in flight for this cancel to abort, and no other download() may
-    // start: the two jobs left keep their places.
-    EXPECT_CALL(*mockClient, cancelDownload()).Times(0);
+    std::vector<DownloadDone> onDone;
+    // Nothing is in flight for this cancel to abort, and no further download() may
+    // start: the jobs left keep their places.
+    expectCapturedDownloads(*mockClient, onDone, kSlots);
+    EXPECT_CALL(*mockClient, cancelDownload(::testing::_)).Times(0);
 
     DownloadService service(mockClient);
     std::vector<DownloadJob> finished;
@@ -558,34 +599,32 @@ TEST(DownloadServiceTest, CancelDropsOneQueuedJobAndLeavesTheRestOfTheQueueAlone
         finished.push_back(std::move(job));
     });
 
-    const std::uint64_t id1 = service.enqueue(1, "a.txt", "/tmp/a.txt", 10);
-    const std::uint64_t id2 = service.enqueue(2, "b.txt", "/tmp/b.txt", 10);
-    const std::uint64_t id3 = service.enqueue(3, "c.txt", "/tmp/c.txt", 10);
+    const std::vector<std::uint64_t> ids = enqueueMany(service, kSlots + 2);
 
-    // Act
-    service.cancel(id2);
+    // Act: the first of the two waiting jobs
+    service.cancel(ids[kSlots]);
 
     // Assert: one notification for the dropped job, exactly as cancelAll() gives
     ASSERT_EQ(finished.size(), 1u);
-    EXPECT_EQ(finished[0].id, id2);
+    EXPECT_EQ(finished[0].id, ids[kSlots]);
     EXPECT_EQ(finished[0].state, DownloadState::Cancelled);
 
     const std::vector<DownloadJob> remaining = service.jobs();
-    ASSERT_EQ(remaining.size(), 2u);
-    EXPECT_EQ(remaining[0].id, id1);
+    ASSERT_EQ(remaining.size(), kSlots + 1);
+    EXPECT_EQ(remaining[0].id, ids[0]);
     EXPECT_EQ(remaining[0].state, DownloadState::Active);
-    EXPECT_EQ(remaining[1].id, id3);
-    EXPECT_EQ(remaining[1].state, DownloadState::Queued);
+    EXPECT_EQ(remaining.back().id, ids.back());
+    EXPECT_EQ(remaining.back().state, DownloadState::Queued);
 }
 
 TEST(DownloadServiceTest, CancellingTheActiveJobAbortsItAndTheQueueBehindItCarriesOn)
 {
     auto mockClient = std::make_shared<MockMegaClient>();
     std::function<void(Result<DownloadOutcome>)> onDone1;
-    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<3>(&onDone1));
-    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_));
-    EXPECT_CALL(*mockClient, cancelDownload());
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<4>(&onDone1));
+    EXPECT_CALL(*mockClient, download(2, ::testing::_, ::testing::_, ::testing::_, ::testing::_));
+    EXPECT_CALL(*mockClient, cancelDownload(::testing::_));
 
     DownloadService service(mockClient);
     std::vector<DownloadJob> finished;
@@ -616,13 +655,99 @@ TEST(DownloadServiceTest, CancellingTheActiveJobAbortsItAndTheQueueBehindItCarri
     EXPECT_EQ(active->state, DownloadState::Active);
 }
 
+TEST(DownloadServiceTest, AJobThatFailsBeforeItsAbortLandsStillReportsCancelled)
+{
+    // The abort names a transfer the client has not created yet, so it reaches
+    // nothing -- and if the transfer then fails for its own reason, kEIncomplete
+    // never comes. Without the cancel-wins rule the user's own stop is reported as
+    // an error.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    DownloadService service(mockClient);
+    EXPECT_CALL(*mockClient,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke([&service](std::uint64_t,
+                                               const std::string&,
+                                               std::uint64_t transferId,
+                                               std::function<void(std::uint64_t, std::uint64_t)>,
+                                               DownloadDone done) {
+            service.cancel(transferId);
+            done(Result<DownloadOutcome>::fail("gone", MegaErrorCode::kENoEnt));
+        }));
+    EXPECT_CALL(*mockClient, cancelDownload(::testing::_)).Times(::testing::AnyNumber());
+
+    std::vector<DownloadJob> finished;
+    service.setOnJobFinished([&](DownloadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    const std::uint64_t id = service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
+
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished[0].id, id);
+    EXPECT_EQ(finished[0].state, DownloadState::Cancelled);
+}
+
+TEST(DownloadServiceTest, TheTransferIdHandedToTheClientIsTheJobId)
+{
+    // The whole per-transfer cancel rests on this: cancelDownload() is given the id
+    // the UI holds, so it has to be the same one download() was started under.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::uint64_t startedUnder = 0;
+    EXPECT_CALL(*mockClient,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<2>(&startedUnder));
+
+    DownloadService service(mockClient);
+    const std::uint64_t id = service.enqueue(1, "a.txt", "/tmp/a.txt", 0);
+
+    EXPECT_EQ(startedUnder, id);
+}
+
+TEST(DownloadServiceTest, CancellingOneRunningJobAbortsOnlyThatTransfer)
+{
+    // What the whole-direction cancelDownload() could not do once transfers run in
+    // parallel: stop one of them and leave its neighbours alone.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::vector<DownloadDone> onDone;
+    expectCapturedDownloads(*mockClient, onDone, 2);
+    std::vector<std::uint64_t> aborted;
+    EXPECT_CALL(*mockClient, cancelDownload(::testing::_))
+        .WillRepeatedly(::testing::Invoke([&aborted](std::uint64_t id) {
+            aborted.push_back(id);
+        }));
+
+    DownloadService service(mockClient);
+    std::vector<DownloadJob> finished;
+    service.setOnJobFinished([&](DownloadJob job) {
+        finished.push_back(std::move(job));
+    });
+    const std::vector<std::uint64_t> ids = enqueueMany(service, 2);
+
+    // Act
+    service.cancel(ids[1]);
+
+    ASSERT_EQ(aborted.size(), 1u);
+    EXPECT_EQ(aborted[0], ids[1]);
+
+    onDone[1](Result<DownloadOutcome>::fail("Transfer cancelled", MegaErrorCode::kEIncomplete));
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished[0].id, ids[1]);
+    EXPECT_EQ(finished[0].state, DownloadState::Cancelled);
+
+    // The neighbour is still running
+    const std::vector<DownloadJob> remaining = service.jobs();
+    ASSERT_EQ(remaining.size(), 1u);
+    EXPECT_EQ(remaining[0].id, ids[0]);
+    EXPECT_EQ(remaining[0].state, DownloadState::Active);
+}
+
 TEST(DownloadServiceTest, CancelOfAnIdThatAlreadyFinishedNeitherNotifiesNorReachesTheClient)
 {
     auto mockClient = std::make_shared<MockMegaClient>();
-    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<3>(
+    EXPECT_CALL(*mockClient, download(1, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<4>(
             Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a.txt"})));
-    EXPECT_CALL(*mockClient, cancelDownload()).Times(0);
+    EXPECT_CALL(*mockClient, cancelDownload(::testing::_)).Times(0);
 
     DownloadService service(mockClient);
     int finishedCount = 0;

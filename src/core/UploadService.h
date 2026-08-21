@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 
 enum class UploadState
@@ -34,7 +35,7 @@ struct UploadJob
     int errorCode = 0; // only meaningful when state == Failed; mirrors Result<T>::errorCode
 };
 
-// Serializes uploads one at a time over IMegaClient::upload, mirroring
+// Runs up to kMaxConcurrent uploads over IMegaClient::upload, mirroring
 // DownloadService down to the mutex discipline, the mActive/mPending split and the
 // job-id matching on callbacks -- see there for why those invariants are
 // structural.
@@ -49,6 +50,10 @@ struct UploadJob
 class UploadService
 {
 public:
+    // Same meaning and same value as DownloadService::kMaxConcurrent, counted
+    // separately: the two directions do not share a budget.
+    static constexpr std::size_t kMaxConcurrent = 4;
+
     explicit UploadService(std::shared_ptr<IMegaClient> client);
 
     // localPath is exact and already resolved. expectedTotalBytes seeds totalBytes so
@@ -88,25 +93,32 @@ public:
     void setOnJobFinished(std::function<void(UploadJob)> onJobFinished);
 
 private:
-    // Promotes mPending.front() into mActive, then keeps going while jobs keep
-    // finishing inside this call. Takes mMutex itself: checkUpload() answers on the
-    // spot and upload() can run onDone before returning, so holding the lock across
-    // either would self-deadlock.
+    // Fills every free slot from the front of mPending, then keeps going while jobs
+    // keep finishing inside this call. Takes mMutex itself: checkUpload() answers on
+    // the spot and upload() can run onDone before returning, so holding the lock
+    // across either would self-deadlock.
     void startNextIfIdle();
+
+    // mMutex must be held. Null once the job has finished and been dropped.
+    UploadJob* activeJob(std::uint64_t jobId);
+
+    // mMutex must be held. Frees the slot and forgets any cancel asked for it.
+    // Invalidates every pointer activeJob() handed out.
+    void dropActive(std::uint64_t jobId);
 
     std::shared_ptr<IMegaClient> mClient;
     mutable std::mutex mMutex;
     std::uint64_t mNextId = 1;
-    std::optional<UploadJob> mActive; // the one in-flight job, if any
-    std::deque<UploadJob> mPending;   // not yet started, in enqueue order
+    std::vector<UploadJob> mActive; // in-flight, at most kMaxConcurrent, start order
+    std::deque<UploadJob> mPending; // not yet started, in enqueue order
     std::function<void(UploadJob)> mOnProgress;
     std::function<void(UploadJob)> mOnJobFinished;
 
-    // Re-entrancy trampoline for startNextIfIdle(), identical to DownloadService's
-    // -- see there for why the recursion it replaces was a real risk.
+    // Re-entrancy guard for startNextIfIdle(), identical to DownloadService's -- see
+    // there for why the recursion it replaces was a real risk.
     bool mAdvancing = false;
-    bool mAdvanceRequested = false;
 
-    // Same role as DownloadService::mCancelGeneration -- see there.
-    std::uint64_t mCancelGeneration = 0;
+    // Same role as DownloadService::mCancelRequested -- see there. The window it
+    // covers is wider on this side, since the blocking checkUpload() sits inside it.
+    std::set<std::uint64_t> mCancelRequested;
 };

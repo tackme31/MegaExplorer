@@ -550,30 +550,44 @@ void MegaSdkClient::listRecent(SortOrder order,
 
 void MegaSdkClient::download(std::uint64_t handle,
                              const std::string& destinationPath,
+                             std::uint64_t transferId,
                              std::function<void(std::uint64_t, std::uint64_t)> onProgress,
                              std::function<void(Result<DownloadOutcome>)> onDone)
 {
+    // Wrapped before any early return so every exit path forgets the id, whether or
+    // not a token was ever made for it.
+    auto forgetThenReport =
+        [this, transferId, onDone = std::move(onDone)](Result<DownloadOutcome> result) {
+            {
+                std::lock_guard<std::mutex> lock(mCancelTokenMutex);
+                mDownloadCancelTokens.erase(transferId);
+            }
+            onDone(std::move(result)); // outside the guard: it re-enters download()
+        };
+
     if (mShuttingDown)
     {
-        onDone(Result<DownloadOutcome>::fail(kShutDownMessage, kClientShutDownCode));
+        forgetThenReport(Result<DownloadOutcome>::fail(kShutDownMessage, kClientShutDownCode));
         return;
     }
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
     {
-        onDone(Result<DownloadOutcome>::fail(
+        forgetThenReport(Result<DownloadOutcome>::fail(
             "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
             MegaErrorCode::kENoEnt));
         return;
     }
 
-    auto* listener = new megasdk::DownloadListener(std::move(onProgress), std::move(onDone));
+    auto* listener =
+        new megasdk::DownloadListener(std::move(onProgress), std::move(forgetThenReport));
 
     mega::MegaCancelToken* cancelTokenRaw = nullptr;
     {
         std::lock_guard<std::mutex> lock(mCancelTokenMutex);
-        mDownloadCancelToken.reset(mega::MegaCancelToken::createInstance());
-        cancelTokenRaw = mDownloadCancelToken.get();
+        auto& slot = mDownloadCancelTokens[transferId];
+        slot.reset(mega::MegaCancelToken::createInstance());
+        cancelTokenRaw = slot.get();
     }
 
     mApi->startDownload(node.get(),
@@ -595,30 +609,44 @@ void MegaSdkClient::download(std::uint64_t handle,
 void MegaSdkClient::upload(const std::string& localPath,
                            std::uint64_t parentHandle,
                            bool parentIsRoot,
+                           std::uint64_t transferId,
                            std::function<void(std::uint64_t, std::uint64_t)> onProgress,
                            std::function<void(Result<UploadOutcome>)> onDone)
 {
+    // Same wrapper as download() -- see there.
+    auto forgetThenReport =
+        [this, transferId, onDone = std::move(onDone)](Result<UploadOutcome> result) {
+            {
+                std::lock_guard<std::mutex> lock(mCancelTokenMutex);
+                mUploadCancelTokens.erase(transferId);
+            }
+            onDone(std::move(result));
+        };
+
     if (mShuttingDown)
     {
-        onDone(Result<UploadOutcome>::fail(kShutDownMessage, kClientShutDownCode));
+        forgetThenReport(Result<UploadOutcome>::fail(kShutDownMessage, kClientShutDownCode));
         return;
     }
     std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
     if (!parent)
     {
-        onDone(Result<UploadOutcome>::fail("No destination folder with the given handle (nodes not "
-                                           "fetched / folder deleted)",
-                                           MegaErrorCode::kENoEnt));
+        forgetThenReport(
+            Result<UploadOutcome>::fail("No destination folder with the given handle (nodes not "
+                                        "fetched / folder deleted)",
+                                        MegaErrorCode::kENoEnt));
         return;
     }
 
-    auto* listener = new megasdk::UploadListener(std::move(onProgress), std::move(onDone));
+    auto* listener =
+        new megasdk::UploadListener(std::move(onProgress), std::move(forgetThenReport));
 
     mega::MegaCancelToken* cancelTokenRaw = nullptr;
     {
         std::lock_guard<std::mutex> lock(mCancelTokenMutex);
-        mUploadCancelToken.reset(mega::MegaCancelToken::createInstance());
-        cancelTokenRaw = mUploadCancelToken.get();
+        auto& slot = mUploadCancelTokens[transferId];
+        slot.reset(mega::MegaCancelToken::createInstance());
+        cancelTokenRaw = slot.get();
     }
 
     // options == nullptr means all defaults; megaapi.cpp only copies the struct when
@@ -626,20 +654,22 @@ void MegaSdkClient::upload(const std::string& localPath,
     mApi->startUpload(localPath, parent.get(), cancelTokenRaw, /*options*/ nullptr, listener);
 }
 
-void MegaSdkClient::cancelDownload()
+void MegaSdkClient::cancelDownload(std::uint64_t transferId)
 {
     std::lock_guard<std::mutex> lock(mCancelTokenMutex);
-    if (mDownloadCancelToken)
-        mDownloadCancelToken->cancel();
+    auto it = mDownloadCancelTokens.find(transferId);
+    if (it != mDownloadCancelTokens.end() && it->second)
+        it->second->cancel();
 }
 
-void MegaSdkClient::cancelUpload()
+void MegaSdkClient::cancelUpload(std::uint64_t transferId)
 {
     // No mShuttingDown guard on either: the token is ours, not the SDK's, so setting
     // it never re-enters mApi.
     std::lock_guard<std::mutex> lock(mCancelTokenMutex);
-    if (mUploadCancelToken)
-        mUploadCancelToken->cancel();
+    auto it = mUploadCancelTokens.find(transferId);
+    if (it != mUploadCancelTokens.end() && it->second)
+        it->second->cancel();
 }
 
 void MegaSdkClient::getThumbnail(std::uint64_t handle,

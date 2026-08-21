@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 
@@ -91,6 +92,7 @@ public:
     void download(
         std::uint64_t handle,
         const std::string& destinationPath,
+        std::uint64_t transferId,
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<DownloadOutcome>)> onDone) override;
 
@@ -98,11 +100,12 @@ public:
     upload(const std::string& localPath,
            std::uint64_t parentHandle,
            bool parentIsRoot,
+           std::uint64_t transferId,
            std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
            std::function<void(Result<UploadOutcome>)> onDone) override;
 
-    void cancelDownload() override;
-    void cancelUpload() override;
+    void cancelDownload(std::uint64_t transferId) override;
+    void cancelUpload(std::uint64_t transferId) override;
 
     void getThumbnail(std::uint64_t handle,
                       const std::string& destinationPath,
@@ -224,13 +227,12 @@ private:
     // GUI thread, so any lock wrapping both sides inverts the order and deadlocks.
     std::atomic<bool> mShuttingDown{false};
 
-    // The token handed to the transfer that startDownload/startUpload most recently
-    // began, kept so cancelDownload()/cancelUpload() have something to set. Owned
-    // here rather than by the listener because the listener deletes itself on the SDK
-    // thread the moment its transfer ends -- a pointer to it could not be held
-    // safely. Keeping a *finished* transfer's token instead is harmless: startDownload
-    // copies the token by value and MegaCancelToken is a shared handle, so cancelling
-    // a token nothing is watching does nothing.
+    // One token per in-flight transfer, keyed by the caller's transferId, so
+    // cancelDownload()/cancelUpload() can name one of several running transfers.
+    // Owned here rather than by the listener because the listener deletes itself on
+    // the SDK thread the moment its transfer ends -- a pointer to it could not be
+    // held safely. The entry is erased by the onDone wrapper instead, before the
+    // caller's own onDone runs, so the map tracks what is actually in flight.
     //
     // A mutex is usable here, unlike around mShuttingDown, only because nothing
     // under it re-enters the SDK: MegaCancelToken::cancel() just writes a shared
@@ -239,6 +241,6 @@ private:
     // calls startDownload *outside* the guard, and it can arrive on the SDK's own
     // callback thread with sdkMutex already held.
     std::mutex mCancelTokenMutex;
-    std::unique_ptr<mega::MegaCancelToken> mDownloadCancelToken;
-    std::unique_ptr<mega::MegaCancelToken> mUploadCancelToken;
+    std::map<std::uint64_t, std::unique_ptr<mega::MegaCancelToken>> mDownloadCancelTokens;
+    std::map<std::uint64_t, std::unique_ptr<mega::MegaCancelToken>> mUploadCancelTokens;
 };

@@ -70,6 +70,7 @@ public:
                 download,
                 (std::uint64_t,
                  const std::string&,
+                 std::uint64_t,
                  std::function<void(std::uint64_t, std::uint64_t)>,
                  std::function<void(Result<DownloadOutcome>)>),
                 (override));
@@ -137,11 +138,12 @@ public:
                 (const std::string&,
                  std::uint64_t,
                  bool,
+                 std::uint64_t,
                  std::function<void(std::uint64_t, std::uint64_t)>,
                  std::function<void(Result<UploadOutcome>)>),
                 (override));
-    MOCK_METHOD(void, cancelDownload, (), (override));
-    MOCK_METHOD(void, cancelUpload, (), (override));
+    MOCK_METHOD(void, cancelDownload, (std::uint64_t), (override));
+    MOCK_METHOD(void, cancelUpload, (std::uint64_t), (override));
     MOCK_METHOD(Result<void>, checkUpload, (std::uint64_t, bool), (const, override));
     MOCK_METHOD(Result<std::vector<FileEntry>>,
                 findChildFiles,
