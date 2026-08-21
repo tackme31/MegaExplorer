@@ -284,6 +284,13 @@ TestCase {
         fail("no button labelled " + label);
     }
 
+    // The body is three items now -- the question, the name or the link that
+    // stands in for a batch of them, and what the answers cost -- so the
+    // assertions below that are about the wording as a whole join them back up.
+    function conflictText(dialog) {
+        return dialog.headLine() + "\n" + dialog.namesText() + "\n\n" + dialog.detailText();
+    }
+
     // ---- NameConflictDialog --------------------------------------------
 
     function test_nameConflict_signalOpensAndCarriesTheDestination() {
@@ -300,6 +307,28 @@ TestCase {
         compare(dialog.conflictNames, ["a.txt"]);
         compare(dialog.destinationHandle, 0);
         compare(dialog.destinationIsRoot, true);
+    }
+
+    // One name still reads inline; a batch collapses to a count that opens the
+    // full list, which is what replaced a comma-run truncated at five -- long
+    // batches could not be read there, let alone checked against what was about
+    // to be replaced.
+    function test_nameConflict_namesCollapseToACountedLink() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+
+        dialog.conflictNames = ["a.txt"];
+        compare(dialog.namesText(), "a.txt");
+        compare(dialog.listEntries().length, 1);
+        compare(dialog.listEntries()[0].name, "a.txt");
+        // An upload never collides with a folder, so the list must not draw one.
+        compare(dialog.listEntries()[0].isFolder, false);
+
+        dialog.conflictNames = ["a.txt", "b.txt", "c.txt"];
+        compare(dialog.namesText(), "3 file(s)");
+        compare(dialog.listEntries().length, 3);
     }
 
     // ---- ConfirmUploadDialog -------------------------------------------
@@ -452,35 +481,9 @@ TestCase {
         tryCompare(dialog, "visible", false);
     }
 
-    function test_nameConflict_listsAtMostFiveNames_data() {
-        return [
-                    {
-                        tag: "five",
-                        names: ["a", "b", "c", "d", "e"],
-                        shown: "a, b, c, d, e",
-                        ellipsis: false
-                    },
-                    {
-                        tag: "six",
-                        names: ["a", "b", "c", "d", "e", "f"],
-                        shown: "a, b, c, d, e",
-                        ellipsis: true
-                    }
-                ];
-    }
-
-    function test_nameConflict_listsAtMostFiveNames(data) {
-        const uploads = makeUploads();
-        const dialog = makeDialog(nameConflictComponent, {
-                                      "uploads": uploads
-                                  });
-
-        uploads.nameConflictRequiresConfirmation(data.names, data.names, 0, "", "", 0, true);
-
-        const text = dialog.contentChildren[0].text;
-        compare(text.indexOf(data.shown) !== -1, true);
-        compare(text.indexOf("…") !== -1, data.ellipsis);
-    }
+    // The truncated comma-run this used to assert ("a, b, c, d, e …") is gone:
+    // no batch is spelled into the body any more, however short. What replaced
+    // it is test_nameConflict_namesCollapseToACountedLink above.
 
     function test_nameConflict_wordsReplaceFromVersioningAndSaysWhatSkipKeeps() {
         const uploads = makeUploads();
@@ -492,7 +495,7 @@ TestCase {
         uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 4, "", "", 0, true);
 
         tryCompare(dialog, "opened", true);
-        const text = dialog.contentChildren[0].text;
+        const text = conflictText(dialog);
         verify(text.indexOf("cannot be recovered") !== -1);
         // Without this line Skip and Cancel read as the same answer.
         verify(text.indexOf("other 4") !== -1);
@@ -510,7 +513,7 @@ TestCase {
 
         tryCompare(dialog, "opened", true);
         verify(dialog.replaceLine().indexOf("earlier versions") !== -1);
-        verify(dialog.contentChildren[0].text.indexOf("\"Replace\"") === -1);
+        verify(conflictText(dialog).indexOf("\"Replace\"") === -1);
     }
 
     // Sizes are formatted in C++ and only quoted here, so what this checks is that
@@ -525,7 +528,7 @@ TestCase {
                                                  true);
 
         tryCompare(dialog, "opened", true);
-        const text = dialog.contentChildren[0].text;
+        const text = conflictText(dialog);
         verify(text.indexOf("(2.0 KB)") !== -1);
         verify(text.indexOf("other 4 file(s) are uploaded either way (9.0 MB)") !== -1);
     }
@@ -540,7 +543,7 @@ TestCase {
         uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 4, "", "", 0, true);
 
         tryCompare(dialog, "opened", true);
-        const text = dialog.contentChildren[0].text;
+        const text = conflictText(dialog);
         verify(text.indexOf("()") === -1);
         verify(text.indexOf("other 4 file(s) are uploaded either way.") !== -1);
     }
@@ -550,7 +553,34 @@ TestCase {
     // Asserting on the frame is not enough -- a Popup clamps its own width to the
     // overlay anyway, so dialog.width alone passes with the bug present. Staged
     // here rather than in a screenshot because the dialog opens only from a drop.
-    function test_nameConflict_staysInsideTheWindowOnALongNameList() {
+    function test_nameConflict_staysInsideTheWindowOnALongName() {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads
+                                  });
+        const long = "a-name-long-enough-to-outgrow-any-sane-window-on-its-own.txt";
+
+        uploads.nameConflictRequiresConfirmation([long], [long], 0, "", "", 0, true);
+
+        tryCompare(dialog, "opened", true);
+        // The body is a Column of head, the lone name, the count link and the
+        // detail; the compare below pins that order rather than trusting the index.
+        const label = dialog.contentChildren[0].children[1];
+        compare(label.text, long);
+        // Guard: if the name ever stops being wider than the window, everything
+        // below would pass on its own emptiness.
+        verify(dialog.parent.width > 0);
+        verify(label.implicitWidth > dialog.parent.width);
+
+        verify(dialog.width <= dialog.parent.width);
+        verify(label.width <= dialog.availableWidth);
+        verify(label.lineCount > 1);
+    }
+
+    // The batch case can no longer widen the frame at all: however many names
+    // collide and however long they are, the body carries only their count. This
+    // is what the comma-run cost -- it grew with the batch it was describing.
+    function test_nameConflict_aBatchOfLongNamesDoesNotWidenTheFrame() {
         const uploads = makeUploads();
         const dialog = makeDialog(nameConflictComponent, {
                                       "uploads": uploads
@@ -560,18 +590,11 @@ TestCase {
         uploads.nameConflictRequiresConfirmation([long], [long, long, long], 0, "", "", 0, true);
 
         tryCompare(dialog, "opened", true);
-        const label = dialog.contentChildren[0];
-        // Guard: if the list ever stops being wider than the window, everything
-        // below would pass on its own emptiness.
         verify(dialog.parent.width > 0);
-        verify(label.implicitWidth > dialog.parent.width);
-
+        const link = dialog.contentChildren[0].children[2];
+        compare(link.text, "3 file(s)");
+        verify(link.implicitWidth < dialog.parent.width);
         verify(dialog.width <= dialog.parent.width);
-        verify(label.width <= dialog.availableWidth);
-        // Counted against the message's own hard breaks rather than against 1:
-        // this text already carries a "\n" ahead of the name list, so lineCount > 1
-        // holds even completely unwrapped.
-        verify(label.lineCount > label.text.split("\n").length);
     }
 
     function test_nameConflict_aSecondDropWaitsInsteadOfReplacingTheFirst() {
@@ -914,7 +937,7 @@ TestCase {
         // Recoverable, so the sentence rides on Continue's tooltip rather than
         // the body.
         verify(c.dialog.continueLine().indexOf("earlier versions") !== -1);
-        verify(c.dialog.buildMessage().indexOf("earlier versions") === -1);
+        verify(conflictText(c.dialog).indexOf("earlier versions") === -1);
     }
 
     function test_copyConflict_defaultIsRenameWhenVersioningIsOff() {
@@ -929,7 +952,7 @@ TestCase {
         tryCompare(buttonNamed(c.dialog, "Rename"), "highlighted", true);
         compare(buttonNamed(c.dialog, "Continue").highlighted, false);
         verify(buttonNamed(c.dialog, "Rename").activeFocus);
-        verify(c.dialog.buildMessage().indexOf("cannot be recovered") !== -1);
+        verify(conflictText(c.dialog).indexOf("cannot be recovered") !== -1);
     }
 
     // Folders never version, so the setting must not reach them.
@@ -964,7 +987,7 @@ TestCase {
         compare(buttonNamed(c.dialog, "Rename").highlighted, true);
         compare(buttonNamed(c.dialog, "Continue").highlighted, false);
         verify(buttonNamed(c.dialog, "Rename").activeFocus);
-        verify(c.dialog.buildMessage().indexOf("cannot be recovered") !== -1);
+        verify(conflictText(c.dialog).indexOf("cannot be recovered") !== -1);
     }
 
     function test_copyConflict_quotesTheSizeOnBothSidesOfTheQuestion() {
@@ -976,7 +999,7 @@ TestCase {
                                ], ["a.txt"], [], ["a - Copy.txt"], "2.0 KB", "9.0 MB", 42, false);
 
         tryCompare(c.dialog, "opened", true);
-        const text = c.dialog.buildMessage();
+        const text = conflictText(c.dialog);
         verify(text.indexOf("(2.0 KB)") !== -1);
         verify(text.indexOf("other 1 item(s) are copied either way (9.0 MB)") !== -1);
     }
@@ -992,7 +1015,7 @@ TestCase {
                                ], ["a.txt"], [], ["a (2).txt"], 42, false, 7, false);
 
         tryCompare(c.dialog, "opened", true);
-        const text = c.dialog.buildMessage();
+        const text = conflictText(c.dialog);
         verify(text.indexOf("KB") === -1);
         verify(text.indexOf("other 1 item(s) are moved either way.") !== -1);
     }
@@ -1007,7 +1030,7 @@ TestCase {
 
         tryCompare(c.dialog, "opened", true);
         verify(c.dialog.skipLine().indexOf("with everything inside them") !== -1);
-        verify(c.dialog.buildMessage().indexOf("with everything inside them") === -1);
+        verify(conflictText(c.dialog).indexOf("with everything inside them") === -1);
     }
 
     // The per-answer sentences moved onto the buttons they describe; what stays in
@@ -1021,7 +1044,7 @@ TestCase {
                                ], ["a.txt"], [], ["a - Copy.txt"], "", "", 42, false);
 
         tryCompare(c.dialog, "opened", true);
-        const body = c.dialog.buildMessage();
+        const body = conflictText(c.dialog);
         verify(c.dialog.renameLine().indexOf("a - Copy.txt") !== -1);
         verify(body.indexOf("\"Rename\"") === -1);
         verify(body.indexOf("\"Continue\"") === -1);
@@ -1029,6 +1052,68 @@ TestCase {
         verify(body.indexOf("a.txt") !== -1);
         // Files only, so Skip has nothing extra to explain.
         compare(c.dialog.skipLine(), "");
+    }
+
+    // A batch collapses to a count that opens the full list. The count has to be
+    // split the same three ways as the head sentence -- a body reading "2 file(s)"
+    // under a head that counted a file and a folder describes a different batch.
+    function test_copyConflict_namesCollapseToACountedLink_data() {
+        return [
+                    {
+                        tag: "one name reads inline",
+                        files: ["a.txt"],
+                        folders: [],
+                        text: "a.txt"
+                    },
+                    {
+                        tag: "files only",
+                        files: ["a.txt", "b.txt"],
+                        folders: [],
+                        text: "2 file(s)"
+                    },
+                    {
+                        tag: "folders only",
+                        files: [],
+                        folders: ["photos", "docs"],
+                        text: "2 folder(s)"
+                    },
+                    {
+                        tag: "both kinds",
+                        files: ["a.txt"],
+                        folders: ["photos"],
+                        text: "2 item(s)"
+                    }
+                ];
+    }
+
+    function test_copyConflict_namesCollapseToACountedLink(data) {
+        const c = makeCopyConflict(true);
+
+        c.mut.copyNameConflict([
+                                   {}
+                               ], data.files, data.folders, [], "", "", 42, false);
+
+        tryCompare(c.dialog, "opened", true);
+        compare(c.dialog.namesText(), data.text);
+    }
+
+    // The icon on the list is the only thing that says a name collided as a
+    // folder rather than a file, so the flag has to survive the two lists being
+    // concatenated -- in that order, since the head sentence counts files first.
+    function test_copyConflict_theListKeepsFoldersAndFilesApart() {
+        const c = makeCopyConflict(true);
+
+        c.mut.copyNameConflict([
+                                   {}
+                               ], ["a.txt"], ["photos"], [], "", "", 42, false);
+
+        tryCompare(c.dialog, "opened", true);
+        const entries = c.dialog.listEntries();
+        compare(entries.length, 2);
+        compare(entries[0].name, "a.txt");
+        compare(entries[0].isFolder, false);
+        compare(entries[1].name, "photos");
+        compare(entries[1].isFolder, true);
     }
 
     // Neither does a move: moveNode overwrites nothing, whatever the setting says.

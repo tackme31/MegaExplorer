@@ -80,6 +80,7 @@ Dialog {
     // is its unwrapped width -- so without a cap the frame grows to the longest
     // sentence below and, on a small window, pushes its own buttons off-screen.
     readonly property real maxWidth: Overlay.overlay.width - 48
+    readonly property real textWidthCap: root.maxWidth - root.leftPadding - root.rightPadding
     width: Math.min(implicitWidth, maxWidth)
 
     // Every button closes, so this is the one place the next question can start
@@ -95,12 +96,65 @@ Dialog {
     onContinueLosesDataChanged: if (root.visible)
                                     root.markDefaultAnswer()
 
-    Label {
-        // Capped against the overlay rather than root.availableWidth: reading the
-        // dialog's own width here closes a loop through its implicitHeight.
-        width: Math.min(implicitWidth, root.maxWidth - root.leftPadding - root.rightPadding)
-        wrapMode: Text.Wrap
-        text: root.buildMessage()
+    // Files first, then folders -- the order the head sentence counts them in,
+    // and the order the list dialog shows them in.
+    readonly property var conflictNames: root.conflictingFiles.concat(root.conflictingFolders)
+
+    Column {
+        spacing: Theme.spacing.sm
+
+        Label {
+            // Capped against the overlay rather than root.availableWidth: reading
+            // the dialog's own width here closes a loop through its implicitHeight.
+            width: Math.min(implicitWidth, root.textWidthCap)
+            wrapMode: Text.Wrap
+            text: root.headLine()
+        }
+
+        // A lone name is spelled out; a batch is a link, because the comma-run
+        // this replaced was truncated at five and so could neither be read nor
+        // checked against what was about to be replaced.
+        Label {
+            visible: root.conflictNames.length === 1
+            width: Math.min(implicitWidth, root.textWidthCap)
+            wrapMode: Text.Wrap
+            text: root.namesText()
+        }
+
+        Label {
+            visible: root.conflictNames.length > 1
+            text: root.namesText()
+            color: Theme.color.accent
+            font.underline: namesLinkHover.hovered
+
+            HoverHandler {
+                id: namesLinkHover
+                cursorShape: Qt.PointingHandCursor
+            }
+
+            TapHandler {
+                onTapped: nameListDialog.open()
+            }
+        }
+
+        Label {
+            width: Math.min(implicitWidth, root.textWidthCap)
+            wrapMode: Text.Wrap
+            visible: text !== ""
+            // The paragraph break the sentences used to carry themselves.
+            topPadding: Theme.spacing.md
+            text: root.detailText()
+        }
+    }
+
+    ConflictNameListDialog {
+        id: nameListDialog
+        entries: root.listEntries()
+
+        // Opening a second popup takes the focus off the answer markDefaultAnswer()
+        // put it on, and nothing puts it back -- without this, Enter after a look at
+        // the list answers nothing, or the wrong thing once focus wanders.
+        onClosed: root.markDefaultAnswer()
     }
 
     footer: DialogButtonBox {
@@ -205,33 +259,58 @@ Dialog {
         (root.continueLosesData ? renameButton : continueButton).forceActiveFocus();
     }
 
-    function buildMessage() {
+    function headLine() {
         const files = root.conflictingFiles.length;
         const folders = root.conflictingFolders.length;
         const size = root.conflictingSize;
-        let head;
         if (files > 0 && folders > 0)
-            head = size === "" ? qsTr(
+            return size === "" ? qsTr(
                                      "%1 file(s) and %2 folder(s) with the same name already exist in the destination:").arg(
                                      files).arg(folders) : qsTr(
                                      "%1 file(s) and %2 folder(s) with the same name already exist in the destination (%3):").arg(
                                      files).arg(folders).arg(size);
-        else if (files > 0)
-            head = size === "" ? qsTr(
+        if (files > 0)
+            return size === "" ? qsTr(
                                      "%1 file(s) with the same name already exist in the destination:").arg(
                                      files) : qsTr(
                                      "%1 file(s) with the same name already exist in the destination (%2):").arg(
                                      files).arg(size);
-        else
-            head = size === "" ? qsTr(
-                                     "%1 folder(s) with the same name already exist in the destination:").arg(
-                                     folders) : qsTr(
-                                     "%1 folder(s) with the same name already exist in the destination (%2):").arg(
-                                     folders).arg(size);
+        return size === "" ? qsTr(
+                                 "%1 folder(s) with the same name already exist in the destination:").arg(
+                                 folders) : qsTr(
+                                 "%1 folder(s) with the same name already exist in the destination (%2):").arg(
+                                 folders).arg(size);
+    }
 
-        const names = root.conflictingFiles.concat(root.conflictingFolders);
-        const lines = [head + "\n" + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "")];
+    // The name itself when there is one, otherwise the label of the link that
+    // opens the full list -- counted the same three ways as the head sentence,
+    // so the two never disagree about what collided.
+    function namesText() {
+        const files = root.conflictingFiles.length;
+        const folders = root.conflictingFolders.length;
+        if (files + folders === 1)
+            return root.conflictNames[0];
+        if (files > 0 && folders > 0)
+            return qsTr("%1 item(s)").arg(files + folders);
+        if (files > 0)
+            return qsTr("%1 file(s)").arg(files);
+        return qsTr("%1 folder(s)").arg(folders);
+    }
 
+    // Same order as conflictNames, but carrying which of the two lists each name
+    // came from -- the icon beside it is the only thing that says so.
+    function listEntries() {
+        return root.conflictingFiles.map(n => ({
+                                                   "name": n,
+                                                   "isFolder": false
+                                               })).concat(root.conflictingFolders.map(n => ({
+                                                                                                "name": n,
+                                                                                                "isFolder": true
+                                                                                            })));
+    }
+
+    function detailText() {
+        const lines = [];
         // What each answer does lives in that button's tooltip, except the one
         // wording that announces unrecoverable loss: a warning nobody sees unless
         // they hover is not a warning.
@@ -287,7 +366,7 @@ Dialog {
     // afterwards (SPEC_NAME_CONFLICT_COPY_MOVE 3-4). One example is enough for a
     // batch -- the rest follow the same suffix.
     function renameLine() {
-        const names = root.conflictingFiles.concat(root.conflictingFolders);
+        const names = root.conflictNames;
         if (root.renamedTo.length === 0)
             return qsTr("\"Rename\" adds them under names the destination does not use yet.");
         if (names.length === 1)
