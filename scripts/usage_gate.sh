@@ -23,8 +23,8 @@
 # Anything unreadable exits 1 as well -- see the parse-failure note below.
 set -u
 
-max_5h=${EVOLVE_USAGE_MAX_5H:-70}
-max_7d=${EVOLVE_USAGE_MAX_7D:-90}
+max_5h=${EVOLVE_USAGE_MAX_5H:-50}
+max_7d=${EVOLVE_USAGE_MAX_7D:-85}
 
 out=$(MSYS_NO_PATHCONV=1 timeout 60 claude -p "/usage" --model haiku \
     --output-format json 2>/dev/null) || {
