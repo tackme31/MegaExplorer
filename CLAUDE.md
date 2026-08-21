@@ -232,7 +232,9 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   branch. It reads the 5h/7d percentages out of `claude -p "/usage"`, which resolves locally at zero
   tokens — the only surface that reports them at all (hooks, OTel and the org-scoped Admin Usage API
   do not). **Unreadable output also exits 1**: unattended, a wrong skip costs one cycle, a wrong
-  start costs the window. Thresholds default to 5h 70% / 7d 90% (`EVOLVE_USAGE_MAX_{5H,7D}`).
+  start costs the window. Thresholds default to 5h 50% / 7d 85% (`EVOLVE_USAGE_MAX_{5H,7D}`), set
+  from 40 measured fires: one cycle eats ~30% of the 5h window and a heavy one 45–52%, so the
+  original 70% left too little room. 50% skips under 1 fire in 10; below 40% it is a fifth of them.
 - `megatool` — a CLI over `IMegaClient` for setting up fixtures and for `whoami`. It logs in from
   `MEGAEXPLORER_TEST_ACCOUNT` / `MEGAEXPLORER_TEST_PASSWORD`, **independently of the app's saved
   session**, so it always sees the test account. Details: `docs/MEGATOOL.md`.
