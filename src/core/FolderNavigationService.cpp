@@ -71,13 +71,13 @@ void FolderNavigationService::openFavourites(
 {
     if (mCurrent.kind == ViewKind::Favourites)
     {
-        mClient->listFavourites(order, "", std::move(onDone));
+        mClient->listFavourites(order, "", SearchFilter{}, std::move(onDone));
         return;
     }
 
     runAndCommit(
         [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
-            mClient->listFavourites(order, "", std::move(onFetched));
+            mClient->listFavourites(order, "", SearchFilter{}, std::move(onFetched));
         },
         [this] {
             mBackStack.push_back(mCurrent);
@@ -113,13 +113,13 @@ void FolderNavigationService::openRecents(
 {
     if (mCurrent.kind == ViewKind::Recents)
     {
-        mClient->listRecent(order, "", std::move(onDone));
+        mClient->listRecent(order, "", SearchFilter{}, std::move(onDone));
         return;
     }
 
     runAndCommit(
         [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
-            mClient->listRecent(order, "", std::move(onFetched));
+            mClient->listRecent(order, "", SearchFilter{}, std::move(onFetched));
         },
         [this] {
             mBackStack.push_back(mCurrent);
@@ -155,9 +155,9 @@ void FolderNavigationService::fetchListing(
     std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     if (location.kind == ViewKind::Favourites)
-        mClient->listFavourites(order, "", std::move(onDone));
+        mClient->listFavourites(order, "", SearchFilter{}, std::move(onDone));
     else if (location.kind == ViewKind::Recents)
-        mClient->listRecent(order, "", std::move(onDone));
+        mClient->listRecent(order, "", SearchFilter{}, std::move(onDone));
     else if (location.kind == ViewKind::Rubbish && location.isRoot)
         mClient->getRubbishChildren(order, std::move(onDone));
     else if (location.isRoot)
@@ -187,17 +187,19 @@ void FolderNavigationService::listChildrenOf(
 void FolderNavigationService::listFavourites(
     SortOrder order,
     const std::string& nameFilter,
+    const SearchFilter& filter,
     std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    mClient->listFavourites(order, nameFilter, std::move(onDone));
+    mClient->listFavourites(order, nameFilter, filter, std::move(onDone));
 }
 
 void FolderNavigationService::listRecent(
     SortOrder order,
     const std::string& nameFilter,
+    const SearchFilter& filter,
     std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    mClient->listRecent(order, nameFilter, std::move(onDone));
+    mClient->listRecent(order, nameFilter, filter, std::move(onDone));
 }
 
 bool FolderNavigationService::canGoBack() const

@@ -150,9 +150,10 @@ TEST_F(TabsControllerTest, AddFavouritesTabOpensInBackground)
 
 TEST_F(TabsControllerTest, AddFavouritesTabSwitchesTheNewTabAndNotTheCurrentOne)
 {
-    EXPECT_CALL(*client, listFavourites(_, _, _))
+    EXPECT_CALL(*client, listFavourites(_, _, _, _))
         .WillRepeatedly(Invoke([](SortOrder,
                                   const std::string&,
+                                  const SearchFilter&,
                                   std::function<void(Result<std::vector<FileEntry>>)> onDone) {
             onDone(Result<std::vector<FileEntry>>::ok({}));
         }));
@@ -175,9 +176,10 @@ TEST_F(TabsControllerTest, AddFavouritesTabSwitchesTheNewTabAndNotTheCurrentOne)
 // assertion about a cross-tab refresh lived on the emitting side.
 TEST_F(TabsControllerTest, AFavouriteToggledElsewhereRefreshesTheFavouritesTabWhenItIsLookedAt)
 {
-    EXPECT_CALL(*client, listFavourites(_, _, _))
+    EXPECT_CALL(*client, listFavourites(_, _, _, _))
         .WillRepeatedly(Invoke([this](SortOrder,
                                       const std::string&,
+                                      const SearchFilter&,
                                       std::function<void(Result<std::vector<FileEntry>>)> onDone) {
             ++favouriteFetches;
             onDone(Result<std::vector<FileEntry>>::ok({}));
@@ -209,9 +211,10 @@ TEST_F(TabsControllerTest, ARubbishMoveElsewhereAlsoLeavesTheFavouritesTabStale)
     // passes it by -- yet a node moved to the rubbish bin drops out of it. That
     // combination is guaranteed to happen: this app forbids deleting from the
     // favourites screen, so the deletion is always in some other tab.
-    EXPECT_CALL(*client, listFavourites(_, _, _))
+    EXPECT_CALL(*client, listFavourites(_, _, _, _))
         .WillRepeatedly(Invoke([this](SortOrder,
                                       const std::string&,
+                                      const SearchFilter&,
                                       std::function<void(Result<std::vector<FileEntry>>)> onDone) {
             ++favouriteFetches;
             onDone(Result<std::vector<FileEntry>>::ok({}));
@@ -237,9 +240,10 @@ TEST_F(TabsControllerTest, ARubbishMoveElsewhereAlsoLeavesTheFavouritesTabStale)
 
 TEST_F(TabsControllerTest, AFavouritesTabAlreadyOnScreenRefreshesWithoutATabSwitch)
 {
-    EXPECT_CALL(*client, listFavourites(_, _, _))
+    EXPECT_CALL(*client, listFavourites(_, _, _, _))
         .WillRepeatedly(Invoke([this](SortOrder,
                                       const std::string&,
+                                      const SearchFilter&,
                                       std::function<void(Result<std::vector<FileEntry>>)> onDone) {
             ++favouriteFetches;
             onDone(Result<std::vector<FileEntry>>::ok({}));
@@ -501,9 +505,10 @@ TEST_F(TabsControllerTest, DuplicatingBeforeTheActiveTabStillLeavesItAddressable
 
 TEST_F(TabsControllerTest, DuplicateTabCopiesTheScreenAndNotJustTheFolder)
 {
-    EXPECT_CALL(*client, listFavourites(_, _, _))
+    EXPECT_CALL(*client, listFavourites(_, _, _, _))
         .WillRepeatedly(Invoke([](SortOrder,
                                   const std::string&,
+                                  const SearchFilter&,
                                   std::function<void(Result<std::vector<FileEntry>>)> onDone) {
             onDone(Result<std::vector<FileEntry>>::ok({}));
         }));

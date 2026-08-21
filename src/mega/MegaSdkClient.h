@@ -78,10 +78,12 @@ public:
 
     void listFavourites(SortOrder order,
                         const std::string& nameFilter,
+                        const SearchFilter& filter,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
     void listRecent(SortOrder order,
                     const std::string& nameFilter,
+                    const SearchFilter& filter,
                     std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
     void getRubbishChildren(SortOrder order,

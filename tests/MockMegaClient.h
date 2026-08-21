@@ -51,12 +51,14 @@ public:
                 listFavourites,
                 (SortOrder,
                  const std::string&,
+                 const SearchFilter&,
                  std::function<void(Result<std::vector<FileEntry>>)>),
                 (override));
     MOCK_METHOD(void,
                 listRecent,
                 (SortOrder,
                  const std::string&,
+                 const SearchFilter&,
                  std::function<void(Result<std::vector<FileEntry>>)>),
                 (override));
     MOCK_METHOD(void,

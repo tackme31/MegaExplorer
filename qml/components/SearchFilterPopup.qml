@@ -153,6 +153,10 @@ Popup {
 
             Layout.fillWidth: true
             Layout.minimumWidth: 200
+            // The recents listing is files-only by definition, so IMegaClient::listRecent
+            // ignores this facet -- greyed out rather than left offering a choice with no
+            // effect, the same bargain the category picker below makes.
+            enabled: root.navController?.viewKind !== ViewKind.Recents
             // Index is the enum value: the model is listed in the enum's own order,
             // which SearchFilterEnums.h static_asserts against core's.
             model: [qsTr("Any"), qsTr("Files"), qsTr("Folders")]
@@ -177,8 +181,10 @@ Popup {
             Layout.fillWidth: true
             Layout.minimumWidth: 200
             // Greyed out rather than hidden, so "folders" visibly costs the category
-            // instead of the row disappearing under the user's cursor.
-            enabled: typeBox.currentIndex !== SearchNodeType.Folders
+            // instead of the row disappearing under the user's cursor. Not while the
+            // type itself is disabled: that value is then ignored C++-side and cannot be
+            // changed, so reading it here would grey both pickers out with no way back.
+            enabled: !typeBox.enabled || typeBox.currentIndex !== SearchNodeType.Folders
             model: [qsTr("Any"), qsTr("Images"), qsTr("Audio"), qsTr("Video"), qsTr("Documents"),
                 qsTr("PDFs"), qsTr("Presentations"), qsTr("Spreadsheets"), qsTr("Archives"), qsTr(
                     "Programs"), qsTr("Other")]
@@ -204,6 +210,9 @@ Popup {
         CheckBox {
             id: favouriteCheck
 
+            // Every row of the favourites listing is already a favourite, so this
+            // narrows nothing there.
+            enabled: root.navController?.viewKind !== ViewKind.Favourites
             text: qsTr("Favourites only")
         }
 

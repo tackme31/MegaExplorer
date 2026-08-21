@@ -524,8 +524,8 @@ TEST(FolderNavigationServiceTest, OpenFavouritesPushesTheCurrentLocationAndSwitc
     auto mockClient = std::make_shared<MockMegaClient>();
     const std::vector<FileEntry> favourites{{"kept.txt", 5, 1, false, 0, false, true}};
 
-    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_))
-        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(favourites)));
+    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(favourites)));
 
     FolderNavigationService service(mockClient);
     Captured captured;
@@ -546,9 +546,9 @@ TEST(FolderNavigationServiceTest, OpenFavouritesFailureLeavesTheLocationUnchange
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
 
-    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_))
+    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_, ::testing::_))
         .WillOnce(
-            ::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::fail("not logged in", 3)));
+            ::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::fail("not logged in", 3)));
 
     FolderNavigationService service(mockClient);
     Captured captured;
@@ -571,10 +571,10 @@ TEST(FolderNavigationServiceTest, OpenFavouritesWhileAlreadyThereRefetchesWithou
     auto mockClient = std::make_shared<MockMegaClient>();
     const std::vector<FileEntry> favourites{{"kept.txt", 5, 1, false, 0, false, true}};
 
-    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_))
+    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_, ::testing::_))
         .Times(2)
         .WillRepeatedly(
-            ::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(favourites)));
+            ::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(favourites)));
     EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<1>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
@@ -757,10 +757,10 @@ TEST(FolderNavigationServiceTest, GoBackReturnsToTheFavouritesListingAFolderWasO
             ::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(photoChildren)));
     EXPECT_CALL(*mockClient, getChildren(2, ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(tripChildren)));
-    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_))
+    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_, ::testing::_))
         .Times(2)
         .WillRepeatedly(
-            ::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(favourites)));
+            ::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(favourites)));
 
     FolderNavigationService service(mockClient);
     Captured c1, c2, c3;
@@ -799,10 +799,10 @@ TEST(FolderNavigationServiceTest, RefreshCurrentInFavouritesReQueriesTheFavourit
     auto mockClient = std::make_shared<MockMegaClient>();
     const std::vector<FileEntry> favourites{{"kept.txt", 5, 1, false, 0, false, true}};
 
-    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_))
+    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_, ::testing::_))
         .Times(2)
         .WillRepeatedly(
-            ::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(favourites)));
+            ::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(favourites)));
     EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_)).Times(0);
     EXPECT_CALL(*mockClient, getChildren(::testing::_, ::testing::_, ::testing::_)).Times(0);
 
@@ -827,8 +827,8 @@ TEST(FolderNavigationServiceTest, ResolveCurrentPathInFavouritesSynthesizesOneNa
     auto mockClient = std::make_shared<MockMegaClient>();
     const std::vector<FileEntry> favourites{{"kept.txt", 5, 1, false, 0, false, true}};
 
-    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_))
-        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(favourites)));
+    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(favourites)));
     // There is no ancestor chain to ask the SDK for.
     EXPECT_CALL(*mockClient, getPath(::testing::_, ::testing::_, ::testing::_)).Times(0);
 
@@ -855,8 +855,8 @@ TEST(FolderNavigationServiceTest, ResetToRootDropsTheFavouritesLocation)
     auto mockClient = std::make_shared<MockMegaClient>();
     const std::vector<FileEntry> favourites{{"kept.txt", 5, 1, false, 0, false, true}};
 
-    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_))
-        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(favourites)));
+    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(favourites)));
 
     FolderNavigationService service(mockClient);
     Captured opened;
@@ -879,14 +879,14 @@ TEST(FolderNavigationServiceTest, ListFavouritesForwardsTheNameFilterAndTouchesN
     auto mockClient = std::make_shared<MockMegaClient>();
     const std::vector<FileEntry> matches{{"kept.txt", 5, 1, false, 0, false, true}};
 
-    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "kept", ::testing::_))
-        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(matches)));
+    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "kept", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(matches)));
 
     FolderNavigationService service(mockClient);
     Captured captured;
 
     // Act
-    service.listFavourites(SortOrder{}, "kept", onDoneInto(captured));
+    service.listFavourites(SortOrder{}, "kept", SearchFilter{}, onDoneInto(captured));
 
     // Assert
     ASSERT_TRUE(captured.doneCalled);
@@ -904,8 +904,8 @@ TEST(FolderNavigationServiceTest, OpenRecentsPushesTheCurrentLocationAndSwitches
     auto mockClient = std::make_shared<MockMegaClient>();
     const std::vector<FileEntry> recent{{"added.txt", 5, 1, false, 0, false, false}};
 
-    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_))
-        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(recent)));
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(recent)));
 
     FolderNavigationService service(mockClient);
     Captured captured;
@@ -927,9 +927,9 @@ TEST(FolderNavigationServiceTest, OpenRecentsWhileAlreadyThereRefetchesWithoutPu
     // row from the screen it opens must not stack a repeat for Back to walk down.
     auto mockClient = std::make_shared<MockMegaClient>();
 
-    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_))
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_, ::testing::_))
         .Times(2)
-        .WillRepeatedly(::testing::InvokeArgument<2>(
+        .WillRepeatedly(::testing::InvokeArgument<3>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
     EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<1>(
@@ -961,9 +961,9 @@ TEST(FolderNavigationServiceTest, GoBackReturnsToTheRecentsListingAFolderWasOpen
     // recents listing has no handle to go back to.
     auto mockClient = std::make_shared<MockMegaClient>();
 
-    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_))
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_, ::testing::_))
         .Times(2)
-        .WillRepeatedly(::testing::InvokeArgument<2>(
+        .WillRepeatedly(::testing::InvokeArgument<3>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
     EXPECT_CALL(*mockClient, getChildren(42u, ::testing::_, ::testing::_))
         .WillOnce(::testing::InvokeArgument<2>(
@@ -988,9 +988,9 @@ TEST(FolderNavigationServiceTest, RefreshCurrentInRecentsReQueriesTheRecents)
 {
     auto mockClient = std::make_shared<MockMegaClient>();
 
-    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_))
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_, ::testing::_))
         .Times(2)
-        .WillRepeatedly(::testing::InvokeArgument<2>(
+        .WillRepeatedly(::testing::InvokeArgument<3>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
     EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_)).Times(0);
 
@@ -1012,8 +1012,8 @@ TEST(FolderNavigationServiceTest, ResolveCurrentPathInRecentsSynthesizesOneNamel
 {
     auto mockClient = std::make_shared<MockMegaClient>();
 
-    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_))
-        .WillOnce(::testing::InvokeArgument<2>(
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
     EXPECT_CALL(*mockClient, getPath(::testing::_, ::testing::_, ::testing::_)).Times(0);
 
@@ -1036,15 +1036,15 @@ TEST(FolderNavigationServiceTest, ListRecentForwardsTheNameFilterAndTouchesNoSta
 {
     auto mockClient = std::make_shared<MockMegaClient>();
 
-    EXPECT_CALL(*mockClient, listRecent(::testing::_, "added", ::testing::_))
-        .WillOnce(::testing::InvokeArgument<2>(
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "added", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
 
     FolderNavigationService service(mockClient);
     Captured captured;
 
     // Act
-    service.listRecent(SortOrder{}, "added", onDoneInto(captured));
+    service.listRecent(SortOrder{}, "added", SearchFilter{}, onDoneInto(captured));
 
     // Assert
     ASSERT_TRUE(captured.doneResult.success);

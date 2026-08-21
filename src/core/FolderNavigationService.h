@@ -77,11 +77,13 @@ public:
     // listing instead of searching a folder (FAVOURITES_VIEW_SPEC.md 3.5).
     void listFavourites(SortOrder order,
                         const std::string& nameFilter,
+                        const SearchFilter& filter,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     // listFavourites' counterpart for the recently-added listing.
     void listRecent(SortOrder order,
                     const std::string& nameFilter,
+                    const SearchFilter& filter,
                     std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     bool canGoBack() const;
