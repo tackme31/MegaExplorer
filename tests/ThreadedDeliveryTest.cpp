@@ -159,10 +159,11 @@ TEST(ThreadedDeliveryTest, DownloadControllerEmitsOnTheGuiThreadWhenCompletionAr
     // Deleting either invokeOnGuiThread in DownloadController.cpp fails this.
     auto client = std::make_shared<MockMegaClient>();
     DownloadDoneCallback onDone;
-    EXPECT_CALL(*client, download(_, _, _, _))
+    EXPECT_CALL(*client, download(_, _, _, _, _))
         .Times(AnyNumber())
         .WillRepeatedly(Invoke([&onDone](std::uint64_t,
                                          const std::string&,
+                                         std::uint64_t,
                                          std::function<void(std::uint64_t, std::uint64_t)>,
                                          DownloadDoneCallback done) {
             onDone = std::move(done);
@@ -219,11 +220,12 @@ TEST(ThreadedDeliveryTest, ClearingAnObserverStopsOnlyTheDeliveriesThatStartAfte
     // against freed memory and so cannot be asserted on at all.
     auto client = std::make_shared<MockMegaClient>();
     std::function<void(std::uint64_t, std::uint64_t)> onProgress;
-    EXPECT_CALL(*client, download(_, _, _, _))
+    EXPECT_CALL(*client, download(_, _, _, _, _))
         .Times(AnyNumber())
         .WillRepeatedly(
             Invoke([&onProgress](std::uint64_t,
                                  const std::string&,
+                                 std::uint64_t,
                                  std::function<void(std::uint64_t, std::uint64_t)> progress,
                                  DownloadDoneCallback) {
                 onProgress = std::move(progress);

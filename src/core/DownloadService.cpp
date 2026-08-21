@@ -2,6 +2,7 @@
 
 #include "MegaErrorCodes.h"
 
+#include <algorithm>
 #include <array>
 
 namespace
@@ -115,19 +116,41 @@ std::uint64_t DownloadService::enqueue(std::uint64_t handle,
     return id;
 }
 
+DownloadJob* DownloadService::activeJob(std::uint64_t jobId)
+{
+    for (DownloadJob& job : mActive)
+    {
+        if (job.id == jobId)
+            return &job;
+    }
+    return nullptr;
+}
+
+void DownloadService::dropActive(std::uint64_t jobId)
+{
+    mActive.erase(std::remove_if(mActive.begin(),
+                                 mActive.end(),
+                                 [jobId](const DownloadJob& job) {
+                                     return job.id == jobId;
+                                 }),
+                  mActive.end());
+    mCancelRequested.erase(jobId);
+}
+
 std::optional<DownloadJob> DownloadService::currentJob() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    return mActive;
+    if (mActive.empty())
+        return std::nullopt;
+    return mActive.front();
 }
 
 std::vector<DownloadJob> DownloadService::jobs() const
 {
     std::lock_guard<std::mutex> lock(mMutex);
     std::vector<DownloadJob> all;
-    all.reserve(mPending.size() + (mActive ? 1 : 0));
-    if (mActive)
-        all.push_back(*mActive);
+    all.reserve(mPending.size() + mActive.size());
+    all.insert(all.end(), mActive.begin(), mActive.end());
     all.insert(all.end(), mPending.begin(), mPending.end());
     return all;
 }
@@ -135,20 +158,23 @@ std::vector<DownloadJob> DownloadService::jobs() const
 void DownloadService::cancelAll()
 {
     std::deque<DownloadJob> dropped;
+    std::vector<std::uint64_t> activeIds;
     std::function<void(DownloadJob)> onJobFinished;
-    bool hadActive = false;
     {
         std::lock_guard<std::mutex> lock(mMutex);
-        ++mCancelGeneration;
         dropped.swap(mPending);
-        hadActive = mActive.has_value();
+        for (const DownloadJob& job : mActive)
+        {
+            activeIds.push_back(job.id);
+            mCancelRequested.insert(job.id);
+        }
         onJobFinished = mOnJobFinished;
     }
 
-    // Order matters: the queue is already empty by the time the abort can come back,
-    // so the active job's onDone cannot promote anything behind it.
-    if (hadActive)
-        mClient->cancelDownload();
+    // Order matters: the queue is already empty by the time the aborts can come back,
+    // so no active job's onDone can promote anything behind it.
+    for (std::uint64_t id : activeIds)
+        mClient->cancelDownload(id);
 
     if (!onJobFinished)
         return;
@@ -163,31 +189,35 @@ void DownloadService::cancel(std::uint64_t jobId)
 {
     std::optional<DownloadJob> dropped;
     std::function<void(DownloadJob)> onJobFinished;
+    bool wasActive = false;
     {
         std::lock_guard<std::mutex> lock(mMutex);
         onJobFinished = mOnJobFinished;
-        if (mActive && mActive->id == jobId)
+        if (activeJob(jobId))
         {
-            // Only an active-job cancel bumps the generation: it is what
-            // startNextIfIdle()'s re-assert reads, so bumping it for a pending job
-            // would abort whichever transfer happened to be starting just then.
-            ++mCancelGeneration;
-            // Held across the client call, unlike cancelAll(): the rest of the queue
-            // is still here, so releasing first would let this job finish and promote
-            // the next one straight into the abort. Safe only because cancelDownload()
-            // just sets a shared flag and re-enters nothing -- don't hoist a call that
-            // does more out here.
-            mClient->cancelDownload();
-            return;
+            mCancelRequested.insert(jobId);
+            wasActive = true;
         }
-        for (auto it = mPending.begin(); it != mPending.end(); ++it)
+        else
         {
-            if (it->id != jobId)
-                continue;
-            dropped = std::move(*it);
-            mPending.erase(it);
-            break;
+            for (auto it = mPending.begin(); it != mPending.end(); ++it)
+            {
+                if (it->id != jobId)
+                    continue;
+                dropped = std::move(*it);
+                mPending.erase(it);
+                break;
+            }
         }
+    }
+
+    // Outside the lock, unlike the whole-direction cancel this replaced: the abort
+    // names one transfer, so a job finishing in the meantime cannot let its successor
+    // be promoted into it.
+    if (wasActive)
+    {
+        mClient->cancelDownload(jobId);
+        return;
     }
 
     if (!dropped || !onJobFinished)
@@ -199,8 +229,11 @@ void DownloadService::cancel(std::uint64_t jobId)
 bool DownloadService::hasJobForHandle(std::uint64_t handle) const
 {
     std::lock_guard<std::mutex> lock(mMutex);
-    if (mActive && mActive->handle == handle)
-        return true;
+    for (const DownloadJob& job : mActive)
+    {
+        if (job.handle == handle)
+            return true;
+    }
     for (const DownloadJob& job : mPending)
     {
         if (job.handle == handle)
@@ -226,10 +259,7 @@ void DownloadService::startNextIfIdle()
     {
         std::lock_guard<std::mutex> lock(mMutex);
         if (mAdvancing)
-        {
-            mAdvanceRequested = true; // whoever is in the loop below picks it up
-            return;
-        }
+            return; // the loop below re-reads the queue every turn and will see this
         mAdvancing = true;
     }
 
@@ -238,27 +268,26 @@ void DownloadService::startNextIfIdle()
         std::uint64_t id;
         std::uint64_t handle;
         std::string destinationPath;
-        std::uint64_t generationAtStart;
         {
             std::lock_guard<std::mutex> lock(mMutex);
-            mAdvanceRequested = false;
-            if (mActive || mPending.empty())
+            if (mActive.size() >= kMaxConcurrent || mPending.empty())
             {
                 mAdvancing = false;
                 return;
             }
-            mActive = std::move(mPending.front());
+            DownloadJob job = std::move(mPending.front());
             mPending.pop_front();
-            mActive->state = DownloadState::Active;
-            id = mActive->id;
-            handle = mActive->handle;
-            destinationPath = mActive->destinationPath;
-            generationAtStart = mCancelGeneration;
+            job.state = DownloadState::Active;
+            id = job.id;
+            handle = job.handle;
+            destinationPath = job.destinationPath;
+            mActive.push_back(std::move(job));
         }
 
         mClient->download(
             handle,
             destinationPath,
+            id,
             [this, id](std::uint64_t transferred, std::uint64_t total) {
                 std::function<void(DownloadJob)> onProgress;
                 DownloadJob snapshot;
@@ -267,11 +296,12 @@ void DownloadService::startNextIfIdle()
                     // Not ours: this job already finished (or was cancelled) and
                     // the SDK is still delivering. Writing here would land on
                     // whichever job was promoted in its place.
-                    if (!mActive || mActive->id != id)
+                    DownloadJob* job = activeJob(id);
+                    if (!job)
                         return;
-                    mActive->transferredBytes = transferred;
-                    mActive->totalBytes = total;
-                    snapshot = *mActive;
+                    job->transferredBytes = transferred;
+                    job->totalBytes = total;
+                    snapshot = *job;
                     onProgress = mOnProgress;
                 }
                 if (onProgress)
@@ -282,57 +312,49 @@ void DownloadService::startNextIfIdle()
                 DownloadJob snapshot;
                 {
                     std::lock_guard<std::mutex> lock(mMutex);
-                    if (!mActive || mActive->id != id)
+                    DownloadJob* job = activeJob(id);
+                    if (!job)
                         return; // same as onProgress above
                     // kEIncomplete is the SDK's own marker for an aborted transfer
                     // (it sets STATE_CANCELLED on exactly that code), so it is the
-                    // one failure that is not an error to report.
-                    mActive->state = result.success ? DownloadState::Completed
-                                     : result.errorCode == MegaErrorCode::kEIncomplete
-                                         ? DownloadState::Cancelled
-                                         : DownloadState::Failed;
+                    // one failure that is not an error to report. A cancel this
+                    // service asked for reads the same way even when the SDK never
+                    // saw it: the transfer can fail for its own reason before the
+                    // abort reaches it, and reporting that turns the user's own stop
+                    // into an error toast.
+                    job->state = result.success ? DownloadState::Completed
+                                 : (result.errorCode == MegaErrorCode::kEIncomplete ||
+                                    mCancelRequested.count(id) != 0)
+                                     ? DownloadState::Cancelled
+                                     : DownloadState::Failed;
                     if (result.success)
                     {
-                        mActive->resolvedLocalPath = result.value().localPath;
+                        job->resolvedLocalPath = result.value().localPath;
                     }
                     else
                     {
-                        mActive->errorMessage = result.errorMessage;
-                        mActive->errorCode = result.errorCode;
+                        job->errorMessage = result.errorMessage;
+                        job->errorCode = result.errorCode;
                     }
-                    snapshot = *mActive;
+                    snapshot = *job;
                     onJobFinished = mOnJobFinished;
-                    mActive.reset();
+                    dropActive(id);
                 }
                 if (onJobFinished)
                     onJobFinished(snapshot);
                 startNextIfIdle(); // auto-advance; mMutex isn't held here
             });
 
-        // A synchronous failure has already run the whole onDone above by now,
-        // and its startNextIfIdle() only set the flag -- so keep looping here
-        // instead of letting it recurse. A genuinely in-flight transfer leaves
-        // the flag clear and this call ends. Both branches must share one lock:
-        // splitting them lets a completion land in between, set the flag, and
-        // find nobody left to act on it.
         bool cancelRaced = false;
-        bool finished = false;
         {
             std::lock_guard<std::mutex> lock(mMutex);
-            // A cancelAll() during the download() call above could only reach the
-            // token of whatever ran before it -- this job's is created inside that
-            // call. Re-assert the cancel now that it exists, or the user's click
-            // silently does nothing and the transfer completes.
-            cancelRaced = mActive.has_value() && mCancelGeneration != generationAtStart;
-            if (!mAdvanceRequested)
-            {
-                mAdvancing = false;
-                finished = true;
-            }
+            // A cancel arriving during the download() call above named a transfer the
+            // client had not created yet, so it did nothing. Re-assert it now that it
+            // exists, or the user's click silently does nothing and the transfer
+            // completes.
+            cancelRaced = activeJob(id) != nullptr && mCancelRequested.count(id) != 0;
         }
         if (cancelRaced)
-            mClient->cancelDownload();
-        if (finished)
-            return;
+            mClient->cancelDownload(id);
     }
 }

@@ -10,9 +10,10 @@
 #include <vector>
 
 // Fetches server-side thumbnails, adding an in-memory handle -> path cache and a
-// bounded-concurrency queue: DownloadService serializes because downloads are
-// heavy, but thumbnails are small and a scrolling grid triggers dozens at once, so
-// up to maxConcurrent run and the rest wait FIFO.
+// bounded-concurrency queue: thumbnails are small and a scrolling grid triggers
+// dozens at once, so up to maxConcurrent run and the rest wait FIFO. The limit is a
+// constructor argument here, unlike DownloadService's fixed one, because a caller
+// tunes it per grid.
 //
 // request() dedupes by handle -- a second request for a cached, active or queued
 // handle attaches its callback to the existing entry. Failures are not cached, so a

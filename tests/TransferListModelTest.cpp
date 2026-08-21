@@ -1,6 +1,7 @@
 #include "qml/TransferListModel.h"
 
 #include "core/DownloadService.h"
+#include "core/MegaErrorCodes.h"
 #include "core/UploadScanService.h"
 #include "core/UploadService.h"
 #include "MockMegaClient.h"
@@ -51,20 +52,23 @@ protected:
     void SetUp() override
     {
         client = std::make_shared<MockMegaClient>();
-        EXPECT_CALL(*client, download(_, _, _, _))
+        EXPECT_CALL(*client, download(_, _, _, _, _))
             .Times(AnyNumber())
             .WillRepeatedly(Invoke([this](std::uint64_t,
                                           const std::string&,
+                                          std::uint64_t,
                                           ProgressCallback progress,
                                           DownloadDone done) {
                 downloadProgress = std::move(progress);
-                downloadDone = std::move(done);
+                downloadDone = done;
+                downloadDones.push_back(std::move(done));
             }));
-        EXPECT_CALL(*client, upload(_, _, _, _, _))
+        EXPECT_CALL(*client, upload(_, _, _, _, _, _))
             .Times(AnyNumber())
             .WillRepeatedly(Invoke([this](const std::string&,
                                           std::uint64_t,
                                           bool,
+                                          std::uint64_t,
                                           ProgressCallback progress,
                                           UploadDone done) {
                 uploadProgress = std::move(progress);
@@ -79,8 +83,8 @@ protected:
         EXPECT_CALL(*client, findChildFolders(_, _, _))
             .Times(AnyNumber())
             .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({})));
-        EXPECT_CALL(*client, cancelDownload()).Times(AnyNumber());
-        EXPECT_CALL(*client, cancelUpload()).Times(AnyNumber());
+        EXPECT_CALL(*client, cancelDownload(_)).Times(AnyNumber());
+        EXPECT_CALL(*client, cancelUpload(_)).Times(AnyNumber());
 
         downloadService = std::make_shared<DownloadService>(client);
         uploadService = std::make_shared<UploadService>(client);
@@ -123,7 +127,8 @@ protected:
 
     QTemporaryDir tempDir;
     ProgressCallback downloadProgress;
-    DownloadDone downloadDone;
+    DownloadDone downloadDone;               // the most recently started transfer's
+    std::vector<DownloadDone> downloadDones; // all of them, in start order
     ProgressCallback uploadProgress;
     UploadDone uploadDone;
     int countChanges = 0;
@@ -144,9 +149,9 @@ TEST_F(TransferListModelTest, EnqueuedDownloadsAppearImmediately)
     EXPECT_EQ(role(0, TransferListModel::DirectionRole).toInt(), TransferDirectionEnum::Download);
     EXPECT_EQ(role(0, TransferListModel::NameRole).toString(), QStringLiteral("a.txt"));
     EXPECT_EQ(role(0, TransferListModel::StateRole).toInt(), TransferStateEnum::Active);
-    // Nothing has started it: the service runs one transfer at a time.
+    // Both are running: two is under the service's concurrency limit.
     EXPECT_EQ(role(1, TransferListModel::NameRole).toString(), QStringLiteral("b.txt"));
-    EXPECT_EQ(role(1, TransferListModel::StateRole).toInt(), TransferStateEnum::Queued);
+    EXPECT_EQ(role(1, TransferListModel::StateRole).toInt(), TransferStateEnum::Active);
     EXPECT_EQ(countChanges, 2);
 }
 
@@ -194,11 +199,14 @@ TEST_F(TransferListModelTest, CancelledDownloadsKeepTheirRows)
     downloads->downloadFile(7, "a.txt", 100);
     downloads->downloadFile(8, "b.txt", 200);
     downloads->cancelDownloads();
+    // Both are running, so neither settles until the SDK acknowledges its abort.
+    ASSERT_EQ(downloadDones.size(), 2u);
+    downloadDones[1](
+        Result<DownloadOutcome>::fail("Transfer cancelled", MegaErrorCode::kEIncomplete));
     flush();
 
     ASSERT_EQ(model->rowCount(), 2);
-    // Only the queued one is settled synchronously; the active transfer stays
-    // Active until the SDK says it stopped.
+    EXPECT_EQ(role(0, TransferListModel::StateRole).toInt(), TransferStateEnum::Active);
     EXPECT_EQ(role(1, TransferListModel::StateRole).toInt(), TransferStateEnum::Cancelled);
 }
 
@@ -305,8 +313,10 @@ TEST_F(TransferListModelTest, CancelledAndFailedRowsSettleTheRun)
     downloads->downloadFile(7, "a.txt", 100);
     downloads->downloadFile(8, "b.txt", 200);
     downloads->cancelDownloads();
-    DownloadDone done = downloadDone;
-    done(Result<DownloadOutcome>::fail("cancelled", 2));
+    ASSERT_EQ(downloadDones.size(), 2u);
+    downloadDones[0](
+        Result<DownloadOutcome>::fail("Transfer cancelled", MegaErrorCode::kEIncomplete));
+    downloadDones[1](Result<DownloadOutcome>::fail("network error", 2));
     flush();
 
     EXPECT_EQ(model->runTotal(), 2);
@@ -328,18 +338,21 @@ TEST_F(TransferListModelTest, RoleNamesAreTheOnesQmlBindsTo)
 
 TEST_F(TransferListModelTest, TheJobIdRoleNamesTheOneRowACancelStops)
 {
-    downloads->downloadFile(7, "a.txt", 100);
-    downloads->downloadFile(8, "b.txt", 200);
-    downloads->downloadFile(9, "c.txt", 300);
+    // The cancelled row has to be a waiting one: a running row only settles once
+    // the SDK acknowledges its abort, so the slots are filled first.
+    const int waitingRow = static_cast<int>(DownloadService::kMaxConcurrent);
+    for (quint64 handle = 1; handle <= DownloadService::kMaxConcurrent + 2; ++handle)
+        downloads->downloadFile(handle, QStringLiteral("f%1.txt").arg(handle), 100);
 
-    // Act: the middle row, through the same call the flyout's row button makes
-    downloads->cancelJob(role(1, TransferListModel::JobIdRole).toULongLong());
+    // Act: through the same call the flyout's row button makes
+    downloads->cancelJob(role(waitingRow, TransferListModel::JobIdRole).toULongLong());
     flush();
 
-    ASSERT_EQ(model->rowCount(), 3);
+    ASSERT_EQ(model->rowCount(), waitingRow + 2);
     EXPECT_EQ(role(0, TransferListModel::StateRole).toInt(), TransferStateEnum::Active);
-    EXPECT_EQ(role(1, TransferListModel::StateRole).toInt(), TransferStateEnum::Cancelled);
-    EXPECT_EQ(role(2, TransferListModel::StateRole).toInt(), TransferStateEnum::Queued);
+    EXPECT_EQ(role(waitingRow, TransferListModel::StateRole).toInt(), TransferStateEnum::Cancelled);
+    EXPECT_EQ(role(waitingRow + 1, TransferListModel::StateRole).toInt(),
+              TransferStateEnum::Queued);
 }
 
 } // namespace

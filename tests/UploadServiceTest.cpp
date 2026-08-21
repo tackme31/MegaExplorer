@@ -25,6 +25,43 @@ std::shared_ptr<MockMegaClient> makeClient()
     return mockClient;
 }
 
+constexpr std::size_t kSlots = UploadService::kMaxConcurrent;
+
+using UploadDone = std::function<void(Result<UploadOutcome>)>;
+
+// Captures each transfer's onDone instead of invoking it, so the test decides when
+// a job finishes; expectedCalls also pins how many transfers may start at all.
+void expectCapturedUploads(MockMegaClient& client,
+                           std::vector<UploadDone>& onDone,
+                           std::size_t expectedCalls)
+{
+    EXPECT_CALL(
+        client,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(static_cast<int>(expectedCalls))
+        .WillRepeatedly(
+            ::testing::Invoke([&onDone](const std::string&,
+                                        std::uint64_t,
+                                        bool,
+                                        std::uint64_t,
+                                        std::function<void(std::uint64_t, std::uint64_t)>,
+                                        UploadDone done) {
+                onDone.push_back(std::move(done));
+            }));
+}
+
+// Local paths and names run 1..count, all into the same destination folder.
+std::vector<std::uint64_t> enqueueMany(UploadService& service, std::size_t count)
+{
+    std::vector<std::uint64_t> ids;
+    for (std::size_t i = 1; i <= count; ++i)
+    {
+        const std::string name = "f" + std::to_string(i) + ".txt";
+        ids.push_back(service.enqueue("/tmp/" + name, name, 7, false, 10));
+    }
+    return ids;
+}
+
 } // namespace
 
 TEST(UploadServiceTest, InitiallyHasNoCurrentJob)
@@ -43,9 +80,10 @@ TEST(UploadServiceTest, EnqueueSuccessNotifiesJobFinishedWithCompletedStateAndNo
 {
     // Arrange
     auto mockClient = makeClient();
-    EXPECT_CALL(*mockClient,
-                upload(std::string("C:\\tmp\\a.txt"), 7, false, ::testing::_, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{42})));
+    EXPECT_CALL(
+        *mockClient,
+        upload(std::string("C:\\tmp\\a.txt"), 7, false, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<5>(Result<UploadOutcome>::ok(UploadOutcome{42})));
 
     UploadService service(mockClient);
     bool finishedCalled = false;
@@ -70,9 +108,10 @@ TEST(UploadServiceTest, EnqueueFailurePropagatesErrorMessageCodeAndState)
 {
     // Arrange
     auto mockClient = makeClient();
-    EXPECT_CALL(*mockClient,
-                upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<4>(Result<UploadOutcome>::fail("network error", 2)));
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<5>(Result<UploadOutcome>::fail("network error", 2)));
 
     UploadService service(mockClient);
     UploadJob finished;
@@ -98,8 +137,9 @@ TEST(UploadServiceTest, EnqueueSeedsTotalBytesFromExpectedTotalBytesBeforeFirstP
     // Arrange: mocked upload() doesn't invoke either callback, so this observes
     // state exactly as enqueue() left it.
     auto mockClient = makeClient();
-    EXPECT_CALL(*mockClient,
-                upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_));
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_));
 
     UploadService service(mockClient);
 
@@ -116,11 +156,12 @@ TEST(UploadServiceTest, ProgressCallbackOverwritesSeededTotalBytes)
 {
     // Arrange
     auto mockClient = makeClient();
-    EXPECT_CALL(*mockClient,
-                upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::DoAll(
-            ::testing::InvokeArgument<3>(std::uint64_t{50}, std::uint64_t{200}),
-            ::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{1}))));
+            ::testing::InvokeArgument<4>(std::uint64_t{50}, std::uint64_t{200}),
+            ::testing::InvokeArgument<5>(Result<UploadOutcome>::ok(UploadOutcome{1}))));
 
     UploadService service(mockClient);
     std::vector<UploadJob> progressSnapshots;
@@ -137,45 +178,40 @@ TEST(UploadServiceTest, ProgressCallbackOverwritesSeededTotalBytes)
     EXPECT_EQ(progressSnapshots[0].totalBytes, 200u);
 }
 
-TEST(UploadServiceTest, SecondEnqueueWhileFirstActiveDoesNotStartImmediatelyThenAutoStarts)
+TEST(UploadServiceTest, EnqueuePastTheConcurrencyLimitWaitsThenAutoStarts)
 {
-    // Arrange: capture both calls' completion callbacks instead of invoking
-    // them, so we control exactly when each transfer "finishes".
+    // Arrange: capture every call's completion callback instead of invoking it, so
+    // we control exactly when each transfer "finishes".
     auto mockClient = makeClient();
-    std::function<void(Result<UploadOutcome>)> onDone1;
-    std::function<void(Result<UploadOutcome>)> onDone2;
-
-    EXPECT_CALL(*mockClient,
-                upload(std::string("a"), ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<4>(&onDone1));
-    EXPECT_CALL(*mockClient,
-                upload(std::string("b"), ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<4>(&onDone2));
+    std::vector<UploadDone> onDone;
+    expectCapturedUploads(*mockClient, onDone, kSlots + 1);
 
     UploadService service(mockClient);
 
-    // Act
-    std::uint64_t id1 = service.enqueue("a", "a.txt", 7, false, 0);
-    std::uint64_t id2 = service.enqueue("b", "b.txt", 7, false, 0);
+    // Act: fill every slot, then one more
+    const std::vector<std::uint64_t> ids = enqueueMany(service, kSlots + 1);
 
-    // Assert: only job 1 started
-    ASSERT_FALSE(static_cast<bool>(onDone2));
-    auto jobsBefore = service.jobs();
-    ASSERT_EQ(jobsBefore.size(), 2u);
-    EXPECT_EQ(jobsBefore[0].id, id1);
-    EXPECT_EQ(jobsBefore[0].state, UploadState::Active);
-    EXPECT_EQ(jobsBefore[1].id, id2);
-    EXPECT_EQ(jobsBefore[1].state, UploadState::Queued);
+    // Assert: the last one is queued and IMegaClient::upload was never called for it
+    ASSERT_EQ(onDone.size(), kSlots);
+    const std::vector<UploadJob> before = service.jobs();
+    ASSERT_EQ(before.size(), kSlots + 1);
+    for (std::size_t i = 0; i < kSlots; ++i)
+    {
+        EXPECT_EQ(before[i].id, ids[i]);
+        EXPECT_EQ(before[i].state, UploadState::Active);
+    }
+    EXPECT_EQ(before.back().id, ids.back());
+    EXPECT_EQ(before.back().state, UploadState::Queued);
 
-    // Act: finish job 1
-    onDone1(Result<UploadOutcome>::ok(UploadOutcome{1}));
+    // Act: free one slot
+    onDone.front()(Result<UploadOutcome>::ok(UploadOutcome{1}));
 
-    // Assert: job 2 auto-started
-    ASSERT_TRUE(static_cast<bool>(onDone2));
-    auto jobsAfter = service.jobs();
-    ASSERT_EQ(jobsAfter.size(), 1u);
-    EXPECT_EQ(jobsAfter[0].id, id2);
-    EXPECT_EQ(jobsAfter[0].state, UploadState::Active);
+    // Assert: the waiting job was promoted into it
+    ASSERT_EQ(onDone.size(), kSlots + 1);
+    const std::vector<UploadJob> after = service.jobs();
+    ASSERT_EQ(after.size(), kSlots);
+    EXPECT_EQ(after.back().id, ids.back());
+    EXPECT_EQ(after.back().state, UploadState::Active);
 }
 
 TEST(UploadServiceTest, DestinationGoneAtStartTimeFailsWithoutCallingUpload)
@@ -185,8 +221,9 @@ TEST(UploadServiceTest, DestinationGoneAtStartTimeFailsWithoutCallingUpload)
     auto mockClient = makeClient();
     EXPECT_CALL(*mockClient, checkUpload(7, false))
         .WillRepeatedly(::testing::Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
-    EXPECT_CALL(*mockClient,
-                upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .Times(0);
 
     UploadService service(mockClient);
@@ -211,8 +248,9 @@ TEST(UploadServiceTest, DestinationGoneDrainsEveryQueuedJobForThatDestination)
     auto mockClient = makeClient();
     EXPECT_CALL(*mockClient, checkUpload(7, false))
         .WillRepeatedly(::testing::Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
-    EXPECT_CALL(*mockClient,
-                upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .Times(0);
 
     UploadService service(mockClient);
@@ -233,9 +271,10 @@ TEST(UploadServiceTest, DestinationGoneDrainsEveryQueuedJobForThatDestination)
 TEST(UploadServiceTest, TheCreatedNodeHandleReachesTheFinishedNotification)
 {
     auto mockClient = makeClient();
-    EXPECT_CALL(*mockClient,
-                upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{99})));
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<5>(Result<UploadOutcome>::ok(UploadOutcome{99})));
     // An upload is one step: MEGA versions a same-named node itself, so nothing in
     // this service ever deletes anything.
     EXPECT_CALL(*mockClient, moveToRubbish(::testing::_, ::testing::_)).Times(0);
@@ -258,8 +297,9 @@ TEST(UploadServiceTest, RootDestinationSentinelIsPassedThrough)
     auto mockClient = makeClient();
     EXPECT_CALL(*mockClient, checkUpload(0, true))
         .WillRepeatedly(::testing::Return(Result<void>::ok()));
-    EXPECT_CALL(*mockClient, upload(::testing::_, 0, true, ::testing::_, ::testing::_))
-        .WillOnce(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{1})));
+    EXPECT_CALL(*mockClient,
+                upload(::testing::_, 0, true, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<5>(Result<UploadOutcome>::ok(UploadOutcome{1})));
 
     UploadService service(mockClient);
 
@@ -322,12 +362,14 @@ TEST(UploadServiceTest, SynchronousUploadFailuresDrainTheQueueWithoutRecursing)
     std::function<void(Result<UploadOutcome>)> firstOnDone;
     int depth = 0;
     int maxDepth = 0;
-    EXPECT_CALL(*mockClient,
-                upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<4>(&firstOnDone))
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<5>(&firstOnDone))
         .WillRepeatedly(::testing::Invoke([&](const std::string&,
                                               std::uint64_t,
                                               bool,
+                                              std::uint64_t,
                                               std::function<void(std::uint64_t, std::uint64_t)>,
                                               std::function<void(Result<UploadOutcome>)> onDone) {
             ++depth;
@@ -361,16 +403,18 @@ TEST(UploadServiceTest, CheckUploadRejectionMidQueueDoesNotStopTheJobBehindIt)
     // This one interleaves them, because the checkUpload fast-fail leaves the
     // loop through `continue` rather than through onDone -- the path that has
     // to clear mAdvancing itself. Getting that wrong strands job 3 as Queued
-    // with nobody left to start it, which no all-failing queue would show.
+    // with nobody left to start it, which no all-failing queue would show. The
+    // slots are filled first so both jobs are genuinely waiting, which is what
+    // puts them in one loop turn.
     auto mockClient = makeClient();
     EXPECT_CALL(*mockClient, checkUpload(8, false))
         .WillRepeatedly(::testing::Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
-    std::function<void(Result<UploadOutcome>)> onDone1;
+    std::vector<UploadDone> filler;
+    expectCapturedUploads(*mockClient, filler, kSlots);
     std::function<void(Result<UploadOutcome>)> onDone3;
-    EXPECT_CALL(*mockClient, upload(::testing::_, 7, false, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<4>(&onDone1));
-    EXPECT_CALL(*mockClient, upload(::testing::_, 9, false, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<4>(&onDone3));
+    EXPECT_CALL(*mockClient,
+                upload(::testing::_, 9, false, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<5>(&onDone3));
 
     UploadService service(mockClient);
     std::vector<UploadJob> finished;
@@ -378,18 +422,18 @@ TEST(UploadServiceTest, CheckUploadRejectionMidQueueDoesNotStopTheJobBehindIt)
         finished.push_back(std::move(job));
     });
 
-    std::uint64_t id1 = service.enqueue("a", "a.txt", 7, false, 0);
+    const std::vector<std::uint64_t> filled = enqueueMany(service, kSlots);
     std::uint64_t id2 = service.enqueue("b", "b.txt", 8, false, 0);
     std::uint64_t id3 = service.enqueue("c", "c.txt", 9, false, 0);
 
-    // Act: finishing job 1 hands the loop to job 2, which fast-fails, and the
-    // same loop turn must carry on to job 3
-    onDone1(Result<UploadOutcome>::ok(UploadOutcome{11}));
+    // Act: finishing one running job hands the loop to job 2, which fast-fails,
+    // and the same loop turn must carry on to job 3
+    filler[0](Result<UploadOutcome>::ok(UploadOutcome{11}));
 
     // Assert: job 3 started (upload() was called for it) with job 2 failed
     ASSERT_TRUE(static_cast<bool>(onDone3));
     ASSERT_EQ(finished.size(), 2u);
-    EXPECT_EQ(finished[0].id, id1);
+    EXPECT_EQ(finished[0].id, filled[0]);
     EXPECT_EQ(finished[0].state, UploadState::Completed);
     EXPECT_EQ(finished[1].id, id2);
     EXPECT_EQ(finished[1].state, UploadState::Failed);
@@ -401,6 +445,9 @@ TEST(UploadServiceTest, CheckUploadRejectionMidQueueDoesNotStopTheJobBehindIt)
     EXPECT_EQ(finished[2].state, UploadState::Completed);
     EXPECT_EQ(finished[2].nodeHandle, 33u);
     EXPECT_TRUE(finished[2].errorMessage.empty());
+
+    for (std::size_t i = 1; i < kSlots; ++i)
+        filler[i](Result<UploadOutcome>::ok(UploadOutcome{1}));
     EXPECT_EQ(service.queueLength(), 0u);
 }
 
@@ -413,10 +460,11 @@ TEST(UploadServiceTest, CompletionArrivingAfterTheQueueDrainedIsIgnored)
     auto mockClient = makeClient();
     std::function<void(std::uint64_t, std::uint64_t)> onProgress;
     std::function<void(Result<UploadOutcome>)> onDone;
-    EXPECT_CALL(*mockClient,
-                upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(
-            ::testing::DoAll(::testing::SaveArg<3>(&onProgress), ::testing::SaveArg<4>(&onDone)));
+            ::testing::DoAll(::testing::SaveArg<4>(&onProgress), ::testing::SaveArg<5>(&onDone)));
 
     UploadService service(mockClient);
     int finishedCount = 0;
@@ -452,12 +500,19 @@ TEST(UploadServiceTest, StaleProgressFromAFinishedJobDoesNotTouchTheNextJob)
     auto mockClient = makeClient();
     std::function<void(std::uint64_t, std::uint64_t)> onProgress1;
     std::function<void(Result<UploadOutcome>)> onDone1;
+    EXPECT_CALL(
+        *mockClient,
+        upload(
+            std::string("a"), ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(
+            ::testing::DoAll(::testing::SaveArg<4>(&onProgress1), ::testing::SaveArg<5>(&onDone1)));
     EXPECT_CALL(*mockClient,
-                upload(std::string("a"), ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::DoAll(::testing::SaveArg<3>(&onProgress1),
-                                   ::testing::SaveArg<4>(&onDone1)));
-    EXPECT_CALL(*mockClient,
-                upload(std::string("b"), ::testing::_, ::testing::_, ::testing::_, ::testing::_));
+                upload(std::string("b"),
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_));
 
     UploadService service(mockClient);
     std::vector<UploadJob> progressSnapshots;
@@ -487,11 +542,18 @@ TEST(UploadServiceTest, StaleCompletionFromAFinishedJobDoesNotFinishTheNextJob)
     // drop it while its transfer is still running.
     auto mockClient = makeClient();
     std::function<void(Result<UploadOutcome>)> onDone1;
+    EXPECT_CALL(
+        *mockClient,
+        upload(
+            std::string("a"), ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<5>(&onDone1));
     EXPECT_CALL(*mockClient,
-                upload(std::string("a"), ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::SaveArg<4>(&onDone1));
-    EXPECT_CALL(*mockClient,
-                upload(std::string("b"), ::testing::_, ::testing::_, ::testing::_, ::testing::_));
+                upload(std::string("b"),
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_));
 
     UploadService service(mockClient);
     std::vector<UploadJob> finished;
@@ -532,12 +594,19 @@ TEST(UploadServiceTest, StaleProgressIsIgnoredAcrossAJobDroppedByTheDestinationR
 
     std::function<void(std::uint64_t, std::uint64_t)> onProgress1;
     std::function<void(Result<UploadOutcome>)> onDone1;
+    EXPECT_CALL(
+        *mockClient,
+        upload(
+            std::string("a"), ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(
+            ::testing::DoAll(::testing::SaveArg<4>(&onProgress1), ::testing::SaveArg<5>(&onDone1)));
     EXPECT_CALL(*mockClient,
-                upload(std::string("a"), ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::DoAll(::testing::SaveArg<3>(&onProgress1),
-                                   ::testing::SaveArg<4>(&onDone1)));
-    EXPECT_CALL(*mockClient,
-                upload(std::string("c"), ::testing::_, ::testing::_, ::testing::_, ::testing::_));
+                upload(std::string("c"),
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_));
 
     UploadService service(mockClient);
     std::vector<UploadJob> finished;
@@ -553,9 +622,10 @@ TEST(UploadServiceTest, StaleProgressIsIgnoredAcrossAJobDroppedByTheDestinationR
     service.enqueue("b", "b.txt", 8, false, 0); // destination is gone
     const std::uint64_t id3 = service.enqueue("c", "c.txt", 7, false, 999);
 
+    ASSERT_EQ(finished.size(), 1u); // job 2 was rejected the moment it was promoted
+    EXPECT_EQ(finished[0].state, UploadState::Failed);
     onDone1(Result<UploadOutcome>::ok(UploadOutcome{1}));
-    ASSERT_EQ(finished.size(), 2u); // job 1 completed, job 2 rejected
-    EXPECT_EQ(finished[1].state, UploadState::Failed);
+    ASSERT_EQ(finished.size(), 2u);
 
     // Act
     onProgress1(50, 100);
@@ -568,15 +638,13 @@ TEST(UploadServiceTest, StaleProgressIsIgnoredAcrossAJobDroppedByTheDestinationR
     EXPECT_TRUE(progressSnapshots.empty());
 }
 
-TEST(UploadServiceTest, CancelAllDropsPendingJobsAndAbortsTheActiveTransfer)
+TEST(UploadServiceTest, CancelAllDropsPendingJobsAndAbortsEveryActiveTransfer)
 {
     auto mockClient = makeClient();
-    std::function<void(Result<UploadOutcome>)> onDone1;
-    EXPECT_CALL(*mockClient,
-                upload(std::string("/tmp/a.txt"), ::testing::_, ::testing::_, ::testing::_,
-                       ::testing::_))
-        .WillOnce(::testing::SaveArg<4>(&onDone1));
-    EXPECT_CALL(*mockClient, cancelUpload());
+    std::vector<UploadDone> onDone;
+    // The queued job must never reach the SDK, so only the running ones count.
+    expectCapturedUploads(*mockClient, onDone, kSlots);
+    EXPECT_CALL(*mockClient, cancelUpload(::testing::_)).Times(static_cast<int>(kSlots));
 
     UploadService service(mockClient);
     std::vector<UploadJob> finished;
@@ -584,34 +652,30 @@ TEST(UploadServiceTest, CancelAllDropsPendingJobsAndAbortsTheActiveTransfer)
         finished.push_back(std::move(job));
     });
 
-    const std::uint64_t id1 = service.enqueue("/tmp/a.txt", "a.txt", 7, false, 10);
-    const std::uint64_t id2 = service.enqueue("/tmp/b.txt", "b.txt", 7, false, 10);
+    const std::vector<std::uint64_t> ids = enqueueMany(service, kSlots + 1);
 
     // Act
     service.cancelAll();
 
     // Assert: same contract as DownloadService -- one notification per dropped job
     ASSERT_EQ(finished.size(), 1u);
-    EXPECT_EQ(finished[0].id, id2);
+    EXPECT_EQ(finished[0].id, ids.back());
     EXPECT_EQ(finished[0].state, UploadState::Cancelled);
 
-    ASSERT_TRUE(onDone1);
-    onDone1(Result<UploadOutcome>::fail("Transfer cancelled", MegaErrorCode::kEIncomplete));
-    ASSERT_EQ(finished.size(), 2u);
-    EXPECT_EQ(finished[1].id, id1);
-    EXPECT_EQ(finished[1].state, UploadState::Cancelled);
+    for (std::size_t i = 0; i < kSlots; ++i)
+        onDone[i](Result<UploadOutcome>::fail("Transfer cancelled", MegaErrorCode::kEIncomplete));
+    ASSERT_EQ(finished.size(), kSlots + 1);
+    EXPECT_EQ(finished.back().id, ids[kSlots - 1]);
+    EXPECT_EQ(finished.back().state, UploadState::Cancelled);
     EXPECT_EQ(service.queueLength(), 0u);
 }
 
 TEST(UploadServiceTest, CancelDropsOneQueuedJobAndLeavesTheRestOfTheQueueAlone)
 {
     auto mockClient = makeClient();
-    std::function<void(Result<UploadOutcome>)> onDone1;
-    EXPECT_CALL(*mockClient,
-                upload(std::string("/tmp/a.txt"), ::testing::_, ::testing::_, ::testing::_,
-                       ::testing::_))
-        .WillOnce(::testing::SaveArg<4>(&onDone1));
-    EXPECT_CALL(*mockClient, cancelUpload()).Times(0);
+    std::vector<UploadDone> onDone;
+    expectCapturedUploads(*mockClient, onDone, kSlots);
+    EXPECT_CALL(*mockClient, cancelUpload(::testing::_)).Times(0);
 
     UploadService service(mockClient);
     std::vector<UploadJob> finished;
@@ -619,23 +683,71 @@ TEST(UploadServiceTest, CancelDropsOneQueuedJobAndLeavesTheRestOfTheQueueAlone)
         finished.push_back(std::move(job));
     });
 
-    const std::uint64_t id1 = service.enqueue("/tmp/a.txt", "a.txt", 7, false, 10);
-    const std::uint64_t id2 = service.enqueue("/tmp/b.txt", "b.txt", 7, false, 10);
-    const std::uint64_t id3 = service.enqueue("/tmp/c.txt", "c.txt", 7, false, 10);
+    const std::vector<std::uint64_t> ids = enqueueMany(service, kSlots + 2);
 
-    // Act
-    service.cancel(id2);
+    // Act: the first of the two waiting jobs
+    service.cancel(ids[kSlots]);
 
     ASSERT_EQ(finished.size(), 1u);
-    EXPECT_EQ(finished[0].id, id2);
+    EXPECT_EQ(finished[0].id, ids[kSlots]);
     EXPECT_EQ(finished[0].state, UploadState::Cancelled);
 
     const std::vector<UploadJob> remaining = service.jobs();
-    ASSERT_EQ(remaining.size(), 2u);
-    EXPECT_EQ(remaining[0].id, id1);
+    ASSERT_EQ(remaining.size(), kSlots + 1);
+    EXPECT_EQ(remaining[0].id, ids[0]);
     EXPECT_EQ(remaining[0].state, UploadState::Active);
-    EXPECT_EQ(remaining[1].id, id3);
-    EXPECT_EQ(remaining[1].state, UploadState::Queued);
+    EXPECT_EQ(remaining.back().id, ids.back());
+    EXPECT_EQ(remaining.back().state, UploadState::Queued);
+}
+
+TEST(UploadServiceTest, AJobCancelledDuringItsDestinationRecheckReportsCancelledNotFailed)
+{
+    // The recheck is a blocking round-trip with the job already promoted, so a cancel
+    // can land inside it -- naming a transfer that was never started, so the abort
+    // reaches nothing. The rejection that follows must not be reported as a failure,
+    // or UploadController counts the user's own stop as an error and raises a second
+    // toast on top of the one cancelUploads() already gave.
+    auto mockClient = makeClient();
+    UploadService service(mockClient);
+    EXPECT_CALL(*mockClient, checkUpload(8, false))
+        .WillRepeatedly(::testing::InvokeWithoutArgs([&service] {
+            // Ids are 1-based and this is the only enqueue, so the job being rechecked
+            // is 1 -- enqueue() has not returned its id yet.
+            service.cancel(1);
+            return Result<void>::fail("gone", MegaErrorCode::kENoEnt);
+        }));
+    EXPECT_CALL(*mockClient, cancelUpload(::testing::_)).Times(::testing::AnyNumber());
+    std::vector<UploadDone> never;
+    expectCapturedUploads(*mockClient, never, 0);
+
+    std::vector<UploadJob> finished;
+    service.setOnJobFinished([&](UploadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    const std::uint64_t id = service.enqueue("b", "b.txt", 8, false, 0);
+
+    ASSERT_EQ(id, 1u);
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished[0].id, id);
+    EXPECT_EQ(finished[0].state, UploadState::Cancelled);
+}
+
+TEST(UploadServiceTest, TheTransferIdHandedToTheClientIsTheJobId)
+{
+    // Same contract as DownloadService's -- cancelUpload() is given the id the UI
+    // holds, so it has to be the one upload() was started under.
+    auto mockClient = makeClient();
+    std::uint64_t startedUnder = 0;
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<3>(&startedUnder));
+
+    UploadService service(mockClient);
+    const std::uint64_t id = service.enqueue("/tmp/a.txt", "a.txt", 7, false, 0);
+
+    EXPECT_EQ(startedUnder, id);
 }
 
 TEST(UploadServiceTest, CancellingTheActiveJobAbortsItAndTheQueueBehindItCarriesOn)
@@ -643,13 +755,21 @@ TEST(UploadServiceTest, CancellingTheActiveJobAbortsItAndTheQueueBehindItCarries
     auto mockClient = makeClient();
     std::function<void(Result<UploadOutcome>)> onDone1;
     EXPECT_CALL(*mockClient,
-                upload(std::string("/tmp/a.txt"), ::testing::_, ::testing::_, ::testing::_,
+                upload(std::string("/tmp/a.txt"),
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_,
                        ::testing::_))
-        .WillOnce(::testing::SaveArg<4>(&onDone1));
+        .WillOnce(::testing::SaveArg<5>(&onDone1));
     EXPECT_CALL(*mockClient,
-                upload(std::string("/tmp/b.txt"), ::testing::_, ::testing::_, ::testing::_,
+                upload(std::string("/tmp/b.txt"),
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_,
+                       ::testing::_,
                        ::testing::_));
-    EXPECT_CALL(*mockClient, cancelUpload());
+    EXPECT_CALL(*mockClient, cancelUpload(::testing::_));
 
     UploadService service(mockClient);
     std::vector<UploadJob> finished;

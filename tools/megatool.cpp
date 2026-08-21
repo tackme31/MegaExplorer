@@ -408,6 +408,7 @@ int cmdPut(IMegaClient& client, const std::string& localPath, const std::string&
         client.upload(native.toStdString(),
                       parent.value().handle,
                       parent.value().isRoot,
+                      /*transferId*/ 1, // one transfer per run, and nothing here cancels
                       kIgnoreProgress,
                       std::move(done));
     });

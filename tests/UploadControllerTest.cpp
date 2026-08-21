@@ -203,20 +203,21 @@ protected:
 TEST_F(UploadControllerTest, DropWithoutFoldersEnqueuesEveryFileDirectly)
 {
     // Arrange: upload()'s callbacks are never invoked, so the queue stays put.
-    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+    EXPECT_CALL(*client, upload(_, 7, false, _, _, _)).Times(2);
 
     // Act
     dropAndConfirm(
         {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
 
-    // Assert: both queued (only the first started), no question asked
+    // Assert: both queued -- and both started, the queue being shorter than the
+    // concurrency limit -- with no question asked
     EXPECT_EQ(conflictAsks, 0);
     EXPECT_EQ(controller->pendingCount(), 2);
 }
 
 TEST_F(UploadControllerTest, MoreThanOneFileIsConfirmedBeforeAnythingIsEnqueued)
 {
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     controller->dropUrls(
         {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
@@ -230,7 +231,7 @@ TEST_F(UploadControllerTest, MoreThanOneFileIsConfirmedBeforeAnythingIsEnqueued)
 TEST_F(UploadControllerTest, ASingleFileIsNotConfirmed)
 {
     // Otherwise every drag of one item onto a folder would cost a click.
-    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+    EXPECT_CALL(*client, upload(_, 7, false, _, _, _)).Times(1);
 
     controller->dropUrls({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
 
@@ -242,7 +243,7 @@ TEST_F(UploadControllerTest, TheConfirmedCountIsWhatIsInsideADroppedFolder)
 {
     // One dropped item, three files: the question has to name what actually goes
     // up, which is the same rule the cap counts by.
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     controller->dropUrls({QUrl::fromLocalFile(makeTree("sub", 3))}, 7, false);
 
@@ -255,7 +256,7 @@ TEST_F(UploadControllerTest, TheCapRefusesWithoutAskingToConfirm)
 {
     // The cap is a refusal, not a question. Stacking the confirmation on top would
     // ask about an upload that is not going to happen either way.
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     controller->dropUrls(
         {QUrl::fromLocalFile(makeTree("sub", UploadController::kMaxFilesPerUpload + 1))}, 7, false);
@@ -269,7 +270,7 @@ TEST_F(UploadControllerTest, DecliningTheConfirmationUploadsNothing)
 {
     // "Declining" is simply never answering: the dialog closes and the paths are
     // dropped, so nothing in the controller is left holding them.
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     controller->dropUrls(
         {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
@@ -283,7 +284,7 @@ TEST_F(UploadControllerTest, ConfirmingStillStopsAtTheSameNameQuestion)
     // The two questions are ordered, not exclusive.
     EXPECT_CALL(*client, findChildFiles(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     controller->dropUrls(
         {QUrl::fromLocalFile(makeFile("a.txt")), QUrl::fromLocalFile(makeFile("b.txt"))}, 7, false);
@@ -298,7 +299,7 @@ TEST_F(UploadControllerTest, DroppedFolderIsEnqueuedWholeAlongsideLooseFiles)
 {
     // One job per dropped item: the SDK walks the tree itself, so the two files
     // inside "sub" never become jobs here.
-    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+    EXPECT_CALL(*client, upload(_, 7, false, _, _, _)).Times(2);
 
     // Act
     dropAndConfirm(
@@ -313,7 +314,7 @@ TEST_F(UploadControllerTest, DroppedFolderIsEnqueuedWholeAlongsideLooseFiles)
 
 TEST_F(UploadControllerTest, DropOfAFolderOnlyIsUploaded)
 {
-    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+    EXPECT_CALL(*client, upload(_, 7, false, _, _, _)).Times(1);
 
     // Act
     dropAndConfirm({QUrl::fromLocalFile(makeTree("sub", 3))}, 7, false);
@@ -329,7 +330,7 @@ TEST_F(UploadControllerTest, AFolderIsNeverOfferedAsAReplacementTarget)
     // turn a folder upload into "replace that file".
     EXPECT_CALL(*client, findChildFiles(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("sub", 55)})));
-    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+    EXPECT_CALL(*client, upload(_, 7, false, _, _, _)).Times(1);
 
     // Act
     dropAndConfirm({QUrl::fromLocalFile(makeTree("sub", 1))}, 7, false);
@@ -353,8 +354,10 @@ TEST_F(UploadControllerTest, NonLocalUrlsAreIgnored)
 TEST_F(UploadControllerTest, UploadOfExactlyTheCapIsStillAccepted)
 {
     // The paths never have to exist: the count is checked before collisionsFor,
-    // and upload() is mocked out.
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(1);
+    // and upload() is mocked out. Only the concurrency limit's worth actually
+    // starts; the rest of the cap sits in the queue behind them.
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _))
+        .Times(static_cast<int>(UploadService::kMaxConcurrent));
     QStringList paths;
     for (int i = 0; i < UploadController::kMaxFilesPerUpload; ++i)
         paths.append(QStringLiteral("C:\\tmp\\f%1.txt").arg(i));
@@ -374,7 +377,7 @@ TEST_F(UploadControllerTest, UploadOverTheCapIsRejectedWholesale)
 {
     // Rejecting the whole operation, not the tail past the cap: a silently
     // truncated upload is worse than none.
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
     QStringList paths;
     for (int i = 0; i <= UploadController::kMaxFilesPerUpload; ++i)
         paths.append(QStringLiteral("C:\\tmp\\f%1.txt").arg(i));
@@ -395,7 +398,7 @@ TEST_F(UploadControllerTest, SkipKeepsAFolderWhoseNameOnlyCollidedAsAFile)
     // file was ever part of the question -- skipping it must not drop the folder.
     EXPECT_CALL(*client, findChildFiles(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("report", 55)})));
-    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+    EXPECT_CALL(*client, upload(_, 7, false, _, _, _)).Times(1);
     QDir(dir.path()).mkdir(QStringLiteral("other"));
     const QString file = makeFile(QStringLiteral("report"));
     const QString folder = makeTree(QStringLiteral("other/report"), 1);
@@ -410,7 +413,7 @@ TEST_F(UploadControllerTest, SkipKeepsAFolderWhoseNameOnlyCollidedAsAFile)
 TEST_F(UploadControllerTest, TheCapCountsWhatIsInsideADroppedFolder)
 {
     // One dropped item, so a cap that counted items would let this through.
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     // Act
     dropAndConfirm(
@@ -426,7 +429,7 @@ TEST_F(UploadControllerTest, LooseFilesAndAFolderShareOneCap)
 {
     // The cap is on the operation, so a folder just under it plus one loose file
     // is over -- neither half is over on its own.
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     // Act
     dropAndConfirm(
@@ -446,7 +449,7 @@ TEST_F(UploadControllerTest, EnqueuedPathsUseNativeSeparators)
     // The path crosses into the SDK's own LocalPath, which splits on '\' on
     // Windows (Phase 4's gotcha).
     std::string captured;
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).WillOnce(SaveArg<0>(&captured));
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).WillOnce(SaveArg<0>(&captured));
 
     // Act
     dropAndConfirm({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
@@ -469,7 +472,7 @@ TEST_F(UploadControllerTest, NameCollisionAsksBeforeEnqueueingAnything)
 {
     EXPECT_CALL(*client, findChildFiles(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     // Act
     dropAndConfirm(
@@ -488,7 +491,7 @@ TEST_F(UploadControllerTest, ReplaceEnqueuesEverythingAndBinsNothing)
     EXPECT_CALL(*client, findChildFiles(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
     // Never completing the transfers keeps the whole queue observable.
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(1);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(2);
     // The point of the whole change: MEGA folds a same-named upload into the
     // existing node as a new version, so binning that node would throw the version
     // away instead of replacing anything.
@@ -508,7 +511,7 @@ TEST_F(UploadControllerTest, SkipDropsTheConflictingFilesAndUploadsTheRest)
 {
     EXPECT_CALL(*client, findChildFiles(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(1);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(1);
 
     // Act
     controller->uploadSkippingExisting({makeFile("a.txt"), makeFile("b.txt")}, 7, false);
@@ -524,7 +527,7 @@ TEST_F(UploadControllerTest, SkippingEverythingUploadsNothingAndSaysNothing)
     // Silence is right: an empty result is exactly what the user asked for.
     EXPECT_CALL(*client, findChildFiles(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     // Act
     controller->uploadSkippingExisting({makeFile("a.txt")}, 7, false);
@@ -544,7 +547,7 @@ TEST_F(UploadControllerTest, AFolderThatOnlyGainsFilesIsNotWorthAQuestion)
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("dir", 20)})));
     EXPECT_CALL(*client, findChildFiles(20, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("other.txt", 55)})));
-    EXPECT_CALL(*client, upload(_, 7, false, _, _)).Times(1);
+    EXPECT_CALL(*client, upload(_, 7, false, _, _, _)).Times(1);
     const QString folder = makeDir(QStringLiteral("dir"));
     makeFile(QStringLiteral("dir/file1.txt"));
 
@@ -562,7 +565,7 @@ TEST_F(UploadControllerTest, ACollisionNestedInADroppedFolderIsAskedAboutByItsPa
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("dir", 20)})));
     EXPECT_CALL(*client, findChildFiles(20, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
     const QString folder = makeDir(QStringLiteral("dir"));
     makeFile(QStringLiteral("dir/a.txt"));
     makeFile(QStringLiteral("dir/b.txt"));
@@ -583,7 +586,7 @@ TEST_F(UploadControllerTest, TheConflictQuestionCarriesTheBytesOnEachSideOfIt)
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("big.bin", 55)})));
     EXPECT_CALL(*client, findChildFolders(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({})));
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
     const QString colliding = makeFileOfSize(QStringLiteral("big.bin"), 2048);
     const QString other = makeFileOfSize(QStringLiteral("small.bin"), 512);
 
@@ -639,7 +642,7 @@ TEST_F(UploadControllerTest, SkipStopsRatherThanUploadWhatItCannotCheck)
     EXPECT_CALL(*client, findChildFiles(_, _, _))
         .WillRepeatedly(
             Return(Result<std::vector<FileEntry>>::fail("gone", MegaErrorCode::kENoEnt)));
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     // Act
     controller->uploadSkippingExisting({makeFile("a.txt")}, 7, false);
@@ -652,9 +655,9 @@ TEST_F(UploadControllerTest, SkipStopsRatherThanUploadWhatItCannotCheck)
 
 TEST_F(UploadControllerTest, BatchReportsOnceAndAnnouncesTheDestinationAfterTheQueueDrains)
 {
-    EXPECT_CALL(*client, upload(_, _, _, _, _))
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _))
         .Times(2)
-        .WillRepeatedly(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{1})));
+        .WillRepeatedly(::testing::InvokeArgument<5>(Result<UploadOutcome>::ok(UploadOutcome{1})));
 
     // Act
     dropAndConfirm(
@@ -674,7 +677,7 @@ TEST_F(UploadControllerTest, WholeBatchLostToAMissingDestinationGetsItsOwnMessag
 {
     EXPECT_CALL(*client, checkUpload(7, false))
         .WillRepeatedly(Return(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
-    EXPECT_CALL(*client, upload(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     // Act
     dropAndConfirm({QUrl::fromLocalFile(makeFile("a.txt"))}, 7, false);
@@ -689,9 +692,9 @@ TEST_F(UploadControllerTest, WholeBatchLostToAMissingDestinationGetsItsOwnMessag
 
 TEST_F(UploadControllerTest, IsUploadingToCoversTheDestinationFromEnqueueUntilTheQueueDrains)
 {
-    EXPECT_CALL(*client, upload(_, _, _, _, _))
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _))
         .Times(2)
-        .WillRepeatedly(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{1})));
+        .WillRepeatedly(::testing::InvokeArgument<5>(Result<UploadOutcome>::ok(UploadOutcome{1})));
 
     // Act: the finished notifications are still queued at this point
     dropAndConfirm(
@@ -721,8 +724,8 @@ TEST_F(UploadControllerTest, ReplaceStopsSpinningAsSoonAsTheUploadLands)
 {
     EXPECT_CALL(*client, findChildFiles(7, false, _))
         .WillRepeatedly(Return(Result<std::vector<FileEntry>>::ok({entry("a.txt", 55)})));
-    EXPECT_CALL(*client, upload(_, _, _, _, _))
-        .WillRepeatedly(::testing::InvokeArgument<4>(Result<UploadOutcome>::ok(UploadOutcome{1})));
+    EXPECT_CALL(*client, upload(_, _, _, _, _, _))
+        .WillRepeatedly(::testing::InvokeArgument<5>(Result<UploadOutcome>::ok(UploadOutcome{1})));
 
     controller->uploadReplacingExisting({makeFile("a.txt")}, 7, false);
     flushQueuedEvents();

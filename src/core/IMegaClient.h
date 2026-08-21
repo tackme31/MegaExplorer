@@ -149,9 +149,15 @@ public:
     // collision made the SDK suffix the leaf with "(1)". A name already taken never
     // cancels the download: MegaSdkClient asks for COLLISION_CHECK_ASSUMEDIFFERENT
     // so even a byte-identical file is fetched again under a free name.
+    //
+    // transferId is the caller's own name for this transfer, and the only handle it
+    // gets on it: cancelDownload() takes the same value back. Supplied rather than
+    // returned because a cancel can arrive before this call returns, and an id the
+    // caller already knows is cancellable from the first instant.
     virtual void download(
         std::uint64_t handle,
         const std::string& destinationPath,
+        std::uint64_t transferId,
         std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
         std::function<void(Result<DownloadOutcome>)> onDone) = 0;
 
@@ -160,27 +166,27 @@ public:
     // recursively, as one transfer -- progress and completion are reported for the
     // tree, not per file inside it.
     //
-    // Two-callback shape for the same reason as download().
+    // Two-callback shape for the same reason as download(), and transferId means the
+    // same thing here.
     virtual void
     upload(const std::string& localPath,
            std::uint64_t parentHandle,
            bool parentIsRoot,
+           std::uint64_t transferId,
            std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
            std::function<void(Result<UploadOutcome>)> onDone) = 0;
 
-    // Abort whatever download/upload is in flight. Callable from any thread and a
-    // no-op when nothing is transferring, so a caller never has to check first.
+    // Abort the transfer started under transferId. Callable from any thread and a
+    // no-op when that id names nothing in flight, so a caller never has to check
+    // first -- including for an id whose transfer has not been started yet, which is
+    // why the caller must re-assert the cancel once download()/upload() returns.
     //
     // Asynchronous like everything else here: the abort is only requested, and it is
     // the transfer's own onDone that reports it -- failing with
     // MegaErrorCode::kEIncomplete, the code the SDK reserves for a cancelled
     // transfer. Callers still get exactly one completion per transfer.
-    //
-    // Deliberately whole-direction rather than per-transfer: only one transfer of
-    // each direction is ever in flight (DownloadService/UploadService serialize
-    // them), so a handle to cancel would name something the caller already knows.
-    virtual void cancelDownload() = 0;
-    virtual void cancelUpload() = 0;
+    virtual void cancelDownload(std::uint64_t transferId) = 0;
+    virtual void cancelUpload(std::uint64_t transferId) = 0;
 
     // Fetches the server-side thumbnail into the exact local path destinationPath,
     // which must not end with a path separator: the SDK would then treat it as a
