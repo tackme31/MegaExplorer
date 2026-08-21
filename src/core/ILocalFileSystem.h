@@ -28,7 +28,10 @@ public:
     // under-count the collisions the user is asked about.
     virtual std::optional<LocalEntry> entryFor(const std::string& path) const = 0;
 
-    // Direct children only, in no particular order. Empty for a file, an
-    // unreadable directory, or a missing path.
-    virtual std::vector<LocalEntry> listDirectory(const std::string& path) const = 0;
+    // Direct children only, in no particular order. Nullopt when the listing
+    // could not be taken at all -- a missing path, a file, or a directory that
+    // refused to be read -- which a caller must not confuse with an empty
+    // directory: the upload skip plan drops what it cannot see.
+    virtual std::optional<std::vector<LocalEntry>> listDirectory(
+        const std::string& path) const = 0;
 };

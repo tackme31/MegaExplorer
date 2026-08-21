@@ -3,9 +3,12 @@
 #include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
 
+#include <algorithm>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <map>
+#include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -45,14 +48,25 @@ public:
         return it->second;
     }
 
-    std::vector<LocalEntry> listDirectory(const std::string& path) const override
+    std::optional<std::vector<LocalEntry>> listDirectory(const std::string& path) const override
     {
+        const bool relisting = std::find(listed.begin(), listed.end(), path) != listed.end();
         listed.push_back(path);
+        if (unreadable.find(path) != unreadable.end() ||
+            (relisting && unreadableOnRelisting.find(path) != unreadableOnRelisting.end()))
+            return std::nullopt;
         const auto it = mChildren.find(path);
-        return it == mChildren.end() ? std::vector<LocalEntry>{} : it->second;
+        if (it == mChildren.end())
+            return std::nullopt;
+        return it->second;
     }
 
     mutable std::vector<std::string> listed;
+    // Paths that answer "could not read" instead of a listing. `unreadable` refuses
+    // from the first call; `unreadableOnRelisting` only from the second, which is
+    // the race the skip plan hits -- it re-lists what the scan already walked.
+    std::set<std::string> unreadable;
+    std::set<std::string> unreadableOnRelisting;
 
 private:
     LocalEntry add(const std::string& parent, const std::string& name, bool isDirectory)
@@ -246,10 +260,10 @@ TEST(UploadScanServiceTest, StopsDescendingAtTheDepthLimit)
             return entry;
         }
 
-        std::vector<LocalEntry> listDirectory(const std::string& path) const override
+        std::optional<std::vector<LocalEntry>> listDirectory(const std::string& path) const override
         {
             ++levels;
-            return {*entryFor(path + "\\loop")};
+            return std::vector<LocalEntry>{*entryFor(path + "\\loop")};
         }
 
         mutable int levels = 0;
@@ -583,4 +597,59 @@ TEST(UploadScanServiceTest, PlanFailsRatherThanUnderReportWhenTheLookupFails)
 
     EXPECT_FALSE(plan.success);
     EXPECT_EQ(plan.errorCode, MegaErrorCode::kENoEnt);
+}
+
+TEST(UploadScanServiceTest, PlanFailsRatherThanDropSurvivorsWhenABranchStopsListing)
+{
+    // The folder is taken apart because something inside it collides, so a listing
+    // that now refuses would leave b.txt out of the plan with nothing said -- the
+    // user asked to skip one file, not to lose the other.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addDirectory("C:\\src", "dir");
+    fs->addFile("C:\\src\\dir", "a.txt");
+    fs->addFile("C:\\src\\dir", "b.txt");
+    fs->unreadableOnRelisting.insert("C:\\src\\dir");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"dir"}))
+        .WillOnce(::testing::Return(hits({folder("dir", 20)})));
+    EXPECT_CALL(*client, findChildFiles(20, false, std::vector<std::string>{"a.txt", "b.txt"}))
+        .WillOnce(::testing::Return(hits({file("a.txt", 55)})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadPlanItem>> plan =
+        service.planSkippingCollisions({"C:\\src\\dir"}, 7, false);
+
+    EXPECT_FALSE(plan.success);
+    EXPECT_EQ(plan.errorCode, MegaErrorCode::kEInternal);
+}
+
+TEST(UploadScanServiceTest, ScanWalksOnPastAFolderThatWillNotList)
+{
+    // The other half of the same rule: the scan finds no collision inside, so the
+    // plan hands the folder to the SDK whole and nothing is dropped -- costing a
+    // question rather than a failure.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addDirectory("C:\\src", "dir");
+    fs->addFile("C:\\src\\dir", "a.txt");
+    fs->unreadable.insert("C:\\src\\dir");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"dir"}))
+        .WillRepeatedly(::testing::Return(hits({folder("dir", 20)})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadCollision>> found =
+        service.findCollisions({"C:\\src\\dir"}, 7, false);
+    ASSERT_TRUE(found.success);
+    EXPECT_TRUE(found.value().empty());
+
+    Result<std::vector<UploadPlanItem>> plan =
+        service.planSkippingCollisions({"C:\\src\\dir"}, 7, false);
+    ASSERT_TRUE(plan.success);
+    ASSERT_EQ(plan.value().size(), 1u);
+    EXPECT_EQ(plan.value()[0].localPath, "C:\\src\\dir");
+    EXPECT_EQ(plan.value()[0].parentHandle, 7u);
 }

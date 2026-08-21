@@ -10,7 +10,8 @@
 namespace
 {
 
-// Only entryFor matters here; listDirectory is never reached, so it answers empty.
+// Only entryFor matters here; listDirectory is never reached, so it answers
+// "could not list".
 class FakeLocalFileSystem : public ILocalFileSystem
 {
 public:
@@ -28,9 +29,9 @@ public:
         return entry;
     }
 
-    std::vector<LocalEntry> listDirectory(const std::string&) const override
+    std::optional<std::vector<LocalEntry>> listDirectory(const std::string&) const override
     {
-        return {};
+        return std::nullopt;
     }
 
 private:
