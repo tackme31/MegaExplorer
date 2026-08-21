@@ -15,8 +15,10 @@ edit) — Qt Creator kits/CMake presets must select `Visual Studio 17 2022` as t
 ## Why `CMakePresets.json` exists
 
 Pins the full configure (generator, architecture, vcpkg toolchain file, and all `VCPKG_*`
-variables) into one named preset, `msvc-debug`. Added because Qt Creator's per-row CMake
-configuration GUI proved unreliable for this many variables — batch-pasted entries silently failed
+variables) into one named preset, `msvc-debug` — one *configure* preset, with two build presets
+(`msvc-debug`, `msvc-release`) hanging off it; see "Debug vs Release" below. Added because Qt
+Creator's per-row CMake configuration GUI proved unreliable for this many variables — batch-pasted
+entries silently failed
 to apply, and individually-added entries (specifically `CMAKE_TOOLCHAIN_FILE`) were dropped on the
 next "Run CMake". Qt Creator auto-detects presets from this file and lists them in the kit/build
 configuration picker — select `msvc-debug` there instead of hand-entering variables. The manual
@@ -30,6 +32,29 @@ Windows defaults — check `third_party/sdk/cmake/modules/sdklib_options.cmake` 
 bumps and defaults change. `sdk-tests` is `third_party/sdk/vcpkg.json`'s own feature name for
 pulling in `gtest` — it only affects what vcpkg installs, unrelated to the SDK's own
 `ENABLE_SDKLIB_TESTS` option (still off).
+
+## Debug vs Release
+
+There is one configure preset, not two. The Visual Studio generator is multi-config, so
+`--build --preset msvc-release` builds the `Release` configuration out of the very same tree and
+`vcpkg_installed` directory that `msvc-debug` configured — vcpkg installs both the release and the
+debug variant of every dependency on first configure, so a Release build needs no second install
+(which would mean rebuilding ffmpeg, pdfium and OpenSSL from source). The cost of that reuse is the
+directory name: `build/msvc-debug/Release/appMegaExplorer.exe` is a Release binary living under a
+path named for the *configure* preset. A second binary directory would buy a tidier name for hours
+of vcpkg time.
+
+At runtime the release binary needs `vcpkg_installed/x64-windows-mega/bin` on `PATH`, not
+`debug/bin`.
+
+**Debug timings mean nothing.** Folder navigation is faster in Release by a margin obvious without a
+stopwatch, and none of it is our code being different — MSVC's Debug defaults are.
+`_ITERATOR_DEBUG_LEVEL=2` puts checked-iterator bookkeeping on every `std::vector`/`std::string`
+operation, and the listing path is exactly that: the `MegaNodeList` -> `std::vector<FileEntry>`
+conversion allocates several strings per row. `/Od` removes inlining from the thin `IMegaClient`
+wrapper layer, the debug CRT heap guards and fills every one of those allocations, and both the SDK
+(node-attribute decryption) and Qt's QML engine run their own debug builds underneath. Reproduce in
+Release before treating anything as a performance problem.
 
 ## Why only `appMegaExplorer`, not the full solution
 
@@ -108,7 +133,10 @@ root folder given `MEGA_EMAIL`/`MEGA_PWD` env vars — useful for isolating "SDK
 
 ## Warning-check workflow detail
 
-Preferred: the `qtcreator` MCP server (Qt Creator's Extensions > MCP Server, enabled in
+`scripts/loop_verify.sh` is the entry point (`CLAUDE.md`), and it must not grow an IDE dependency:
+`/evolve` runs it unattended. What follows is the optional convenience for interactive sessions.
+
+The `qtcreator` MCP server (Qt Creator's Extensions > MCP Server, enabled in
 Preferences > AI > Qt Creator MCP Server — must be running, registered locally via `claude mcp add
 --transport http qtcreator http://127.0.0.1:<port>/ --scope local`, not committed). Call
 `mcp__qtcreator__build` (or `list_issues`/`list_file_issues`); its `issues` array returns `{file,
@@ -117,9 +145,9 @@ is a reliable path-prefix check rather than a text-based `grep -v`. Confirmed 20
 raised only on our own targets (via `/W4`) don't leak SDKlib/third_party noise into the array at
 all, since those are separate CMake targets.
 
-`/W4` reaches all five of our targets — `MegaExplorerCore`, `MegaExplorerQml`, `appMegaExplorer`,
-`MegaExplorerTests`, `MegaExplorerQmlTests` — through the `MegaExplorerWarnings` interface target they each link
-`PRIVATE`. `PRIVATE` is what keeps it off `third_party/sdk` and QWindowKit; putting `/W4` in
+`/W4` reaches all six of our targets — `MegaExplorerCore`, `MegaExplorerQml`, `appMegaExplorer`,
+`megatool`, `MegaExplorerTests`, `MegaExplorerQmlTests` — through the `MegaExplorerWarnings`
+interface target they each link `PRIVATE`. `PRIVATE` is what keeps it off `third_party/sdk` and QWindowKit; putting `/W4` in
 `CMAKE_CXX_FLAGS` instead would hit everything and is why the flag was target-scoped from the
 start. Before R4-9 it was on `appMegaExplorer` alone, which meant `src/core` and all of `tests/`
 were never compiled at anything above MSVC's default `/W1`.
