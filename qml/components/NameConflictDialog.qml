@@ -56,18 +56,63 @@ Dialog {
     // is its unwrapped width -- so without a cap the frame follows the name list
     // below and, on a small window, pushes its own buttons off-screen.
     readonly property real maxWidth: Overlay.overlay.width - 48
+    readonly property real textWidthCap: root.maxWidth - root.leftPadding - root.rightPadding
     width: Math.min(implicitWidth, maxWidth)
 
     // Every one of the three buttons closes, so this is the one place the next
     // question can start from.
     onClosed: root.showNextRequest()
 
-    Label {
-        // Capped against the overlay rather than root.availableWidth: reading the
-        // dialog's own width here closes a loop through its implicitHeight.
-        width: Math.min(implicitWidth, root.maxWidth - root.leftPadding - root.rightPadding)
-        wrapMode: Text.Wrap
-        text: root.buildMessage()
+    Column {
+        spacing: Theme.spacing.sm
+
+        Label {
+            // Capped against the overlay rather than root.availableWidth: reading
+            // the dialog's own width here closes a loop through its implicitHeight.
+            width: Math.min(implicitWidth, root.textWidthCap)
+            wrapMode: Text.Wrap
+            text: root.headLine()
+        }
+
+        // A lone name is spelled out; a batch is a link, because the comma-run
+        // this replaced was truncated at five and so could neither be read nor
+        // checked against what was about to be replaced.
+        Label {
+            visible: root.conflictNames.length === 1
+            width: Math.min(implicitWidth, root.textWidthCap)
+            wrapMode: Text.Wrap
+            text: root.namesText()
+        }
+
+        Label {
+            visible: root.conflictNames.length > 1
+            text: root.namesText()
+            color: Theme.color.accent
+            font.underline: namesLinkHover.hovered
+
+            HoverHandler {
+                id: namesLinkHover
+                cursorShape: Qt.PointingHandCursor
+            }
+
+            TapHandler {
+                onTapped: nameListDialog.open()
+            }
+        }
+
+        Label {
+            width: Math.min(implicitWidth, root.textWidthCap)
+            wrapMode: Text.Wrap
+            visible: text !== ""
+            // The paragraph break the sentences used to carry themselves.
+            topPadding: Theme.spacing.md
+            text: root.detailText()
+        }
+    }
+
+    ConflictNameListDialog {
+        id: nameListDialog
+        entries: root.listEntries()
     }
 
     footer: DialogButtonBox {
@@ -110,14 +155,32 @@ Dialog {
 
     // Whole sentences per case rather than clauses joined at runtime: a translator
     // needs the sentence, and there are only a handful of them.
-    function buildMessage() {
+    function headLine() {
+        const count = root.conflictNames.length;
+        return root.conflictingSize === "" ? qsTr(
+                                                 "%1 file(s) with the same name already exist in the destination:").arg(
+                                                 count) : qsTr(
+                                                 "%1 file(s) with the same name already exist in the destination (%2):").arg(
+                                                 count).arg(root.conflictingSize);
+    }
+
+    // The name itself when there is one, otherwise the label of the link that
+    // opens the full list.
+    function namesText() {
         const names = root.conflictNames;
-        const head = root.conflictingSize === "" ? qsTr(
-                                                       "%1 file(s) with the same name already exist in the destination:").arg(
-                                                       names.length) : qsTr(
-                                                       "%1 file(s) with the same name already exist in the destination (%2):").arg(
-                                                       names.length).arg(root.conflictingSize);
-        const lines = [head + "\n" + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "")];
+        return names.length === 1 ? names[0] : qsTr("%1 file(s)").arg(names.length);
+    }
+
+    // An upload collides file by file, so nothing on this list is a folder.
+    function listEntries() {
+        return root.conflictNames.map(n => ({
+                                                "name": n,
+                                                "isFolder": false
+                                            }));
+    }
+
+    function detailText() {
+        const lines = [];
         // Everything Replace does lives in its tooltip, except the one wording
         // that announces unrecoverable loss: a warning nobody sees unless they
         // hover is not a warning.
