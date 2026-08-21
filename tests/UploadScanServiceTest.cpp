@@ -367,6 +367,193 @@ TEST(UploadScanServiceTest, ReportsTheSecondCopyOfANameTheUploadBringsTwice)
     EXPECT_EQ(result.value()[0].existingHandle, 0u);
 }
 
+TEST(UploadScanServiceTest, ReportsACollisionBetweenTwoCopiesOfAFolderMegaDoesNotHave)
+{
+    // The folder half of "the upload brings the name twice": the SDK creates
+    // `photos` from the first copy and merges the second into it, so files the two
+    // share stack as versions even though MEGA held neither.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addDirectory("C:\\a", "photos");
+    fs->addFile("C:\\a\\photos", "p.jpg");
+    fs->addDirectory("C:\\b", "photos");
+    fs->addFile("C:\\b\\photos", "p.jpg");
+    fs->addFile("C:\\b\\photos", "q.jpg");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"photos"}))
+        .WillOnce(::testing::Return(hits({})));
+    // Nothing to ask about below a folder that is not there yet.
+    EXPECT_CALL(*client, findChildFiles(::testing::_, ::testing::_, ::testing::_)).Times(0);
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadCollision>> result =
+        service.findCollisions({"C:\\a\\photos", "C:\\b\\photos"}, 7, false);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.value().size(), 1u);
+    EXPECT_EQ(result.value()[0].localPath, "C:\\b\\photos\\p.jpg");
+    EXPECT_EQ(result.value()[0].existingHandle, 0u);
+    EXPECT_EQ(result.value()[0].parentHandle, 0u);
+    EXPECT_FALSE(result.value()[0].parentIsRoot);
+}
+
+TEST(UploadScanServiceTest, ReportsACollisionBetweenTwoCopiesMergingIntoOneMegaFolder)
+{
+    // Same defect one level in: MEGA has the folder but not the file, so each copy
+    // on its own collides with nothing -- they only collide with each other.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addDirectory("C:\\a", "photos");
+    fs->addFile("C:\\a\\photos", "p.jpg");
+    fs->addDirectory("C:\\b", "photos");
+    fs->addFile("C:\\b\\photos", "p.jpg");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"photos"}))
+        .WillOnce(::testing::Return(hits({folder("photos", 20)})));
+    EXPECT_CALL(*client, findChildFiles(20, false, std::vector<std::string>{"p.jpg"}))
+        .WillOnce(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadCollision>> result =
+        service.findCollisions({"C:\\a\\photos", "C:\\b\\photos"}, 7, false);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.value().size(), 1u);
+    EXPECT_EQ(result.value()[0].localPath, "C:\\b\\photos\\p.jpg");
+    EXPECT_EQ(result.value()[0].existingHandle, 0u);
+    EXPECT_EQ(result.value()[0].parentHandle, 20u);
+}
+
+TEST(UploadScanServiceTest, PlanRefusesToTakeApartAFolderTheUploadCreatesItself)
+{
+    // A plan item names its parent by handle, and the folder holding q.jpg does not
+    // have one yet. Sending the second copy whole would version over what Skip was
+    // asked to spare, so the plan fails instead.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addDirectory("C:\\a", "photos");
+    fs->addFile("C:\\a\\photos", "p.jpg");
+    fs->addDirectory("C:\\b", "photos");
+    fs->addFile("C:\\b\\photos", "p.jpg");
+    fs->addFile("C:\\b\\photos", "q.jpg");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"photos"}))
+        .WillOnce(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadPlanItem>> plan =
+        service.planSkippingCollisions({"C:\\a\\photos", "C:\\b\\photos"}, 7, false);
+
+    EXPECT_FALSE(plan.success);
+    EXPECT_EQ(plan.errorCode, MegaErrorCode::kEInternal);
+}
+
+TEST(UploadScanServiceTest, PlanLeavesOutAWholeSecondCopyOfANewFolderWhenAllOfItCollides)
+{
+    // The one shape Skip can still express without a handle: nothing in the second
+    // copy survives, so leaving the copy out entirely is the whole plan for it.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addDirectory("C:\\a", "photos");
+    fs->addFile("C:\\a\\photos", "p.jpg");
+    fs->addDirectory("C:\\b", "photos");
+    fs->addFile("C:\\b\\photos", "p.jpg");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"photos"}))
+        .WillOnce(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadPlanItem>> plan =
+        service.planSkippingCollisions({"C:\\a\\photos", "C:\\b\\photos"}, 7, false);
+
+    ASSERT_TRUE(plan.success);
+    ASSERT_EQ(plan.value().size(), 1u);
+    EXPECT_EQ(plan.value()[0].localPath, "C:\\a\\photos");
+    EXPECT_EQ(plan.value()[0].parentHandle, 7u);
+}
+
+TEST(UploadScanServiceTest, PlanLeavesOutASecondCopyWhoseSubfolderTheFirstCopyBringsToo)
+{
+    // The redundancy can sit below the copy as well: `empty` is not a collision --
+    // no file lands on anything -- yet the first copy already brings it, so the
+    // second copy still has nothing of its own and is dropped rather than refused.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addDirectory("C:\\a", "photos");
+    fs->addFile("C:\\a\\photos", "p.jpg");
+    fs->addDirectory("C:\\a\\photos", "empty");
+    fs->addDirectory("C:\\b", "photos");
+    fs->addFile("C:\\b\\photos", "p.jpg");
+    fs->addDirectory("C:\\b\\photos", "empty");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"photos"}))
+        .WillOnce(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadPlanItem>> plan =
+        service.planSkippingCollisions({"C:\\a\\photos", "C:\\b\\photos"}, 7, false);
+
+    ASSERT_TRUE(plan.success);
+    ASSERT_EQ(plan.value().size(), 1u);
+    EXPECT_EQ(plan.value()[0].localPath, "C:\\a\\photos");
+}
+
+TEST(UploadScanServiceTest, PlanRefusesWhenOnlyTheSecondCopyBringsASubfolder)
+{
+    // The other side of the same question: `extra` is nobody's duplicate, so it has
+    // to be uploaded -- and there is no handle to upload it under.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addDirectory("C:\\a", "photos");
+    fs->addFile("C:\\a\\photos", "p.jpg");
+    fs->addDirectory("C:\\b", "photos");
+    fs->addFile("C:\\b\\photos", "p.jpg");
+    fs->addDirectory("C:\\b\\photos", "extra");
+    fs->addFile("C:\\b\\photos\\extra", "z.jpg");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"photos"}))
+        .WillOnce(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadPlanItem>> plan =
+        service.planSkippingCollisions({"C:\\a\\photos", "C:\\b\\photos"}, 7, false);
+
+    EXPECT_FALSE(plan.success);
+    EXPECT_EQ(plan.errorCode, MegaErrorCode::kEInternal);
+}
+
+TEST(UploadScanServiceTest, PlanSendsBothCopiesOfANewFolderWholeWhenNothingInsideOverlaps)
+{
+    // Descending into a folder the upload creates is only a question. Finding no
+    // overlap leaves both copies as ordinary folder transfers, which the SDK merges.
+    auto fs = std::make_shared<FakeLocalFileSystem>();
+    fs->addDirectory("C:\\a", "photos");
+    fs->addFile("C:\\a\\photos", "p.jpg");
+    fs->addDirectory("C:\\b", "photos");
+    fs->addFile("C:\\b\\photos", "q.jpg");
+
+    auto client = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"photos"}))
+        .WillRepeatedly(::testing::Return(hits({})));
+
+    UploadScanService service(client, fs);
+
+    Result<std::vector<UploadPlanItem>> plan =
+        service.planSkippingCollisions({"C:\\a\\photos", "C:\\b\\photos"}, 7, false);
+
+    ASSERT_TRUE(plan.success);
+    ASSERT_EQ(plan.value().size(), 2u);
+    EXPECT_EQ(plan.value()[0].localPath, "C:\\a\\photos");
+    EXPECT_EQ(plan.value()[0].parentHandle, 7u);
+    EXPECT_EQ(plan.value()[1].localPath, "C:\\b\\photos");
+}
+
 TEST(UploadScanServiceTest, DoesNotCountAFileAndAFolderSharingAName)
 {
     // Matched by kind, as on the copy/move path: a folder cannot version over a
@@ -503,8 +690,8 @@ TEST(UploadScanServiceTest, PlanTakesApartEveryCopyOfAMergingFolderName)
     auto client = std::make_shared<MockMegaClient>();
     EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"photos"}))
         .WillOnce(::testing::Return(hits({folder("photos", 20)})));
-    EXPECT_CALL(*client, findChildFiles(20, false, std::vector<std::string>{"p.jpg"}))
-        .WillOnce(::testing::Return(hits({file("p.jpg", 55)})));
+    // One lookup, not one per copy: both copies become the same MEGA folder, so
+    // their children are walked as a single level.
     EXPECT_CALL(*client, findChildFiles(20, false, std::vector<std::string>{"p.jpg", "q.jpg"}))
         .WillOnce(::testing::Return(hits({file("p.jpg", 55)})));
 
