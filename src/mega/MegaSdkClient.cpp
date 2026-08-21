@@ -487,6 +487,7 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
 
 void MegaSdkClient::listFavourites(SortOrder order,
                                    const std::string& nameFilter,
+                                   const SearchFilter& searchFilter,
                                    std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     if (mShuttingDown)
@@ -509,6 +510,7 @@ void MegaSdkClient::listFavourites(SortOrder order,
     // entirely for an empty pattern, so byName("") would not mean "match nothing".
     if (!nameFilter.empty())
         filter->byName(nameFilter.c_str());
+    applySearchFilter(*filter, searchFilter);
 
     std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get(), toMegaOrder(order)));
     onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
@@ -516,6 +518,7 @@ void MegaSdkClient::listFavourites(SortOrder order,
 
 void MegaSdkClient::listRecent(SortOrder order,
                                const std::string& nameFilter,
+                               const SearchFilter& searchFilter,
                                std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     if (mShuttingDown)
@@ -532,17 +535,22 @@ void MegaSdkClient::listRecent(SortOrder order,
     }
 
     std::unique_ptr<mega::MegaSearchFilter> filter(mega::MegaSearchFilter::createInstance());
-    // Upper limit 0, which MegaSearchFilter reads as "no bound on that side" rather
-    // than as the epoch -- a clock skewed ahead on the uploading device must not
-    // hide a node from this listing.
-    filter->byCreationTime(recentWindowStart(), 0);
-    // Files only: this is a listing of recently added files, and a folder's creation
-    // time would drag its whole subtree's container into it.
-    filter->byNodeType(mega::MegaNode::TYPE_FILE);
     filter->byLocationHandle(root->getHandle());
     // Left unset when empty, for listFavourites' reason.
     if (!nameFilter.empty())
         filter->byName(nameFilter.c_str());
+    applySearchFilter(*filter, searchFilter);
+
+    // Both facets below are ones applySearchFilter also writes, so they are set after
+    // it: what this listing means has to win over the popup's selection.
+    // Upper limit 0, which MegaSearchFilter reads as "no bound on that side" rather
+    // than as the epoch -- a clock skewed ahead on the uploading device must not
+    // hide a node from this listing. The later of the two lower bounds wins, so
+    // "past 24 hours" narrows the window but "past year" cannot widen it.
+    filter->byCreationTime(std::max(recentWindowStart(), filter->byCreationTimeLowerLimit()), 0);
+    // Files only: this is a listing of recently added files, and a folder's creation
+    // time would drag its whole subtree's container into it.
+    filter->byNodeType(mega::MegaNode::TYPE_FILE);
 
     std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get(), toMegaOrder(order)));
     onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));

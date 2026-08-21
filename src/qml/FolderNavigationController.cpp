@@ -451,9 +451,9 @@ void FolderNavigationController::runVisibleSearch()
     };
 
     if (viewKind() == ViewKindEnum::Favourites)
-        mService->listFavourites(mSortOrder, mLastSearchQuery, std::move(onSearched));
+        mService->listFavourites(mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
     else if (viewKind() == ViewKindEnum::Recents)
-        mService->listRecent(mSortOrder, mLastSearchQuery, std::move(onSearched));
+        mService->listRecent(mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
     else
         mSearchService->search(mLastSearchQuery, mSearchFilter, mSortOrder, std::move(onSearched));
 }

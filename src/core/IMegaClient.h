@@ -110,18 +110,22 @@ public:
     // search(). Rooting it there is what keeps the Rubbish bin, the Vault and
     // incoming shares out. An empty nameFilter means no name filtering at all --
     // MegaSearchFilter treats an unset name as "match everything", so the
-    // favourite flag stays the only criterion.
+    // favourite flag stays the only criterion. filter narrows further, exactly as in
+    // search(); its favouritesOnly facet is redundant here but harmless.
     virtual void listFavourites(SortOrder order,
                                 const std::string& nameFilter,
+                                const SearchFilter& filter,
                                 std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
     // Everything added under the Cloud Drive root in the last 30 days, recursively;
     // rooting, name filter and contract are listFavourites'.
     // "Added" is the node's creation time, not its modification time: an upload
     // carries the local file's mtime, so a freshly uploaded old file would
-    // otherwise never appear here. Files only -- folders are excluded.
+    // otherwise never appear here. Files only -- folders are excluded, so filter's
+    // node-type facet is ignored here, and its time window can only narrow the 30 days.
     virtual void listRecent(SortOrder order,
                             const std::string& nameFilter,
+                            const SearchFilter& filter,
                             std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
     // The Rubbish bin's own top level, same contract as getRootChildren(). Only the

@@ -27,6 +27,7 @@ TestCase {
         id: navComponent
 
         QtObject {
+            property int viewKind: ViewKind.CloudDrive
             property int calls: 0
             property int lastType: -1
             property int lastCategory: -1
@@ -204,5 +205,53 @@ TestCase {
         verify(!f.popup.pendingActive);
         compare(f.popup.typeSelector.currentIndex, SearchNodeType.Any);
         compare(f.popup.favouriteSelector.checked, false);
+    }
+
+    // The two listings ignore one facet each C++-side, and a control that pushes a
+    // value nothing reads is what this popup was hidden from those views to avoid.
+    function test_facetsTheQueryListingsIgnoreAreDisabled_data() {
+        return [
+            {
+                tag: "cloud drive",
+                kind: ViewKind.CloudDrive,
+                type: true,
+                favourite: true
+            },
+            {
+                tag: "favourites",
+                kind: ViewKind.Favourites,
+                type: true,
+                favourite: false
+            },
+            {
+                tag: "recents",
+                kind: ViewKind.Recents,
+                type: false,
+                favourite: true
+            }
+        ];
+    }
+
+    function test_facetsTheQueryListingsIgnoreAreDisabled(data) {
+        const f = makePopup();
+        f.nav.viewKind = data.kind;
+
+        compare(f.popup.typeSelector.enabled, data.type);
+        compare(f.popup.favouriteSelector.enabled, data.favourite);
+        // Never gated on the view: both listings honour it.
+        verify(f.popup.timeSelector.enabled);
+    }
+
+    // The popup's applied state is one per window, so a Folders picked in a Cloud Drive
+    // tab survives into a Recents tab. Greying the category off that stale value would
+    // leave both pickers dead with only Clear as a way out.
+    function test_recentsKeepsTheCategoryPickerWhenTheStaleTypeIsFolders() {
+        const f = makePopup();
+
+        f.popup.typeSelector.currentIndex = SearchNodeType.Folders;
+        f.nav.viewKind = ViewKind.Recents;
+
+        verify(!f.popup.typeSelector.enabled);
+        verify(f.popup.categorySelector.enabled);
     }
 }

@@ -128,10 +128,11 @@ protected:
     void givenFavourites(std::vector<FileEntry> entries)
     {
         favouriteListing = std::move(entries);
-        EXPECT_CALL(*client, listFavourites(_, std::string(), _))
+        EXPECT_CALL(*client, listFavourites(_, std::string(), _, _))
             .WillRepeatedly(
                 Invoke([this](SortOrder,
                               const std::string&,
+                              const SearchFilter&,
                               std::function<void(Result<std::vector<FileEntry>>)> onDone) {
                     ++favouriteFetches;
                     onDone(Result<std::vector<FileEntry>>::ok(favouriteListing));
@@ -535,10 +536,11 @@ TEST_F(FolderNavigationControllerTest, SearchInFavouritesNarrowsTheListingWithou
     // the favourites query instead of reaching the service at all.
     EXPECT_CALL(*client, search(_, _, _, _, _, _)).Times(0);
     int filtered = 0;
-    EXPECT_CALL(*client, listFavourites(_, std::string("kept"), _))
+    EXPECT_CALL(*client, listFavourites(_, std::string("kept"), _, _))
         .WillRepeatedly(
             Invoke([&filtered](SortOrder,
                                const std::string&,
+                               const SearchFilter&,
                                std::function<void(Result<std::vector<FileEntry>>)> onDone) {
                 ++filtered;
                 onDone(Result<std::vector<FileEntry>>::ok({entry("kept.txt", 5)}));
@@ -553,14 +555,76 @@ TEST_F(FolderNavigationControllerTest, SearchInFavouritesNarrowsTheListingWithou
               QStringLiteral("kept.txt"));
 }
 
+TEST_F(FolderNavigationControllerTest, AFilterInFavouritesReachesTheFavouritesQuery)
+{
+    givenFavourites({entry("kept.txt", 5), entry("shot.jpg", 6)});
+    controller->openFavourites();
+    flush();
+
+    EXPECT_CALL(*client, search(_, _, _, _, _, _)).Times(0);
+    SearchFilter seen;
+    EXPECT_CALL(*client, listFavourites(_, std::string(), _, _))
+        .WillRepeatedly(
+            Invoke([&seen](SortOrder,
+                           const std::string&,
+                           const SearchFilter& filter,
+                           std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                seen = filter;
+                onDone(Result<std::vector<FileEntry>>::ok({entry("shot.jpg", 6)}));
+            }));
+
+    controller->setSearchFilter(SearchNodeTypeEnum::Files,
+                                SearchCategoryEnum::Photo,
+                                SearchTimeWindowEnum::PastWeek,
+                                false);
+    flush();
+
+    EXPECT_TRUE(controller->searchActive());
+    EXPECT_EQ(seen.nodeType, SearchNodeType::Files);
+    EXPECT_EQ(seen.category, SearchCategory::Photo);
+    EXPECT_EQ(seen.createdWithin, SearchTimeWindow::PastWeek);
+    ASSERT_EQ(model()->rowCount(), 1);
+}
+
+TEST_F(FolderNavigationControllerTest, AFilterInRecentsReachesTheRecentsQuery)
+{
+    EXPECT_CALL(*client, listRecent(_, std::string(), _, _))
+        .WillRepeatedly(InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a.txt", 1)})));
+    controller->openRecents();
+    flush();
+
+    EXPECT_CALL(*client, search(_, _, _, _, _, _)).Times(0);
+    SearchFilter seen;
+    EXPECT_CALL(*client, listRecent(_, std::string(), _, _))
+        .WillRepeatedly(
+            Invoke([&seen](SortOrder,
+                           const std::string&,
+                           const SearchFilter& filter,
+                           std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                seen = filter;
+                onDone(Result<std::vector<FileEntry>>::ok({entry("a.txt", 1)}));
+            }));
+
+    controller->setSearchFilter(SearchNodeTypeEnum::Any,
+                                SearchCategoryEnum::Video,
+                                SearchTimeWindowEnum::PastDay,
+                                false);
+    flush();
+
+    EXPECT_TRUE(controller->searchActive());
+    EXPECT_EQ(seen.category, SearchCategory::Video);
+    EXPECT_EQ(seen.createdWithin, SearchTimeWindow::PastDay);
+}
+
 TEST_F(FolderNavigationControllerTest, ClearingTheSearchInFavouritesRestoresTheFullListing)
 {
     givenFavourites({entry("kept.txt", 5), entry("other.txt", 6)});
     controller->openFavourites();
     flush();
 
-    EXPECT_CALL(*client, listFavourites(_, std::string("kept"), _))
-        .WillRepeatedly(InvokeArgument<2>(
+    EXPECT_CALL(*client, listFavourites(_, std::string("kept"), _, _))
+        .WillRepeatedly(InvokeArgument<3>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("kept.txt", 5)})));
     controller->search(QStringLiteral("kept"));
     flush();
@@ -750,10 +814,11 @@ TEST_F(FolderNavigationControllerTest, UnfavouritingWhileSearchingInFavouritesKe
     flush();
 
     int filtered = 0;
-    EXPECT_CALL(*client, listFavourites(_, std::string("kept"), _))
+    EXPECT_CALL(*client, listFavourites(_, std::string("kept"), _, _))
         .WillRepeatedly(
             Invoke([&filtered](SortOrder,
                                const std::string&,
+                               const SearchFilter&,
                                std::function<void(Result<std::vector<FileEntry>>)> onDone) {
                 ++filtered;
                 onDone(Result<std::vector<FileEntry>>::ok(
@@ -821,10 +886,11 @@ TEST_F(FolderNavigationControllerTest, SearchActiveFollowsTheQueryAndReportsOnly
 TEST_F(FolderNavigationControllerTest, RecentsOpensNewestFirstRatherThanInTheWindowWideOrder)
 {
     std::vector<SortOrder> used;
-    EXPECT_CALL(*client, listRecent(_, std::string(), _))
+    EXPECT_CALL(*client, listRecent(_, std::string(), _, _))
         .WillRepeatedly(
             Invoke([&used](SortOrder order,
                            const std::string&,
+                           const SearchFilter&,
                            std::function<void(Result<std::vector<FileEntry>>)> onDone) {
                 used.push_back(order);
                 onDone(Result<std::vector<FileEntry>>::ok(
@@ -855,10 +921,11 @@ TEST_F(FolderNavigationControllerTest, RecentsOpensNewestFirstRatherThanInTheWin
 TEST_F(FolderNavigationControllerTest, TheStartupSortRestoreDoesNotUndoTheRecentsDefault)
 {
     std::vector<SortOrder> used;
-    EXPECT_CALL(*client, listRecent(_, std::string(), _))
+    EXPECT_CALL(*client, listRecent(_, std::string(), _, _))
         .WillRepeatedly(
             Invoke([&used](SortOrder order,
                            const std::string&,
+                           const SearchFilter&,
                            std::function<void(Result<std::vector<FileEntry>>)> onDone) {
                 used.push_back(order);
                 onDone(Result<std::vector<FileEntry>>::ok(
@@ -906,8 +973,8 @@ TEST_F(FolderNavigationControllerTest, LeavingRecentsPutsTheUsersOwnSortOrderBac
     EXPECT_CALL(*client, getPath(_, _, _))
         .WillRepeatedly(InvokeArgument<2>(
             Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{})));
-    EXPECT_CALL(*client, listRecent(_, std::string(), _))
-        .WillRepeatedly(InvokeArgument<2>(
+    EXPECT_CALL(*client, listRecent(_, std::string(), _, _))
+        .WillRepeatedly(InvokeArgument<3>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.txt", 2)})));
 
     // The window-wide order this tab started from.
@@ -956,10 +1023,11 @@ TEST_F(FolderNavigationControllerTest, ASortArrivingBeforeTheRecentsListingIsRef
         .WillRepeatedly(InvokeArgument<2>(
             Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{})));
     std::vector<SortOrder> recentOrders;
-    EXPECT_CALL(*client, listRecent(_, std::string(), _))
+    EXPECT_CALL(*client, listRecent(_, std::string(), _, _))
         .WillRepeatedly(
             Invoke([&recentOrders](SortOrder order,
                                    const std::string&,
+                                   const SearchFilter&,
                                    std::function<void(Result<std::vector<FileEntry>>)> onDone) {
                 recentOrders.push_back(order);
                 onDone(Result<std::vector<FileEntry>>::ok(
@@ -992,10 +1060,11 @@ TEST_F(FolderNavigationControllerTest, ASortArrivingBeforeTheRecentsListingIsRef
 TEST_F(FolderNavigationControllerTest, RecentsRefusesASortOrderTheHeaderAsksFor)
 {
     std::vector<SortOrder> used;
-    EXPECT_CALL(*client, listRecent(_, std::string(), _))
+    EXPECT_CALL(*client, listRecent(_, std::string(), _, _))
         .WillRepeatedly(
             Invoke([&used](SortOrder order,
                            const std::string&,
+                           const SearchFilter&,
                            std::function<void(Result<std::vector<FileEntry>>)> onDone) {
                 used.push_back(order);
                 onDone(Result<std::vector<FileEntry>>::ok(
