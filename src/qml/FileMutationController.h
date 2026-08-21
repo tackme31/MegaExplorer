@@ -266,6 +266,11 @@ signals:
                           quint64 source,
                           bool sourceIsRoot);
 
+    // Not a question: the copy or move was refused before anything was issued,
+    // because the set itself brings one name twice. Carries only the repeated
+    // names ({handle, name, isFolder} each), which is all the report shows.
+    void duplicateNamesRejected(QVariantList entries);
+
     // Source only, for the opposite reason: the rubbish bin is not a place any tab
     // can be showing. Until F7b this batch announced nothing at all, so a second
     // tab on the same folder -- or on the favourites listing, which any rubbished
@@ -342,11 +347,18 @@ private:
 
     // One flag per entry, in order: does it land on a name that is already spoken
     // for? Shared by both paths so the dialog's preview and the plan it previews
-    // never disagree. A name the batch itself brings counts, since two same-named
-    // entries from different folders land on each other even when the destination
-    // holds neither (SPEC_NAME_CONFLICT_COPY_MOVE 5-3).
+    // never disagree. Only the destination's own names count -- a set that brings
+    // one name twice is refused by duplicateArrivals() before this runs.
     static std::vector<bool> collidingEntries(const std::vector<NodeRef>& entries,
                                               const DestinationSnapshot& destination);
+
+    // The names this set brings more than once, one entry per repeated name. Such
+    // a set is refused outright rather than asked about: copying it stacks the
+    // second item as a version of the first and moving it leaves two same-named
+    // siblings, neither of which is what selecting both meant. Closes
+    // SPEC_NAME_CONFLICT_COPY_MOVE 6-1.
+    static std::vector<NodeRef> duplicateArrivals(const std::vector<NodeRef>& entries,
+                                                  const DestinationSnapshot& destination);
 
     // Second stage of a copy, on the GUI thread. How the snapshot was arrived at
     // is the caller's problem, since the callers answer a failed destination read

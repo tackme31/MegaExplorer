@@ -74,8 +74,6 @@ std::vector<bool> FileMutationController::collidingEntries(const std::vector<Nod
 {
     std::vector<bool> colliding;
     colliding.reserve(entries.size());
-    // Keyed by kind as well as name, for the reason collidesWith matches by kind.
-    std::set<std::pair<std::string, bool>> arriving;
     for (const NodeRef& entry : entries)
     {
         // Already a child of the destination: this is a paste or drop back into
@@ -86,10 +84,35 @@ std::vector<bool> FileMutationController::collidingEntries(const std::vector<Nod
             colliding.push_back(false);
             continue;
         }
-        const bool broughtTwice = !arriving.insert({entry.name, entry.isFolder}).second;
-        colliding.push_back(destination.collidesWith(entry) || broughtTwice);
+        colliding.push_back(destination.collidesWith(entry));
     }
     return colliding;
+}
+
+std::vector<NodeRef> FileMutationController::duplicateArrivals(
+    const std::vector<NodeRef>& entries,
+    const DestinationSnapshot& destination)
+{
+    // Keyed by kind as well as name, for the reason collidesWith matches by kind.
+    std::set<std::pair<std::string, bool>> arriving;
+    std::set<std::pair<std::string, bool>> reported;
+    std::vector<NodeRef> duplicates;
+    for (const NodeRef& entry : entries)
+    {
+        // Same carve-out as collidingEntries: an entry already in the destination
+        // lands beside its own node under a generated name, so a second copy of
+        // that name is not ambiguous (SPEC_NAME_CONFLICT_COPY_MOVE 3-5).
+        if (destination.handles.count(entry.handle) > 0)
+            continue;
+        const std::pair<std::string, bool> key{entry.name, entry.isFolder};
+        if (arriving.insert(key).second)
+            continue;
+        // One row per repeated name rather than per extra copy: the list is shown
+        // by name, so a third copy would only repeat a line already there.
+        if (reported.insert(key).second)
+            duplicates.push_back(entry);
+    }
+    return duplicates;
 }
 
 FileMutationController::FileMutationController(
@@ -507,6 +530,13 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
     if (entries.empty())
         return;
 
+    const std::vector<NodeRef> duplicates = duplicateArrivals(entries, destination);
+    if (!duplicates.empty())
+    {
+        emit duplicateNamesRejected(ClipboardController::toVariantList(duplicates));
+        return;
+    }
+
     const std::vector<bool> colliding = collidingEntries(entries, destination);
 
     // A generated name has to dodge this batch's own arrivals, not just what the
@@ -888,6 +918,13 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
 {
     if (entries.empty())
         return;
+
+    const std::vector<NodeRef> duplicates = duplicateArrivals(entries, destination);
+    if (!duplicates.empty())
+    {
+        emit duplicateNamesRejected(ClipboardController::toVariantList(duplicates));
+        return;
+    }
 
     const std::vector<bool> colliding = collidingEntries(entries, destination);
 

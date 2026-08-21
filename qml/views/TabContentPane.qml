@@ -187,6 +187,23 @@ ColumnLayout {
         fileVersioningEnabled: accountController.fileVersioningEnabled
     }
 
+    // The refusal, not a question: a set carrying one name twice never reaches
+    // CopyConflictDialog. Same list widget so the names read the same way here.
+    ConflictNameListDialog {
+        id: duplicateNameDialog
+
+        message: qsTr("Two or more of these have the same name, so they can't be copied "
+                      + "or moved together. Leave one of each and try again.")
+    }
+
+    Connections {
+        target: pane.mutController
+        function onDuplicateNamesRejected(entries) {
+            duplicateNameDialog.entries = entries;
+            duplicateNameDialog.open();
+        }
+    }
+
     // uploadController is app-global (three of the five drop targets are shared
     // chrome with no owning tab), so it broadcasts the destination and each tab
     // decides for itself whether it's the one showing it. Connections is a
