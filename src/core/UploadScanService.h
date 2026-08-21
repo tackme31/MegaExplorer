@@ -14,7 +14,9 @@ struct UploadCollision
 {
     std::string localPath;          // the local file that would land on a taken name
     std::string name;               // leaf name, shared by both sides
-    std::uint64_t parentHandle = 0; // MEGA folder it would land in
+    // MEGA folder it would land in, or 0 when that folder does not exist yet
+    // because this same upload creates it.
+    std::uint64_t parentHandle = 0;
     bool parentIsRoot = false;
     // The MEGA file already sitting there, or 0 when the name is taken by an
     // earlier file in this same upload rather than by anything on MEGA.
@@ -36,11 +38,14 @@ struct UploadPlanItem
 // 1-2). A name the upload itself brings twice counts too: the second copy versions
 // over the first exactly as it would over a pre-existing node.
 //
-// The walk only descends where both sides have a folder of the same name, so its
-// cost tracks the size of the overlap rather than the size of the upload: adding
-// one file to a local copy of a 100-file folder costs one directory listing and
-// two MEGA lookups. Both lookups answer from memory or local SQLite, so a scan
-// never goes to the network (spec 1-1).
+// The walk descends where both sides have a folder of the same name, and where the
+// upload itself brings one name twice -- the SDK merges those two into one folder
+// as well, so their contents land on each other. Every copy of a name is walked as
+// a single level, since that is what they become on MEGA. The cost still tracks the
+// size of the overlap rather than the size of the upload: adding one file to a local
+// copy of a 100-file folder costs one directory listing and two MEGA lookups. Both
+// lookups answer from memory or local SQLite, so a scan never goes to the network
+// (spec 1-1).
 class UploadScanService
 {
 public:
@@ -80,27 +85,46 @@ private:
         // the only place those lookups happen, and the skip plan needs them: a file
         // that survives beside a colliding one has to name the folder they share.
         std::map<std::string, std::uint64_t> folderHandles;
+        // Local directories the walk descended into that MEGA has no folder for --
+        // this upload creates it. Having no handle, they cannot be named as a plan
+        // item's parent, which is what limits what "skip" can do inside them.
+        std::set<std::string> createdFolders;
     };
 
     Result<Scan> scan(const std::vector<std::string>& localPaths,
                       std::uint64_t parentHandle,
                       bool parentIsRoot) const;
 
+    // parentOnMega false means the folder holding this level is one the upload
+    // creates, so nothing on MEGA can be there to collide with and neither lookup
+    // is worth making -- only the names the batch itself brings twice count.
     Result<void> scanLevel(const std::vector<LocalEntry>& entries,
                            std::uint64_t parentHandle,
                            bool parentIsRoot,
+                           bool parentOnMega,
                            int depth,
                            Scan& out) const;
 
     // Fails when a folder it has to take apart can no longer be listed: the
     // survivors inside it would otherwise be dropped from the plan without a
     // trace, and "skip" would then quietly upload less than the user agreed to.
+    // Fails too when a folder the upload creates itself has to be taken apart and
+    // something in it survives, since a plan item can only name a parent that
+    // already has a handle; a copy of which nothing survives is simply left out.
     Result<void> addToPlan(const LocalEntry& entry,
                            std::uint64_t parentHandle,
                            bool parentIsRoot,
                            const Scan& scanned,
                            const std::set<std::string>& collided,
                            std::vector<UploadPlanItem>& plan) const;
+
+    // Whether any file under `entry` would still be uploaded. Asked only about a
+    // copy of a folder this upload creates itself, where the answer decides between
+    // leaving the whole copy out and refusing to plan: no part of it can be named.
+    Result<bool> anySurvivorUnder(const LocalEntry& entry,
+                                  const Scan& scanned,
+                                  const std::set<std::string>& collided,
+                                  int depth) const;
 
     std::shared_ptr<IMegaClient> mClient;
     std::shared_ptr<ILocalFileSystem> mFs;
