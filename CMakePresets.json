@@ -29,6 +29,12 @@
       "configurePreset": "msvc-debug",
       "configuration": "Debug",
       "targets": ["appMegaExplorer", "megatool", "MegaExplorerTests", "MegaExplorerQmlTests"]
+    },
+    {
+      "name": "msvc-release",
+      "configurePreset": "msvc-debug",
+      "configuration": "Release",
+      "targets": ["appMegaExplorer"]
     }
   ],
   "testPresets": [

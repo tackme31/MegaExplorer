@@ -327,6 +327,20 @@ and vcpkg's `debug/bin` on `PATH` to run outside Qt Creator:
 set PATH=C:\Qt\6.11.1\msvc2022_64\bin;%CD%\build\msvc-debug\vcpkg_installed\x64-windows-mega\debug\bin;%PATH%
 ```
 
+**Release build** — the same configure tree: the VS generator is multi-config, so only the build
+preset differs and no second vcpkg install happens.
+
+```
+C:/Qt/Tools/CMake_64/bin/cmake.exe --build --preset msvc-release
+set PATH=C:\Qt\6.11.1\msvc2022_64\bin;%CD%\build\msvc-debug\vcpkg_installed\x64-windows-mega\bin;%PATH%
+```
+
+Binary `build/msvc-debug/Release/appMegaExplorer.exe` — the directory is named after the *configure*
+preset, which is why a Release build lands under `msvc-debug`. Note `bin`, not `debug/bin`. **Never
+judge performance from a Debug run**: `_ITERATOR_DEBUG_LEVEL=2` and the debug CRT heap dominate the
+listing path, so folder navigation is visibly faster in Release for that reason alone
+(`docs/BUILD.md`).
+
 **Compiler warnings**: all six of our targets — `MegaExplorerCore`, `MegaExplorerQml`,
 `appMegaExplorer`, `megatool`, `MegaExplorerTests`, `MegaExplorerQmlTests` — build at `/W4`, via the
 `MegaExplorerWarnings` interface
