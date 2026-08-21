@@ -258,19 +258,12 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   answer with the shortcut, and don't lock the workstation while the flag is set: `SendInput` goes
   to the secure desktop and never reaches the app.
 - `scripts/ntfy-send.sh` — how the loop reaches a phone. Claude Code's built-in push reports success
-  and mostly doesn't deliver, so it isn't used. Two callers: Claude — at the end of a cycle, and
-  ahead of every question it raises itself — and `scripts/away_notify_hook.sh`, a `Notification`
-  hook covering the prompts Claude cannot announce (a first-time command, an MCP dialog) because it
-  is blocked while one is open. **Two gates, and they live in different places.** The settings entry
-  carries a `matcher` naming the types that actually need answering
-  (`permission_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog`) — `Notification`
-  is not the permission-only event its name suggests, it also fires for `idle_prompt`,
-  `agent_completed` and `auth_success`. The script holds the other gate, which no matcher can
-  express: it only pushes when **nobody is at the desk**, since a `UserPromptSubmit` hook stamps the
-  last time you typed and anything within 10 minutes of that is treated as "you are looking at the
-  terminal". That stamp ignores injected `<task-notification>` prompts, which report a human present
-  in the middle of an unattended cycle. Both hooks live in the gitignored
-  `.claude/settings.local.json`, so a fresh clone has to re-add them, matcher included.
+  and mostly doesn't deliver, so it isn't used. Claude is the only caller: at the end of a cycle,
+  and ahead of every question it raises itself. A `Notification` hook used to push waiting permission
+  prompts too, but the case it was built for — the `drive` request going unannounced — is now covered
+  by `AskUserQuestion` plus the direct push above, so it was removed (2026-08-21) rather than kept
+  for the prompts nobody had asked it to cover. A permission dialog opening unattended therefore
+  stalls that cycle silently; the cost is the same one the drive gate already accepts.
 
 Secrets: `MEGAEXPLORER_TEST_ACCOUNT` and `NTFY_TOPIC` live in the gitignored
 `.claude/settings.local.json` `env` block; `MEGAEXPLORER_TEST_PASSWORD` is a Windows user
