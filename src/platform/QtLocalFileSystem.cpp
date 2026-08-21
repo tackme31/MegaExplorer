@@ -4,6 +4,9 @@
 #include <QFileInfo>
 #include <QString>
 
+#include <filesystem>
+#include <system_error>
+
 namespace
 {
 LocalEntry toEntry(const QFileInfo& info)
@@ -34,19 +37,36 @@ std::optional<LocalEntry> QtLocalFileSystem::entryFor(const std::string& path) c
     return toEntry(info);
 }
 
-std::vector<LocalEntry> QtLocalFileSystem::listDirectory(const std::string& path) const
+std::optional<std::vector<LocalEntry>> QtLocalFileSystem::listDirectory(
+    const std::string& path) const
 {
     const QString nativePath = QString::fromStdString(path);
     if (!QFileInfo(nativePath).isDir())
-        return {};
+        return std::nullopt;
     const QDir dir(nativePath);
 
     // Hidden because the SDK's recursive upload sends hidden files, System
     // because entryInfoList otherwise drops symlinks with a missing target: a
     // scan that matched Explorer's view instead would under-count collisions.
-    std::vector<LocalEntry> entries;
     const QFileInfoList children = dir.entryInfoList(QDir::Files | QDir::Dirs | QDir::Hidden |
                                                      QDir::System | QDir::NoDotAndDotDot);
+    // entryInfoList reports a refused directory as an empty one, and QDir's own
+    // isReadable() cannot tell them apart either -- on Windows it ignores NTFS
+    // ACLs unless qt_ntfs_permission_lookup is enabled. The iterator does the
+    // FindFirstFile itself and surfaces the error, so probe with it, but only in
+    // the empty case, where it costs one call and nothing is being listed twice.
+    if (children.isEmpty())
+    {
+        std::error_code ec;
+        // Constructed from a wide string: std::filesystem reads a narrow one in
+        // the ANSI code page, which mangles anything outside it.
+        const std::filesystem::directory_iterator probe(
+            std::filesystem::path(nativePath.toStdWString()), ec);
+        if (ec)
+            return std::nullopt;
+    }
+
+    std::vector<LocalEntry> entries;
     entries.reserve(static_cast<std::size_t>(children.size()));
     for (const QFileInfo& info : children)
         entries.push_back(toEntry(info));

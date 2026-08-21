@@ -7,5 +7,5 @@ class QtLocalFileSystem : public ILocalFileSystem
 {
 public:
     std::optional<LocalEntry> entryFor(const std::string& path) const override;
-    std::vector<LocalEntry> listDirectory(const std::string& path) const override;
+    std::optional<std::vector<LocalEntry>> listDirectory(const std::string& path) const override;
 };

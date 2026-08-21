@@ -56,22 +56,27 @@ Result<std::vector<UploadPlanItem>> UploadScanService::planSkippingCollisions(
 
     std::vector<UploadPlanItem> plan;
     for (const LocalEntry& entry : scanned.value().topLevel)
-        addToPlan(entry, parentHandle, parentIsRoot, scanned.value(), collided, plan);
+    {
+        Result<void> added =
+            addToPlan(entry, parentHandle, parentIsRoot, scanned.value(), collided, plan);
+        if (!added.success)
+            return Result<std::vector<UploadPlanItem>>::fail(added.errorMessage, added.errorCode);
+    }
     return Result<std::vector<UploadPlanItem>>::ok(std::move(plan));
 }
 
-void UploadScanService::addToPlan(const LocalEntry& entry,
-                                  std::uint64_t parentHandle,
-                                  bool parentIsRoot,
-                                  const Scan& scanned,
-                                  const std::set<std::string>& collided,
-                                  std::vector<UploadPlanItem>& plan) const
+Result<void> UploadScanService::addToPlan(const LocalEntry& entry,
+                                         std::uint64_t parentHandle,
+                                         bool parentIsRoot,
+                                         const Scan& scanned,
+                                         const std::set<std::string>& collided,
+                                         std::vector<UploadPlanItem>& plan) const
 {
     if (!entry.isDirectory)
     {
         if (collided.find(entry.path) == collided.end())
             plan.push_back(UploadPlanItem{entry.path, parentHandle, parentIsRoot});
-        return;
+        return Result<void>::ok();
     }
 
     // Only a directory the walk descended into can hold a collision, and only one
@@ -81,10 +86,22 @@ void UploadScanService::addToPlan(const LocalEntry& entry,
     if (merged == scanned.folderHandles.end() || !hasCollisionUnder(collided, entry.path))
     {
         plan.push_back(UploadPlanItem{entry.path, parentHandle, parentIsRoot});
-        return;
+        return Result<void>::ok();
     }
-    for (const LocalEntry& child : mFs->listDirectory(entry.path))
-        addToPlan(child, merged->second, false, scanned, collided, plan);
+    // The scan listed this folder a moment ago, so a refusal here is a race (it
+    // was removed, or locked) rather than the ordinary case -- and one that would
+    // silently shrink the upload, hence a failure instead of an empty level.
+    const std::optional<std::vector<LocalEntry>> children = mFs->listDirectory(entry.path);
+    if (!children)
+        return Result<void>::fail("Could not read the local folder \"" + entry.name + "\"",
+                                  MegaErrorCode::kEInternal);
+    for (const LocalEntry& child : *children)
+    {
+        Result<void> deeper = addToPlan(child, merged->second, false, scanned, collided, plan);
+        if (!deeper.success)
+            return deeper;
+    }
+    return Result<void>::ok();
 }
 
 Result<UploadScanService::Scan> UploadScanService::scan(const std::vector<std::string>& localPaths,
@@ -187,10 +204,15 @@ Result<void> UploadScanService::scanLevel(const std::vector<LocalEntry>& entries
                                       "collisions",
                                       MegaErrorCode::kEInternal);
         out.folderHandles.emplace(local->path, hit->second);
+        // Unlike the skip plan, a folder that refuses to be listed only costs a
+        // question here: finding no collisions under it leaves the plan handing it
+        // to the SDK whole, so nothing is dropped by walking on.
+        const std::optional<std::vector<LocalEntry>> children = mFs->listDirectory(local->path);
+        if (!children)
+            continue;
         // Below the top level the parent is always a real node, so parentIsRoot
         // stops applying once the walk descends.
-        Result<void> deeper =
-            scanLevel(mFs->listDirectory(local->path), hit->second, false, depth + 1, out);
+        Result<void> deeper = scanLevel(*children, hit->second, false, depth + 1, out);
         if (!deeper.success)
             return deeper;
     }

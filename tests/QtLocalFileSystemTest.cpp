@@ -19,6 +19,14 @@ void writeFile(const std::filesystem::path& path, const std::string& contents)
     out << contents;
 }
 
+// Unwraps the "could not list" answer for the cases that are not about it.
+std::vector<LocalEntry> mustList(const QtLocalFileSystem& fs, const QString& path)
+{
+    const std::optional<std::vector<LocalEntry>> entries = fs.listDirectory(path.toStdString());
+    EXPECT_TRUE(entries.has_value());
+    return entries.value_or(std::vector<LocalEntry>{});
+}
+
 std::vector<std::string> namesOf(const std::vector<LocalEntry>& entries)
 {
     std::vector<std::string> names;
@@ -42,7 +50,7 @@ TEST(QtLocalFileSystemTest, ListsFilesAndDirectoriesWithoutDotEntries)
     QtLocalFileSystem fs;
 
     // Act
-    const std::vector<LocalEntry> entries = fs.listDirectory(dir.path().toStdString());
+    const std::vector<LocalEntry> entries = mustList(fs, dir.path());
 
     // Assert
     EXPECT_THAT(namesOf(entries), ::testing::ElementsAre("a.txt", "sub"));
@@ -67,8 +75,7 @@ TEST(QtLocalFileSystemTest, ListsHiddenFiles)
 
     QtLocalFileSystem fs;
 
-    EXPECT_THAT(namesOf(fs.listDirectory(dir.path().toStdString())),
-                ::testing::ElementsAre("hidden.txt"));
+    EXPECT_THAT(namesOf(mustList(fs, dir.path())), ::testing::ElementsAre("hidden.txt"));
 }
 
 TEST(QtLocalFileSystemTest, KeepsNonAsciiNamesAsUtf8)
@@ -85,7 +92,7 @@ TEST(QtLocalFileSystemTest, KeepsNonAsciiNamesAsUtf8)
 
     QtLocalFileSystem fs;
 
-    const std::vector<LocalEntry> entries = fs.listDirectory(dir.path().toStdString());
+    const std::vector<LocalEntry> entries = mustList(fs, dir.path());
     ASSERT_EQ(entries.size(), 1u);
     EXPECT_EQ(entries[0].name, kUtf8Name);
 
@@ -94,8 +101,10 @@ TEST(QtLocalFileSystemTest, KeepsNonAsciiNamesAsUtf8)
     EXPECT_EQ(entry->name, kUtf8Name);
 }
 
-TEST(QtLocalFileSystemTest, ListingAMissingOrNonDirectoryPathIsEmpty)
+TEST(QtLocalFileSystemTest, ListingAMissingOrNonDirectoryPathAnswersNoListing)
 {
+    // Not an empty listing: the upload skip plan drops a branch it cannot see, so
+    // "there is nothing here" and "I could not look" have to stay apart.
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
     const std::filesystem::path root(dir.path().toStdWString());
@@ -103,8 +112,25 @@ TEST(QtLocalFileSystemTest, ListingAMissingOrNonDirectoryPathIsEmpty)
 
     QtLocalFileSystem fs;
 
-    EXPECT_TRUE(fs.listDirectory((root / "nope").string()).empty());
-    EXPECT_TRUE(fs.listDirectory((root / "a.txt").string()).empty());
+    EXPECT_FALSE(fs.listDirectory((root / "nope").string()).has_value());
+    EXPECT_FALSE(fs.listDirectory((root / "a.txt").string()).has_value());
+}
+
+TEST(QtLocalFileSystemTest, AnEmptyDirectoryListsAsEmptyRatherThanUnreadable)
+{
+    // The other side of the same line, and the one the readability probe could
+    // break: an empty directory is a listing, just an empty one.
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const std::filesystem::path root(dir.path().toStdWString());
+    std::filesystem::create_directory(root / "empty");
+
+    QtLocalFileSystem fs;
+
+    const std::optional<std::vector<LocalEntry>> entries =
+        fs.listDirectory((root / "empty").string());
+    ASSERT_TRUE(entries.has_value());
+    EXPECT_TRUE(entries->empty());
 }
 
 TEST(QtLocalFileSystemTest, EntryForDistinguishesFilesFoldersAndMissingPaths)

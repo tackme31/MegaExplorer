@@ -57,8 +57,9 @@ public:
     // What "skip the duplicates" has to be turned into. The SDK's recursive upload
     // has no per-file hook (spec 1-2), so a branch holding a collision is walked
     // here and its surviving parts issued one by one, while a branch holding none
-    // is handed over whole and left to the SDK. Fails exactly when findCollisions
-    // would: a caller must not treat "could not tell" as "nothing collides" here,
+    // is handed over whole and left to the SDK. Fails wherever findCollisions
+    // would, and additionally when a branch it has to take apart can no longer be
+    // listed: a caller must not treat "could not tell" as "nothing collides" here,
     // since uploading everything is what the user just declined.
     Result<std::vector<UploadPlanItem>> planSkippingCollisions(
         const std::vector<std::string>& localPaths,
@@ -91,12 +92,15 @@ private:
                            int depth,
                            Scan& out) const;
 
-    void addToPlan(const LocalEntry& entry,
-                   std::uint64_t parentHandle,
-                   bool parentIsRoot,
-                   const Scan& scanned,
-                   const std::set<std::string>& collided,
-                   std::vector<UploadPlanItem>& plan) const;
+    // Fails when a folder it has to take apart can no longer be listed: the
+    // survivors inside it would otherwise be dropped from the plan without a
+    // trace, and "skip" would then quietly upload less than the user agreed to.
+    Result<void> addToPlan(const LocalEntry& entry,
+                           std::uint64_t parentHandle,
+                           bool parentIsRoot,
+                           const Scan& scanned,
+                           const std::set<std::string>& collided,
+                           std::vector<UploadPlanItem>& plan) const;
 
     std::shared_ptr<IMegaClient> mClient;
     std::shared_ptr<ILocalFileSystem> mFs;
