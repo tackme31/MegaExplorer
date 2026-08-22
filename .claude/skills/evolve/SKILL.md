@@ -5,8 +5,9 @@ description: >-
   docs/ROADMAP.md, implement it, verify it with scripts/loop_verify.sh, review
   it, land it on an evolve/NNN branch, and merge that into master. Always runs one
   cycle starting now; the timer that fires it is registered separately by
-  `/evolve-loop`. Use only when asked to run a cycle -- ordinary feature work does
-  not go through this skill.
+  `/evolve-loop`. `/evolve force` runs the cycle even when the usage gate says the
+  quota window is too far spent. Use only when asked to run a cycle -- ordinary
+  feature work does not go through this skill.
 ---
 
 # /evolve — ディスパッチャ
@@ -30,6 +31,13 @@ description: >-
    残る——待つほうが安い。ゲート自身は `/usage` をローカル実行するだけで **0 トークン・約 4 秒**
    なので、毎周叩いて損はない。閾値（5h 50% / 7d 85%）とスキップ理由の判定はスクリプト側にある
    ので、**親はそれを読まない。exit コードだけ見る。**
+
+   **例外は引数に `force`（`--force` / `強行` も同じ）が付いていたときだけ。** そのときもゲートは
+   情報として走らせるが、exit 1 でも 1. へ進む。報告の先頭に `ゲート踏み越え: <ゲートの出力行>`
+   を 1 行足して、枠が途中で尽きればブランチが残ることを添える。閾値そのものは触らない——
+   `EVOLVE_USAGE_MAX_5H` を書き換えるとその値が以後の無人周にも効くが、`force` はその 1 周
+   限りで消えるので、踏み越えの判断が次の cron 発火へ漏れない。**`force` は人間がその場で
+   打ったときにしか成立しない**——cron が投げる `/evolve` には付かず、親が自分で足すこともない。
 
 1. `Agent` ツールで `general-purpose` を **1 体だけ**、**フォアグラウンドで**
    （`run_in_background: false`）、`model: "opus"` を明示して spawn し、次を渡す:
@@ -77,8 +85,9 @@ description: >-
   来る前に終わっている必要がある。バックグラウンドにすると報告の中継がティックをまたぐ。
 - **1 ティックで 2 体以上 spawn しない。** サイクルが 2 本並走すると、同じ ROADMAP 項目を 2 回
   取り、`evolve/NNN` の採番も衝突する。
-- **ゲートが落ちたとき、閾値を上書きして回さない。** `EVOLVE_USAGE_MAX_5H` などを渡して通すのは
-  人間が対話でやる判断であって、ループの中で親がやることではない。**読めなかった周もスキップ
+- **ゲートが落ちたとき、勝手に踏み越えない。** 踏み越えは人間が `force` と打ったときだけ成立
+  する判断で、ループの中で親が代弁するものではない。`EVOLVE_USAGE_MAX_5H` などの環境変数を
+  渡して通す道も使わない——1 周だけのつもりが以後の無人周にも効く。**読めなかった周もスキップ
   する**——不明を「たぶん大丈夫」に倒すと、枠を使い切った状態で 1 周まるごと溶かす。
 - **報告が返る前にユーザーへ結果を書かない。** 予測して書かない。通知も同じで、`通知:` の行は
   中継の直前・直後に叩く。先回りして鳴らさない。
