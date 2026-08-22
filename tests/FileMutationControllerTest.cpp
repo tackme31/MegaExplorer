@@ -1560,9 +1560,8 @@ TEST_F(FileMutationControllerTest, PasteNamesARepeatedNameOnceHoweverManyBringIt
     givenRootListing({});
     controller->loadRoot();
     flush();
-    clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("a.txt", 6), entry("a.txt", 7)}),
-                    8,
-                    false);
+    clipboard->copy(
+        clipboardEntries({entry("a.txt", 5), entry("a.txt", 6), entry("a.txt", 7)}), 8, false);
 
     EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
 
@@ -1585,10 +1584,8 @@ TEST_F(FileMutationControllerTest, PasteLetsASharedNameThroughWhenTheKindsDiffer
 
     // Names left open: the folder's is decided by uniqueCopyName, whose set is
     // keyed by name alone, and what it picks is not what this test is about.
-    EXPECT_CALL(*client, copyNode(5u, _, _, _, _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-    EXPECT_CALL(*client, copyNode(6u, _, _, _, _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(5u, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(6u, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
     mutations->paste();
     flush();

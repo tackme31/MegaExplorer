@@ -222,8 +222,8 @@ TEST_F(TabsControllerTest, ALinkSharedElsewhereMarksTheRowInEveryOtherTab)
                 onDone(Result<std::vector<FileEntry>>::ok({FileEntry{"a", 9}}));
             }));
     EXPECT_CALL(*client, getPath(_, _, _))
-        .WillRepeatedly(InvokeArgument<2>(
-            Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{})));
+        .WillRepeatedly(
+            InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{})));
     EXPECT_CALL(*client, exportNode(9u, _))
         .WillRepeatedly(InvokeArgument<1>(Result<std::string>::ok("https://mega.nz/file/a#k")));
 

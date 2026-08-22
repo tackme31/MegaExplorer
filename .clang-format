@@ -1,4 +1,6 @@
-# clang-format 18. Applies to src/, tests/, main.cpp, Main.qml's C++ neighbors.
+# Applies to src/, tests/, main.cpp, Main.qml's C++ neighbors. Verified to give
+# byte-identical output on clang-format 18 and 22, so the local LLVM version is
+# not pinned -- churn after an LLVM upgrade means an unformatted file, not skew.
 # third_party/sdk has its own .clang-format (vendored, do not edit) which
 # clang-format picks up instead for files under that tree.
 Language: Cpp

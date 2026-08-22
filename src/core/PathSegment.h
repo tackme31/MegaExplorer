@@ -17,7 +17,7 @@ struct PathSegment
     // compares before re-emitting.
     bool operator==(const PathSegment& other) const
     {
-        return name == other.name && handle == other.handle && isRoot == other.isRoot
-               && kind == other.kind;
+        return name == other.name && handle == other.handle && isRoot == other.isRoot &&
+               kind == other.kind;
     }
 };

@@ -92,17 +92,15 @@ void LocalFolderController::withLocalPath(quint64 handle,
         mLocalRoot.toStdString(),
         [this, resolveFailToast = std::move(resolveFailToast), act = std::move(act)](
             Result<std::string> result) {
-            invokeOnGuiThread(
-                this,
-                [this, resolveFailToast, act, result = std::move(result)] {
-                    if (!result.success)
-                    {
-                        qCWarning(lcApp) << "no local counterpart for this item:"
-                                         << QString::fromStdString(result.errorMessage);
-                        mNotifications->notifyError(resolveFailToast);
-                        return;
-                    }
-                    act(QString::fromStdString(result.value()));
-                });
+            invokeOnGuiThread(this, [this, resolveFailToast, act, result = std::move(result)] {
+                if (!result.success)
+                {
+                    qCWarning(lcApp) << "no local counterpart for this item:"
+                                     << QString::fromStdString(result.errorMessage);
+                    mNotifications->notifyError(resolveFailToast);
+                    return;
+                }
+                act(QString::fromStdString(result.value()));
+            });
         });
 }

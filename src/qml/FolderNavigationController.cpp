@@ -185,14 +185,12 @@ void FolderNavigationController::openFavourites()
 {
     dropSearchForNavigation();
     restoreUserSortOrder();
-    mService->openFavourites(mSortOrder,
-                             [this, self = shared_from_this()](
-                                 Result<std::vector<FileEntry>> result) {
-                                 invokeOnGuiThread(this,
-                                                   [this, result = std::move(result)]() mutable {
-                                                       applyResult(std::move(result));
-                                                   });
-                             });
+    mService->openFavourites(
+        mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+                applyResult(std::move(result));
+            });
+        });
 }
 
 void FolderNavigationController::openRubbish()
@@ -200,12 +198,10 @@ void FolderNavigationController::openRubbish()
     dropSearchForNavigation();
     restoreUserSortOrder();
     mService->openRubbish(mSortOrder,
-                          [this, self = shared_from_this()](
-                              Result<std::vector<FileEntry>> result) {
-                              invokeOnGuiThread(this,
-                                                [this, result = std::move(result)]() mutable {
-                                                    applyResult(std::move(result));
-                                                });
+                          [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+                              invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+                                  applyResult(std::move(result));
+                              });
                           });
 }
 
@@ -214,12 +210,10 @@ void FolderNavigationController::openRecents()
     dropSearchForNavigation();
     applyViewSortOrder(ViewKindEnum::Recents, kRecentsOrder);
     mService->openRecents(mSortOrder,
-                          [this, self = shared_from_this()](
-                              Result<std::vector<FileEntry>> result) {
-                              invokeOnGuiThread(this,
-                                                [this, result = std::move(result)]() mutable {
-                                                    applyResult(std::move(result));
-                                                });
+                          [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+                              invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+                                  applyResult(std::move(result));
+                              });
                           });
 }
 
@@ -264,18 +258,16 @@ void FolderNavigationController::navigateToKind(quint64 handle,
 {
     dropSearchForNavigation();
     restoreUserSortOrder();
-    mService->navigateTo(static_cast<std::uint64_t>(handle),
-                         isRoot,
-                         kind,
-                         mSortOrder,
-                         [this, self = shared_from_this(), revealName](
-                             Result<std::vector<FileEntry>> result) {
-                             invokeOnGuiThread(this,
-                                               [this, result = std::move(result),
-                                                revealName]() mutable {
-                                                   applyResult(std::move(result), revealName);
-                                               });
-                         });
+    mService->navigateTo(
+        static_cast<std::uint64_t>(handle),
+        isRoot,
+        kind,
+        mSortOrder,
+        [this, self = shared_from_this(), revealName](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result), revealName]() mutable {
+                applyResult(std::move(result), revealName);
+            });
+        });
 }
 
 void FolderNavigationController::goToContainingFolder(quint64 handle, QString name)
@@ -393,8 +385,8 @@ void FolderNavigationController::publishCrossFolderListing()
     // latched after the user opens a folder from its results (a documented property
     // of search() -- navigation state is left alone), so asking the box would keep
     // claiming "these rows come from elsewhere" about a plain folder listing.
-    mFileListModel->setCrossFolderListing(
-        mListingFromSearch || isCrossDriveListing(static_cast<ViewKind>(viewKind())));
+    mFileListModel->setCrossFolderListing(mListingFromSearch ||
+                                          isCrossDriveListing(static_cast<ViewKind>(viewKind())));
 }
 
 bool FolderNavigationController::canPerform(const QString& actionId) const
@@ -477,7 +469,8 @@ void FolderNavigationController::runVisibleSearch()
     };
 
     if (viewKind() == ViewKindEnum::Favourites)
-        mService->listFavourites(mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
+        mService->listFavourites(
+            mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
     else if (viewKind() == ViewKindEnum::Recents)
         mService->listRecent(mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
     else
@@ -645,11 +638,10 @@ const std::vector<FileEntry>& FolderNavigationController::cachedChildren() const
 
 bool FolderNavigationController::hasChildFolderNamed(const std::string& name) const
 {
-    return std::any_of(mLastFolderEntries.begin(),
-                       mLastFolderEntries.end(),
-                       [&name](const FileEntry& entry) {
-                           return entry.isFolder && entry.name == name;
-                       });
+    return std::any_of(
+        mLastFolderEntries.begin(), mLastFolderEntries.end(), [&name](const FileEntry& entry) {
+            return entry.isFolder && entry.name == name;
+        });
 }
 
 void FolderNavigationController::applyFavouriteChange(quint64 handle, bool favourite)

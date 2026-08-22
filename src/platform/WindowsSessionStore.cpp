@@ -71,8 +71,7 @@ Result<std::string> WindowsSessionStore::loadSession() const
     if (!in)
     {
         qCWarning(lcSession) << "failed to open session file for reading:" << mFilePath.c_str();
-        return Result<std::string>::fail("failed to open session file",
-                                        MegaErrorCode::kEInternal);
+        return Result<std::string>::fail("failed to open session file", MegaErrorCode::kEInternal);
     }
     std::vector<char> raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     in.close();
@@ -95,7 +94,7 @@ Result<std::string> WindowsSessionStore::loadSession() const
         qCWarning(lcSession) << "CryptUnprotectData failed, error"
                              << static_cast<qint64>(GetLastError());
         return Result<std::string>::fail("failed to decrypt session data",
-                                        MegaErrorCode::kEInternal);
+                                         MegaErrorCode::kEInternal);
     }
 
     std::string result(reinterpret_cast<char*>(dataOut.pbData), dataOut.cbData);

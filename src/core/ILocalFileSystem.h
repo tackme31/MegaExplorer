@@ -32,6 +32,5 @@ public:
     // could not be taken at all -- a missing path, a file, or a directory that
     // refused to be read -- which a caller must not confuse with an empty
     // directory: the upload skip plan drops what it cannot see.
-    virtual std::optional<std::vector<LocalEntry>> listDirectory(
-        const std::string& path) const = 0;
+    virtual std::optional<std::vector<LocalEntry>> listDirectory(const std::string& path) const = 0;
 };

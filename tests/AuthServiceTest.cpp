@@ -136,7 +136,8 @@ TEST(AuthServiceTest, RestoreSessionCorruptSessionFileSelfHealsByClearing)
     auto mockSessionStore = std::make_shared<MockSessionStore>();
 
     EXPECT_CALL(*mockSessionStore, loadSession())
-        .WillOnce(::testing::Return(Result<std::string>::fail("decrypt failed", MegaErrorCode::kEInternal)));
+        .WillOnce(::testing::Return(
+            Result<std::string>::fail("decrypt failed", MegaErrorCode::kEInternal)));
     EXPECT_CALL(*mockSessionStore, clearSession()).WillOnce(::testing::Return(Result<void>::ok()));
     EXPECT_CALL(*mockClient, loginWithSession(::testing::_, ::testing::_)).Times(0);
 

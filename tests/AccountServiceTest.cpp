@@ -51,7 +51,8 @@ TEST(AccountServiceTest, IdentityPropagatesFailureWhenNotLoggedIn)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     EXPECT_CALL(*mockClient, currentAccountIdentity())
-        .WillOnce(::testing::Return(Result<AccountIdentity>::fail("not logged in", MegaErrorCode::kEInternal)));
+        .WillOnce(::testing::Return(
+            Result<AccountIdentity>::fail("not logged in", MegaErrorCode::kEInternal)));
 
     AccountService service(mockClient);
 
@@ -334,8 +335,8 @@ TEST(AccountServiceTest, FileVersioningDefaultsToEnabledWhenAttributeUnset)
     // Arrange
     auto mockClient = std::make_shared<MockMegaClient>();
     EXPECT_CALL(*mockClient, getFileVersioningEnabled(::testing::_))
-        .WillOnce(::testing::InvokeArgument<0>(
-            Result<bool>::fail("Not found", MegaErrorCode::kENoEnt)));
+        .WillOnce(
+            ::testing::InvokeArgument<0>(Result<bool>::fail("Not found", MegaErrorCode::kENoEnt)));
     AccountService service(mockClient);
     bool captured = false;
 

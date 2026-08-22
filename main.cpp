@@ -29,9 +29,9 @@
 #include "qml/LocalFolderController.h"
 #include "qml/NotificationController.h"
 #include "qml/PreviewController.h"
-#include "qml/PropertiesController.h"
 #include "qml/PreviewImageProvider.h"
 #include "qml/PreviewImageStore.h"
+#include "qml/PropertiesController.h"
 #include "qml/QuickAccessModel.h"
 #include "qml/TabsController.h"
 #include "qml/ThumbnailController.h"
@@ -90,8 +90,8 @@ int main(int argc, char* argv[])
         // QtCore Settings item, which stores its aliases ungrouped -- hence the bare
         // key. Qt::ColorScheme::Unknown, the default, is "follow the OS".
         const int stored = QSettings().value(QStringLiteral("colorSchemePreference")).toInt();
-        if (stored == static_cast<int>(Qt::ColorScheme::Light)
-            || stored == static_cast<int>(Qt::ColorScheme::Dark))
+        if (stored == static_cast<int>(Qt::ColorScheme::Light) ||
+            stored == static_cast<int>(Qt::ColorScheme::Dark))
         {
             app.styleHints()->setColorScheme(static_cast<Qt::ColorScheme>(stored));
         }

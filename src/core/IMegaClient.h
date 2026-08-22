@@ -325,8 +325,7 @@ public:
 
     // exportNode's inverse. Reports success for a node that has no link, so a caller
     // whose view of the export state is stale still ends up where it asked to be.
-    virtual void disableExport(std::uint64_t handle,
-                               std::function<void(Result<void>)> onDone) = 0;
+    virtual void disableExport(std::uint64_t handle, std::function<void(Result<void>)> onDone) = 0;
 
     // Whether moveNode() with the same arguments would be accepted, as a pure
     // in-memory check -- a drag hovering over a drop target queries it per mouse
@@ -375,8 +374,7 @@ public:
     // the parent is read here because only an implementation can see it, as with
     // checkMove. The node itself never counts as its own collision, so a rename
     // that only changes a name's case still goes through.
-    virtual Result<bool> siblingNameTaken(std::uint64_t handle,
-                                          const std::string& name) const = 0;
+    virtual Result<bool> siblingNameTaken(std::uint64_t handle, const std::string& name) const = 0;
 
     // Whether the node has at least one *folder* child -- the folder tree's own
     // question, since files never appear in the side panel. False for a file.

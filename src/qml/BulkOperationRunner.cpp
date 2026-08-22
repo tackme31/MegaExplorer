@@ -40,10 +40,8 @@ void BulkOperationRunner::Batch::settle(const Result<void>& result)
         mRefresh();
     else
         mRunner.mDefaultRefresh();
-    mRunner.mNotifications.notifyOperation(QString::fromLatin1(mContext),
-                                           mSucceeded,
-                                           mFailed,
-                                           mUndo);
+    mRunner.mNotifications.notifyOperation(
+        QString::fromLatin1(mContext), mSucceeded, mFailed, mUndo);
     if (mOnComplete)
         mOnComplete(mSucceeded, mFailed);
 }
