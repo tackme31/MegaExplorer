@@ -794,3 +794,40 @@ TEST(DownloadServiceTest, AThrowingClientCallLeavesTheQueueAbleToStartTheNextJob
     // Assert
     EXPECT_EQ(onDone.size(), 1u);
 }
+
+TEST(DownloadServiceTest, AThrowingStartGivesItsSlotBackAndReportsTheJob)
+{
+    // The flag guard alone did not cover this: the job is moved into mActive before
+    // the client call, so a throw used to leave it there for good -- kMaxConcurrent
+    // of those and no download starts again -- with nothing ever reporting it.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::vector<DownloadDone> onDone;
+    EXPECT_CALL(*mockClient,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Throw(std::runtime_error("boom")))
+        .WillRepeatedly(
+            ::testing::Invoke([&onDone](std::uint64_t,
+                                        const std::string&,
+                                        std::uint64_t,
+                                        std::function<void(std::uint64_t, std::uint64_t)>,
+                                        DownloadDone done) {
+                onDone.push_back(std::move(done));
+            }));
+
+    DownloadService service(mockClient);
+    std::vector<DownloadJob> finished;
+    service.setOnJobFinished([&finished](DownloadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    // Act
+    EXPECT_THROW(service.enqueue(1, "a.txt", "/tmp/a.txt", 10), std::runtime_error);
+
+    // Assert
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished.front().state, DownloadState::Failed);
+    EXPECT_FALSE(finished.front().errorMessage.empty());
+    EXPECT_TRUE(service.jobs().empty());
+    enqueueMany(service, kSlots); // every slot is still free, so all of these start
+    EXPECT_EQ(onDone.size(), kSlots);
+}

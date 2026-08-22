@@ -316,66 +316,94 @@ void DownloadService::startNextIfIdle()
             mActive.push_back(std::move(job));
         }
 
-        mClient->download(
-            handle,
-            destinationPath,
-            id,
-            [this, id](std::uint64_t transferred, std::uint64_t total) {
-                std::function<void(DownloadJob)> onProgress;
-                DownloadJob snapshot;
-                {
-                    std::lock_guard<std::mutex> lock(mMutex);
-                    // Not ours: this job already finished (or was cancelled) and
-                    // the SDK is still delivering. Writing here would land on
-                    // whichever job was promoted in its place.
-                    DownloadJob* job = activeJob(id);
-                    if (!job)
-                        return;
-                    job->transferredBytes = transferred;
-                    job->totalBytes = total;
-                    snapshot = *job;
-                    onProgress = mOnProgress;
-                }
-                if (onProgress)
-                    onProgress(snapshot);
-            },
-            [this, id](Result<DownloadOutcome> result) {
-                std::function<void(DownloadJob)> onJobFinished;
-                DownloadJob snapshot;
-                {
-                    std::lock_guard<std::mutex> lock(mMutex);
-                    DownloadJob* job = activeJob(id);
-                    if (!job)
-                        return; // same as onProgress above
-                    // kEIncomplete is the SDK's own marker for an aborted transfer
-                    // (it sets STATE_CANCELLED on exactly that code), so it is the
-                    // one failure that is not an error to report. A cancel this
-                    // service asked for reads the same way even when the SDK never
-                    // saw it: the transfer can fail for its own reason before the
-                    // abort reaches it, and reporting that turns the user's own stop
-                    // into an error toast.
-                    job->state = result.success ? DownloadState::Completed
-                                 : (result.errorCode == MegaErrorCode::kEIncomplete ||
-                                    mCancelRequested.count(id) != 0)
-                                     ? DownloadState::Cancelled
-                                     : DownloadState::Failed;
-                    if (result.success)
+        try
+        {
+            mClient->download(
+                handle,
+                destinationPath,
+                id,
+                [this, id](std::uint64_t transferred, std::uint64_t total) {
+                    std::function<void(DownloadJob)> onProgress;
+                    DownloadJob snapshot;
                     {
-                        job->resolvedLocalPath = result.value().localPath;
+                        std::lock_guard<std::mutex> lock(mMutex);
+                        // Not ours: this job already finished (or was cancelled) and
+                        // the SDK is still delivering. Writing here would land on
+                        // whichever job was promoted in its place.
+                        DownloadJob* job = activeJob(id);
+                        if (!job)
+                            return;
+                        job->transferredBytes = transferred;
+                        job->totalBytes = total;
+                        snapshot = *job;
+                        onProgress = mOnProgress;
                     }
-                    else
+                    if (onProgress)
+                        onProgress(snapshot);
+                },
+                [this, id](Result<DownloadOutcome> result) {
+                    std::function<void(DownloadJob)> onJobFinished;
+                    DownloadJob snapshot;
                     {
-                        job->errorMessage = result.errorMessage;
-                        job->errorCode = result.errorCode;
+                        std::lock_guard<std::mutex> lock(mMutex);
+                        DownloadJob* job = activeJob(id);
+                        if (!job)
+                            return; // same as onProgress above
+                        // kEIncomplete is the SDK's own marker for an aborted transfer
+                        // (it sets STATE_CANCELLED on exactly that code), so it is the
+                        // one failure that is not an error to report. A cancel this
+                        // service asked for reads the same way even when the SDK never
+                        // saw it: the transfer can fail for its own reason before the
+                        // abort reaches it, and reporting that turns the user's own stop
+                        // into an error toast.
+                        job->state = result.success ? DownloadState::Completed
+                                     : (result.errorCode == MegaErrorCode::kEIncomplete ||
+                                        mCancelRequested.count(id) != 0)
+                                         ? DownloadState::Cancelled
+                                         : DownloadState::Failed;
+                        if (result.success)
+                        {
+                            job->resolvedLocalPath = result.value().localPath;
+                        }
+                        else
+                        {
+                            job->errorMessage = result.errorMessage;
+                            job->errorCode = result.errorCode;
+                        }
+                        snapshot = *job;
+                        onJobFinished = mOnJobFinished;
+                        dropActive(id);
                     }
+                    if (onJobFinished)
+                        onJobFinished(snapshot);
+                    startNextIfIdle(); // auto-advance; mMutex isn't held here
+                });
+        }
+        catch (...)
+        {
+            // Nothing has run this job's completion, so the slot it took in mActive and
+            // anything counting down on that callback both leak unless it is reported
+            // here. Ids are never reused, so finding it still there means this start threw.
+            std::function<void(DownloadJob)> onJobFinished;
+            DownloadJob snapshot;
+            {
+                std::lock_guard<std::mutex> lock(mMutex);
+                DownloadJob* job = activeJob(id);
+                if (job)
+                {
+                    // Same cancel-wins rule as the completion above.
+                    job->state = mCancelRequested.count(id) != 0 ? DownloadState::Cancelled
+                                                                 : DownloadState::Failed;
+                    job->errorMessage = "The download could not be started";
                     snapshot = *job;
                     onJobFinished = mOnJobFinished;
                     dropActive(id);
                 }
-                if (onJobFinished)
-                    onJobFinished(snapshot);
-                startNextIfIdle(); // auto-advance; mMutex isn't held here
-            });
+            }
+            if (onJobFinished)
+                onJobFinished(snapshot);
+            throw;
+        }
 
         bool cancelRaced = false;
         {

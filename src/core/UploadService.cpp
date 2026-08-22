@@ -267,62 +267,90 @@ void UploadService::startNextIfIdle()
             continue;
         }
 
-        mClient->upload(
-            localPath,
-            parentHandle,
-            parentIsRoot,
-            id,
-            [this, id](std::uint64_t transferred, std::uint64_t total) {
-                std::function<void(UploadJob)> onProgress;
-                UploadJob snapshot;
-                {
-                    std::lock_guard<std::mutex> lock(mMutex);
-                    // Not ours: this job already finished (or was cancelled) and
-                    // the SDK is still delivering. Writing here would land on
-                    // whichever job was promoted in its place.
-                    UploadJob* job = activeJob(id);
-                    if (!job)
-                        return;
-                    job->transferredBytes = transferred;
-                    job->totalBytes = total;
-                    snapshot = *job;
-                    onProgress = mOnProgress;
-                }
-                if (onProgress)
-                    onProgress(snapshot);
-            },
-            [this, id](Result<UploadOutcome> result) {
-                std::function<void(UploadJob)> onJobFinished;
-                UploadJob snapshot;
-                {
-                    std::lock_guard<std::mutex> lock(mMutex);
-                    UploadJob* job = activeJob(id);
-                    if (!job)
-                        return; // same as onProgress above
-                    // Same kEIncomplete and same cancel-wins rule as DownloadService
-                    // -- see the comment there.
-                    job->state = result.success ? UploadState::Completed
-                                 : (result.errorCode == MegaErrorCode::kEIncomplete ||
-                                    mCancelRequested.count(id) != 0)
-                                     ? UploadState::Cancelled
-                                     : UploadState::Failed;
-                    if (result.success)
+        try
+        {
+            mClient->upload(
+                localPath,
+                parentHandle,
+                parentIsRoot,
+                id,
+                [this, id](std::uint64_t transferred, std::uint64_t total) {
+                    std::function<void(UploadJob)> onProgress;
+                    UploadJob snapshot;
                     {
-                        job->nodeHandle = result.value().nodeHandle;
+                        std::lock_guard<std::mutex> lock(mMutex);
+                        // Not ours: this job already finished (or was cancelled) and
+                        // the SDK is still delivering. Writing here would land on
+                        // whichever job was promoted in its place.
+                        UploadJob* job = activeJob(id);
+                        if (!job)
+                            return;
+                        job->transferredBytes = transferred;
+                        job->totalBytes = total;
+                        snapshot = *job;
+                        onProgress = mOnProgress;
                     }
-                    else
+                    if (onProgress)
+                        onProgress(snapshot);
+                },
+                [this, id](Result<UploadOutcome> result) {
+                    std::function<void(UploadJob)> onJobFinished;
+                    UploadJob snapshot;
                     {
-                        job->errorMessage = result.errorMessage;
-                        job->errorCode = result.errorCode;
+                        std::lock_guard<std::mutex> lock(mMutex);
+                        UploadJob* job = activeJob(id);
+                        if (!job)
+                            return; // same as onProgress above
+                        // Same kEIncomplete and same cancel-wins rule as DownloadService
+                        // -- see the comment there.
+                        job->state = result.success ? UploadState::Completed
+                                     : (result.errorCode == MegaErrorCode::kEIncomplete ||
+                                        mCancelRequested.count(id) != 0)
+                                         ? UploadState::Cancelled
+                                         : UploadState::Failed;
+                        if (result.success)
+                        {
+                            job->nodeHandle = result.value().nodeHandle;
+                        }
+                        else
+                        {
+                            job->errorMessage = result.errorMessage;
+                            job->errorCode = result.errorCode;
+                        }
+                        snapshot = *job;
+                        onJobFinished = mOnJobFinished;
+                        dropActive(id);
                     }
+                    if (onJobFinished)
+                        onJobFinished(snapshot);
+                    startNextIfIdle(); // auto-advance; mMutex isn't held here
+                });
+        }
+        catch (...)
+        {
+            // Nothing has run this job's completion, so the slot it took in mActive and
+            // the batch counting down on that callback both leak unless it is reported
+            // here. Ids are never reused, so finding it still there means this start threw.
+            std::function<void(UploadJob)> onJobFinished;
+            UploadJob snapshot;
+            {
+                std::lock_guard<std::mutex> lock(mMutex);
+                UploadJob* job = activeJob(id);
+                if (job)
+                {
+                    // Same cancel-wins rule as the paths above.
+                    job->state = mCancelRequested.count(id) != 0 ? UploadState::Cancelled
+                                                                 : UploadState::Failed;
+                    job->errorMessage = "The upload could not be started";
                     snapshot = *job;
                     onJobFinished = mOnJobFinished;
                     dropActive(id);
                 }
-                if (onJobFinished)
-                    onJobFinished(snapshot);
-                startNextIfIdle(); // auto-advance; mMutex isn't held here
-            });
+            }
+            if (onJobFinished)
+                onJobFinished(snapshot);
+            throw;
+        }
 
         bool cancelRaced = false;
         {

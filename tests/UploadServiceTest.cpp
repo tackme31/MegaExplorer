@@ -827,3 +827,42 @@ TEST(UploadServiceTest, AThrowingClientCallLeavesTheQueueAbleToStartTheNextJob)
     // Assert
     EXPECT_EQ(onDone.size(), 1u);
 }
+
+TEST(UploadServiceTest, AThrowingStartGivesItsSlotBackAndReportsTheJob)
+{
+    // Same regression guard as DownloadServiceTest's of this name -- see there. The
+    // missing report costs more here: UploadController counts the batch down on it,
+    // so a job that never finishes also keeps the batch summary from ever flushing.
+    auto mockClient = makeClient();
+    std::vector<UploadDone> onDone;
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Throw(std::runtime_error("boom")))
+        .WillRepeatedly(::testing::Invoke(
+            [&onDone](const std::string&,
+                      std::uint64_t,
+                      bool,
+                      std::uint64_t,
+                      std::function<void(std::uint64_t, std::uint64_t)>,
+                      UploadDone done) {
+                onDone.push_back(std::move(done));
+            }));
+
+    UploadService service(mockClient);
+    std::vector<UploadJob> finished;
+    service.setOnJobFinished([&finished](UploadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    // Act
+    EXPECT_THROW(service.enqueue("/tmp/a.txt", "a.txt", 7, false, 10), std::runtime_error);
+
+    // Assert
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished.front().state, UploadState::Failed);
+    EXPECT_FALSE(finished.front().errorMessage.empty());
+    EXPECT_TRUE(service.jobs().empty());
+    enqueueMany(service, kSlots); // every slot is still free, so all of these start
+    EXPECT_EQ(onDone.size(), kSlots);
+}
