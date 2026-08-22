@@ -27,6 +27,8 @@ TestCase {
         id: navComponent
 
         QtObject {
+            id: nav
+
             property int viewKind: ViewKind.CloudDrive
             property int calls: 0
             property int lastType: -1
@@ -34,12 +36,33 @@ TestCase {
             property int lastTime: -1
             property bool lastFavourite: false
 
+            // FolderNavigationController's four filter properties, which the popup now
+            // reads back instead of mirroring. Written here only by setSearchFilter, as
+            // C++ writes them only in the same call.
+            property int searchFilterNodeType: SearchNodeType.Any
+            property int searchFilterCategory: SearchCategory.Any
+            property int searchFilterCreatedWithin: SearchTimeWindow.Any
+            property bool searchFilterFavouritesOnly: false
+
+            // Navigation drops the filter C++-side (searchCleared) without the popup
+            // pushing anything; this is that half, for the tests that need it.
+            function dropFilter() {
+                nav.searchFilterNodeType = SearchNodeType.Any;
+                nav.searchFilterCategory = SearchCategory.Any;
+                nav.searchFilterCreatedWithin = SearchTimeWindow.Any;
+                nav.searchFilterFavouritesOnly = false;
+            }
+
             function setSearchFilter(nodeType, category, createdWithin, favouritesOnly) {
                 calls += 1;
                 lastType = nodeType;
                 lastCategory = category;
                 lastTime = createdWithin;
                 lastFavourite = favouritesOnly;
+                nav.searchFilterNodeType = nodeType;
+                nav.searchFilterCategory = category;
+                nav.searchFilterCreatedWithin = createdWithin;
+                nav.searchFilterFavouritesOnly = favouritesOnly;
             }
         }
     }
@@ -191,12 +214,13 @@ TestCase {
         compare(f.nav.calls, 0);
     }
 
-    function test_resetMirrorsCppDroppingTheFilter() {
+    function test_revertPendingFollowsCppDroppingTheFilter() {
         const f = makePopup();
 
         pick(f.popup, SearchNodeType.Files, SearchCategory.Video, SearchTimeWindow.PastMonth, true);
         f.popup.apply();
-        f.popup.reset();
+        f.nav.dropFilter();
+        f.popup.revertPending();
 
         // C++ has already dropped it (searchCleared), so pushing here would re-run a
         // search the navigation just cancelled.
@@ -207,29 +231,57 @@ TestCase {
         compare(f.popup.favouriteSelector.checked, false);
     }
 
+    // The regression this popup's applied* side was rebuilt for: the filter belongs to
+    // a tab, the popup is one control for the whole window, and a mirror kept here left
+    // the chip lit over whichever tab last applied one.
+    function test_switchingControllerShowsThatTabsFilter() {
+        const f = makePopup();
+        const other = createTemporaryObject(navComponent, testCase);
+
+        pick(f.popup, SearchNodeType.Files, SearchCategory.Video, SearchTimeWindow.PastMonth, true);
+        f.popup.apply();
+        verify(f.popup.filterActive);
+
+        // Switching tabs, which is the only thing that moves navController.
+        f.popup.navController = other;
+
+        verify(!f.popup.filterActive);
+        compare(other.calls, 0);
+
+        // And the pending edit follows on the next open, so Apply cannot carry the
+        // previous tab's selection into this one.
+        f.popup.open();
+        tryCompare(f.popup, "opened", true);
+        compare(f.popup.typeSelector.currentIndex, SearchNodeType.Any);
+        verify(!f.popup.dirty);
+
+        f.popup.navController = f.nav;
+        verify(f.popup.filterActive);
+    }
+
     // The two listings ignore one facet each C++-side, and a control that pushes a
     // value nothing reads is what this popup was hidden from those views to avoid.
     function test_facetsTheQueryListingsIgnoreAreDisabled_data() {
         return [
-            {
-                tag: "cloud drive",
-                kind: ViewKind.CloudDrive,
-                type: true,
-                favourite: true
-            },
-            {
-                tag: "favourites",
-                kind: ViewKind.Favourites,
-                type: true,
-                favourite: false
-            },
-            {
-                tag: "recents",
-                kind: ViewKind.Recents,
-                type: false,
-                favourite: true
-            }
-        ];
+                    {
+                        tag: "cloud drive",
+                        kind: ViewKind.CloudDrive,
+                        type: true,
+                        favourite: true
+                    },
+                    {
+                        tag: "favourites",
+                        kind: ViewKind.Favourites,
+                        type: true,
+                        favourite: false
+                    },
+                    {
+                        tag: "recents",
+                        kind: ViewKind.Recents,
+                        type: false,
+                        favourite: true
+                    }
+                ];
     }
 
     function test_facetsTheQueryListingsIgnoreAreDisabled(data) {
@@ -242,9 +294,10 @@ TestCase {
         verify(f.popup.timeSelector.enabled);
     }
 
-    // The popup's applied state is one per window, so a Folders picked in a Cloud Drive
-    // tab survives into a Recents tab. Greying the category off that stale value would
-    // leave both pickers dead with only Clear as a way out.
+    // The pending edit is still one per window (only applied* follows the tab), so a
+    // Folders picked in a Cloud Drive tab survives into a Recents tab until the next
+    // open. Greying the category off that stale value would leave both pickers dead
+    // with only Clear as a way out.
     function test_recentsKeepsTheCategoryPickerWhenTheStaleTypeIsFolders() {
         const f = makePopup();
 

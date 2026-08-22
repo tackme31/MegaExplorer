@@ -59,6 +59,15 @@ class FolderNavigationController : public QObject,
     // holds, so an empty listing can say which kind of empty it is. Its own NOTIFY:
     // the query changes without the location doing so.
     Q_PROPERTY(bool searchActive READ searchActive NOTIFY searchActiveChanged)
+    // The advanced-search facets this tab is searching with. The popup that edits them is
+    // one control shared by every tab, so it has to read them back per tab rather than
+    // remember what it last pushed. ints for the same reason viewKind is one.
+    Q_PROPERTY(int searchFilterNodeType READ searchFilterNodeType NOTIFY searchFilterChanged)
+    Q_PROPERTY(int searchFilterCategory READ searchFilterCategory NOTIFY searchFilterChanged)
+    Q_PROPERTY(
+        int searchFilterCreatedWithin READ searchFilterCreatedWithin NOTIFY searchFilterChanged)
+    Q_PROPERTY(
+        bool searchFilterFavouritesOnly READ searchFilterFavouritesOnly NOTIFY searchFilterChanged)
     // True while this tab has a mutating operation or a server sync in flight.
     // Deliberately NOT set by listing/search/breadcrumb fetches -- those are
     // synchronous in-memory reads and finish before anything could repaint. Nor by
@@ -97,6 +106,10 @@ public:
     int viewKind() const;
     bool canSort() const;
     bool searchActive() const;
+    int searchFilterNodeType() const;
+    int searchFilterCategory() const;
+    int searchFilterCreatedWithin() const;
+    bool searchFilterFavouritesOnly() const;
 
     // Not Q_INVOKABLE: QML reaches the root load through
     // TabsController::loadRootAll(), never this per-tab entry point.
@@ -244,10 +257,11 @@ signals:
     void breadcrumbChanged();
     void busyChanged();
     void searchActiveChanged();
+    void searchFilterChanged();
 
     // The tab dropped its query and filter because it navigated. The search box owns
-    // its text and the filter popup its selections, so both have to be told; nothing
-    // else can reach them.
+    // its text and the filter popup its *pending* edit, so both have to be told;
+    // nothing else can reach them.
     void searchCleared();
 
     // Row is already selected in the model when this fires; the views only have

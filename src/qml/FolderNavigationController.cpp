@@ -136,6 +136,26 @@ bool FolderNavigationController::searchActive() const
     return !mLastSearchQuery.empty() || !mSearchFilter.isDefault();
 }
 
+int FolderNavigationController::searchFilterNodeType() const
+{
+    return static_cast<int>(mSearchFilter.nodeType);
+}
+
+int FolderNavigationController::searchFilterCategory() const
+{
+    return static_cast<int>(mSearchFilter.category);
+}
+
+int FolderNavigationController::searchFilterCreatedWithin() const
+{
+    return static_cast<int>(mSearchFilter.createdWithin);
+}
+
+bool FolderNavigationController::searchFilterFavouritesOnly() const
+{
+    return mSearchFilter.favouritesOnly;
+}
+
 void FolderNavigationController::loadRoot()
 {
     dropSearchForNavigation();
@@ -400,8 +420,11 @@ void FolderNavigationController::dropSearchForNavigation()
     // lands, and applyResult() clears that flag when it does. Clearing it here would
     // claim the rows are one folder's children while they are still hits.
     mLastSearchQuery.clear();
+    const bool filterDropped = !mSearchFilter.isDefault();
     mSearchFilter = SearchFilter{};
     emit searchActiveChanged();
+    if (filterDropped)
+        emit searchFilterChanged();
     emit searchCleared();
 }
 
@@ -418,11 +441,14 @@ void FolderNavigationController::setSearchFilter(int nodeType,
                                                  bool favouritesOnly)
 {
     const bool wasActive = searchActive();
+    const SearchFilter previous = mSearchFilter;
     mSearchFilter =
         SearchFilter{clampEnum<SearchNodeType>(nodeType, SearchNodeType::Folders),
                      clampEnum<SearchCategory>(category, SearchCategory::Other),
                      clampEnum<SearchTimeWindow>(createdWithin, SearchTimeWindow::PastYear),
                      favouritesOnly};
+    if (mSearchFilter != previous)
+        emit searchFilterChanged();
     applySearchCriteria(wasActive);
 }
 
@@ -744,6 +770,7 @@ void FolderNavigationController::reset()
     mFileListModel->setEntries({});
     mLastFolderEntries.clear();
     const bool wasSearching = searchActive();
+    const bool filterDropped = !mSearchFilter.isDefault();
     mLastSearchQuery.clear();
     mSearchFilter = SearchFilter{};
     mListingFromSearch = false;
@@ -757,4 +784,6 @@ void FolderNavigationController::reset()
     emit breadcrumbChanged();
     if (wasSearching)
         emit searchActiveChanged();
+    if (filterDropped)
+        emit searchFilterChanged();
 }
