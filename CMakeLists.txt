@@ -111,6 +111,8 @@ add_library(MegaExplorerCore STATIC
     src/core/PreviewKind.cpp
     src/core/PreviewService.h
     src/core/PreviewService.cpp
+    src/core/ZipListing.h
+    src/core/ZipListing.cpp
     src/core/FolderTreeService.h
     src/core/FolderTreeService.cpp
     src/core/LocalLinkService.h
