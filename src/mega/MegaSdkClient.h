@@ -121,6 +121,11 @@ public:
                          std::uint64_t maxBytes,
                          std::function<void(Result<std::vector<char>>)> onDone) override;
 
+    void readFileRange(std::uint64_t handle,
+                       std::uint64_t offset,
+                       std::uint64_t length,
+                       std::function<void(Result<std::vector<char>>)> onDone) override;
+
     void getPath(std::uint64_t handle,
                  bool isRoot,
                  std::function<void(Result<std::vector<PathSegment>>)> onDone) override;

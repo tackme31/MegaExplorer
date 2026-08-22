@@ -231,6 +231,14 @@ public:
                                  std::uint64_t maxBytes,
                                  std::function<void(Result<std::vector<char>>)> onDone) = 0;
 
+    // A byte range of a file, in memory, under the same no-cancel rule as above.
+    // Unlike maxBytes, length is a real range request, and doubles as the buffer
+    // cap; a range overrunning the end is clamped, an offset at or past it fails.
+    virtual void readFileRange(std::uint64_t handle,
+                               std::uint64_t offset,
+                               std::uint64_t length,
+                               std::function<void(Result<std::vector<char>>)> onDone) = 0;
+
     // Ancestor chain root-first, always including the root as the first element
     // and the node itself as the last. Must follow a successful fetchNodes().
     virtual void getPath(std::uint64_t handle,

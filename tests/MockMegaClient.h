@@ -89,6 +89,13 @@ public:
                 (std::uint64_t, std::uint64_t, std::function<void(Result<std::vector<char>>)>),
                 (override));
     MOCK_METHOD(void,
+                readFileRange,
+                (std::uint64_t,
+                 std::uint64_t,
+                 std::uint64_t,
+                 std::function<void(Result<std::vector<char>>)>),
+                (override));
+    MOCK_METHOD(void,
                 getPath,
                 (std::uint64_t, bool, std::function<void(Result<std::vector<PathSegment>>)>),
                 (override));

@@ -756,6 +756,51 @@ void MegaSdkClient::readFileContent(std::uint64_t handle,
                          new megasdk::StreamingContentListener(maxBytes, std::move(onDone)));
 }
 
+void MegaSdkClient::readFileRange(std::uint64_t handle,
+                                  std::uint64_t offset,
+                                  std::uint64_t length,
+                                  std::function<void(Result<std::vector<char>>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<char>>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<std::vector<char>>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
+            MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    // getSize() is negative for anything that isn't a file, so the signed compare
+    // has to happen before the width cast.
+    const std::int64_t size = node->getSize();
+    if (size <= 0 || offset >= static_cast<std::uint64_t>(size))
+    {
+        onDone(Result<std::vector<char>>::fail("Range starts at or past the end of the file",
+                                               MegaErrorCode::kEArgs));
+        return;
+    }
+    const std::uint64_t clamped =
+        std::min<std::uint64_t>(length, static_cast<std::uint64_t>(size) - offset);
+    if (clamped == 0)
+    {
+        onDone(Result<std::vector<char>>::ok({}));
+        return;
+    }
+
+    // Same rate-check trap as readFileContent: without this a few tens of kilobytes
+    // are read as "too slow" and the transfer dies with API_EAGAIN.
+    mApi->setStreamingMinimumRate(0);
+    mApi->startStreaming(node.get(),
+                         static_cast<std::int64_t>(offset),
+                         static_cast<std::int64_t>(clamped),
+                         new megasdk::StreamingContentListener(clamped, std::move(onDone)));
+}
+
 void MegaSdkClient::getPath(std::uint64_t handle,
                             bool isRoot,
                             std::function<void(Result<std::vector<PathSegment>>)> onDone)
