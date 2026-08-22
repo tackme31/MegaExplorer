@@ -20,8 +20,9 @@ import QtQuick
 //   handle, isRoot, name  the single primary target (the clicked row, or the
 //                         first selected entry, or the folder a view shows)
 //   pinned                whether that target is already in Quick access
+//   favourited, exported  whether that target is hearted / has a public link
 //   entries               every target, as {handle, name, sizeBytes, isFolder,
-//                         isFavourite, modificationTime}
+//                         isFavourite, isExported, modificationTime}
 //   request*()            callbacks into the view/tab that opened the menu,
 //                         for actions driving an Item no singleton can reach
 //                         (the inline rename field, ConfirmRubbishDialog,
@@ -138,14 +139,21 @@ QtObject {
                                             "trigger": ctx => ctx.mutations.copyLinkToClipboard(
                                                                   ctx.handle)
                                         },
-                                        // ctx: requestRemoveLink(). Routed via the
-                                        // view's confirmation like moveToRubbish,
-                                        // not straight to the controller like
-                                        // copyLink above: removing the link revokes
-                                        // access for everyone already holding it.
+                                        // ctx: exported, requestRemoveLink(). Routed
+                                        // via the view's confirmation like
+                                        // moveToRubbish, not straight to the
+                                        // controller like copyLink above: removing
+                                        // the link revokes access for everyone
+                                        // already holding it.
                                         "removeLink": {
                                             "icon": ctx => Theme.glyph.menu.removeLink,
                                             "label": ctx => qsTr("Remove link"),
+                                            // Greyed rather than hidden, so the row
+                                            // stays where the user learnt it was.
+                                            // disableExport succeeds on an unshared
+                                            // node anyway, so this is about saying
+                                            // there is nothing to remove.
+                                            "enabled": ctx => ctx.exported === true,
                                             "trigger": ctx => ctx.requestRemoveLink()
                                         },
                                         // ctx: entries, navController

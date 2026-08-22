@@ -855,6 +855,51 @@ TEST_F(FolderNavigationControllerTest, UnfavouritingInAFolderStillUpdatesTheRowI
     EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsFavouriteRole).toBool());
 }
 
+TEST_F(FolderNavigationControllerTest, ExportingUpdatesTheRowInPlaceInAFolderListing)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+    const int fetchesBefore = rootFetches;
+
+    controller->applyExportChange(1, true);
+    flush();
+
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
+    EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+}
+
+TEST_F(FolderNavigationControllerTest, ExportingInFavouritesWritesInPlaceRatherThanReQuerying)
+{
+    // Unlike the favourite flag, no listing is defined by an export -- so even
+    // the favourites screen, which re-queries for a heart, just writes this one.
+    givenFavourites({entry("shared.txt", 5)});
+    controller->openFavourites();
+    flush();
+    const int fetchesBefore = favouriteFetches;
+
+    controller->applyExportChange(5, true);
+    flush();
+
+    EXPECT_EQ(favouriteFetches - fetchesBefore, 0);
+    EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+}
+
+TEST_F(FolderNavigationControllerTest, ExportingWritesThroughToTheCachedListing)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    controller->applyExportChange(1, true);
+    flush();
+
+    // Without this the cache would restore the pre-export flag the moment a
+    // search is cleared -- the same trap applyFavouriteChange documents.
+    ASSERT_EQ(controller->cachedChildren().size(), 1u);
+    EXPECT_TRUE(controller->cachedChildren().front().isExported);
+}
+
 TEST_F(FolderNavigationControllerTest, SearchActiveFollowsTheQueryAndReportsOnlyRealChanges)
 {
     givenRootListing({entry("a.txt", 1)});

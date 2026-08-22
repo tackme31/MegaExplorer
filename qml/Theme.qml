@@ -122,12 +122,13 @@ QtObject {
         readonly property int tileHeight: 138
         readonly property int thumbSize: 80
         readonly property int labelHeight: 38 // two lines at font.body
-        // Favourite marker overlaid on the thumbnail's bottom-right corner.
-        // Drawn bare, so it can vanish into a light or busy photo -- accepted,
-        // an opaque disc behind it was more conspicuous than the state it
-        // reports. Sits fully inside the thumbnail frame, so it neither fights
-        // the frame's clip nor changes tileHeight above.
-        readonly property int favouriteGlyph: 12
+        // The two corner markers overlaid on the thumbnail: favourite at the
+        // bottom right, public link at the top right. Drawn bare, so either can
+        // vanish into a light or busy photo -- accepted, an opaque disc behind it
+        // was more conspicuous than the state it reports. Both sit fully inside
+        // the thumbnail frame, so they neither fight the frame's clip nor change
+        // tileHeight above.
+        readonly property int markerGlyph: 12
     }
 
     // Segoe Fluent Icons code points, spelled as escapes: the raw glyphs sit in
@@ -195,6 +196,12 @@ QtObject {
         readonly property string favourite: "\uEB52"        // solid heart
         readonly property string favouriteOutline: "\uEB51" // outline heart
 
+        // "This node has a public link" marker on a grid tile and in the detail
+        // view's marker column, and the menu's two link actions below. One code
+        // point for all of them; not yet checked drawn at the 12px the grid
+        // badge uses.
+        readonly property string link: "\uE71B" // Link
+
         // Side-panel row for the recently-added listing. Monochrome at 16px, so no
         // COLR surprise like E80A above; the Segoe MDL2 half of the cmap check was
         // not re-run, fontTools being absent from this machine (as for filter).
@@ -244,7 +251,7 @@ QtObject {
             // toggleFavourite above and for the same reason: the font has no
             // broken-link counterpart, and the label says which direction it is.
             // Present in both icon fonts' cmaps; not yet checked drawn at 16px.
-            readonly property string copyLink: "\uE71B"      // Link
+            readonly property string copyLink: glyphSet.link
             readonly property string removeLink: copyLink
             readonly property string cut: "\uE8C6"           // Cut
             readonly property string copy: "\uE8C8"          // Copy

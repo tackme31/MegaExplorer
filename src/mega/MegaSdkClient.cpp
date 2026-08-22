@@ -132,6 +132,7 @@ FileEntry nodeToEntry(mega::MegaNode* node)
     entry.modificationTime = node->getModificationTime();
     entry.hasThumbnail = node->hasThumbnail();
     entry.isFavourite = node->isFavourite();
+    entry.isExported = node->isExported();
     return entry;
 }
 

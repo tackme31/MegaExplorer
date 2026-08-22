@@ -219,6 +219,12 @@ public:
     // row, so that screen re-fetches instead (FAVOURITES_VIEW_SPEC.md 4.4).
     void applyFavouriteChange(quint64 handle, bool favourite);
 
+    // applyFavouriteChange's counterpart for "this node now has / no longer has a
+    // public link". One method for both this tab and the fan-out to the others,
+    // where the favourite flag needs two: no screen is *defined* by an export, so
+    // nothing has to re-query and nothing marks itself stale.
+    void applyExportChange(quint64 handle, bool exported);
+
     // What the mutation half gates paste on: before the first load there is no
     // folder for it to target.
     bool isLoaded() const;

@@ -26,6 +26,7 @@ TestCase {
             "name": "folder",
             "pinned": false,
             "favourited": false,
+            "exported": true,
             "canPaste": true,
             "localFolderLinked": true,
             "entries": [
@@ -259,8 +260,9 @@ TestCase {
 
     // ---- isEnabled ---------------------------------------------------------
 
-    // Every entry but togglePin and paste declares no `enabled` lambda and is
-    // always on. Listed rather than counted: a count goes stale silently.
+    // Every entry but togglePin, paste and removeLink declares no `enabled`
+    // lambda and is always on. Listed rather than counted: a count goes stale
+    // silently.
     function test_isEnabled_data() {
         return [
                     {
@@ -270,10 +272,6 @@ TestCase {
                     {
                         tag: "copyLink",
                         id: "copyLink"
-                    },
-                    {
-                        tag: "removeLink",
-                        id: "removeLink"
                     },
                     {
                         tag: "download",
@@ -325,6 +323,17 @@ TestCase {
         compare(ActionCatalog.isEnabled("togglePin", ctx), true);
         ctx.isRoot = true;
         compare(ActionCatalog.isEnabled("togglePin", ctx), false);
+    }
+
+    // removeLink is the third entry with an `enabled` lambda, and the only one
+    // whose condition is sampled off the clicked row rather than off a
+    // singleton.
+    function test_isEnabled_removeLinkFollowsTheSampledExportState() {
+        const ctx = fullCtx();
+        ctx.exported = true;
+        compare(ActionCatalog.isEnabled("removeLink", ctx), true);
+        ctx.exported = false;
+        compare(ActionCatalog.isEnabled("removeLink", ctx), false);
     }
 
     function test_isEnabled_pasteFollowsCanPaste() {

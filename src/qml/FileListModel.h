@@ -41,6 +41,7 @@ public:
         HandleRole,
         HasThumbnailRole,
         IsFavouriteRole,
+        IsExportedRole,
         ThumbnailPathRole,
         ModificationTimeRole,
         FormattedSizeRole,
@@ -76,6 +77,11 @@ public:
     // reason: setEntries() would reset the model, which relayouts the grid and
     // drops the scroll position -- too much for toggling one heart.
     void setFavourite(quint64 handle, bool favourite);
+
+    // setFavourite's counterpart for the "has a public link" flag, and one-row for
+    // the same reason. No listing is defined by this flag, so unlike a favourite it
+    // never removes the row.
+    void setExported(quint64 handle, bool exported);
 
     // modifiers is a Qt::KeyboardModifiers value, passed as int from QML. Plain
     // click replaces the selection and moves the anchor; Ctrl toggles this row and
@@ -118,7 +124,7 @@ public:
     // MenuActions singleton instead.
     QStringList availableActions() const;
 
-    // Row-ordered {handle, name, sizeBytes, isFolder, isFavourite} maps. Walks
+    // Row-ordered {handle, name, sizeBytes, isFolder, isFavourite, isExported} maps. Walks
     // mEntries, not the
     // unordered mSelectedHandles: callers acting on the selection (bulk download, a
     // drag snapshot) need a stable order.

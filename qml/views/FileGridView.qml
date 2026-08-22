@@ -239,6 +239,7 @@ GridView {
         required property string thumbnailPath
         required property bool selected
         required property bool isFavourite
+        required property bool isExported
 
         readonly property bool renaming: viewInput.renamingHandle !== 0 && viewInput.renamingHandle
                                          === gridDelegateItem.handle
@@ -340,8 +341,22 @@ GridView {
                         anchors.margins: Theme.spacing.xs
                         visible: gridDelegateItem.isFavourite && root.showFavouriteMarkers
                         font.family: Theme.font.iconFamily
-                        font.pixelSize: Theme.grid.favouriteGlyph
+                        font.pixelSize: Theme.grid.markerGlyph
                         text: Theme.glyph.favourite
+                        color: Theme.color.accent
+                    }
+
+                    // Opposite corner from the heart above so the two can never
+                    // overlap on a tile carrying both. Shown on every screen --
+                    // unlike the heart, no listing here is defined by this flag.
+                    Label {
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: Theme.spacing.xs
+                        visible: gridDelegateItem.isExported
+                        font.family: Theme.font.iconFamily
+                        font.pixelSize: Theme.grid.markerGlyph
+                        text: Theme.glyph.link
                         color: Theme.color.accent
                     }
                 }

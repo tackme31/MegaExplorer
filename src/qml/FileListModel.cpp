@@ -20,7 +20,10 @@ int FileListModel::columnCount(const QModelIndex& parent) const
 {
     if (parent.isValid())
         return 0;
-    return 3; // Name, Modified, Size -- see FileTableView.qml's header labels
+    // Name, Modified, Size, link marker -- see FileTableView.qml's header labels.
+    // The fourth carries no data of its own: the marker cell reads IsExportedRole
+    // like every other cell, and its header is deliberately blank.
+    return 4;
 }
 
 QVariant FileListModel::data(const QModelIndex& index, int role) const
@@ -45,6 +48,8 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
             return entry.hasThumbnail;
         case IsFavouriteRole:
             return entry.isFavourite;
+        case IsExportedRole:
+            return entry.isExported;
         case ThumbnailPathRole:
             return mThumbnailPaths[static_cast<std::size_t>(index.row())];
         case ModificationTimeRole:
@@ -76,6 +81,7 @@ QHash<int, QByteArray> FileListModel::roleNames() const
         {HandleRole, "handle"},
         {HasThumbnailRole, "hasThumbnail"},
         {IsFavouriteRole, "isFavourite"},
+        {IsExportedRole, "isExported"},
         {ThumbnailPathRole, "thumbnailPath"},
         {ModificationTimeRole, "modificationTime"},
         {FormattedSizeRole, "formattedSize"},
@@ -146,6 +152,16 @@ void FileListModel::setFavourite(quint64 handle, bool favourite)
             return;
         }
     }
+}
+
+void FileListModel::setExported(quint64 handle, bool exported)
+{
+    const int row = rowForHandle(handle);
+    if (row < 0)
+        return;
+
+    mEntries[static_cast<std::size_t>(row)].isExported = exported;
+    emit dataChanged(index(row, 0), index(row, columnCount() - 1), {IsExportedRole});
 }
 
 void FileListModel::selectRow(int row, int modifiers)
@@ -251,6 +267,7 @@ QVariantList FileListModel::selectedEntries() const
         map.insert(QStringLiteral("sizeBytes"), static_cast<qulonglong>(entry.sizeBytes));
         map.insert(QStringLiteral("isFolder"), entry.isFolder);
         map.insert(QStringLiteral("isFavourite"), entry.isFavourite);
+        map.insert(QStringLiteral("isExported"), entry.isExported);
         map.insert(QStringLiteral("modificationTime"),
                    static_cast<qlonglong>(entry.modificationTime));
         result.append(map);
@@ -274,6 +291,7 @@ QVariantMap FileListModel::selectedEntry() const
     map.insert(QStringLiteral("sizeBytes"), static_cast<qulonglong>(entry.sizeBytes));
     map.insert(QStringLiteral("isFolder"), entry.isFolder);
     map.insert(QStringLiteral("isFavourite"), entry.isFavourite);
+    map.insert(QStringLiteral("isExported"), entry.isExported);
     return map;
 }
 
