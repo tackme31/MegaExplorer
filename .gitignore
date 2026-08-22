@@ -32,6 +32,8 @@ qrc_*.cpp
 Thumbs.db
 *.res
 *.rc
+# Hand-written, not a qmake leftover: the .exe icon resource script.
+!/resources/*.rc
 /.qmake.cache
 /.qmake.stash
 **/.qmlls.ini
