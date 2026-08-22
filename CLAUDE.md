@@ -243,10 +243,12 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   of destructive checks — and in `.screenshots/`. Every cycle aborts unless `megatool whoami`
   matches `MEGAEXPLORER_TEST_ACCOUNT`.
 - `scripts/drive_gate.cmd` — `ui_shot.py drive` hijacks the real mouse and keyboard, so permission
-  is taken **once per thing being verified**: Claude pushes what it is about to check through
-  `scripts/ntfy-send.sh`, then pauses so the question can be raised and waits for the answer — the
-  cycle runs in a subagent, which has no `AskUserQuestion`, so it ends its turn with a
-  `DRIVE-PERMISSION-REQUEST` block and the loop session asks on its behalf and resumes it. That one
+  is taken **once per thing being verified**: the cycle runs in a subagent, which has no
+  `AskUserQuestion`, so it ends its turn with a `DRIVE-PERMISSION-REQUEST` block carrying a ready-made
+  `ntfy-send.sh` line, and the loop session pushes that and asks on its behalf in the same turn, then
+  resumes it with the answer. **The subagent never pushes** — firing from there rang the phone a whole
+  turn before the question reached the app, so the phone said "answer me" and the app had nothing to
+  answer yet (changed 2026-08-22). That one
   answer covers every `drive` call belonging to that check — two states of the same screen, a `drag` and the shot after
   it — while a different grain (re-checking after a review fix, another feature) asks again. A
   refusal means the point is handed to the human as "needs checking on a real run" instead. An
@@ -258,8 +260,10 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   answer with the shortcut, and don't lock the workstation while the flag is set: `SendInput` goes
   to the secure desktop and never reaches the app.
 - `scripts/ntfy-send.sh` — how the loop reaches a phone. Claude Code's built-in push reports success
-  and mostly doesn't deliver, so it isn't used. Claude is the only caller: at the end of a cycle,
-  and ahead of every question it raises itself. A `Notification` hook used to push waiting permission
+  and mostly doesn't deliver, so it isn't used. The **loop session** is the only caller, and both of
+  its calls sit next to what they announce: the drive push immediately before `AskUserQuestion`, the
+  completion push in the same turn as the report it relays. The subagent writes the text; the session
+  holding the human sends it. A `Notification` hook used to push waiting permission
   prompts too, but the case it was built for — the `drive` request going unannounced — is now covered
   by `AskUserQuestion` plus the direct push above, so it was removed (2026-08-21) rather than kept
   for the prompts nobody had asked it to cover. A permission dialog opening unattended therefore
