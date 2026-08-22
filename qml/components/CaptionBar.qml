@@ -79,43 +79,17 @@ Item {
         }
     }
 
-    // Left end of the caption, ahead of the tabs. Kept as a zone rather than a
-    // bare Image so the strip and the title below can anchor to one edge that
-    // already includes the margins. Nothing interactive lives in here, so it
-    // stays hit-test-invisible and the window still drags by it.
-    Item {
-        id: iconZone
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        width: 12 + appIcon.width + 8
-
-        Image {
-            id: appIcon
-            anchors.left: parent.left
-            anchors.leftMargin: 12
-            anchors.verticalCenter: parent.verticalCenter
-            width: Theme.iconSize.sm
-            height: Theme.iconSize.sm
-            // The 64px master, not the 16px one, and left at full decode size:
-            // this is drawn at 16 device-independent pixels, so a display
-            // scaled past 100% has real pixels to take rather than an upscale.
-            source: "qrc:/qt/qml/MegaExplorer/resources/appicon-64.png"
-            mipmap: true
-        }
-    }
-
     TabStrip {
         id: tabStrip
-        anchors.left: iconZone.right
+        anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         // Content-driven rather than filling, and clamped so dragReserve
         // always survives: the strip's own rect is what the hit test carves
         // out of the caption, so a fillWidth strip would leave the window
         // undraggable once tabs were open.
-        width: Math.max(0, Math.min(tabStrip.preferredWidth, root.width - iconZone.width
-                                    - systemButtons.width - root.dragReserve))
+        width: Math.max(0, Math.min(tabStrip.preferredWidth, root.width - systemButtons.width
+                                    - root.dragReserve))
         // Tabs are logged-in chrome, but the caption row that carries them is
         // not (Main.qml keeps it outside the authState gate so LoginView can
         // still drag the window) -- hence a plain visible binding here rather
@@ -128,7 +102,8 @@ Item {
     // Stands in for the tab strip while logged out. Explorer 11 shows no
     // title text once tabs are on the caption row, and neither do we.
     Label {
-        anchors.left: iconZone.right
+        anchors.left: parent.left
+        anchors.leftMargin: 12
         anchors.right: systemButtons.left
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
