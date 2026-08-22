@@ -13,7 +13,7 @@ import MegaExplorer
 // field's own text makes -- the control owns what it shows, and the one event that
 // can invalidate it (navigating, which drops the search) arrives as searchCleared.
 //
-// The four controls hold a *pending* edit and the applied* properties below hold
+// The four controls hold a *pending* edit and the applied* properties below read back
 // what C++ is searching with; the only crossings are apply(), clearFilter() and
 // revertPending().
 // A ComboBox writes its own currentIndex when the user picks a row, and any write
@@ -32,13 +32,18 @@ Popup {
     property alias timeSelector: timeBox
     property alias favouriteSelector: favouriteCheck
 
-    // What C++ is currently searching with. Dismissing the popup throws the pending
-    // edit away and leaves these standing, so they cannot be bindings to the
-    // controls.
-    property int appliedType: SearchNodeType.Any
-    property int appliedCategory: SearchCategory.Any
-    property int appliedTime: SearchTimeWindow.Any
-    property bool appliedFavourite: false
+    // What C++ is currently searching with. Read back from the controller, not
+    // remembered here: one popup serves every tab and the filter is per-tab, so a
+    // mirror kept on this side would follow whichever tab last pushed. Bindings to
+    // navController, never to the controls -- dismissing the popup throws the pending
+    // edit away and has to leave these standing.
+    readonly property int appliedType: root.navController?.searchFilterNodeType
+                                       ?? SearchNodeType.Any
+    readonly property int appliedCategory: root.navController?.searchFilterCategory
+                                           ?? SearchCategory.Any
+    readonly property int appliedTime: root.navController?.searchFilterCreatedWithin
+                                       ?? SearchTimeWindow.Any
+    readonly property bool appliedFavourite: root.navController?.searchFilterFavouritesOnly ?? false
 
     readonly property bool filterActive: root.appliedType !== SearchNodeType.Any
                                          || root.appliedCategory !== SearchCategory.Any
@@ -78,16 +83,8 @@ Popup {
         radius: Theme.radius.md
     }
 
-    // Display only -- the caller has already cleared the C++ side (searchCleared),
-    // so this deliberately does not push.
-    function reset() {
-        root.appliedType = SearchNodeType.Any;
-        root.appliedCategory = SearchCategory.Any;
-        root.appliedTime = SearchTimeWindow.Any;
-        root.appliedFavourite = false;
-        root.revertPending();
-    }
-
+    // The applied* side follows C++ on its own now; only the pending edit, which is
+    // this side's alone, has to be told the filter went away.
     function revertPending() {
         typeBox.currentIndex = root.appliedType;
         categoryBox.currentIndex = root.appliedCategory;
@@ -100,8 +97,8 @@ Popup {
     // Apply a second time.
     function clearFilter() {
         // apply()'s guard, and it has to come before the control writes: clearing them
-        // without the mirror would disable this button (pendingActive) while the chip
-        // still shows the filter as applied (filterActive), with no way back.
+        // with nothing to push to would disable this button (pendingActive) while the
+        // chip still shows the filter as applied (filterActive), with no way back.
         if (!root.navController)
             return;
         typeBox.currentIndex = SearchNodeType.Any;
@@ -112,30 +109,21 @@ Popup {
         // would re-run a search that blocks the GUI thread.
         if (!root.filterActive)
             return;
-        root.appliedType = SearchNodeType.Any;
-        root.appliedCategory = SearchCategory.Any;
-        root.appliedTime = SearchTimeWindow.Any;
-        root.appliedFavourite = false;
-        root.navController.setSearchFilter(root.appliedType, root.appliedCategory, root.appliedTime,
-                                           root.appliedFavourite);
+        root.navController.setSearchFilter(SearchNodeType.Any, SearchCategory.Any,
+                                           SearchTimeWindow.Any, false);
     }
 
     // Every facet is pushed together, so C++ never sees a half-applied filter and only
     // re-runs the search once.
     function apply() {
         // navController is null only during the login/logout transition, and the
-        // funnel button stays visible through it -- committing the mirror there would
-        // light the chip for a filter C++ was never told about.
+        // funnel button stays visible through it.
         if (!root.navController) {
             root.close();
             return;
         }
-        root.appliedType = typeBox.currentIndex;
-        root.appliedCategory = categoryBox.currentIndex;
-        root.appliedTime = timeBox.currentIndex;
-        root.appliedFavourite = favouriteCheck.checked;
-        root.navController?.setSearchFilter(root.appliedType, root.appliedCategory, root.appliedTime,
-                                            root.appliedFavourite);
+        root.navController.setSearchFilter(typeBox.currentIndex, categoryBox.currentIndex,
+                                           timeBox.currentIndex, favouriteCheck.checked);
         root.close();
     }
 

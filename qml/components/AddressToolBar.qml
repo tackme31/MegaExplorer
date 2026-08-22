@@ -185,7 +185,7 @@ ToolBar {
 
                 function onSearchCleared() {
                     searchField.text = "";
-                    filterPopup.reset();
+                    filterPopup.revertPending();
                 }
             }
         }

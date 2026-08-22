@@ -335,6 +335,53 @@ TEST_F(FolderNavigationControllerTest, AnOutOfRangeFilterFacetNarrowsNothing)
     EXPECT_FALSE(controller->searchActive());
 }
 
+TEST_F(FolderNavigationControllerTest, TheAppliedFilterIsReadableAndDroppedByNavigation)
+{
+    // The advanced-search popup is one control shared by every tab, so it binds to
+    // these four rather than remembering what it last pushed.
+    givenRootListing({entry("photos", 1, true)});
+    controller->loadRoot();
+    flush();
+
+    int filterChanges = 0;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::searchFilterChanged,
+                     [&filterChanges]() {
+                         ++filterChanges;
+                     });
+
+    EXPECT_CALL(*client, search(_, _, std::string(""), _, _, _))
+        .WillRepeatedly(InvokeArgument<5>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("photos", 1, true)})));
+    controller->setSearchFilter(
+        SearchNodeTypeEnum::Files, SearchCategoryEnum::Photo, SearchTimeWindowEnum::PastWeek, true);
+    flush();
+
+    EXPECT_EQ(controller->searchFilterNodeType(), SearchNodeTypeEnum::Files);
+    EXPECT_EQ(controller->searchFilterCategory(), SearchCategoryEnum::Photo);
+    EXPECT_EQ(controller->searchFilterCreatedWithin(), SearchTimeWindowEnum::PastWeek);
+    EXPECT_TRUE(controller->searchFilterFavouritesOnly());
+    EXPECT_EQ(filterChanges, 1);
+
+    // Re-pushing identical facets must not signal: the popup binds to these.
+    controller->setSearchFilter(
+        SearchNodeTypeEnum::Files, SearchCategoryEnum::Photo, SearchTimeWindowEnum::PastWeek, true);
+    flush();
+    EXPECT_EQ(filterChanges, 1);
+
+    EXPECT_CALL(*client, getChildren(1, _, _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
+    controller->openFolder(1);
+    flush();
+
+    EXPECT_EQ(controller->searchFilterNodeType(), SearchNodeTypeEnum::Any);
+    EXPECT_EQ(controller->searchFilterCategory(), SearchCategoryEnum::Any);
+    EXPECT_EQ(controller->searchFilterCreatedWithin(), SearchTimeWindowEnum::Any);
+    EXPECT_FALSE(controller->searchFilterFavouritesOnly());
+    EXPECT_EQ(filterChanges, 2);
+}
+
 TEST_F(FolderNavigationControllerTest, RefreshReRunsTheActiveSearch)
 {
     givenRootListing({entry("a", 1)});
