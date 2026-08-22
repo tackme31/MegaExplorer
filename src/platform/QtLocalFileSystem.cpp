@@ -37,8 +37,8 @@ std::optional<LocalEntry> QtLocalFileSystem::entryFor(const std::string& path) c
     return toEntry(info);
 }
 
-std::optional<std::vector<LocalEntry>> QtLocalFileSystem::listDirectory(
-    const std::string& path) const
+std::optional<std::vector<LocalEntry>>
+QtLocalFileSystem::listDirectory(const std::string& path) const
 {
     const QString nativePath = QString::fromStdString(path);
     if (!QFileInfo(nativePath).isDir())

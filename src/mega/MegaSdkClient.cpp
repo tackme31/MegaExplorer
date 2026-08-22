@@ -986,11 +986,8 @@ void MegaSdkClient::exportNode(std::uint64_t handle,
     // The plain read-only link, which is the only one the UI offers: no expiry (0 is
     // the SDK's "never"), not writable, and not MEGA-hosted -- the writable variants
     // also hand back a key the caller would have to keep, and nothing here does.
-    mApi->exportNode(node.get(),
-                     0,
-                     false,
-                     false,
-                     new megasdk::LinkResultListener(std::move(onDone)));
+    mApi->exportNode(
+        node.get(), 0, false, false, new megasdk::LinkResultListener(std::move(onDone)));
 }
 
 void MegaSdkClient::disableExport(std::uint64_t handle, std::function<void(Result<void>)> onDone)
@@ -1180,11 +1177,11 @@ Result<void> MegaSdkClient::checkUpload(std::uint64_t parentHandle, bool parentI
     return Result<void>::ok();
 }
 
-Result<std::vector<FileEntry>> MegaSdkClient::findChildrenOfType(
-    std::uint64_t parentHandle,
-    bool parentIsRoot,
-    const std::vector<std::string>& names,
-    int nodeType) const
+Result<std::vector<FileEntry>>
+MegaSdkClient::findChildrenOfType(std::uint64_t parentHandle,
+                                  bool parentIsRoot,
+                                  const std::vector<std::string>& names,
+                                  int nodeType) const
 {
     if (mShuttingDown)
         return Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode);

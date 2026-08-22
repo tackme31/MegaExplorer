@@ -335,10 +335,8 @@ void UploadController::uploadSkippingExisting(const QStringList& localPaths,
                                               quint64 target,
                                               bool targetIsRoot)
 {
-    Result<std::vector<UploadPlanItem>> plan =
-        mScan->planSkippingCollisions(toLocalPaths(localPaths),
-                                      static_cast<std::uint64_t>(target),
-                                      targetIsRoot);
+    Result<std::vector<UploadPlanItem>> plan = mScan->planSkippingCollisions(
+        toLocalPaths(localPaths), static_cast<std::uint64_t>(target), targetIsRoot);
     if (!plan.success)
     {
         // Falling back to a plain upload would version over the very files the user
@@ -358,10 +356,8 @@ std::vector<UploadCollision> UploadController::collisionsFor(const QStringList& 
                                                              quint64 target,
                                                              bool targetIsRoot) const
 {
-    Result<std::vector<UploadCollision>> result =
-        mScan->findCollisions(toLocalPaths(localPaths),
-                              static_cast<std::uint64_t>(target),
-                              targetIsRoot);
+    Result<std::vector<UploadCollision>> result = mScan->findCollisions(
+        toLocalPaths(localPaths), static_cast<std::uint64_t>(target), targetIsRoot);
     if (!result.success)
     {
         // Can't ask the question, so don't -- just upload. MEGA stacks a
@@ -375,16 +371,13 @@ std::vector<UploadCollision> UploadController::collisionsFor(const QStringList& 
     return result.value();
 }
 
-void UploadController::enqueueAll(const QStringList& localPaths,
-                                  quint64 target,
-                                  bool targetIsRoot)
+void UploadController::enqueueAll(const QStringList& localPaths, quint64 target, bool targetIsRoot)
 {
     std::vector<UploadPlanItem> plan;
     plan.reserve(static_cast<std::size_t>(localPaths.size()));
     for (const QString& path : localPaths)
-        plan.push_back(UploadPlanItem{path.toStdString(),
-                                      static_cast<std::uint64_t>(target),
-                                      targetIsRoot});
+        plan.push_back(
+            UploadPlanItem{path.toStdString(), static_cast<std::uint64_t>(target), targetIsRoot});
     enqueuePlan(plan);
 }
 

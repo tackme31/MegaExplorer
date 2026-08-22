@@ -245,10 +245,8 @@ SelectionSummary FileListModel::selectionSummary() const
 QStringList FileListModel::availableActions() const
 {
     QStringList actions;
-    const MenuContext context{mViewKind,
-                              MenuSite::FileSelection,
-                              selectionSummary(),
-                              mCrossFolderListing};
+    const MenuContext context{
+        mViewKind, MenuSite::FileSelection, selectionSummary(), mCrossFolderListing};
     for (MenuAction action : resolveMenuActions(context))
         actions.append(QString::fromLatin1(menuActionId(action)));
     return actions;

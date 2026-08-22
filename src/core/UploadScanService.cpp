@@ -66,11 +66,11 @@ Result<std::vector<UploadPlanItem>> UploadScanService::planSkippingCollisions(
 }
 
 Result<void> UploadScanService::addToPlan(const LocalEntry& entry,
-                                         std::uint64_t parentHandle,
-                                         bool parentIsRoot,
-                                         const Scan& scanned,
-                                         const std::set<std::string>& collided,
-                                         std::vector<UploadPlanItem>& plan) const
+                                          std::uint64_t parentHandle,
+                                          bool parentIsRoot,
+                                          const Scan& scanned,
+                                          const std::set<std::string>& collided,
+                                          std::vector<UploadPlanItem>& plan) const
 {
     if (!entry.isDirectory)
     {

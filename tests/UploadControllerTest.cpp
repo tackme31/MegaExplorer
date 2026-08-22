@@ -90,25 +90,24 @@ protected:
                              askedUploadPaths = filePaths;
                              askedUploadCount = fileCount;
                          });
-        QObject::connect(
-            controller.get(),
-            &UploadController::nameConflictRequiresConfirmation,
-            controller.get(),
-            [this](QStringList filePaths,
-                   QStringList conflictNames,
-                   int unaffected,
-                   QString conflictingSize,
-                   QString unaffectedSize,
-                   quint64 handle,
-                   bool) {
-                ++conflictAsks;
-                askedFilePaths = filePaths;
-                askedConflictNames = conflictNames;
-                askedUnaffected = unaffected;
-                askedConflictingSize = conflictingSize;
-                askedUnaffectedSize = unaffectedSize;
-                askedHandle = handle;
-            });
+        QObject::connect(controller.get(),
+                         &UploadController::nameConflictRequiresConfirmation,
+                         controller.get(),
+                         [this](QStringList filePaths,
+                                QStringList conflictNames,
+                                int unaffected,
+                                QString conflictingSize,
+                                QString unaffectedSize,
+                                quint64 handle,
+                                bool) {
+                             ++conflictAsks;
+                             askedFilePaths = filePaths;
+                             askedConflictNames = conflictNames;
+                             askedUnaffected = unaffected;
+                             askedConflictingSize = conflictingSize;
+                             askedUnaffectedSize = unaffectedSize;
+                             askedHandle = handle;
+                         });
         QObject::connect(controller.get(),
                          &UploadController::destinationChanged,
                          controller.get(),
@@ -432,11 +431,10 @@ TEST_F(UploadControllerTest, LooseFilesAndAFolderShareOneCap)
     EXPECT_CALL(*client, upload(_, _, _, _, _, _)).Times(0);
 
     // Act
-    dropAndConfirm(
-        {QUrl::fromLocalFile(makeFile("a.txt")),
-         QUrl::fromLocalFile(makeTree("sub", UploadController::kMaxFilesPerUpload))},
-        7,
-        false);
+    dropAndConfirm({QUrl::fromLocalFile(makeFile("a.txt")),
+                    QUrl::fromLocalFile(makeTree("sub", UploadController::kMaxFilesPerUpload))},
+                   7,
+                   false);
 
     // Assert
     ASSERT_EQ(errorCalls, 1);

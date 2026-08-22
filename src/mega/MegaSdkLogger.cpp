@@ -16,7 +16,7 @@ bool isSdkLogNoise(const char* message)
     static constexpr char kSparseCrcNoise[] = "computeSparseOffset64:";
     return message && std::strncmp(message, kSparseCrcNoise, sizeof kSparseCrcNoise - 1) == 0;
 }
-}
+} // namespace
 
 void MegaSdkLogger::log(const char* time, int logLevel, const char* source, const char* message)
 {

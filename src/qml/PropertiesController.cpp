@@ -32,9 +32,8 @@ QString PropertiesController::formattedSize() const
     // c() rather than system(): the unit word comes from locale data, not from a
     // translation, so a Japanese system prints "bytes" in Japanese into a UI that
     // is English everywhere else.
-    return QLocale::c().formattedDataSize(static_cast<qint64>(mSizeBytes),
-                                          1,
-                                          QLocale::DataSizeTraditionalFormat);
+    return QLocale::c().formattedDataSize(
+        static_cast<qint64>(mSizeBytes), 1, QLocale::DataSizeTraditionalFormat);
 }
 
 qlonglong PropertiesController::modificationTime() const

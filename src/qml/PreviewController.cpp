@@ -130,14 +130,12 @@ void PreviewController::requestText(quint64 handle, qulonglong sizeBytes)
     publish(Loading, NoKind, NoReason);
 
     const quint64 generation = mGeneration;
-    mService->requestText(handle,
-                          kMaxTextPreviewBytes,
-                          [this, generation](Result<std::vector<char>> result) {
-                              invokeOnGuiThread(this,
-                                                [this, generation, result = std::move(result)]() {
-                                                    onTextFetched(generation, result);
-                                                });
-                          });
+    mService->requestText(
+        handle, kMaxTextPreviewBytes, [this, generation](Result<std::vector<char>> result) {
+            invokeOnGuiThread(this, [this, generation, result = std::move(result)]() {
+                onTextFetched(generation, result);
+            });
+        });
 }
 
 void PreviewController::onTextFetched(quint64 generation, Result<std::vector<char>> result)
@@ -147,16 +145,15 @@ void PreviewController::onTextFetched(quint64 generation, Result<std::vector<cha
 
     if (!result.success)
     {
-        qCDebug(lcPreview) << "text fetch failed:"
-                           << QString::fromStdString(result.errorMessage)
+        qCDebug(lcPreview) << "text fetch failed:" << QString::fromStdString(result.errorMessage)
                            << "code=" << result.errorCode;
         publish(Unsupported, NoKind, NoPreviewAvailable);
         return;
     }
 
     const std::vector<char>& bytes = result.value();
-    const std::optional<QString> decoded = decodePreviewText(
-        QByteArray(bytes.data(), static_cast<qsizetype>(bytes.size())));
+    const std::optional<QString> decoded =
+        decodePreviewText(QByteArray(bytes.data(), static_cast<qsizetype>(bytes.size())));
     if (!decoded)
     {
         publish(Unsupported, NoKind, BinaryContent);

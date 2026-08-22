@@ -102,7 +102,7 @@ QuickAccessService::PinStatus QuickAccessService::classify(const Result<NodeInfo
     if (resolved.success)
     {
         return resolved.value().isFolder && resolved.value().inCloud ? PinStatus::Usable
-                                                                 : PinStatus::Gone;
+                                                                     : PinStatus::Gone;
     }
 
     switch (resolved.errorCode)

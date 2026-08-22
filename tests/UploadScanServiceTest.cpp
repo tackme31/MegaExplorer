@@ -720,8 +720,7 @@ TEST(UploadScanServiceTest, PlanSendsAnUntouchedBranchWholeAndWalksOnlyTheCollid
     auto client = std::make_shared<MockMegaClient>();
     EXPECT_CALL(*client, findChildFolders(7, false, std::vector<std::string>{"dir"}))
         .WillOnce(::testing::Return(hits({folder("dir", 20)})));
-    EXPECT_CALL(*client,
-                findChildFiles(20, false, std::vector<std::string>{"a.txt", "b.txt"}))
+    EXPECT_CALL(*client, findChildFiles(20, false, std::vector<std::string>{"a.txt", "b.txt"}))
         .WillOnce(::testing::Return(hits({file("a.txt", 55)})));
     EXPECT_CALL(*client, findChildFolders(20, false, std::vector<std::string>{"sub"}))
         .WillOnce(::testing::Return(hits({})));
@@ -828,8 +827,7 @@ TEST(UploadScanServiceTest, ScanWalksOnPastAFolderThatWillNotList)
 
     UploadScanService service(client, fs);
 
-    Result<std::vector<UploadCollision>> found =
-        service.findCollisions({"C:\\src\\dir"}, 7, false);
+    Result<std::vector<UploadCollision>> found = service.findCollisions({"C:\\src\\dir"}, 7, false);
     ASSERT_TRUE(found.success);
     EXPECT_TRUE(found.value().empty());
 

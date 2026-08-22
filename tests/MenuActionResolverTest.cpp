@@ -1,8 +1,7 @@
 #include "core/MenuActionResolver.h"
 
-#include <gtest/gtest.h>
-
 #include <algorithm>
+#include <gtest/gtest.h>
 
 namespace
 {
@@ -179,8 +178,7 @@ TEST(MenuActionResolverTest, OrdinaryActionsIgnoreTheCrossFolderFlag)
     // not start offering or withholding anything else.
     MenuContext ctx = fileSelection(1, 0);
     ctx.crossFolderListing = true;
-    EXPECT_EQ(resolveMenuActions(fileSelection(1, 0)).size() + 1,
-              resolveMenuActions(ctx).size());
+    EXPECT_EQ(resolveMenuActions(fileSelection(1, 0)).size() + 1, resolveMenuActions(ctx).size());
 }
 
 TEST(MenuActionResolverTest, GoToFolderIsOfferedOnlyWhereTheParentDiffers)
@@ -189,8 +187,7 @@ TEST(MenuActionResolverTest, GoToFolderIsOfferedOnlyWhereTheParentDiffers)
     // navigate to where the user already stands.
     const auto offers = [](const MenuContext& ctx) {
         const std::vector<MenuAction> actions = resolveMenuActions(ctx);
-        return std::find(actions.begin(), actions.end(), MenuAction::GoToFolder) !=
-               actions.end();
+        return std::find(actions.begin(), actions.end(), MenuAction::GoToFolder) != actions.end();
     };
 
     EXPECT_FALSE(offers(fileSelection(1, 0)));
@@ -345,8 +342,8 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsOpenLocalFileWhereNoOneFileIsM
     EXPECT_FALSE(contains(resolveMenuActions(fileSelection(2, 0)), MenuAction::OpenLocalFile));
     EXPECT_FALSE(contains(resolveMenuActions(fileSelection(1, 0, ViewKind::Rubbish)),
                           MenuAction::OpenLocalFile));
-    EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)),
-                          MenuAction::OpenLocalFile));
+    EXPECT_FALSE(
+        contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::OpenLocalFile));
     EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)),
                           MenuAction::OpenLocalFile));
 }
@@ -705,20 +702,16 @@ TEST(MenuActionResolverTest, DefaultTableOffersPropertiesForOneItemInEveryView)
 {
     // The one selection action the bin keeps: it only reads, and a binned node's
     // size and original location are exactly what gets looked up there.
-    for (ViewKind kind : {ViewKind::CloudDrive,
-                          ViewKind::Favourites,
-                          ViewKind::Recents,
-                          ViewKind::Rubbish})
+    for (ViewKind kind :
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::Rubbish})
     {
-        EXPECT_TRUE(contains(resolveMenuActions(fileSelection(1, 0, kind)),
-                             MenuAction::Properties))
+        EXPECT_TRUE(contains(resolveMenuActions(fileSelection(1, 0, kind)), MenuAction::Properties))
             << static_cast<int>(kind);
-        EXPECT_TRUE(contains(resolveMenuActions(fileSelection(0, 1, kind)),
-                             MenuAction::Properties))
+        EXPECT_TRUE(contains(resolveMenuActions(fileSelection(0, 1, kind)), MenuAction::Properties))
             << static_cast<int>(kind);
         // One node, one dialog -- a multi-selection has nothing to describe.
-        EXPECT_FALSE(contains(resolveMenuActions(fileSelection(2, 0, kind)),
-                              MenuAction::Properties))
+        EXPECT_FALSE(
+            contains(resolveMenuActions(fileSelection(2, 0, kind)), MenuAction::Properties))
             << static_cast<int>(kind);
     }
 }
@@ -729,8 +722,8 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersPropertiesOnFixedTargetSites
     // breadcrumb already identifies -- there is no row whose facts are in question.
     EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)),
                           MenuAction::Properties));
-    EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)),
-                          MenuAction::Properties));
+    EXPECT_FALSE(
+        contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::Properties));
 }
 
 TEST(MenuActionResolverTest, MenuActionAllowedRejectsAnUnknownId)

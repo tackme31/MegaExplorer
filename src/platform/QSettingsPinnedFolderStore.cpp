@@ -30,15 +30,13 @@ std::unique_ptr<QSettings> openSettings(const std::string& iniFilePath)
 {
     if (iniFilePath.empty())
         return std::make_unique<QSettings>();
-    return std::make_unique<QSettings>(QString::fromStdString(iniFilePath),
-                                       QSettings::IniFormat);
+    return std::make_unique<QSettings>(QString::fromStdString(iniFilePath), QSettings::IniFormat);
 }
 } // namespace
 
 QSettingsPinnedFolderStore::QSettingsPinnedFolderStore(std::string iniFilePath)
     : mIniFilePath(std::move(iniFilePath))
-{
-}
+{}
 QSettingsPinnedFolderStore::~QSettingsPinnedFolderStore() = default;
 
 Result<std::vector<PinnedFolder>>

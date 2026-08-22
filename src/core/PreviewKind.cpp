@@ -11,44 +11,18 @@ namespace
 // the extension is the only thing knowable before spending a round trip.
 const std::unordered_set<std::string>& mediaExtensions()
 {
-    static const std::unordered_set<std::string> extensions{// FreeImage
-                                                            "jpg",
-                                                            "jpeg",
-                                                            "png",
-                                                            "bmp",
-                                                            "gif",
-                                                            "webp",
-                                                            "tga",
-                                                            "tif",
-                                                            "tiff",
-                                                            "ico",
-                                                            // FreeImage, RAW
-                                                            "cr2",
-                                                            "nef",
-                                                            "arw",
-                                                            "dng",
-                                                            "raf",
-                                                            "orf",
-                                                            "rw2",
-                                                            "pef",
-                                                            "srw",
-                                                            "mrw",
-                                                            // FFmpeg
-                                                            "mp4",
-                                                            "mkv",
-                                                            "mov",
-                                                            "avi",
-                                                            "webm",
-                                                            "wmv",
-                                                            "ts",
-                                                            "m4v",
-                                                            "mpg",
-                                                            "mpeg",
-                                                            "flv",
-                                                            "3gp",
-                                                            "ogv",
-                                                            // PDFium
-                                                            "pdf"};
+    // clang-format off
+    static const std::unordered_set<std::string> extensions{
+        // FreeImage
+        "jpg", "jpeg", "png", "bmp", "gif", "webp", "tga", "tif", "tiff", "ico",
+        // FreeImage, RAW
+        "cr2", "nef", "arw", "dng", "raf", "orf", "rw2", "pef", "srw", "mrw",
+        // FFmpeg
+        "mp4", "mkv", "mov", "avi", "webm", "wmv", "ts", "m4v", "mpg", "mpeg", "flv",
+        "3gp", "ogv",
+        // PDFium
+        "pdf"};
+    // clang-format on
     return extensions;
 }
 
@@ -60,6 +34,7 @@ const std::unordered_set<std::string>& textExtensions()
     // "ts" is deliberately absent: mediaExtensions() claims it for MPEG-TS and is
     // consulted first, so adding it here would be dead. A TypeScript file therefore
     // lands on "no preview available" rather than showing its source.
+    // clang-format off
     static const std::unordered_set<std::string> extensions{
         // Plain text, documents and markup
         "txt", "md", "markdown", "rst", "adoc", "asciidoc", "tex", "bib", "log",
@@ -87,6 +62,7 @@ const std::unordered_set<std::string>& textExtensions()
         "asm", "vhd", "vhdl", "sql",
         // Patches, subtitles and playlists
         "diff", "patch", "po", "pot", "srt", "vtt", "m3u", "m3u8"};
+    // clang-format on
     return extensions;
 }
 

@@ -2,13 +2,12 @@
 
 #include <QTemporaryDir>
 
-#include <windows.h> // SetFileAttributesW, for the hidden-file case
-
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <windows.h> // SetFileAttributesW, for the hidden-file case
 
 namespace
 {
@@ -71,7 +70,8 @@ TEST(QtLocalFileSystemTest, ListsHiddenFiles)
     ASSERT_TRUE(dir.isValid());
     const std::filesystem::path root(dir.path().toStdWString());
     writeFile(root / "hidden.txt", "hello");
-    ASSERT_NE(SetFileAttributesW((root / "hidden.txt").wstring().c_str(), FILE_ATTRIBUTE_HIDDEN), 0);
+    ASSERT_NE(SetFileAttributesW((root / "hidden.txt").wstring().c_str(), FILE_ATTRIBUTE_HIDDEN),
+              0);
 
     QtLocalFileSystem fs;
 

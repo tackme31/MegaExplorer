@@ -12,8 +12,8 @@
 
 struct UploadCollision
 {
-    std::string localPath;          // the local file that would land on a taken name
-    std::string name;               // leaf name, shared by both sides
+    std::string localPath; // the local file that would land on a taken name
+    std::string name;      // leaf name, shared by both sides
     // MEGA folder it would land in, or 0 when that folder does not exist yet
     // because this same upload creates it.
     std::uint64_t parentHandle = 0;
@@ -66,10 +66,10 @@ public:
     // would, and additionally when a branch it has to take apart can no longer be
     // listed: a caller must not treat "could not tell" as "nothing collides" here,
     // since uploading everything is what the user just declined.
-    Result<std::vector<UploadPlanItem>> planSkippingCollisions(
-        const std::vector<std::string>& localPaths,
-        std::uint64_t parentHandle,
-        bool parentIsRoot) const;
+    Result<std::vector<UploadPlanItem>>
+    planSkippingCollisions(const std::vector<std::string>& localPaths,
+                           std::uint64_t parentHandle,
+                           bool parentIsRoot) const;
 
     // Directory junctions can make a local tree cyclic, and Windows resolves them
     // transparently, so the walk needs a stop of its own. Reaching it is reported

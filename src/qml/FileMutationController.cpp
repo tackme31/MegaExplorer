@@ -37,9 +37,8 @@ QString sizeText(std::uint64_t bytes)
     if (bytes == 0)
         return QString();
     // c() not system(): the unit word is locale data, and the UI is English-only.
-    return QLocale::c().formattedDataSize(static_cast<qint64>(bytes),
-                                          1,
-                                          QLocale::DataSizeTraditionalFormat);
+    return QLocale::c().formattedDataSize(
+        static_cast<qint64>(bytes), 1, QLocale::DataSizeTraditionalFormat);
 }
 } // namespace
 
@@ -89,9 +88,9 @@ std::vector<bool> FileMutationController::collidingEntries(const std::vector<Nod
     return colliding;
 }
 
-std::vector<NodeRef> FileMutationController::duplicateArrivals(
-    const std::vector<NodeRef>& entries,
-    const DestinationSnapshot& destination)
+std::vector<NodeRef>
+FileMutationController::duplicateArrivals(const std::vector<NodeRef>& entries,
+                                          const DestinationSnapshot& destination)
 {
     // Keyed by kind as well as name, for the reason collidesWith matches by kind.
     std::set<std::pair<std::string, bool>> arriving;
@@ -227,8 +226,7 @@ void FileMutationController::copyLinkToClipboard(quint64 handle)
                 // binary runs on a plain QCoreApplication, where building a QClipboard
                 // finds no platform integration to talk to.
                 if (qobject_cast<QGuiApplication*>(QCoreApplication::instance()) != nullptr)
-                    QGuiApplication::clipboard()->setText(
-                        QString::fromStdString(result.value()));
+                    QGuiApplication::clipboard()->setText(QString::fromStdString(result.value()));
                 markExported(handle, true);
                 mNotifications->notifyOperation(QStringLiteral("copyLink"), 1, 0);
             });
@@ -652,15 +650,15 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
         undo.insert(QStringLiteral("sourceIsRoot"), targetIsRoot);
     }
 
-    auto batch =
-        mBulk.start("move",
-                    static_cast<int>(plan.size()),
-                    {},
-                    [this, target, targetIsRoot, source, sourceIsRoot](int succeeded, int) {
-                        if (succeeded > 0)
-                            emit nodesMoved(target, targetIsRoot, source, sourceIsRoot);
-                    },
-                    undo);
+    auto batch = mBulk.start(
+        "move",
+        static_cast<int>(plan.size()),
+        {},
+        [this, target, targetIsRoot, source, sourceIsRoot](int succeeded, int) {
+            if (succeeded > 0)
+                emit nodesMoved(target, targetIsRoot, source, sourceIsRoot);
+        },
+        undo);
 
     for (const PlannedMove& planned : plan)
         moveOne(planned.handle, target, targetIsRoot, planned.newName, batch);
@@ -955,8 +953,8 @@ void FileMutationController::startCopyBatch(const std::vector<NodeRef>& entries,
         // for a total it then discards. A size the SDK cannot answer is left out of
         // the total rather than failing the question -- it only costs the dialog a
         // parenthetical.
-        const bool anyColliding = std::find(colliding.begin(), colliding.end(), true) !=
-                                  colliding.end();
+        const bool anyColliding =
+            std::find(colliding.begin(), colliding.end(), true) != colliding.end();
         std::uint64_t conflictingBytes = 0;
         std::uint64_t unaffectedBytes = 0;
         for (std::size_t i = 0; i < entries.size(); ++i)

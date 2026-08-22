@@ -162,8 +162,7 @@ public:
                           bool favourite,
                           std::function<void(Result<void>)> onDone) override;
 
-    void exportNode(std::uint64_t handle,
-                    std::function<void(Result<std::string>)> onDone) override;
+    void exportNode(std::uint64_t handle, std::function<void(Result<std::string>)> onDone) override;
 
     void disableExport(std::uint64_t handle, std::function<void(Result<void>)> onDone) override;
 

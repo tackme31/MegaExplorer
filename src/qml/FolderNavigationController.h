@@ -1,8 +1,8 @@
 #pragma once
+#include "BusyState.h"
 #include "core/FolderNavigationService.h"
 #include "core/SearchService.h"
 #include "core/SortOrder.h"
-#include "BusyState.h"
 #include "FileListModel.h"
 
 #include <QObject>
@@ -167,10 +167,8 @@ public:
     // SearchNodeType/SearchCategory/SearchTimeWindow values. Out-of-range values fall
     // back to "any". Re-runs the current query, and a filter with no query is itself a
     // search -- clearing both is what restores the cached folder listing.
-    Q_INVOKABLE void setSearchFilter(int nodeType,
-                                     int category,
-                                     int createdWithin,
-                                     bool favouritesOnly);
+    Q_INVOKABLE void
+    setSearchFilter(int nodeType, int category, int createdWithin, bool favouritesOnly);
 
     // column: 0=Name, 1=ModificationTime, 2=Size. Also called at startup with the
     // persisted value, before login/loadRoot() have run (see mHasLoadedOnce).
@@ -331,7 +329,6 @@ private:
     // The other half of what availableActions resolves against. Separate from
     // publishViewKind because the search box moves it without the location changing.
     void publishCrossFolderListing();
-
 
     std::shared_ptr<FolderNavigationService> mService;
     std::shared_ptr<SearchService> mSearchService;

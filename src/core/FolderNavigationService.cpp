@@ -193,11 +193,10 @@ void FolderNavigationService::listFavourites(
     mClient->listFavourites(order, nameFilter, filter, std::move(onDone));
 }
 
-void FolderNavigationService::listRecent(
-    SortOrder order,
-    const std::string& nameFilter,
-    const SearchFilter& filter,
-    std::function<void(Result<std::vector<FileEntry>>)> onDone)
+void FolderNavigationService::listRecent(SortOrder order,
+                                         const std::string& nameFilter,
+                                         const SearchFilter& filter,
+                                         std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
     mClient->listRecent(order, nameFilter, filter, std::move(onDone));
 }
@@ -227,8 +226,7 @@ void FolderNavigationService::resolveCurrentPath(
     // here could never be translated).
     if (mCurrent.kind == ViewKind::Favourites || mCurrent.kind == ViewKind::Recents)
     {
-        onDone(
-            Result<std::vector<PathSegment>>::ok({PathSegment{"", 0, false, mCurrent.kind}}));
+        onDone(Result<std::vector<PathSegment>>::ok({PathSegment{"", 0, false, mCurrent.kind}}));
         return;
     }
     // The bin's own top is synthesized for the same reason, and marked isRoot so
@@ -236,8 +234,7 @@ void FolderNavigationService::resolveCurrentPath(
     // chain and resolves normally below.
     if (mCurrent.kind == ViewKind::Rubbish && mCurrent.isRoot)
     {
-        onDone(
-            Result<std::vector<PathSegment>>::ok({PathSegment{"", 0, true, ViewKind::Rubbish}}));
+        onDone(Result<std::vector<PathSegment>>::ok({PathSegment{"", 0, true, ViewKind::Rubbish}}));
         return;
     }
     mClient->getPath(mCurrent.handle, mCurrent.isRoot, std::move(onDone));

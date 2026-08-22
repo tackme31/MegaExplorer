@@ -196,8 +196,7 @@ void TabsController::duplicateTab(int index)
 
     // Only the location is copied -- not the back stack, the search or the
     // selection, all of which stay with the tab that was right-clicked.
-    const FolderNavigationController& source =
-        *mTabs[static_cast<std::size_t>(index)].navigation;
+    const FolderNavigationController& source = *mTabs[static_cast<std::size_t>(index)].navigation;
     const ViewKind kind = static_cast<ViewKind>(source.viewKind());
     const quint64 handle = source.currentHandle();
     const bool atRoot = source.atRoot();
