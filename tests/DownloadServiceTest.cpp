@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <string>
 
 namespace
@@ -762,4 +763,34 @@ TEST(DownloadServiceTest, CancelOfAnIdThatAlreadyFinishedNeitherNotifiesNorReach
     service.cancel(id);
 
     EXPECT_EQ(finishedCount, 1); // still exactly one completion for that job
+}
+
+TEST(DownloadServiceTest, AThrowingClientCallLeavesTheQueueAbleToStartTheNextJob)
+{
+    // Regression guard for the re-entrancy flag's lifetime: it used to be cleared by
+    // hand at the one exit that returns normally, so an exception from anything
+    // startNextIfIdle() calls left it set forever and every later enqueue() bounced
+    // off the guard -- ids kept being handed out with no transfer ever starting.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::vector<DownloadDone> onDone;
+    EXPECT_CALL(*mockClient,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Throw(std::runtime_error("boom")))
+        .WillRepeatedly(
+            ::testing::Invoke([&onDone](std::uint64_t,
+                                        const std::string&,
+                                        std::uint64_t,
+                                        std::function<void(std::uint64_t, std::uint64_t)>,
+                                        DownloadDone done) {
+                onDone.push_back(std::move(done));
+            }));
+
+    DownloadService service(mockClient);
+    EXPECT_THROW(service.enqueue(1, "a.txt", "/tmp/a.txt", 10), std::runtime_error);
+
+    // Act
+    service.enqueue(2, "b.txt", "/tmp/b.txt", 10);
+
+    // Assert
+    EXPECT_EQ(onDone.size(), 1u);
 }

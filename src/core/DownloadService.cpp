@@ -8,6 +8,37 @@
 namespace
 {
 
+// Puts the re-entrancy flag back when startNextIfIdle()'s loop leaves through an
+// exception: everything it calls out to (IMegaClient, the finished callback, the
+// controllers and QML behind it) can throw, and a flag left set makes every later
+// startNextIfIdle() return at the guard, so enqueue() keeps handing out ids while no
+// transfer ever starts again.
+//
+// The ordinary exits call clearHeld() instead of leaving it to the destructor: the
+// flag has to drop in the same critical section that decided to stop, or an enqueue
+// landing in between bounces off the guard and is left for nobody to start.
+struct AdvancingGuard
+{
+    std::mutex& mutex;
+    bool& flag;
+    bool armed = true;
+
+    // mutex must be held.
+    void clearHeld()
+    {
+        flag = false;
+        armed = false;
+    }
+
+    ~AdvancingGuard()
+    {
+        if (!armed)
+            return;
+        std::lock_guard<std::mutex> lock(mutex);
+        flag = false;
+    }
+};
+
 bool isAsciiLetter(char c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
@@ -262,6 +293,7 @@ void DownloadService::startNextIfIdle()
             return; // the loop below re-reads the queue every turn and will see this
         mAdvancing = true;
     }
+    AdvancingGuard advancing = {mMutex, mAdvancing};
 
     for (;;)
     {
@@ -272,7 +304,7 @@ void DownloadService::startNextIfIdle()
             std::lock_guard<std::mutex> lock(mMutex);
             if (mActive.size() >= kMaxConcurrent || mPending.empty())
             {
-                mAdvancing = false;
+                advancing.clearHeld();
                 return;
             }
             DownloadJob job = std::move(mPending.front());

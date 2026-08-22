@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <stdexcept>
 
 // TRAP: Result<void>::success defaults to false (src/core/Result.h), so gmock's
 // default action for an unstubbed checkUpload() returns *failure*. Without the
@@ -796,4 +797,33 @@ TEST(UploadServiceTest, CancellingTheActiveJobAbortsItAndTheQueueBehindItCarries
     ASSERT_TRUE(active.has_value());
     EXPECT_EQ(active->id, id2);
     EXPECT_EQ(active->state, UploadState::Active);
+}
+
+TEST(UploadServiceTest, AThrowingClientCallLeavesTheQueueAbleToStartTheNextJob)
+{
+    // Same regression guard as DownloadServiceTest's of this name -- see there.
+    auto mockClient = makeClient();
+    std::vector<UploadDone> onDone;
+    EXPECT_CALL(
+        *mockClient,
+        upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Throw(std::runtime_error("boom")))
+        .WillRepeatedly(::testing::Invoke(
+            [&onDone](const std::string&,
+                      std::uint64_t,
+                      bool,
+                      std::uint64_t,
+                      std::function<void(std::uint64_t, std::uint64_t)>,
+                      UploadDone done) {
+                onDone.push_back(std::move(done));
+            }));
+
+    UploadService service(mockClient);
+    EXPECT_THROW(service.enqueue("/tmp/a.txt", "a.txt", 7, false, 10), std::runtime_error);
+
+    // Act
+    service.enqueue("/tmp/b.txt", "b.txt", 7, false, 10);
+
+    // Assert
+    EXPECT_EQ(onDone.size(), 1u);
 }

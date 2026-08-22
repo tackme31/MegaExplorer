@@ -4,6 +4,35 @@
 
 #include <algorithm>
 
+namespace
+{
+
+// Same struct, same reasons, as DownloadService.cpp's -- see there, including why the
+// ordinary exits clear the flag themselves instead of leaving it to the destructor.
+struct AdvancingGuard
+{
+    std::mutex& mutex;
+    bool& flag;
+    bool armed = true;
+
+    // mutex must be held.
+    void clearHeld()
+    {
+        flag = false;
+        armed = false;
+    }
+
+    ~AdvancingGuard()
+    {
+        if (!armed)
+            return;
+        std::lock_guard<std::mutex> lock(mutex);
+        flag = false;
+    }
+};
+
+} // namespace
+
 UploadService::UploadService(std::shared_ptr<IMegaClient> client) : mClient(std::move(client)) {}
 
 std::uint64_t UploadService::enqueue(const std::string& localPath,
@@ -177,6 +206,7 @@ void UploadService::startNextIfIdle()
             return;
         mAdvancing = true;
     }
+    AdvancingGuard advancing = {mMutex, mAdvancing};
 
     for (;;)
     {
@@ -188,7 +218,7 @@ void UploadService::startNextIfIdle()
             std::lock_guard<std::mutex> lock(mMutex);
             if (mActive.size() >= kMaxConcurrent || mPending.empty())
             {
-                mAdvancing = false;
+                advancing.clearHeld();
                 return;
             }
             UploadJob job = std::move(mPending.front());
@@ -216,7 +246,7 @@ void UploadService::startNextIfIdle()
                 UploadJob* job = activeJob(id);
                 if (!job)
                 {
-                    mAdvancing = false; // every exit past the flag must clear it
+                    advancing.clearHeld(); // every exit past the flag must clear it
                     return;
                 }
                 // A cancel that landed during the checkUpload() round-trip named a
