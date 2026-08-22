@@ -282,7 +282,17 @@ signals:
     // recognises the node by handle alone.
     void favouriteChanged(quint64 handle, bool favourite);
 
+    // favouriteChanged's counterpart for the public-link flag, carrying no location
+    // for the same reason. Fired by both copyLinkToClipboard (which exports when the
+    // node has no link yet) and removeLink -- from the row's point of view the two
+    // are the same event in opposite directions.
+    void exportChanged(quint64 handle, bool exported);
+
 private:
+    // This tab's row plus every other tab's, in one call -- the three link
+    // outcomes all have to do both.
+    void markExported(quint64 handle, bool exported);
+
     // What to do with an entry whose name the destination already holds. Ask is
     // the entry points' value; the other three are the dialog's answers. Unlike
     // the copy side's, Rename here is only ever an answer -- a move that collides

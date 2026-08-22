@@ -72,6 +72,9 @@ ActionMenu {
             // Sampled, not bound, for the same reason as pinned above: the model
             // can only change the answer while the menu is closed.
             "favourited": entries.length === 1 && entries[0].isFavourite === true,
+            // Sampled like favourited above. Only "Remove link" reads it: "Copy
+            // link" exports on demand, so it is offered either way.
+            "exported": entries.length === 1 && entries[0].isExported === true,
             // Sampled like pinned/favourited above, and it can only change while
             // the menu is closed -- the settings dialog is modal.
             "localFolderLinked": localFolderController.linked,

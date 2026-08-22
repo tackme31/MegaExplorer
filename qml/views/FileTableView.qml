@@ -9,7 +9,8 @@ import QtQuick.Layouts
 import "../components"
 
 // Explorer-style detail view for the list-view mode (Phase 6b/sort): a
-// 3-column TableView (Name/Modified/Size -- a "Kind" column was considered
+// TableView of three sortable columns plus an unlabelled marker column
+// (Name/Modified/Size -- a "Kind" column was considered
 // but dropped, see MEMO.md's 2026-07-28 note: MegaApi::getChildren/search
 // has no order value corresponding to it, and sorting here is deliberately
 // server-side, not in-memory). Column header labels are hardcoded here
@@ -71,7 +72,12 @@ ColumnLayout {
     required property real initialColumnWidthModified
     required property real initialColumnWidthSize
 
-    readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size")]
+    // The fourth is the public-link marker: deliberately unlabelled, never
+    // sortable (see requestSort) and never resizable (see columnWidthFor).
+    readonly property var columnLabels: [qsTr("Name"), qsTr("Date modified"), qsTr("Size"), ""]
+
+    readonly property int linkColumn: 3
+    readonly property int linkColumnWidth: 32
 
     // Off in the favourites listing, where every row carries the flag and the
     // marker would say nothing (FAVOURITES_VIEW_SPEC.md decision 6). Resolved
@@ -150,8 +156,8 @@ ColumnLayout {
     // that fit supersedes it on the very first layout.
     readonly property var defaultColumnWidths: [220, 150, 100]
 
-    // 0 = Name, 1 = Modified, 2 = Size -- matches FileListModel::columnCount()
-    // and FolderNavigationController::setSortOrder()'s column mapping.
+    // 0 = Name, 1 = Modified, 2 = Size -- FolderNavigationController::setSortOrder()'s
+    // column mapping. The link column has no sort key, so it never appears here.
     // Plain literal defaults (not bound to initialSortColumn/initialColumnWidth*
     // below) -- Component.onCompleted assigns the real starting value exactly
     // once, deliberately as a one-time imperative copy rather than a live
@@ -197,6 +203,12 @@ ColumnLayout {
     // here; see columnWidthProvider below for why none of them is derived from
     // the viewport.
     function columnWidthFor(column) {
+        // The marker column is not the user's to resize. Ignoring
+        // explicitColumnWidth here is what makes it fixed: TableView has no
+        // per-column resizableColumns, but a provider that never consults the
+        // dragged width leaves the handle inert.
+        if (column === root.linkColumn)
+            return root.linkColumnWidth;
         const w = tableView.explicitColumnWidth(column);
         const fallback = root.defaultColumnWidths[column];
         // Math.max(min, w) pattern straight from Qt's own TableView docs
@@ -219,7 +231,7 @@ ColumnLayout {
         root.nameWidthInitialized = true;
         if (root.columnWidthName >= 0)
             return;
-        const rest = root.columnWidthFor(1) + root.columnWidthFor(2);
+        const rest = root.columnWidthFor(1) + root.columnWidthFor(2) + root.linkColumnWidth;
         root.columnWidthName = Math.max(root.minColumnWidths[0], tableView.width - rest);
         tableView.setColumnWidth(0, root.columnWidthName);
     }
@@ -227,7 +239,7 @@ ColumnLayout {
     // Same column same click: toggle direction. Different column: switch to
     // it, reset to ascending (Explorer's convention).
     function requestSort(column) {
-        if (!root.sortable)
+        if (!root.sortable || column === root.linkColumn)
             return;
         if (root.sortColumn === column)
             root.sortAscending = !root.sortAscending;
@@ -343,6 +355,11 @@ ColumnLayout {
             implicitHeight: Theme.rowHeight.normal
             required property int column
 
+            // The unlabelled marker column sorts nothing, so it must not look
+            // like a button either.
+            readonly property bool clickable: root.sortable
+                                              && headerCell.column !== root.linkColumn
+
             // FluentWinUI3 ships no HorizontalHeaderView delegate of its own
             // (unlike Basic), so this Rectangle's background is the only one
             // drawn here -- leaving `color` at Rectangle's default (opaque
@@ -350,7 +367,8 @@ ColumnLayout {
             // Windows) foreground, producing invisible white-on-white text.
             // transparent lets the real themed background show through,
             // same as the row delegate below.
-            color: headerHover.hovered && root.sortable ? Theme.color.subtleHover : "transparent"
+            color: headerHover.hovered
+                   && headerCell.clickable ? Theme.color.subtleHover : "transparent"
 
             // A header cell sorts on click, and nothing else here said so.
             HoverHandler {
@@ -410,7 +428,7 @@ ColumnLayout {
             // suppresses click-drag panning, not delivery to child handlers.
             TapHandler {
                 acceptedButtons: Qt.LeftButton
-                enabled: root.sortable
+                enabled: headerCell.clickable
                 onTapped: root.requestSort(headerCell.column)
             }
         }
@@ -571,6 +589,7 @@ ColumnLayout {
             required property double modificationTime
             required property bool selected
             required property bool isFavourite
+            required property bool isExported
 
             // Only the name column of the one renamed row turns into an editor.
             readonly property bool renaming: viewInput.renamingHandle !== 0
@@ -669,6 +688,19 @@ ColumnLayout {
                     verticalAlignment: Text.AlignVCenter
                     text: Theme.glyph.favourite
                 }
+            }
+
+            // Centred in its own column rather than tucked into the RowLayout
+            // above, whose md margins would leave it visibly off-centre in a
+            // 32px cell. Ghosted with the row for the same reason the heart is.
+            Label {
+                anchors.centerIn: parent
+                opacity: cell.cutPending ? Theme.opacity.cut : 1
+                visible: cell.column === root.linkColumn && cell.isExported
+                font.family: Theme.font.iconFamily
+                font.pixelSize: Theme.font.caption
+                color: Theme.color.accent
+                text: Theme.glyph.link
             }
 
             // The Component is declared inline rather than shared at root level

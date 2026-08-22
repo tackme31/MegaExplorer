@@ -615,6 +615,79 @@ TEST(FileListModelTest, SelectedEntryCarriesIsFavouriteForTheContextMenu)
     EXPECT_TRUE(model.selectedEntries().first().toMap().value("isFavourite").toBool());
 }
 
+TEST(FileListModelTest, IsExportedRoleReportsTheEntryFlag)
+{
+    FileListModel model;
+    model.setEntries({FileEntry{"a", 1, 0, false, 0, false, false, true},
+                      FileEntry{"b", 2, 0, false, 0, false, false, false}});
+
+    EXPECT_TRUE(model.data(model.index(0, 0), FileListModel::IsExportedRole).toBool());
+    EXPECT_FALSE(model.data(model.index(1, 0), FileListModel::IsExportedRole).toBool());
+}
+
+TEST(FileListModelTest, SetExportedUpdatesOneRowWithoutResettingTheModel)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(5));
+
+    int resets = 0;
+    int changedRow = -1;
+    QVector<int> changedRoles;
+    QObject::connect(&model, &FileListModel::modelReset, [&]() {
+        ++resets;
+    });
+    QObject::connect(
+        &model,
+        &FileListModel::dataChanged,
+        [&](const QModelIndex& topLeft, const QModelIndex&, const QVector<int>& roles) {
+            changedRow = topLeft.row();
+            changedRoles = roles;
+        });
+
+    model.setExported(3, true);
+
+    EXPECT_EQ(resets, 0);
+    EXPECT_EQ(changedRow, 3);
+    EXPECT_EQ(changedRoles, QVector<int>{FileListModel::IsExportedRole});
+    EXPECT_TRUE(model.data(model.index(3, 0), FileListModel::IsExportedRole).toBool());
+}
+
+TEST(FileListModelTest, SetExportedIgnoresAHandleThatIsNoLongerListed)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(3));
+
+    int changes = 0;
+    QObject::connect(&model, &FileListModel::dataChanged, [&]() {
+        ++changes;
+    });
+
+    model.setExported(999, true);
+
+    EXPECT_EQ(changes, 0);
+}
+
+TEST(FileListModelTest, SelectedEntryCarriesIsExportedForTheContextMenu)
+{
+    FileListModel model;
+    // FileContextMenu.qml reads this key to decide whether "Remove link" is
+    // greyed out.
+    model.setEntries({FileEntry{"shared.txt", 7, 0, false, 0, false, false, true}});
+
+    model.selectRow(0, Qt::NoModifier);
+
+    EXPECT_TRUE(model.selectedEntry().value("isExported").toBool());
+    EXPECT_TRUE(model.selectedEntries().first().toMap().value("isExported").toBool());
+}
+
+// The detail view's fourth column is the link marker; it carries no role of its
+// own, so its only trace in C++ is this count.
+TEST(FileListModelTest, ColumnCountCoversTheMarkerColumn)
+{
+    FileListModel model;
+    EXPECT_EQ(model.columnCount(), 4);
+}
+
 TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
 {
     // Same selection, two screens: the view kind is the only difference, and it

@@ -199,8 +199,8 @@ void FileMutationController::copyLinkToClipboard(quint64 handle)
     mBusy->begin();
     mFileOps->exportLink(
         static_cast<std::uint64_t>(handle),
-        [this, self = shared_from_this()](Result<std::string> result) {
-            invokeOnGuiThread(this, [this, result = std::move(result)]() {
+        [this, self = shared_from_this(), handle](Result<std::string> result) {
+            invokeOnGuiThread(this, [this, handle, result = std::move(result)]() {
                 mBusy->end();
                 if (!result.success)
                 {
@@ -213,9 +213,13 @@ void FileMutationController::copyLinkToClipboard(quint64 handle)
                     return;
                 }
                 // An export that succeeds with no URL would otherwise blank the
-                // clipboard while claiming the link was copied.
+                // clipboard while claiming the link was copied. The node is shared
+                // all the same -- only the URL is missing -- so the flag is written
+                // before bailing out; without it the row would show no marker and
+                // "Remove link" would be greyed on a link the user cannot revoke.
                 if (result.value().empty())
                 {
+                    markExported(handle, true);
                     mNotifications->notifyError(QStringLiteral("copyLinkEmpty"));
                     return;
                 }
@@ -225,9 +229,16 @@ void FileMutationController::copyLinkToClipboard(quint64 handle)
                 if (qobject_cast<QGuiApplication*>(QCoreApplication::instance()) != nullptr)
                     QGuiApplication::clipboard()->setText(
                         QString::fromStdString(result.value()));
+                markExported(handle, true);
                 mNotifications->notifyOperation(QStringLiteral("copyLink"), 1, 0);
             });
         });
+}
+
+void FileMutationController::markExported(quint64 handle, bool exported)
+{
+    mNavigation->applyExportChange(handle, exported);
+    emit exportChanged(handle, exported);
 }
 
 void FileMutationController::removeLink(quint64 handle)
@@ -235,8 +246,8 @@ void FileMutationController::removeLink(quint64 handle)
     mBusy->begin();
     mFileOps->removeLink(
         static_cast<std::uint64_t>(handle),
-        [this, self = shared_from_this()](Result<void> result) {
-            invokeOnGuiThread(this, [this, result = std::move(result)]() {
+        [this, self = shared_from_this(), handle](Result<void> result) {
+            invokeOnGuiThread(this, [this, handle, result = std::move(result)]() {
                 mBusy->end();
                 if (!result.success)
                 {
@@ -248,6 +259,7 @@ void FileMutationController::removeLink(quint64 handle)
                                                 QString::fromStdString(result.errorMessage));
                     return;
                 }
+                markExported(handle, false);
                 mNotifications->notifyOperation(QStringLiteral("removeLink"), 1, 0);
             });
         });

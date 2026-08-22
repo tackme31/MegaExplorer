@@ -653,6 +653,19 @@ void FolderNavigationController::applyRemoteFavouriteChange(quint64 handle, bool
     writeFavouriteFlag(handle, favourite);
 }
 
+void FolderNavigationController::applyExportChange(quint64 handle, bool exported)
+{
+    mFileListModel->setExported(handle, exported);
+    for (FileEntry& entry : mLastFolderEntries)
+    {
+        if (entry.handle == static_cast<std::uint64_t>(handle))
+        {
+            entry.isExported = exported;
+            break;
+        }
+    }
+}
+
 void FolderNavigationController::writeFavouriteFlag(quint64 handle, bool favourite)
 {
     mFileListModel->setFavourite(handle, favourite);

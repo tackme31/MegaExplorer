@@ -997,6 +997,116 @@ TEST_F(FileMutationControllerTest, RemoveLinkReportsAFailureUnderItsOwnContext)
     EXPECT_EQ(lastErrorReason, NotificationController::NotFound);
 }
 
+TEST_F(FileMutationControllerTest, CopyLinkMarksTheRowSharedAndAnnouncesIt)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+    const int fetchesBefore = rootFetches;
+
+    int reported = 0;
+    bool reportedValue = false;
+    QObject::connect(mutations.get(),
+                     &FileMutationController::exportChanged,
+                     mutations.get(),
+                     [&](quint64, bool exported) {
+                         ++reported;
+                         reportedValue = exported;
+                     });
+
+    EXPECT_CALL(*client, exportNode(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<std::string>::ok("https://mega.nz/file/abc#key")));
+
+    mutations->copyLinkToClipboard(1);
+    flush();
+
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
+    EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+    ASSERT_EQ(reported, 1);
+    EXPECT_TRUE(reportedValue);
+}
+
+TEST_F(FileMutationControllerTest, CopyLinkStillMarksTheRowWhenTheExportProducedNoLink)
+{
+    // The export itself succeeded -- only the URL came back empty -- so the node
+    // is shared. Leaving the marker off would grey out "Remove link" on a live
+    // link the user then has no way to revoke.
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    int reported = 0;
+    QObject::connect(mutations.get(),
+                     &FileMutationController::exportChanged,
+                     mutations.get(),
+                     [&](quint64, bool) {
+                         ++reported;
+                     });
+
+    EXPECT_CALL(*client, exportNode(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<std::string>::ok("")));
+
+    mutations->copyLinkToClipboard(1);
+    flush();
+
+    EXPECT_EQ(lastErrorContext, QStringLiteral("copyLinkEmpty"));
+    EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+    EXPECT_EQ(reported, 1);
+}
+
+TEST_F(FileMutationControllerTest, CopyLinkLeavesTheRowAloneWhenTheExportItselfFailed)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    int reported = 0;
+    QObject::connect(mutations.get(),
+                     &FileMutationController::exportChanged,
+                     mutations.get(),
+                     [&](quint64, bool) {
+                         ++reported;
+                     });
+
+    EXPECT_CALL(*client, exportNode(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<std::string>::fail("denied", MegaErrorCode::kEAccess)));
+
+    mutations->copyLinkToClipboard(1);
+    flush();
+
+    EXPECT_FALSE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+    EXPECT_EQ(reported, 0);
+}
+
+TEST_F(FileMutationControllerTest, RemoveLinkClearsTheRowsMarkerAndAnnouncesIt)
+{
+    FileEntry shared = entry("a", 1);
+    shared.isExported = true;
+    givenRootListing({shared});
+    controller->loadRoot();
+    flush();
+    ASSERT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+
+    int reported = 0;
+    bool reportedValue = true;
+    QObject::connect(mutations.get(),
+                     &FileMutationController::exportChanged,
+                     mutations.get(),
+                     [&](quint64, bool exported) {
+                         ++reported;
+                         reportedValue = exported;
+                     });
+
+    EXPECT_CALL(*client, disableExport(1u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
+
+    mutations->removeLink(1);
+    flush();
+
+    EXPECT_FALSE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+    ASSERT_EQ(reported, 1);
+    EXPECT_FALSE(reportedValue);
+}
+
 TEST_F(FileMutationControllerTest, BusyClearsOnlyAfterTheLastCallbackOfABulkOperation)
 {
     givenRootListing({entry("a", 1), entry("b", 2)});

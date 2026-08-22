@@ -423,6 +423,20 @@ TabContext TabsController::createTab()
                 refreshCurrentTabIfStale();
             });
 
+    // Same fan-out as the flag above, minus the stale handling: no screen is
+    // defined by an export, so every tab can write it in place.
+    connect(context.mutations.get(),
+            &FileMutationController::exportChanged,
+            this,
+            [this, navigation](quint64 handle, bool exported) {
+                for (const TabContext& tab : mTabs)
+                {
+                    if (tab.navigation.get() == navigation)
+                        continue;
+                    tab.navigation->applyExportChange(handle, exported);
+                }
+            });
+
     return context;
 }
 

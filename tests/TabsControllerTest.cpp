@@ -8,6 +8,7 @@
 #include "platform/QtLocalFileSystem.h"
 #include "qml/BusyState.h"
 #include "qml/ClipboardController.h"
+#include "qml/FileListModel.h"
 #include "qml/FileMutationController.h"
 #include "qml/FolderNavigationController.h"
 #include "qml/GuiThread.h"
@@ -88,6 +89,12 @@ protected:
     {
         return qobject_cast<FileMutationController*>(
             tabs.data(tabs.index(row), TabsController::MutationsRole).value<QObject*>());
+    }
+
+    static FolderNavigationController* navigationOf(TabsController& tabs, int row)
+    {
+        return qobject_cast<FolderNavigationController*>(
+            tabs.data(tabs.index(row), TabsController::NavigationRole).value<QObject*>());
     }
 
     std::shared_ptr<MockMegaClient> client;
@@ -203,6 +210,40 @@ TEST_F(TabsControllerTest, AFavouriteToggledElsewhereRefreshesTheFavouritesTabWh
     flushQueuedEvents();
 
     EXPECT_EQ(favouriteFetches, 2);
+}
+
+TEST_F(TabsControllerTest, ALinkSharedElsewhereMarksTheRowInEveryOtherTab)
+{
+    // No stale mark and no re-read, unlike the favourite fan-out above: an export
+    // defines no listing, so a second tab on the same folder can just write it.
+    EXPECT_CALL(*client, getRootChildren(_, _))
+        .WillRepeatedly(
+            Invoke([](SortOrder, std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                onDone(Result<std::vector<FileEntry>>::ok({FileEntry{"a", 9}}));
+            }));
+    EXPECT_CALL(*client, getPath(_, _, _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{})));
+    EXPECT_CALL(*client, exportNode(9u, _))
+        .WillRepeatedly(InvokeArgument<1>(Result<std::string>::ok("https://mega.nz/file/a#k")));
+
+    auto tabs = makeController();
+    // Not loadRootAll(): it collapses back to a single tab, which is the
+    // opposite of what this needs.
+    navigationOf(*tabs, 0)->loadRoot();
+    tabs->addTab();
+    flushQueuedEvents();
+    flushQueuedEvents();
+
+    auto* other = qobject_cast<FileListModel*>(navigationOf(*tabs, 1)->fileListModel());
+    ASSERT_NE(other, nullptr);
+    ASSERT_EQ(other->rowCount(), 1);
+    ASSERT_FALSE(other->data(other->index(0, 0), FileListModel::IsExportedRole).toBool());
+
+    mutationsOf(*tabs, 0)->copyLinkToClipboard(9);
+    flushQueuedEvents();
+
+    EXPECT_TRUE(other->data(other->index(0, 0), FileListModel::IsExportedRole).toBool());
 }
 
 TEST_F(TabsControllerTest, ARubbishMoveElsewhereAlsoLeavesTheFavouritesTabStale)
