@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <vector>
 
 TEST(PreviewServiceTest, SingleRequestReachesClientAndDelivers)
@@ -151,4 +152,26 @@ TEST(PreviewServiceTest, ChainedRequestsFromCallbacksDoNotRecurse)
     // Assert
     EXPECT_EQ(finishedCount, 50);
     EXPECT_EQ(maxDepth, 1); // recursing would make this 50
+}
+
+TEST(PreviewServiceTest, AThrowingClientCallLeavesTheServiceAbleToStartTheNextRequest)
+{
+    // Regression guard for the re-entrancy flag's and the in-flight slot's lifetimes:
+    // both used to be dropped only at the exits that return normally, so an exception
+    // from anything startNextIfIdle() calls left them set forever and no preview was
+    // ever fetched again.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::string>)> secondOnDone;
+    EXPECT_CALL(*mockClient, getPreview(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Throw(std::runtime_error("boom")))
+        .WillRepeatedly(::testing::SaveArg<2>(&secondOnDone));
+
+    PreviewService service(mockClient);
+    EXPECT_THROW(service.request(1, "/tmp/1.jpg", [](Result<std::string>) {}), std::runtime_error);
+
+    // Act
+    service.request(2, "/tmp/2.jpg", [](Result<std::string>) {});
+
+    // Assert
+    EXPECT_TRUE(static_cast<bool>(secondOnDone));
 }

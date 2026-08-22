@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <stdexcept>
 
 TEST(ThumbnailServiceTest, InitialRequestCallsSdkAndReturnsResult)
 {
@@ -203,4 +204,70 @@ TEST(ThumbnailServiceTest, SynchronousFailuresDrainTheQueueWithoutRecursing)
     // Assert
     EXPECT_EQ(finishedCount, 50);
     EXPECT_EQ(maxDepth, 1); // recursing would make this 49
+}
+
+TEST(ThumbnailServiceTest, AThrowingClientCallLeavesTheQueueAbleToStartTheNextJob)
+{
+    // Regression guard for the re-entrancy flag's and the active slot's lifetimes:
+    // both used to be dropped only at the exits that return normally, so an exception
+    // from anything startNextIfCapacity() calls left them set forever and no thumbnail
+    // was ever fetched again. maxConcurrent 1 so the leaked slot alone would block it.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::string>)> secondOnDone;
+    EXPECT_CALL(*mockClient, getThumbnail(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Throw(std::runtime_error("boom")))
+        .WillRepeatedly(::testing::SaveArg<2>(&secondOnDone));
+
+    ThumbnailService service(mockClient, 1);
+    EXPECT_THROW(service.request(1, "/tmp/1.jpg", [](Result<std::string>) {}), std::runtime_error);
+
+    // Act
+    service.request(2, "/tmp/2.jpg", [](Result<std::string>) {});
+
+    // Assert
+    EXPECT_TRUE(static_cast<bool>(secondOnDone));
+}
+
+TEST(ThumbnailServiceTest, AThrowAfterAnInStackCompletionDoesNotWedgeTheQueue)
+{
+    // The rollback above must release the slot it took, not whatever entry happens to
+    // sit under that handle: a completion running inside the same getThumbnail() call
+    // already gave the slot back, and a re-request from its callbacks puts a fresh,
+    // unstarted entry there. Decrementing for that one wraps the unsigned count and no
+    // thumbnail is ever started again -- the very symptom this cycle removed.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::string>)> secondOnDone;
+    int starts = 0;
+    EXPECT_CALL(*mockClient, getThumbnail(::testing::_, ::testing::_, ::testing::_))
+        .WillRepeatedly(::testing::Invoke([&](std::uint64_t,
+                                              const std::string&,
+                                              std::function<void(Result<std::string>)> onDone) {
+            if (++starts == 1)
+            {
+                onDone(Result<std::string>::fail("gone", 2)); // finishJob runs in-stack
+                throw std::runtime_error("boom");
+            }
+            secondOnDone = std::move(onDone);
+        }));
+
+    ThumbnailService service(mockClient, 1);
+    bool reRequested = false;
+    EXPECT_THROW(service.request(1,
+                                 "/tmp/1.jpg",
+                                 [&](Result<std::string>) {
+                                     if (reRequested)
+                                         return;
+                                     reRequested = true;
+                                     // same handle: a failure is not cached, so this makes
+                                     // a new, unstarted job entry under handle 1
+                                     service.request(1, "/tmp/1.jpg", [](Result<std::string>) {});
+                                 }),
+                 std::runtime_error);
+    ASSERT_TRUE(reRequested);
+
+    // Act
+    service.request(2, "/tmp/2.jpg", [](Result<std::string>) {});
+
+    // Assert
+    EXPECT_TRUE(static_cast<bool>(secondOnDone));
 }

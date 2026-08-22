@@ -3,7 +3,31 @@
 namespace
 {
 constexpr const char* kSupersededMessage = "Superseded by a newer preview request";
-}
+
+// Same struct, same reasons, as DownloadService.cpp's -- see there, including why the
+// ordinary exits clear the flag themselves instead of leaving it to the destructor.
+struct AdvancingGuard
+{
+    std::mutex& mutex;
+    bool& flag;
+    bool armed = true;
+
+    // mutex must be held.
+    void clearHeld()
+    {
+        flag = false;
+        armed = false;
+    }
+
+    ~AdvancingGuard()
+    {
+        if (!armed)
+            return;
+        std::lock_guard<std::mutex> lock(mutex);
+        flag = false;
+    }
+};
+} // namespace
 
 PreviewService::PreviewService(std::shared_ptr<IMegaClient> client) : mClient(std::move(client)) {}
 
@@ -69,6 +93,7 @@ void PreviewService::startNextIfIdle()
         }
         mAdvancing = true;
     }
+    AdvancingGuard advancing = {mMutex, mAdvancing};
 
     for (;;)
     {
@@ -78,7 +103,7 @@ void PreviewService::startNextIfIdle()
             mAdvanceRequested = false;
             if (mActive || !mPending)
             {
-                mAdvancing = false;
+                advancing.clearHeld();
                 return;
             }
             start = std::move(mPending->start);
@@ -86,7 +111,18 @@ void PreviewService::startNextIfIdle()
             mActive = true;
         }
 
-        start();
+        // A start() that throws never reaches finish(), so the one-deep slot has to be
+        // given back here -- otherwise the flag is clear but nothing can ever start.
+        try
+        {
+            start();
+        }
+        catch (...)
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            mActive = false;
+            throw;
+        }
 
         // Same reasoning as ThumbnailService::startNextIfCapacity: a synchronous
         // failure has already run finish() by now, and its startNextIfIdle() only
@@ -94,7 +130,7 @@ void PreviewService::startNextIfIdle()
         std::lock_guard<std::mutex> lock(mMutex);
         if (!mAdvanceRequested)
         {
-            mAdvancing = false;
+            advancing.clearHeld();
             return;
         }
     }

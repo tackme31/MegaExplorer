@@ -38,6 +38,9 @@ private:
     {
         std::string destinationPath;
         std::vector<std::function<void(Result<std::string>)>> callbacks;
+        // Tells the entry startNextIfCapacity() handed to the SDK apart from one that a
+        // completion running inside that same call re-created under the same handle.
+        bool started = false;
     };
 
     // One slot per turn; loops only when a request finished inside this very call
