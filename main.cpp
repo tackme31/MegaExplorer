@@ -41,6 +41,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QSettings>
@@ -65,6 +66,21 @@ int main(int argc, char* argv[])
     QCoreApplication::setApplicationName("MegaExplorer");
     // Reaches the About dialog as QML's Qt.application.version.
     QCoreApplication::setApplicationVersion(QStringLiteral(MEGAEXPLORER_VERSION));
+
+    // Windows asks the window for a small and a large icon separately (Alt-Tab
+    // vs. the taskbar button), scaled by the monitor's DPI, so one pixmap would
+    // be resampled for most of them -- hence every size. The .exe resource in
+    // resources/appicon.rc is the other half: it is what Explorer and a pinned
+    // taskbar entry read, before the process exists.
+    {
+        QIcon windowIcon;
+        for (int size : {16, 24, 32, 48, 64, 256})
+        {
+            windowIcon.addFile(QStringLiteral(":/qt/qml/MegaExplorer/resources/appicon-%1.png")
+                                   .arg(size));
+        }
+        QGuiApplication::setWindowIcon(windowIcon);
+    }
 
     // Must run before any other logging call: this is a WIN32_EXECUTABLE, so log
     // output reaches no visible destination at all until the file sink exists.

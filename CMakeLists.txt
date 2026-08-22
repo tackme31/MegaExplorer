@@ -176,6 +176,7 @@ add_library(MegaExplorerQml STATIC
 
 qt_add_executable(appMegaExplorer
     main.cpp
+    resources/appicon.rc
     src/app/Logging.h
     src/app/Logging.cpp
     src/mega/MegaSdkClient.h
@@ -287,6 +288,16 @@ qt_add_qml_module(MegaExplorerQml
         src/qml/WindowAgentForeign.h
     RESOURCES
         ${MEGAEXPLORER_LICENSE_RESOURCES}
+        # PNGs rather than the .ico these are also packed into: PNG decoding is
+        # built into QtGui, while .ico needs the qico image-format plugin to be
+        # deployed alongside the app. setWindowIcon() in main.cpp reads them
+        # from here.
+        resources/appicon-16.png
+        resources/appicon-24.png
+        resources/appicon-32.png
+        resources/appicon-48.png
+        resources/appicon-64.png
+        resources/appicon-256.png
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

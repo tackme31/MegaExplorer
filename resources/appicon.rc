@@ -1,0 +1,9 @@
+// Explorer, the taskbar's pinned entry and Alt-Tab read the icon straight out
+// of the .exe, so setWindowIcon() in main.cpp cannot cover them -- it only
+// reaches the window of a process that is already running. Qt's own
+// QT_TARGET_RC_ICONS property does not help here: the generator behind it runs
+// only for targets built as part of Qt itself, never for qt_add_executable.
+//
+// Numeric id 1 on purpose. The shell shows the icon group with the lowest id,
+// and a symbolic name would sort as a string instead.
+1 ICON "appicon.ico"
