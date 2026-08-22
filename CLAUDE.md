@@ -235,6 +235,9 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   start costs the window. Thresholds default to 5h 50% / 7d 85% (`EVOLVE_USAGE_MAX_{5H,7D}`), set
   from 40 measured fires: one cycle eats ~30% of the 5h window and a heavy one 45–52%, so the
   original 70% left too little room. 50% skips under 1 fire in 10; below 40% it is a fifth of them.
+  A cycle you want to run anyway is `/evolve force` — it still runs the gate for the numbers but
+  starts regardless, and it is deliberately a one-shot: raising `EVOLVE_USAGE_MAX_5H` instead would
+  keep applying to every unattended fire after it.
 - `megatool` — a CLI over `IMegaClient` for setting up fixtures and for `whoami`. It logs in from
   `MEGAEXPLORER_TEST_ACCOUNT` / `MEGAEXPLORER_TEST_PASSWORD`, **independently of the app's saved
   session**, so it always sees the test account. Details: `docs/MEGATOOL.md`.
