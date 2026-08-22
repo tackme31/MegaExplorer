@@ -8,7 +8,8 @@ enum class PreviewKind
 {
     None,
     Image,
-    Text
+    Text,
+    Archive // listing only -- the entry names, never the contents
 };
 
 // Decided from the extension alone -- nothing else about a node is knowable without

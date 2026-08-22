@@ -128,6 +128,82 @@ Rectangle {
         }
     }
 
+    // Archive listing. The rows arrive already flattened and ordered from C++, so
+    // this is a ListView rather than a TreeView: nothing here collapses, and a
+    // TreeView would need a QAbstractItemModel to hold a shape that is fixed the
+    // moment the central directory is parsed.
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: Theme.spacing.md
+        visible: root.controller.state === PreviewController.Ready && root.controller.kind
+                 === PreviewController.Archive
+        color: Theme.color.fieldFill
+        border.width: Theme.border.thin
+        border.color: Theme.color.stroke
+        radius: Theme.radius.sm
+
+        ListView {
+            id: archiveList
+            anchors.fill: parent
+            anchors.margins: Theme.spacing.sm
+            clip: true
+            model: root.controller.archiveEntries
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar {}
+
+            delegate: Item {
+                id: archiveRow
+                required property var modelData
+                width: archiveList.width
+                height: Theme.rowHeight.compact
+
+                Row {
+                    anchors.fill: parent
+                    // The step the folder tree indents by, so a nested zip reads at
+                    // the same rhythm as the panel beside it.
+                    anchors.leftMargin: archiveRow.modelData.depth * Theme.tree.indent
+                    spacing: Theme.spacing.sm
+
+                    Text {
+                        id: kindGlyph
+                        anchors.verticalCenter: parent.verticalCenter
+                        font.family: Theme.font.iconFamily
+                        font.pixelSize: Theme.iconSize.sm
+                        color: archiveRow.modelData.isDirectory ? Theme.color.accentFolder :
+                                                                  Theme.color.textSecondary
+                        text: archiveRow.modelData.isDirectory ? Theme.glyph.folder :
+                                                                 Theme.glyph.file
+                    }
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+                        // Whatever the two siblings and the Row's own two gaps leave.
+                        // Measured off kindGlyph rather than off Theme.iconSize.sm:
+                        // that token is a font size, and a glyph's advance width is
+                        // not its pixelSize. Clamped at zero because a deep entry in
+                        // a narrow pane drives this negative, and a negative width
+                        // stops eliding silently.
+                        width: Math.max(0, parent.width - kindGlyph.width - sizeLabel.width - 2
+                                        * parent.spacing)
+                        elide: Text.ElideMiddle
+                        font.pixelSize: Theme.font.body
+                        text: archiveRow.modelData.name
+                    }
+
+                    Label {
+                        id: sizeLabel
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: Theme.color.textSecondary
+                        font.pixelSize: Theme.font.caption
+                        // Worded in C++ against the same QLocale call the file list
+                        // and the properties dialog make, so all three agree.
+                        text: archiveRow.modelData.formattedSize
+                    }
+                }
+            }
+        }
+    }
+
     // Assigned in three steps rather than bound, and all three matter. TextEdit
     // builds scene graph nodes only near its flickable's viewport, so replacing a
     // scrolled long document with a short one in a single pass leaves that node
@@ -147,6 +223,12 @@ Rectangle {
         function onChanged() {
             if (root.controller.kind === PreviewController.Text)
                 root.showText(root.controller.text);
+            // A new listing inherits the previous one's scroll position otherwise,
+            // so opening a second zip after scrolling through the first starts it
+            // part-way down. The text view resets its own flickable for the same
+            // reason, three steps up.
+            else if (root.controller.kind === PreviewController.Archive)
+                archiveList.positionViewAtBeginning();
         }
     }
 
@@ -164,6 +246,10 @@ Rectangle {
                   return qsTr("This file is too large to preview");
               case PreviewController.BinaryContent:
                   return qsTr("This file is not text");
+              case PreviewController.ArchiveUnreadable:
+                  return qsTr("This archive could not be read");
+              case PreviewController.ArchiveEmpty:
+                  return qsTr("This archive is empty");
               default:
                   return qsTr("No preview available");
               }

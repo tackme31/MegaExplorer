@@ -2,15 +2,118 @@
 
 #include "app/Logging.h"
 #include "core/PreviewKind.h"
+#include "core/ZipListing.h"
 #include "GuiThread.h"
 #include "TextPreviewDecoder.h"
 
 #include <QByteArray>
 #include <QDir>
 #include <QFile>
+#include <QLocale>
 #include <QStandardPaths>
+#include <QStringDecoder>
+#include <QStringList>
+#include <QVariantMap>
 
+#include <algorithm>
+#include <map>
 #include <optional>
+#include <utility>
+
+namespace
+{
+
+// Entry names carry no reliable encoding tag: bit 11 promises UTF-8, but Windows
+// zips routinely store CP932 without setting it. Same fallback ladder as
+// TextPreviewDecoder.
+QString decodeEntryName(const std::string& raw, bool declaredUtf8)
+{
+    const QByteArray bytes(raw.data(), static_cast<qsizetype>(raw.size()));
+    QStringDecoder utf8(QStringDecoder::Utf8);
+    const QString decoded = utf8.decode(bytes);
+    if (declaredUtf8 || !utf8.hasError())
+        return decoded;
+
+    QStringDecoder shiftJis("Shift-JIS");
+    if (shiftJis.isValid())
+        return shiftJis.decode(bytes);
+    return QStringDecoder(QStringDecoder::System).decode(bytes);
+}
+
+// A zip stores a flat list of paths; the pane wants a tree. Intermediate folders may
+// have no entry of their own, so they are synthesised on the way in.
+struct ArchiveNode
+{
+    std::map<QString, ArchiveNode> children;
+    bool isDirectory = false;
+    bool hasFile = false;
+    quint64 size = 0;
+};
+
+// A name may be 65535 bytes, so "a/" repeated makes an archive whose tree is tens of
+// thousands deep -- enough for flatten()'s recursion to run out of stack. Anything
+// past this is dropped rather than nested further.
+constexpr qsizetype kMaxArchiveDepth = 64;
+
+void insertPath(ArchiveNode& root, const QString& path, bool isDirectory, quint64 size)
+{
+    QStringList parts = path.split('/', Qt::SkipEmptyParts);
+    const bool truncated = parts.size() > kMaxArchiveDepth;
+    if (truncated)
+        parts = parts.mid(0, kMaxArchiveDepth);
+    ArchiveNode* node = &root;
+    for (qsizetype i = 0; i < parts.size(); ++i)
+    {
+        node = &node->children[parts.at(i)];
+        if (i + 1 < parts.size())
+            node->isDirectory = true;
+    }
+    if (node == &root)
+        return;
+    // What is left of a truncated path names an ancestor, never the entry itself, so
+    // its size would be somebody else's.
+    if (isDirectory || truncated)
+    {
+        node->isDirectory = true;
+    }
+    else
+    {
+        node->hasFile = true;
+        node->size = size;
+    }
+}
+
+void flatten(const ArchiveNode& node, int depth, QVariantList& rows)
+{
+    // Folders before files at each level, matching the file views' own ordering.
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        for (const auto& [name, child] : node.children)
+        {
+            const bool isDirectory = child.isDirectory || !child.hasFile;
+            if ((pass == 0) != isDirectory)
+                continue;
+            QVariantMap row;
+            row.insert("name", name);
+            row.insert("depth", depth);
+            row.insert("isDirectory", isDirectory);
+            // Worded here rather than in QML so the pane matches the file list and
+            // the properties dialog, which both make this same call. Traditional
+            // rather than Iec is what those two chose: 1024-based, spelled "kB".
+            // c() not system(): the unit is locale data and the UI is English-only.
+            row.insert("formattedSize",
+                       isDirectory
+                           ? QString()
+                           : QLocale::c().formattedDataSize(static_cast<qint64>(child.size),
+                                                            1,
+                                                            QLocale::DataSizeTraditionalFormat));
+            rows.append(row);
+            flatten(child, depth + 1, rows);
+        }
+    }
+}
+
+} // namespace
 
 PreviewController::PreviewController(std::shared_ptr<PreviewService> service,
                                      std::shared_ptr<PreviewImageStore> imageStore,
@@ -47,6 +150,9 @@ void PreviewController::showSelection(quint64 handle,
             return;
         case PreviewKind::Text:
             requestText(handle, sizeBytes);
+            return;
+        case PreviewKind::Archive:
+            requestArchive(handle, sizeBytes);
             return;
         case PreviewKind::None:
             publish(Unsupported, NoKind, UnsupportedType);
@@ -164,6 +270,117 @@ void PreviewController::onTextFetched(quint64 generation, Result<std::vector<cha
     publish(Ready, Text, NoReason);
 }
 
+// Two round trips per selection, every time: the listing is not cached, matching
+// the rest of this controller. Re-selecting the same zip costs both reads again.
+void PreviewController::requestArchive(quint64 handle, qulonglong sizeBytes)
+{
+    // The End Of Central Directory record cannot exist below this, so there is
+    // nothing to look for.
+    if (sizeBytes < 22)
+    {
+        publish(Unsupported, NoKind, ArchiveUnreadable);
+        return;
+    }
+
+    publish(Loading, NoKind, NoReason);
+
+    mArchiveHandle = handle;
+    mArchiveSize = sizeBytes;
+    const quint64 tailLength = std::min<quint64>(sizeBytes, kZipTailScanBytes);
+    mArchiveTailOffset = sizeBytes - tailLength;
+
+    const quint64 generation = mGeneration;
+    mService->requestRange(handle,
+                           mArchiveTailOffset,
+                           tailLength,
+                           [this, generation](Result<std::vector<char>> result) {
+                               invokeOnGuiThread(this,
+                                                 [this, generation, result = std::move(result)]() {
+                                                     onArchiveTailFetched(generation, result);
+                                                 });
+                           });
+}
+
+void PreviewController::onArchiveTailFetched(quint64 generation, Result<std::vector<char>> result)
+{
+    if (generation != mGeneration)
+        return;
+
+    if (!result.success)
+    {
+        qCDebug(lcPreview) << "archive tail fetch failed:"
+                           << QString::fromStdString(result.errorMessage)
+                           << "code=" << result.errorCode;
+        publish(Unsupported, NoKind, NoPreviewAvailable);
+        return;
+    }
+
+    const std::optional<ZipDirectoryLocation> location =
+        findZipDirectory(result.value(), mArchiveTailOffset);
+    if (!location || location->offset >= mArchiveSize)
+    {
+        publish(Unsupported, NoKind, ArchiveUnreadable);
+        return;
+    }
+    // A validated record that describes a zero-byte directory is an archive with no
+    // entries, not a broken one -- saying "could not be read" would be wrong.
+    if (location->size == 0)
+    {
+        publish(Unsupported, NoKind, ArchiveEmpty);
+        return;
+    }
+
+    // The tail slice usually contains the directory already, but it is re-read
+    // rather than sliced out: one extra range read against one code path beats two
+    // paths whose bounds arithmetic has to agree.
+    mService->requestRange(mArchiveHandle,
+                           location->offset,
+                           location->size,
+                           [this, generation](Result<std::vector<char>> directory) {
+                               invokeOnGuiThread(
+                                   this, [this, generation, directory = std::move(directory)]() {
+                                       onArchiveDirectoryFetched(generation, directory);
+                                   });
+                           });
+}
+
+void PreviewController::onArchiveDirectoryFetched(quint64 generation,
+                                                  Result<std::vector<char>> result)
+{
+    if (generation != mGeneration)
+        return;
+
+    if (!result.success)
+    {
+        qCDebug(lcPreview) << "archive directory fetch failed:"
+                           << QString::fromStdString(result.errorMessage)
+                           << "code=" << result.errorCode;
+        publish(Unsupported, NoKind, NoPreviewAvailable);
+        return;
+    }
+
+    const std::vector<ZipEntry> entries = parseZipDirectory(result.value());
+    if (entries.empty())
+    {
+        publish(Unsupported, NoKind, ArchiveUnreadable);
+        return;
+    }
+
+    ArchiveNode root;
+    for (const ZipEntry& entry : entries)
+    {
+        insertPath(root,
+                   decodeEntryName(entry.rawName, entry.nameIsUtf8),
+                   entry.isDirectory,
+                   entry.uncompressedSize);
+    }
+
+    QVariantList rows;
+    flatten(root, 0, rows);
+    mArchiveEntries = std::move(rows);
+    publish(Ready, Archive, NoReason);
+}
+
 void PreviewController::publish(State state, Kind kind, Reason reason)
 {
     mState = state;
@@ -173,6 +390,8 @@ void PreviewController::publish(State state, Kind kind, Reason reason)
         mImageSource.clear();
     if (kind != Text)
         mText.clear();
+    if (kind != Archive)
+        mArchiveEntries.clear();
     emit changed();
 }
 

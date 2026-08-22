@@ -67,6 +67,25 @@ void PreviewService::requestText(std::uint64_t handle,
         });
 }
 
+void PreviewService::requestRange(std::uint64_t handle,
+                                  std::uint64_t offset,
+                                  std::uint64_t length,
+                                  std::function<void(Result<std::vector<char>>)> onDone)
+{
+    enqueue(
+        [this, handle, offset, length, onDone] {
+            mClient->readFileRange(
+                handle, offset, length, [this, onDone](Result<std::vector<char>> result) {
+                    finish([&onDone, &result] {
+                        onDone(std::move(result));
+                    });
+                });
+        },
+        [onDone] {
+            onDone(Result<std::vector<char>>::fail(kSupersededMessage, kPreviewSuperseded));
+        });
+}
+
 void PreviewService::enqueue(std::function<void()> start, std::function<void()> reportSuperseded)
 {
     std::function<void()> superseded;

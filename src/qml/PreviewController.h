@@ -5,6 +5,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVariantList>
 
 #include <memory>
 #include <optional>
@@ -46,7 +47,8 @@ public:
     {
         NoKind,
         Image, // covers video and PDF: all three arrive as one server-side JPEG
-        Text
+        Text,
+        Archive // entry listing of a zip, read from its central directory
     };
     Q_ENUM(Kind)
 
@@ -58,7 +60,9 @@ public:
         NoPreviewAvailable, // the type is previewable, this file has no preview stored
         UnsupportedType,    // the extension is not one this app previews
         TooLarge,           // text past kMaxTextPreviewBytes, refused without a request
-        BinaryContent       // a text extension whose bytes are not text
+        BinaryContent,      // a text extension whose bytes are not text
+        ArchiveUnreadable,  // a zip whose central directory could not be located
+        ArchiveEmpty        // a readable zip that holds no entries
     };
     Q_ENUM(Reason)
 
@@ -70,6 +74,8 @@ public:
     Q_PROPERTY(Kind kind READ kind NOTIFY changed)
     Q_PROPERTY(QString imageSource READ imageSource NOTIFY changed)
     Q_PROPERTY(QString text READ text NOTIFY changed)
+    // One flattened row per archive entry: name, depth, isDirectory, formattedSize.
+    Q_PROPERTY(QVariantList archiveEntries READ archiveEntries NOTIFY changed)
     Q_PROPERTY(Reason reason READ reason NOTIFY changed)
 
     explicit PreviewController(std::shared_ptr<PreviewService> service,
@@ -103,6 +109,10 @@ public:
     {
         return mText;
     }
+    QVariantList archiveEntries() const
+    {
+        return mArchiveEntries;
+    }
     Reason reason() const
     {
         return mReason;
@@ -118,6 +128,9 @@ private:
     onImageFetched(quint64 generation, const QString& destinationPath, Result<std::string> result);
     void requestText(quint64 handle, qulonglong sizeBytes);
     void onTextFetched(quint64 generation, Result<std::vector<char>> result);
+    void requestArchive(quint64 handle, qulonglong sizeBytes);
+    void onArchiveTailFetched(quint64 generation, Result<std::vector<char>> result);
+    void onArchiveDirectoryFetched(quint64 generation, Result<std::vector<char>> result);
 
     // Unique per request, so no two previews ever share an image:// URL --
     // QQuickPixmapCache keys on it, and a repeated URL would show the first picture
@@ -140,5 +153,12 @@ private:
     Kind mKind = NoKind;
     QString mImageSource;
     QString mText;
+    QVariantList mArchiveEntries;
     Reason mReason = NoReason;
+
+    // Carried between the two range reads a zip listing takes: the tail read has to
+    // say where in the file its slice started before the EOCD offsets mean anything.
+    quint64 mArchiveHandle = 0;
+    quint64 mArchiveSize = 0;
+    quint64 mArchiveTailOffset = 0;
 };

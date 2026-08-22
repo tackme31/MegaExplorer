@@ -101,5 +101,11 @@ PreviewKind previewKindForName(const std::string& name)
     {
         return PreviewKind::Text;
     }
+    // Only zip so far: rar and 7z need a sequential scan and an LZMA decoder
+    // respectively (docs/investigations/STUDY_ARCHIVE_PREVIEW.md).
+    if (extension == "zip")
+    {
+        return PreviewKind::Archive;
+    }
     return PreviewKind::None;
 }

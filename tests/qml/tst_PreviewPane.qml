@@ -31,6 +31,7 @@ TestCase {
             property int kind: PreviewController.NoKind
             property string imageSource: ""
             property string text: ""
+            property var archiveEntries: []
             property int reason: PreviewController.NoReason
 
             // PreviewPane listens for this to drive the text swap; the per-property
@@ -157,6 +158,88 @@ TestCase {
         compare(flick.contentY, 0);
     }
 
+    function test_ready_archive_lists_every_entry_indented_by_depth() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const pane = makePane(controller);
+
+        // The rows are what PreviewController hands over: already flattened, already
+        // ordered, and with the size already worded. A non-ASCII name is in here
+        // because the decode from the archive's raw bytes is the step most likely to
+        // regress and the pane is where it becomes visible.
+        controller.archiveEntries = [
+                    {
+                        name: "日本語フォルダ",
+                        depth: 0,
+                        isDirectory: true,
+                        formattedSize: ""
+                    },
+                    {
+                        name: "メモ.txt",
+                        depth: 1,
+                        isDirectory: false,
+                        formattedSize: "1.4 kB"
+                    }
+                ];
+        controller.kind = PreviewController.Archive;
+        controller.state = PreviewController.Ready;
+
+        // "delegate" is a ListView-only property here: the text preview's Flickable
+        // would answer to the scrolling ones.
+        const list = findDeep(pane, "delegate");
+        verify(list !== null);
+        tryCompare(list, "count", 2);
+
+        const folderRow = list.itemAtIndex(0).children[0];
+        const fileRow = list.itemAtIndex(1).children[0];
+        compare(folderRow.anchors.leftMargin, 0);
+        compare(fileRow.anchors.leftMargin, Theme.tree.indent);
+
+        // Row order inside the delegate: icon, name, size.
+        compare(folderRow.children[0].text, Theme.glyph.folder);
+        compare(fileRow.children[0].text, Theme.glyph.file);
+        compare(folderRow.children[1].text, "日本語フォルダ");
+        compare(fileRow.children[1].text, "メモ.txt");
+        // A folder's size arrives empty rather than as a zero.
+        compare(folderRow.children[2].text, "");
+        compare(fileRow.children[2].text, "1.4 kB");
+    }
+
+    function test_a_second_archive_starts_at_the_top() {
+        // Same class of bug as the text view's three-step swap: the ListView keeps
+        // the scroll position it had, so the next zip opens part-way down.
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const pane = makePane(controller);
+
+        let many = [];
+        for (let i = 0; i < 60; ++i)
+            many.push({
+                          name: "entry" + i + ".txt",
+                          depth: 0,
+                          isDirectory: false,
+                          formattedSize: "1 bytes"
+                      });
+        controller.archiveEntries = many;
+        controller.kind = PreviewController.Archive;
+        controller.state = PreviewController.Ready;
+        controller.changed();
+
+        const list = findDeep(pane, "delegate");
+        tryCompare(list, "count", 60);
+        list.contentY = 300;
+        compare(list.contentY, 300);
+
+        controller.archiveEntries = [{
+                name: "only.txt",
+                depth: 0,
+                isDirectory: false,
+                formattedSize: "1 bytes"
+            }];
+        controller.changed();
+
+        tryCompare(list, "count", 1);
+        compare(list.contentY, 0);
+    }
+
     function test_unsupported_reason_data() {
         return [
                     {
@@ -173,6 +256,16 @@ TestCase {
                         tag: "binaryContent",
                         reason: PreviewController.BinaryContent,
                         expected: "This file is not text"
+                    },
+                    {
+                        tag: "archiveUnreadable",
+                        reason: PreviewController.ArchiveUnreadable,
+                        expected: "This archive could not be read"
+                    },
+                    {
+                        tag: "archiveEmpty",
+                        reason: PreviewController.ArchiveEmpty,
+                        expected: "This archive is empty"
                     },
                     // NoPreviewAvailable is the common case and falls to the default arm.
                     {

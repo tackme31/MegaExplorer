@@ -48,6 +48,13 @@ public:
                      std::uint64_t maxBytes,
                      std::function<void(Result<std::vector<char>>)> onDone);
 
+    // Same scheduling again, for the archive listing's byte ranges. The two ranges a
+    // zip needs are issued one after the other, so the second one supersedes nothing.
+    void requestRange(std::uint64_t handle,
+                      std::uint64_t offset,
+                      std::uint64_t length,
+                      std::function<void(Result<std::vector<char>>)> onDone);
+
 private:
     struct Pending
     {

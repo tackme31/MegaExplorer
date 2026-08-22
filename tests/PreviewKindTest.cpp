@@ -48,7 +48,7 @@ TEST(PreviewKindTest, ComparisonIsCaseInsensitive)
 TEST(PreviewKindTest, UnknownExtensionsAreNone)
 {
     EXPECT_EQ(previewKindForName("setup.exe"), PreviewKind::None);
-    EXPECT_EQ(previewKindForName("archive.zip"), PreviewKind::None);
+    EXPECT_EQ(previewKindForName("archive.zip"), PreviewKind::Archive);
     // Audio has no server-side preview: USE_MEDIAINFO is off, so not even cover art.
     EXPECT_EQ(previewKindForName("song.mp3"), PreviewKind::None);
 }
@@ -64,6 +64,6 @@ TEST(PreviewKindTest, NamesWithoutAUsableExtensionAreNone)
 
 TEST(PreviewKindTest, OnlyTheLastExtensionCounts)
 {
-    EXPECT_EQ(previewKindForName("backup.txt.zip"), PreviewKind::None);
+    EXPECT_EQ(previewKindForName("backup.txt.zip"), PreviewKind::Archive);
     EXPECT_EQ(previewKindForName("archive.zip.txt"), PreviewKind::Text);
 }
