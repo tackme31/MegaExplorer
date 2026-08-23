@@ -139,6 +139,7 @@ FileEntry nodeToEntry(mega::MegaNode* node)
 // Copies our SearchFilter onto the SDK's. Every facet is only touched when it is
 // narrowing something: MegaSearchFilter's "unset" defaults already mean "match
 // everything", and byCategory(FILE_TYPE_DEFAULT) is not the same as leaving it alone.
+// thisFolderOnly is deliberately absent: it selects the MegaApi call, not a facet.
 void applySearchFilter(mega::MegaSearchFilter& target, const SearchFilter& filter)
 {
     switch (filter.nodeType)
@@ -482,7 +483,11 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
     filter->byLocationHandle(ancestor->getHandle());
     applySearchFilter(*filter, searchFilter);
 
-    std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get(), toMegaOrder(order)));
+    // Recursion is chosen by which call takes the filter, not by anything on it:
+    // MegaApi::search walks the subtree, getChildren stops at the location handle.
+    std::unique_ptr<mega::MegaNodeList> results(
+        searchFilter.thisFolderOnly ? mApi->getChildren(filter.get(), toMegaOrder(order))
+                                    : mApi->search(filter.get(), toMegaOrder(order)));
     onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
 }
 

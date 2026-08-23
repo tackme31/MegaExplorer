@@ -35,14 +35,16 @@ TestCase {
             property int lastCategory: -1
             property int lastTime: -1
             property bool lastFavourite: false
+            property bool lastThisFolder: false
 
-            // FolderNavigationController's four filter properties, which the popup now
+            // FolderNavigationController's filter properties, which the popup now
             // reads back instead of mirroring. Written here only by setSearchFilter, as
             // C++ writes them only in the same call.
             property int searchFilterNodeType: SearchNodeType.Any
             property int searchFilterCategory: SearchCategory.Any
             property int searchFilterCreatedWithin: SearchTimeWindow.Any
             property bool searchFilterFavouritesOnly: false
+            property bool searchFilterThisFolderOnly: false
 
             // Navigation drops the filter C++-side (searchCleared) without the popup
             // pushing anything; this is that half, for the tests that need it.
@@ -51,18 +53,21 @@ TestCase {
                 nav.searchFilterCategory = SearchCategory.Any;
                 nav.searchFilterCreatedWithin = SearchTimeWindow.Any;
                 nav.searchFilterFavouritesOnly = false;
+                nav.searchFilterThisFolderOnly = false;
             }
 
-            function setSearchFilter(nodeType, category, createdWithin, favouritesOnly) {
+            function setSearchFilter(nodeType, category, createdWithin, favouritesOnly, thisFolderOnly) {
                 calls += 1;
                 lastType = nodeType;
                 lastCategory = category;
                 lastTime = createdWithin;
                 lastFavourite = favouritesOnly;
+                lastThisFolder = thisFolderOnly;
                 nav.searchFilterNodeType = nodeType;
                 nav.searchFilterCategory = category;
                 nav.searchFilterCreatedWithin = createdWithin;
                 nav.searchFilterFavouritesOnly = favouritesOnly;
+                nav.searchFilterThisFolderOnly = thisFolderOnly;
             }
         }
     }
@@ -267,19 +272,22 @@ TestCase {
                         tag: "cloud drive",
                         kind: ViewKind.CloudDrive,
                         type: true,
-                        favourite: true
+                        favourite: true,
+                        thisFolder: true
                     },
                     {
                         tag: "favourites",
                         kind: ViewKind.Favourites,
                         type: true,
-                        favourite: false
+                        favourite: false,
+                        thisFolder: false
                     },
                     {
                         tag: "recents",
                         kind: ViewKind.Recents,
                         type: false,
-                        favourite: true
+                        favourite: true,
+                        thisFolder: false
                     }
                 ];
     }
@@ -290,8 +298,39 @@ TestCase {
 
         compare(f.popup.typeSelector.enabled, data.type);
         compare(f.popup.favouriteSelector.enabled, data.favourite);
+        // Both listings are rooted at the Cloud Drive root, so there is no open folder
+        // to scope to and C++ ignores the facet there.
+        compare(f.popup.thisFolderSelector.enabled, data.thisFolder);
         // Never gated on the view: both listings honour it.
         verify(f.popup.timeSelector.enabled);
+    }
+
+    // The scope checkbox is the one facet that changes which SDK call runs rather than
+    // narrowing the result, so it has to travel the same Apply/Clear path as the rest.
+    function test_theFolderScopeTravelsWithTheOtherFacets() {
+        const f = makePopup();
+
+        f.popup.thisFolderSelector.checked = true;
+        f.popup.thisFolderSelector.toggled();
+        verify(f.popup.dirty);
+        verify(f.popup.pendingActive);
+        verify(!f.popup.filterActive);
+
+        f.popup.apply();
+
+        compare(f.nav.calls, 1);
+        compare(f.nav.lastThisFolder, true);
+        verify(f.popup.filterActive);
+        verify(!f.popup.dirty);
+
+        f.popup.open();
+        tryCompare(f.popup, "opened", true);
+        f.popup.clearFilter();
+
+        compare(f.nav.calls, 2);
+        compare(f.nav.lastThisFolder, false);
+        compare(f.popup.thisFolderSelector.checked, false);
+        verify(!f.popup.filterActive);
     }
 
     // The pending edit is still one per window (only applied* follows the tab), so a

@@ -287,8 +287,11 @@ TEST_F(FolderNavigationControllerTest, AFilterWithNoQueryIsAnActiveSearch)
             onDone(Result<std::vector<FileEntry>>::ok({entry("b.jpg", 2)}));
         }));
 
-    controller->setSearchFilter(
-        SearchNodeTypeEnum::Files, SearchCategoryEnum::Photo, SearchTimeWindowEnum::PastWeek, true);
+    controller->setSearchFilter(SearchNodeTypeEnum::Files,
+                                SearchCategoryEnum::Photo,
+                                SearchTimeWindowEnum::PastWeek,
+                                true,
+                                false);
     flush();
 
     EXPECT_TRUE(controller->searchActive());
@@ -296,6 +299,39 @@ TEST_F(FolderNavigationControllerTest, AFilterWithNoQueryIsAnActiveSearch)
     EXPECT_EQ(seen.category, SearchCategory::Photo);
     EXPECT_EQ(seen.createdWithin, SearchTimeWindow::PastWeek);
     EXPECT_TRUE(seen.favouritesOnly);
+    EXPECT_FALSE(seen.thisFolderOnly);
+}
+
+TEST_F(FolderNavigationControllerTest, ScopingToTheOpenFolderReachesTheSearchQuery)
+{
+    // The facet the adapter reads to pick getChildren over search, so it has to
+    // survive the trip and count as a search on its own -- nothing else narrows here.
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    SearchFilter seen;
+    EXPECT_CALL(*client, search(_, _, std::string(""), _, _, _))
+        .WillRepeatedly(Invoke([&seen](std::uint64_t,
+                                       bool,
+                                       const std::string&,
+                                       const SearchFilter& filter,
+                                       SortOrder,
+                                       std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            seen = filter;
+            onDone(Result<std::vector<FileEntry>>::ok({entry("a.txt", 1)}));
+        }));
+
+    controller->setSearchFilter(SearchNodeTypeEnum::Any,
+                                SearchCategoryEnum::Any,
+                                SearchTimeWindowEnum::Any,
+                                false,
+                                true);
+    flush();
+
+    EXPECT_TRUE(controller->searchActive());
+    EXPECT_TRUE(seen.thisFolderOnly);
+    EXPECT_TRUE(controller->searchFilterThisFolderOnly());
 }
 
 TEST_F(FolderNavigationControllerTest, ClearingTheFilterRestoresTheCachedListing)
@@ -308,12 +344,12 @@ TEST_F(FolderNavigationControllerTest, ClearingTheFilterRestoresTheCachedListing
         .WillRepeatedly(InvokeArgument<5>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
     controller->setSearchFilter(
-        SearchNodeTypeEnum::Any, SearchCategoryEnum::Photo, SearchTimeWindowEnum::Any, false);
+        SearchNodeTypeEnum::Any, SearchCategoryEnum::Photo, SearchTimeWindowEnum::Any, false, false);
     flush();
     ASSERT_TRUE(controller->searchActive());
 
     controller->setSearchFilter(
-        SearchNodeTypeEnum::Any, SearchCategoryEnum::Any, SearchTimeWindowEnum::Any, false);
+        SearchNodeTypeEnum::Any, SearchCategoryEnum::Any, SearchTimeWindowEnum::Any, false, false);
     flush();
 
     EXPECT_FALSE(controller->searchActive());
@@ -329,7 +365,7 @@ TEST_F(FolderNavigationControllerTest, AnOutOfRangeFilterFacetNarrowsNothing)
 
     EXPECT_CALL(*client, search(_, _, _, _, _, _)).Times(0);
 
-    controller->setSearchFilter(99, -1, 12345, false);
+    controller->setSearchFilter(99, -1, 12345, false, false);
     flush();
 
     EXPECT_FALSE(controller->searchActive());
@@ -352,8 +388,11 @@ TEST_F(FolderNavigationControllerTest, TheAppliedFilterIsReadableAndDroppedByNav
     EXPECT_CALL(*client, search(_, _, std::string(""), _, _, _))
         .WillRepeatedly(InvokeArgument<5>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("photos", 1, true)})));
-    controller->setSearchFilter(
-        SearchNodeTypeEnum::Files, SearchCategoryEnum::Photo, SearchTimeWindowEnum::PastWeek, true);
+    controller->setSearchFilter(SearchNodeTypeEnum::Files,
+                                SearchCategoryEnum::Photo,
+                                SearchTimeWindowEnum::PastWeek,
+                                true,
+                                false);
     flush();
 
     EXPECT_EQ(controller->searchFilterNodeType(), SearchNodeTypeEnum::Files);
@@ -363,8 +402,11 @@ TEST_F(FolderNavigationControllerTest, TheAppliedFilterIsReadableAndDroppedByNav
     EXPECT_EQ(filterChanges, 1);
 
     // Re-pushing identical facets must not signal: the popup binds to these.
-    controller->setSearchFilter(
-        SearchNodeTypeEnum::Files, SearchCategoryEnum::Photo, SearchTimeWindowEnum::PastWeek, true);
+    controller->setSearchFilter(SearchNodeTypeEnum::Files,
+                                SearchCategoryEnum::Photo,
+                                SearchTimeWindowEnum::PastWeek,
+                                true,
+                                false);
     flush();
     EXPECT_EQ(filterChanges, 1);
 
@@ -621,6 +663,7 @@ TEST_F(FolderNavigationControllerTest, AFilterInFavouritesReachesTheFavouritesQu
     controller->setSearchFilter(SearchNodeTypeEnum::Files,
                                 SearchCategoryEnum::Photo,
                                 SearchTimeWindowEnum::PastWeek,
+                                false,
                                 false);
     flush();
 
@@ -650,8 +693,11 @@ TEST_F(FolderNavigationControllerTest, AFilterInRecentsReachesTheRecentsQuery)
             onDone(Result<std::vector<FileEntry>>::ok({entry("a.txt", 1)}));
         }));
 
-    controller->setSearchFilter(
-        SearchNodeTypeEnum::Any, SearchCategoryEnum::Video, SearchTimeWindowEnum::PastDay, false);
+    controller->setSearchFilter(SearchNodeTypeEnum::Any,
+                                SearchCategoryEnum::Video,
+                                SearchTimeWindowEnum::PastDay,
+                                false,
+                                false);
     flush();
 
     EXPECT_TRUE(controller->searchActive());

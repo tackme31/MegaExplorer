@@ -161,6 +161,11 @@ bool FolderNavigationController::searchFilterFavouritesOnly() const
     return mSearchFilter.favouritesOnly;
 }
 
+bool FolderNavigationController::searchFilterThisFolderOnly() const
+{
+    return mSearchFilter.thisFolderOnly;
+}
+
 void FolderNavigationController::loadRoot()
 {
     dropSearchForNavigation();
@@ -440,7 +445,8 @@ void FolderNavigationController::search(QString query)
 void FolderNavigationController::setSearchFilter(int nodeType,
                                                  int category,
                                                  int createdWithin,
-                                                 bool favouritesOnly)
+                                                 bool favouritesOnly,
+                                                 bool thisFolderOnly)
 {
     const bool wasActive = searchActive();
     const SearchFilter previous = mSearchFilter;
@@ -448,7 +454,8 @@ void FolderNavigationController::setSearchFilter(int nodeType,
         SearchFilter{clampEnum<SearchNodeType>(nodeType, SearchNodeType::Folders),
                      clampEnum<SearchCategory>(category, SearchCategory::Other),
                      clampEnum<SearchTimeWindow>(createdWithin, SearchTimeWindow::PastYear),
-                     favouritesOnly};
+                     favouritesOnly,
+                     thisFolderOnly};
     if (mSearchFilter != previous)
         emit searchFilterChanged();
     applySearchCriteria(wasActive);

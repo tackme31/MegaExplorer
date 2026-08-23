@@ -72,6 +72,8 @@ class FolderNavigationController : public QObject,
         int searchFilterCreatedWithin READ searchFilterCreatedWithin NOTIFY searchFilterChanged)
     Q_PROPERTY(
         bool searchFilterFavouritesOnly READ searchFilterFavouritesOnly NOTIFY searchFilterChanged)
+    Q_PROPERTY(
+        bool searchFilterThisFolderOnly READ searchFilterThisFolderOnly NOTIFY searchFilterChanged)
     // True while this tab has a mutating operation or a server sync in flight.
     // Deliberately NOT set by listing/search/breadcrumb fetches -- those are
     // synchronous in-memory reads and finish before anything could repaint. Nor by
@@ -115,6 +117,7 @@ public:
     int searchFilterCategory() const;
     int searchFilterCreatedWithin() const;
     bool searchFilterFavouritesOnly() const;
+    bool searchFilterThisFolderOnly() const;
 
     // Not Q_INVOKABLE: QML reaches the root load through
     // TabsController::loadRootAll(), never this per-tab entry point.
@@ -167,13 +170,16 @@ public:
     // navigation state alone, so openFolder() still works from search results.
     Q_INVOKABLE void search(QString query);
 
-    // The advanced-search popup's four facets, as ints so this header stays free of
+    // The advanced-search popup's facets, as ints so this header stays free of
     // Qt-side enum types (same argument as viewKind above); QML passes
     // SearchNodeType/SearchCategory/SearchTimeWindow values. Out-of-range values fall
     // back to "any". Re-runs the current query, and a filter with no query is itself a
     // search -- clearing both is what restores the cached folder listing.
-    Q_INVOKABLE void
-    setSearchFilter(int nodeType, int category, int createdWithin, bool favouritesOnly);
+    Q_INVOKABLE void setSearchFilter(int nodeType,
+                                     int category,
+                                     int createdWithin,
+                                     bool favouritesOnly,
+                                     bool thisFolderOnly);
 
     // column: 0=Name, 1=ModificationTime, 2=Size. Also called at startup with the
     // persisted value, before login/loadRoot() have run (see mHasLoadedOnce).

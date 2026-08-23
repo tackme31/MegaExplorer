@@ -96,8 +96,9 @@ public:
                              SortOrder order,
                              std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
-    // Recursive name search rooted at ancestorHandle. Must be called after a
-    // successful fetchNodes(); order is forwarded to MegaApi::search's own order.
+    // Name search rooted at ancestorHandle, recursive unless filter.thisFolderOnly
+    // asks for that node's direct children only. Must be called after a successful
+    // fetchNodes(); order is forwarded to MegaApi::search's own order.
     // An empty query means "no name predicate", so filter alone is a valid search.
     virtual void search(std::uint64_t ancestorHandle,
                         bool isRoot,
@@ -111,7 +112,8 @@ public:
     // incoming shares out. An empty nameFilter means no name filtering at all --
     // MegaSearchFilter treats an unset name as "match everything", so the
     // favourite flag stays the only criterion. filter narrows further, exactly as in
-    // search(); its favouritesOnly facet is redundant here but harmless.
+    // search(); its favouritesOnly facet is redundant here but harmless, and its
+    // thisFolderOnly facet is ignored -- this listing has no open folder to scope to.
     virtual void listFavourites(SortOrder order,
                                 const std::string& nameFilter,
                                 const SearchFilter& filter,
@@ -123,6 +125,7 @@ public:
     // carries the local file's mtime, so a freshly uploaded old file would
     // otherwise never appear here. Files only -- folders are excluded, so filter's
     // node-type facet is ignored here, and its time window can only narrow the 30 days.
+    // thisFolderOnly is ignored for the same reason as in listFavourites().
     virtual void listRecent(SortOrder order,
                             const std::string& nameFilter,
                             const SearchFilter& filter,

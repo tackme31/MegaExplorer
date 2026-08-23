@@ -31,6 +31,7 @@ Popup {
     property alias categorySelector: categoryBox
     property alias timeSelector: timeBox
     property alias favouriteSelector: favouriteCheck
+    property alias thisFolderSelector: thisFolderCheck
 
     // What C++ is currently searching with. Read back from the controller, not
     // remembered here: one popup serves every tab and the filter is per-tab, so a
@@ -44,23 +45,25 @@ Popup {
     readonly property int appliedTime: root.navController?.searchFilterCreatedWithin
                                        ?? SearchTimeWindow.Any
     readonly property bool appliedFavourite: root.navController?.searchFilterFavouritesOnly ?? false
+    readonly property bool appliedThisFolder: root.navController?.searchFilterThisFolderOnly ?? false
 
     readonly property bool filterActive: root.appliedType !== SearchNodeType.Any
                                          || root.appliedCategory !== SearchCategory.Any
                                          || root.appliedTime !== SearchTimeWindow.Any
-                                         || root.appliedFavourite
+                                         || root.appliedFavourite || root.appliedThisFolder
 
     // Reads of currentIndex/checked, not bindings assigned to them, so these stay
     // live for the whole session -- see the note above.
     readonly property bool pendingActive: typeBox.currentIndex !== SearchNodeType.Any
                                           || categoryBox.currentIndex !== SearchCategory.Any
                                           || timeBox.currentIndex !== SearchTimeWindow.Any
-                                          || favouriteCheck.checked
+                                          || favouriteCheck.checked || thisFolderCheck.checked
 
     readonly property bool dirty: typeBox.currentIndex !== root.appliedType
                                   || categoryBox.currentIndex !== root.appliedCategory
                                   || timeBox.currentIndex !== root.appliedTime
                                   || favouriteCheck.checked !== root.appliedFavourite
+                                  || thisFolderCheck.checked !== root.appliedThisFolder
 
     // Same reasoning as the "More" menu's popupType in AddressToolBar.qml: on
     // Windows a Popup may resolve to a native window, and this one has to be able to
@@ -90,6 +93,7 @@ Popup {
         categoryBox.currentIndex = root.appliedCategory;
         timeBox.currentIndex = root.appliedTime;
         favouriteCheck.checked = root.appliedFavourite;
+        thisFolderCheck.checked = root.appliedThisFolder;
     }
 
     // Clear commits, like Apply does: leaving it pending made the two buttons disagree
@@ -105,12 +109,13 @@ Popup {
         categoryBox.currentIndex = SearchCategory.Any;
         timeBox.currentIndex = SearchTimeWindow.Any;
         favouriteCheck.checked = false;
+        thisFolderCheck.checked = false;
         // Nothing applied means C++ already holds this empty filter, and re-pushing it
         // would re-run a search that blocks the GUI thread.
         if (!root.filterActive)
             return;
         root.navController.setSearchFilter(SearchNodeType.Any, SearchCategory.Any,
-                                           SearchTimeWindow.Any, false);
+                                           SearchTimeWindow.Any, false, false);
     }
 
     // Every facet is pushed together, so C++ never sees a half-applied filter and only
@@ -123,7 +128,8 @@ Popup {
             return;
         }
         root.navController.setSearchFilter(typeBox.currentIndex, categoryBox.currentIndex,
-                                           timeBox.currentIndex, favouriteCheck.checked);
+                                           timeBox.currentIndex, favouriteCheck.checked,
+                                           thisFolderCheck.checked);
         root.close();
     }
 
@@ -202,6 +208,17 @@ Popup {
             // narrows nothing there.
             enabled: root.navController?.viewKind !== ViewKind.Favourites
             text: qsTr("Favourites only")
+        }
+
+        CheckBox {
+            id: thisFolderCheck
+
+            // The favourites and recents listings are rooted at the Cloud Drive root
+            // rather than at an open folder, so there is nothing for this to scope to
+            // and C++ ignores it there.
+            enabled: root.navController?.viewKind !== ViewKind.Favourites
+                     && root.navController?.viewKind !== ViewKind.Recents
+            text: qsTr("This folder only")
         }
 
         RowLayout {

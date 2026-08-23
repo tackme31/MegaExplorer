@@ -46,19 +46,27 @@ struct SearchFilter
     SearchTimeWindow createdWithin = SearchTimeWindow::Any;
     bool favouritesOnly = false;
 
+    // Unlike the facets above this one narrows no node: it picks which SDK call the
+    // adapter makes (MegaApi::getChildren instead of MegaApi::search), because the
+    // recursion depth is not expressible on MegaSearchFilter. Only the listings that
+    // have an open folder honour it -- the favourites/recents queries are rooted at
+    // the Cloud Drive root and ignore it.
+    bool thisFolderOnly = false;
+
     // "Narrows nothing", which is what lets an empty query still count as no search
     // at all -- SearchService refuses that pair rather than listing the whole drive.
     bool isDefault() const
     {
         return nodeType == SearchNodeType::Any && category == SearchCategory::Any &&
-               createdWithin == SearchTimeWindow::Any && !favouritesOnly;
+               createdWithin == SearchTimeWindow::Any && !favouritesOnly && !thisFolderOnly;
     }
 };
 
 inline bool operator==(const SearchFilter& lhs, const SearchFilter& rhs)
 {
     return lhs.nodeType == rhs.nodeType && lhs.category == rhs.category &&
-           lhs.createdWithin == rhs.createdWithin && lhs.favouritesOnly == rhs.favouritesOnly;
+           lhs.createdWithin == rhs.createdWithin && lhs.favouritesOnly == rhs.favouritesOnly &&
+           lhs.thisFolderOnly == rhs.thisFolderOnly;
 }
 
 inline bool operator!=(const SearchFilter& lhs, const SearchFilter& rhs)
