@@ -145,7 +145,7 @@ Rectangle {
         ListView {
             id: archiveList
             anchors.fill: parent
-            anchors.margins: Theme.spacing.sm
+            anchors.margins: Theme.spacing.md
             clip: true
             model: root.controller.archiveEntries
             boundsBehavior: Flickable.StopAtBounds
