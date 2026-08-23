@@ -64,6 +64,11 @@ Rectangle {
     // their jobs independently, so the id alone does not say which queue to ask.
     signal cancelRequested(direction: int, jobId: var)
 
+    // A finished download's name was clicked. Carries the path the file was
+    // actually written to, which is not the name the row shows whenever a
+    // collision made the SDK append " (1)".
+    signal openRequested(path: string)
+
     // Split out of the Label below so the wording can be tested without reaching
     // into the layout, the same split ToastStack.qml's describe* functions are.
     function summaryText(): string {
@@ -305,10 +310,36 @@ Rectangle {
                         spacing: Theme.spacing.xs
 
                         Label {
+                            id: nameLabel
+
+                            // Only a finished download has a file to open: an
+                            // upload's local copy is not this app's to hand out,
+                            // and an unfinished download has not been written yet.
+                            readonly property bool openable: model.direction === TransferDirection.Download
+                                                             && model.state === TransferState.Completed
+                                                             && !!model.localPath
+
                             Layout.fillWidth: true
                             elide: Text.ElideMiddle
                             font.pixelSize: Theme.font.caption
+                            font.underline: openArea.containsMouse
                             text: model.name
+
+                            MouseArea {
+                                id: openArea
+
+                                // Indexed for the same reason the cancel button is.
+                                objectName: "openRowName" + index
+                                // Only as wide as the name is painted: filling the
+                                // label would make the empty space after a short
+                                // name open the file too.
+                                width: Math.min(nameLabel.width, nameLabel.contentWidth)
+                                height: nameLabel.height
+                                enabled: nameLabel.openable
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.openRequested(model.localPath)
+                            }
                         }
 
                         ProgressBar {

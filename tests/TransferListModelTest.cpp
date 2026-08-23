@@ -255,6 +255,9 @@ TEST_F(TransferListModelTest, UploadProgressAndCompletionReachTheRow)
     done(Result<UploadOutcome>::ok(UploadOutcome{1}));
     flush();
     EXPECT_EQ(role(0, TransferListModel::StateRole).toInt(), TransferStateEnum::Completed);
+    // Nothing to open: an upload's source is the user's own file, not something
+    // this app put there. The flyout keys its clickable name off this being empty.
+    EXPECT_TRUE(role(0, TransferListModel::LocalPathRole).toString().isEmpty());
 }
 
 // The run summary is what the minimized transfer flyout reads: "9 / 41" plus one
@@ -334,6 +337,34 @@ TEST_F(TransferListModelTest, RoleNamesAreTheOnesQmlBindsTo)
     EXPECT_EQ(names.value(TransferListModel::ProgressRole), QByteArray("progress"));
     EXPECT_EQ(names.value(TransferListModel::TransferredBytesRole), QByteArray("transferredBytes"));
     EXPECT_EQ(names.value(TransferListModel::TotalBytesRole), QByteArray("totalBytes"));
+    EXPECT_EQ(names.value(TransferListModel::LocalPathRole), QByteArray("localPath"));
+}
+
+// What the flyout's clickable name needs: the row has to name the file that was
+// actually written, which is not what NameRole says once a collision renamed it.
+TEST_F(TransferListModelTest, ACompletedDownloadCarriesThePathItWasSavedTo)
+{
+    downloads->downloadFile(7, "a.txt", 100);
+    ASSERT_TRUE(static_cast<bool>(downloadDone));
+    DownloadDone done = downloadDone;
+    EXPECT_TRUE(role(0, TransferListModel::LocalPathRole).toString().isEmpty());
+
+    done(Result<DownloadOutcome>::ok(DownloadOutcome{"C:/dl/a (1).txt"}));
+    flush();
+
+    EXPECT_EQ(role(0, TransferListModel::NameRole).toString(), QStringLiteral("a.txt"));
+    EXPECT_EQ(role(0, TransferListModel::LocalPathRole).toString(),
+              QStringLiteral("C:/dl/a (1).txt"));
+}
+
+TEST_F(TransferListModelTest, AFailedDownloadHasNoPathToOpen)
+{
+    downloads->downloadFile(7, "a.txt", 100);
+    DownloadDone done = downloadDone;
+    done(Result<DownloadOutcome>::fail("network error", 2));
+    flush();
+
+    EXPECT_TRUE(role(0, TransferListModel::LocalPathRole).toString().isEmpty());
 }
 
 TEST_F(TransferListModelTest, TheJobIdRoleNamesTheOneRowACancelStops)

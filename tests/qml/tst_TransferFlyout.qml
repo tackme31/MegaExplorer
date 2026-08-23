@@ -142,7 +142,7 @@ TestCase {
         compare(flyout.summaryText(), data.expected);
     }
 
-    function addRow(stub, direction, name, state, progress, jobId) {
+    function addRow(stub, direction, name, state, progress, jobId, localPath) {
         stub.append({
                         "direction": direction,
                         "name": name,
@@ -150,7 +150,8 @@ TestCase {
                         "progress": progress,
                         // Defaulted so the callers that do not care which job a row
                         // names stay five-argument.
-                        "jobId": jobId === undefined ? stub.count + 1 : jobId
+                        "jobId": jobId === undefined ? stub.count + 1 : jobId,
+                        "localPath": localPath === undefined ? "" : localPath
                     });
     }
 
@@ -334,6 +335,71 @@ TestCase {
         compare(spy.count, 1);
         compare(spy.signalArguments[0][0], TransferDirection.Upload);
         compare(spy.signalArguments[0][1], 22);
+    }
+
+    // Clicking a finished download's name opens the file. The path has to come off
+    // the row rather than from its label: a collision saved it as "a (1).bin" while
+    // the row still says "a.bin".
+    function test_aFinishedDownloadOpensThePathItWasSavedTo() {
+        const stub = createTemporaryObject(stubComponent, testCase);
+        const flyout = makeFlyout(stub);
+        const spy = createTemporaryObject(spyComponent, testCase, {
+                                              "target": flyout,
+                                              "signalName": "openRequested"
+                                          });
+
+        addRow(stub, TransferDirection.Download, "a.bin", TransferState.Completed, 1, 11,
+               "C:/dl/a (1).bin");
+        flyout.show();
+        flyout.toggleExpanded();
+        waitForRendering(flyout);
+
+        const area = findChild(flyout, "openRowName0");
+        verify(area.enabled);
+        // The hit area is only as wide as the painted name, so a zero here would
+        // be an unclickable row that still passes the click below.
+        verify(area.width > 0);
+        area.clicked(null);
+
+        compare(spy.count, 1);
+        compare(spy.signalArguments[0][0], "C:/dl/a (1).bin");
+    }
+
+    // The three rows that have no file to hand over. An upload's source is the
+    // user's own, and an unfinished download has not been written yet.
+    function test_onlyFinishedDownloadsAreClickable_data() {
+        return [
+                    {
+                        tag: "upload",
+                        direction: TransferDirection.Upload,
+                        state: TransferState.Completed,
+                        localPath: ""
+                    },
+                    {
+                        tag: "download in flight",
+                        direction: TransferDirection.Download,
+                        state: TransferState.Active,
+                        localPath: ""
+                    },
+                    {
+                        tag: "download that failed",
+                        direction: TransferDirection.Download,
+                        state: TransferState.Failed,
+                        localPath: ""
+                    },
+                ];
+    }
+
+    function test_onlyFinishedDownloadsAreClickable(data) {
+        const stub = createTemporaryObject(stubComponent, testCase);
+        const flyout = makeFlyout(stub);
+
+        addRow(stub, data.direction, "a.bin", data.state, 0.5, 11, data.localPath);
+        flyout.show();
+        flyout.toggleExpanded();
+        waitForRendering(flyout);
+
+        verify(!findChild(flyout, "openRowName0").enabled);
     }
 
     function test_stateText_data() {

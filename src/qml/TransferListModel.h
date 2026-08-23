@@ -51,6 +51,10 @@ public:
         ProgressRole,
         TransferredBytesRole,
         TotalBytesRole,
+        // Where a completed download actually landed. Empty for uploads, and for a
+        // download until it succeeds; it differs from NameRole whenever a collision
+        // made the SDK append " (1)".
+        LocalPathRole,
     };
 
     explicit TransferListModel(DownloadController* downloads,
@@ -81,6 +85,7 @@ private:
         TransferStateEnum::Kind state = TransferStateEnum::Queued;
         std::uint64_t transferredBytes = 0;
         std::uint64_t totalBytes = 0;
+        QString localPath;
     };
 
     void recordDownload(const DownloadJob& job);

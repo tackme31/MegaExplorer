@@ -515,6 +515,8 @@ ApplicationWindow {
             else
                 downloadController.cancelJob(jobId);
         }
+        // The same call the download toast's "Open" makes.
+        onOpenRequested: path => downloadController.openFile(path)
     }
 
     Connections {

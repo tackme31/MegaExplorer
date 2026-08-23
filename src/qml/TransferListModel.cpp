@@ -43,6 +43,8 @@ QVariant TransferListModel::data(const QModelIndex& index, int role) const
             return static_cast<qulonglong>(row.transferredBytes);
         case TotalBytesRole:
             return static_cast<qulonglong>(row.totalBytes);
+        case LocalPathRole:
+            return row.localPath;
         default:
             return {};
     }
@@ -58,6 +60,7 @@ QHash<int, QByteArray> TransferListModel::roleNames() const
         {ProgressRole, "progress"},
         {TransferredBytesRole, "transferredBytes"},
         {TotalBytesRole, "totalBytes"},
+        {LocalPathRole, "localPath"},
     };
 }
 
@@ -90,13 +93,15 @@ void TransferListModel::recordDownload(const DownloadJob& job)
 {
     // job.name throughout, including on success, even though the file may have been
     // saved under a "(1)" suffix: a row that renames itself as it completes is worse
-    // to read than one that keeps naming the node that was asked for.
+    // to read than one that keeps naming the node that was asked for. The path it
+    // really went to rides along beside it, so the row can still open the file.
     upsert(Row{TransferDirectionEnum::Download,
                job.id,
                QString::fromStdString(job.name),
                static_cast<TransferStateEnum::Kind>(job.state),
                job.transferredBytes,
-               job.totalBytes});
+               job.totalBytes,
+               QString::fromStdString(job.resolvedLocalPath)});
 }
 
 void TransferListModel::recordUpload(const UploadJob& job)
@@ -118,7 +123,7 @@ void TransferListModel::upsert(const Row& row)
             continue;
         if (existing.name == row.name && existing.state == row.state &&
             existing.transferredBytes == row.transferredBytes &&
-            existing.totalBytes == row.totalBytes)
+            existing.totalBytes == row.totalBytes && existing.localPath == row.localPath)
             return;
         existing = row;
         const QModelIndex changed = index(static_cast<int>(i));
