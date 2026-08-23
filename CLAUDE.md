@@ -6,11 +6,14 @@ session lives in companion docs, linked from the relevant section below rather t
 - `docs/REQUESTS.md` — **the inbox: where requests, new features and bugs get written, in free
   prose.** Each cycle folds it into `ROADMAP.md` and empties it, so nobody has to decide size or
   placement while writing. Labels (`[バグ]` `[最優先]` `[高]`/`[中]`/`[低]` `[削除]` `[編集]`) are
-  optional; without `[最優先]` the loop only ever appends, so priority stays a human call.
+  optional; `[バグ]` only sets the row's 種類, and without `[最優先]` the loop only ever appends, so
+  priority stays a human call.
 - `docs/ROADMAP.md` — **the backlog, and the single source of truth for what gets built next.** The
   `/evolve` loop reads it every cycle and picks one item off the top. Sized S/M/L, and an **L is
-  never implemented as-is** — a cycle that hits one only splits it. Its "見送り (blocked)" section
-  is what the loop must not touch. Written by the loop, not by hand: keeping the human out of this
+  never implemented as-is** — a cycle that hits one only splits it. Every row also carries a 種類
+  (機能追加 / 不具合), decided by whether intent and implementation agree; it is bookkeeping, not
+  queue order, so a bug is picked earlier only when it was filed at a higher priority. Its
+  "見送り (blocked)" section is what the loop must not touch. Written by the loop, not by hand: keeping the human out of this
   file is what stops an edit racing a cycle's own removal of the row it just finished.
 - `docs/roadmap-done.md` — one line per finished ROADMAP item, and the only log the loop writes to.
   Its メモ column is where "still needs checking on a real run" gets recorded, plus the judgement
