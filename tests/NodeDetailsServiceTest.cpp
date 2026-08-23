@@ -46,7 +46,7 @@ TEST(NodeDetailsServiceTest, DropsBothTheRootAndTheNodeItselfFromTheParentPath)
     NodeDetailsService service(mockClient);
     Captured captured;
 
-    service.loadDetails(42, false, captureInto(captured));
+    service.loadDetails(42, false, false, captureInto(captured));
 
     ASSERT_TRUE(captured.called);
     ASSERT_TRUE(captured.result.success);
@@ -64,7 +64,7 @@ TEST(NodeDetailsServiceTest, LeavesTheParentPathEmptyForANodeDirectlyUnderTheRoo
     NodeDetailsService service(mockClient);
     Captured captured;
 
-    service.loadDetails(42, false, captureInto(captured));
+    service.loadDetails(42, false, false, captureInto(captured));
 
     ASSERT_TRUE(captured.result.success);
     EXPECT_EQ(captured.result.value().parentPath, "");
@@ -81,7 +81,7 @@ TEST(NodeDetailsServiceTest, ReportsWhichRootTheWalkEndedAt)
     NodeDetailsService service(mockClient);
     Captured captured;
 
-    service.loadDetails(42, false, captureInto(captured));
+    service.loadDetails(42, false, false, captureInto(captured));
 
     ASSERT_TRUE(captured.result.success);
     EXPECT_EQ(captured.result.value().rootKind, ViewKind::Rubbish);
@@ -99,7 +99,7 @@ TEST(NodeDetailsServiceTest, AsksForFolderContentsOnlyForAFolder)
     NodeDetailsService service(mockClient);
 
     Captured folder;
-    service.loadDetails(42, true, captureInto(folder));
+    service.loadDetails(42, false, true, captureInto(folder));
     ASSERT_TRUE(folder.result.success);
     ASSERT_TRUE(folder.result.value().hasContents);
     EXPECT_EQ(folder.result.value().contents.fileCount, 3u);
@@ -109,7 +109,7 @@ TEST(NodeDetailsServiceTest, AsksForFolderContentsOnlyForAFolder)
     // Second call is a file: the getFolderInfo expectation above allows exactly one
     // call, so a second one fails the test.
     Captured file;
-    service.loadDetails(42, false, captureInto(file));
+    service.loadDetails(42, false, false, captureInto(file));
     ASSERT_TRUE(file.result.success);
     EXPECT_FALSE(file.result.value().hasContents);
 }
@@ -125,7 +125,7 @@ TEST(NodeDetailsServiceTest, FailsWithoutAskingForContentsWhenThePathCannotBeRes
     NodeDetailsService service(mockClient);
     Captured captured;
 
-    service.loadDetails(42, true, captureInto(captured));
+    service.loadDetails(42, false, true, captureInto(captured));
 
     ASSERT_TRUE(captured.called);
     EXPECT_FALSE(captured.result.success);
@@ -145,9 +145,31 @@ TEST(NodeDetailsServiceTest, FailsTheWholeCallWhenTheContentsLookupFails)
     NodeDetailsService service(mockClient);
     Captured captured;
 
-    service.loadDetails(42, true, captureInto(captured));
+    service.loadDetails(42, false, true, captureInto(captured));
 
     ASSERT_TRUE(captured.called);
     EXPECT_FALSE(captured.result.success);
     EXPECT_EQ(captured.result.errorCode, MegaErrorCode::kEArgs);
+}
+
+TEST(NodeDetailsServiceTest, PassesIsRootToBothReadsSoARootCanBeInspected)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    // Handle 0 with the flag set is how a root is named -- getPath itself zeroes the
+    // root segment's handle, so nothing else points at one.
+    EXPECT_CALL(*mockClient, getPath(0u, true, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(pathOf({}))));
+    EXPECT_CALL(*mockClient, getFolderInfo(0u, true, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<FolderInfo>::ok(FolderInfo{5, 2, 4096})));
+
+    NodeDetailsService service(mockClient);
+    Captured captured;
+
+    service.loadDetails(0, true, true, captureInto(captured));
+
+    ASSERT_TRUE(captured.called);
+    ASSERT_TRUE(captured.result.success);
+    EXPECT_EQ(captured.result.value().parentPath, "");
+    EXPECT_TRUE(captured.result.value().hasContents);
+    EXPECT_EQ(captured.result.value().contents.fileCount, 5u);
 }

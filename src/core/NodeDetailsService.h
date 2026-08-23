@@ -37,11 +37,15 @@ public:
     // caller already displayed. A stale flag costs a failed folder-info request,
     // not a wrong answer -- MegaSdkClient::getFolderInfo rejects a file.
     //
+    // isRoot is what a listing row can never be, but the folder a view is showing
+    // can: a root's handle is the nameless 0 sentinel, so only this flag reaches it.
+    //
     // Either read failing fails the whole call: a dialog showing a location but no
     // contents (or the reverse) is harder to read than one saying it could not
     // look. onDone may run in-stack (getPath is an in-memory query) or on an SDK
     // thread (getFolderInfo is a request).
     void loadDetails(std::uint64_t handle,
+                     bool isRoot,
                      bool isFolder,
                      std::function<void(Result<NodeDetails>)> onDone);
 

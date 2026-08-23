@@ -242,15 +242,24 @@ QtObject {
                                             "label": ctx => qsTr("Refresh"),
                                             "trigger": ctx => ctx.navController.refresh()
                                         },
-                                        // ctx: entries. Straight to the app-wide
-                                        // controller rather than a request*(): the
-                                        // dialog is one instance in Main.qml, so no
-                                        // per-view Item has to be reached.
+                                        // ctx: isRoot, entries. Straight to the
+                                        // app-wide controller rather than a
+                                        // request*(): the dialog is one instance in
+                                        // Main.qml, so no per-view Item has to be
+                                        // reached.
+                                        //
+                                        // entries[0] is the primary target at both
+                                        // sites this action is offered at: the one
+                                        // selected row, or -- from a view's empty
+                                        // space -- the folder the view is showing,
+                                        // which is the only target that can be a
+                                        // root and so the only reason isRoot is read.
                                         "properties": {
                                             "icon": ctx => Theme.glyph.menu.properties,
                                             "label": ctx => qsTr("Properties"),
                                             "trigger": ctx => propertiesController.show(
                                                           ctx.entries[0].handle,
+                                                          ctx.isRoot === true,
                                                           ctx.entries[0].name,
                                                           ctx.entries[0].isFolder,
                                                           ctx.entries[0].sizeBytes,

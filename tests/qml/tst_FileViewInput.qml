@@ -90,6 +90,9 @@ TestCase {
             // Read by FolderBackgroundMenu's actionIds binding, which is evaluated
             // when this component is created -- not only when a menu opens.
             "viewKind": p.viewKind === undefined ? ViewKind.CloudDrive : p.viewKind,
+            // Read by FolderBackgroundMenu's onAboutToShow, which names the folder
+            // its menu targets.
+            "currentFolderName": p.currentFolderName === undefined ? "photos" : p.currentFolderName,
             "canPerformCalls": [],
             // The action IDs this screen withholds. Empty is Cloud Drive's answer
             // for every ID the key handler asks about.

@@ -72,6 +72,7 @@ bool PropertiesController::failed() const
 }
 
 void PropertiesController::show(quint64 handle,
+                                bool isRoot,
                                 const QString& name,
                                 bool isFolder,
                                 qulonglong sizeBytes,
@@ -97,6 +98,7 @@ void PropertiesController::show(quint64 handle,
 
     mService->loadDetails(
         static_cast<std::uint64_t>(handle),
+        isRoot,
         isFolder,
         [this, requestId](Result<NodeDetails> result) {
             invokeOnGuiThread(this, [this, requestId, result = std::move(result)]() mutable {

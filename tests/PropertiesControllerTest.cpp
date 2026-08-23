@@ -50,7 +50,7 @@ TEST(PropertiesControllerTest, PublishesTheRowsOwnFactsBeforeTheLookupAnswers)
     QObject::connect(&f.controller, &PropertiesController::showRequested, [&shown] {
         ++shown;
     });
-    f.controller.show(42, QStringLiteral("a.jpg"), false, 1024, 1700000000);
+    f.controller.show(42, false, QStringLiteral("a.jpg"), false, 1024, 1700000000);
 
     EXPECT_EQ(shown, 1);
     EXPECT_EQ(f.controller.name(), QStringLiteral("a.jpg"));
@@ -72,7 +72,7 @@ TEST(PropertiesControllerTest, IgnoresTheRowsSizeForAFolderAndTakesTheRecursiveT
         .WillOnce(::testing::InvokeArgument<2>(Result<FolderInfo>::ok(FolderInfo{5, 2, 4096})));
 
     // 999 is what a folder row claims; MEGA gives folders no size of their own.
-    f.controller.show(42, QStringLiteral("photos"), true, 999, 0);
+    f.controller.show(42, false, QStringLiteral("photos"), true, 999, 0);
     EXPECT_EQ(f.controller.sizeBytes(), 0u);
 
     drainEvents();
@@ -91,7 +91,7 @@ TEST(PropertiesControllerTest, ReportsAFailedLookupWithoutClearingWhatTheRowGave
         .WillOnce(::testing::InvokeArgument<2>(
             Result<std::vector<PathSegment>>::fail("gone", MegaErrorCode::kENoEnt)));
 
-    f.controller.show(42, QStringLiteral("a.jpg"), false, 1024, 0);
+    f.controller.show(42, false, QStringLiteral("a.jpg"), false, 1024, 0);
     drainEvents();
 
     EXPECT_TRUE(f.controller.failed());
@@ -113,8 +113,8 @@ TEST(PropertiesControllerTest, DropsAReplyBelongingToAPreviouslyInspectedNode)
         .WillOnce(::testing::InvokeArgument<2>(
             Result<std::vector<PathSegment>>::ok(pathOf({"second", "b.jpg"}))));
 
-    f.controller.show(1, QStringLiteral("a.jpg"), false, 1, 0);
-    f.controller.show(2, QStringLiteral("b.jpg"), false, 2, 0);
+    f.controller.show(1, false, QStringLiteral("a.jpg"), false, 1, 0);
+    f.controller.show(2, false, QStringLiteral("b.jpg"), false, 2, 0);
     drainEvents();
     ASSERT_EQ(f.controller.parentPath(), QStringLiteral("/second"));
 
@@ -137,8 +137,8 @@ TEST(PropertiesControllerTest, AsksTheDialogToOpenAgainForTheSameNode)
     QObject::connect(&f.controller, &PropertiesController::showRequested, [&shown] {
         ++shown;
     });
-    f.controller.show(42, QStringLiteral("a.jpg"), false, 1, 0);
-    f.controller.show(42, QStringLiteral("a.jpg"), false, 1, 0);
+    f.controller.show(42, false, QStringLiteral("a.jpg"), false, 1, 0);
+    f.controller.show(42, false, QStringLiteral("a.jpg"), false, 1, 0);
     drainEvents();
 
     EXPECT_EQ(shown, 2);

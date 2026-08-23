@@ -61,8 +61,10 @@ public:
 
     // Publishes what the row already knows, starts the lookup, and asks the dialog
     // to open. Everything but the handle comes from the caller because the listing
-    // has it and re-reading it would cost a round-trip.
+    // has it and re-reading it would cost a round-trip. isRoot names the case a row
+    // can't be: a root's handle is 0, so the flag is the only thing pointing at it.
     Q_INVOKABLE void show(quint64 handle,
+                          bool isRoot,
                           const QString& name,
                           bool isFolder,
                           qulonglong sizeBytes,

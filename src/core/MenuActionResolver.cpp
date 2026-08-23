@@ -200,6 +200,18 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::Rubbish},
          ActionTarget::Any,
          ActionArity::SingleOnly},
+        // The same action from a view's empty space, describing the folder on
+        // screen. A second row rather than another site on the one above, because
+        // the sites disagree about scope: only the Cloud Drive's background always
+        // names a node the lookup can resolve. Favourites and Recents synthesize a
+        // handle-less location, and the Rubbish bin's own top is handle 0 with
+        // isRoot set -- which MegaSdkClient::resolveNode answers with the *Cloud
+        // Drive* root, so offering it there would quietly describe the wrong node.
+        {MenuAction::Properties,
+         {MenuSite::FolderBackground},
+         {ViewKind::CloudDrive},
+         ActionTarget::FoldersOnly,
+         ActionArity::SingleOnly},
     };
     return actions;
 }
@@ -220,9 +232,11 @@ bool menuActionAllowed(std::string_view actionId, const MenuContext& ctx)
 {
     for (const MenuActionSpec& spec : defaultMenuActions())
     {
-        // One spec per action, so the first match settles it.
-        if (menuActionId(spec.action) == actionId)
-            return menuActionApplies(spec, ctx);
+        // An action may have more than one row (Properties has one per site), so
+        // every row for the ID is tried before answering no -- stopping at the first
+        // would report a site's own row as unreachable.
+        if (menuActionId(spec.action) == actionId && menuActionApplies(spec, ctx))
+            return true;
     }
     return false;
 }

@@ -547,14 +547,15 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersRenameOrMoveToRubbishForAnEm
     EXPECT_TRUE(resolveMenuActions(fileSelection(0, 0)).empty());
 }
 
-TEST(MenuActionResolverTest, DefaultTableOffersNewFolderPasteSelectAllAndRefreshOnABackground)
+TEST(MenuActionResolverTest, DefaultTableOffersTheFiveBackgroundActionsInMenuOrder)
 {
     std::vector<MenuAction> result = resolveMenuActions(folderTarget(MenuSite::FolderBackground));
-    ASSERT_EQ(result.size(), 4u);
+    ASSERT_EQ(result.size(), 5u);
     EXPECT_EQ(result[0], MenuAction::NewFolder);
     EXPECT_EQ(result[1], MenuAction::Paste);
     EXPECT_EQ(result[2], MenuAction::SelectAll);
     EXPECT_EQ(result[3], MenuAction::Refresh);
+    EXPECT_EQ(result[4], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersCutAndCopyForEveryNonEmptySelection)
@@ -716,14 +717,37 @@ TEST(MenuActionResolverTest, DefaultTableOffersPropertiesForOneItemInEveryView)
     }
 }
 
-TEST(MenuActionResolverTest, DefaultTableNeverOffersPropertiesOnFixedTargetSites)
+TEST(MenuActionResolverTest, DefaultTableOffersPropertiesOnACloudDriveBackgroundOnly)
 {
-    // Those sites name the folder a view shows or a tree row, both of which the
-    // breadcrumb already identifies -- there is no row whose facts are in question.
-    EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)),
-                          MenuAction::Properties));
+    // The background's target is the folder on screen, which only the Cloud Drive
+    // always has as a real node: the two flat listings synthesize a handle-less
+    // location, and the bin's own top resolves to the Cloud Drive root instead.
+    EXPECT_TRUE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)),
+                         MenuAction::Properties));
+    for (ViewKind kind : {ViewKind::Favourites, ViewKind::Recents, ViewKind::Rubbish})
+    {
+        EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground, kind)),
+                              MenuAction::Properties))
+            << static_cast<int>(kind);
+    }
+}
+
+TEST(MenuActionResolverTest, DefaultTableNeverOffersPropertiesOnAFolderRow)
+{
+    // A tree or Quick-access row names a folder the breadcrumb reaches anyway, and
+    // the dialog is one instance the file views own.
     EXPECT_FALSE(
         contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::Properties));
+}
+
+TEST(MenuActionResolverTest, MenuActionAllowedConsidersEverySpecForAnId)
+{
+    // Properties is the first action with a row per site; a first-match lookup would
+    // answer the background's question from the selection's row and say no.
+    EXPECT_TRUE(menuActionAllowed("properties", fileSelection(1, 0)));
+    EXPECT_TRUE(menuActionAllowed("properties", folderTarget(MenuSite::FolderBackground)));
+    EXPECT_FALSE(menuActionAllowed(
+        "properties", folderTarget(MenuSite::FolderBackground, ViewKind::Favourites)));
 }
 
 TEST(MenuActionResolverTest, MenuActionAllowedRejectsAnUnknownId)

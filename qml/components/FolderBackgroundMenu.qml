@@ -29,12 +29,25 @@ ActionMenu {
         : []
 
     onAboutToShow: {
-        root.context = {
+        // The folder on screen, shaped like a listing row so the catalog entries
+        // shared with the selection menu (properties) need no site-specific branch.
+        // Its size and time are left at 0 deliberately: a breadcrumb carries neither,
+        // and the dialog shows a folder's recursive total from its own lookup and
+        // hides the modified row for folders entirely.
+        const folder = {
             "handle": root.navController.currentHandle,
+            "name": ViewLabels.label(root.navController.viewKind, root.navController.atRoot,
+                                     root.navController.currentFolderName),
+            "isFolder": true,
+            "sizeBytes": 0,
+            "modificationTime": 0
+        };
+        root.context = {
+            "handle": folder.handle,
             "isRoot": root.navController.atRoot,
-            "name": "",
+            "name": folder.name,
             "pinned": false,
-            "entries": [],
+            "entries": [folder],
             "navController": root.navController,
             "mutations": root.mutController,
             // Sampled, not bound: a menu must not grey or un-grey a row while

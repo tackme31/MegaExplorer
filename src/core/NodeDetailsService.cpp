@@ -10,6 +10,7 @@ NodeDetailsService::NodeDetailsService(std::shared_ptr<IMegaClient> client)
 {}
 
 void NodeDetailsService::loadDetails(std::uint64_t handle,
+                                     bool isRoot,
                                      bool isFolder,
                                      std::function<void(Result<NodeDetails>)> onDone)
 {
@@ -19,12 +20,10 @@ void NodeDetailsService::loadDetails(std::uint64_t handle,
     // an SDK thread -- deliberately holds no client: anything added there that calls
     // back into one needs its own keep-alive.
     //
-    // isRoot false, like FolderNavigationService::resolvePathOf: a caller here names
-    // a node it saw in a listing, and no listing contains a root.
     mClient->getPath(
         handle,
-        false,
-        [client = mClient, handle, isFolder, onDone = std::move(onDone)](
+        isRoot,
+        [client = mClient, handle, isRoot, isFolder, onDone = std::move(onDone)](
             Result<std::vector<PathSegment>> pathResult) {
             if (!pathResult.success)
             {
@@ -53,7 +52,7 @@ void NodeDetailsService::loadDetails(std::uint64_t handle,
 
             client->getFolderInfo(
                 handle,
-                false,
+                isRoot,
                 [details = std::move(details), onDone](Result<FolderInfo> infoResult) mutable {
                     if (!infoResult.success)
                     {
