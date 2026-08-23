@@ -307,6 +307,11 @@ C:/Qt/Tools/CMake_64/bin/cmake.exe --preset msvc-debug
 C:/Qt/Tools/CMake_64/bin/cmake.exe --build --preset msvc-debug
 ```
 
+`scripts/run.ps1` does close-app → (re)configure → build → launch in one step, with the DLL
+directories put on `PATH` for you: `scripts/run.ps1 [-Config Debug|Release] [-Preset <build preset>]
+[-Target appMegaExplorer] [-Theme light|dark|system] [-Reconfigure] [-NoBuild|-NoRun]`. It reads the
+configuration out of `CMakePresets.json`, so an added preset needs no edit to the script.
+
 Manual equivalent of the configure, which also documents each variable (same full path):
 
 ```
