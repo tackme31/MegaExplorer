@@ -59,6 +59,10 @@ class FolderNavigationController : public QObject,
     // holds, so an empty listing can say which kind of empty it is. Its own NOTIFY:
     // the query changes without the location doing so.
     Q_PROPERTY(bool searchActive READ searchActive NOTIFY searchActiveChanged)
+    // The text this tab is searching for, "" when it isn't. The search box is one
+    // control shared by every tab, so switching tabs has to read the query back per
+    // tab rather than leave whatever was last typed on screen.
+    Q_PROPERTY(QString searchQuery READ searchQuery NOTIFY searchQueryChanged)
     // The advanced-search facets this tab is searching with. The popup that edits them is
     // one control shared by every tab, so it has to read them back per tab rather than
     // remember what it last pushed. ints for the same reason viewKind is one.
@@ -106,6 +110,7 @@ public:
     int viewKind() const;
     bool canSort() const;
     bool searchActive() const;
+    QString searchQuery() const;
     int searchFilterNodeType() const;
     int searchFilterCategory() const;
     int searchFilterCreatedWithin() const;
@@ -255,6 +260,7 @@ signals:
     void breadcrumbChanged();
     void busyChanged();
     void searchActiveChanged();
+    void searchQueryChanged();
     void searchFilterChanged();
 
     // The tab dropped its query and filter because it navigated. The search box owns

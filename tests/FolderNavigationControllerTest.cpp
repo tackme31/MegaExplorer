@@ -970,6 +970,44 @@ TEST_F(FolderNavigationControllerTest, SearchActiveFollowsTheQueryAndReportsOnly
     EXPECT_EQ(changes, 2);
 }
 
+TEST_F(FolderNavigationControllerTest, SearchQueryReadsBackPerTabAndIsDroppedByNavigation)
+{
+    // The search box is one control shared by every tab, so it reads the query off
+    // whichever tab is current instead of remembering what was last typed into it.
+    givenRootListing({entry("photos", 1, true)});
+    controller->loadRoot();
+    flush();
+
+    int changes = 0;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::searchQueryChanged,
+                     controller.get(),
+                     [&changes]() {
+                         ++changes;
+                     });
+
+    EXPECT_EQ(controller->searchQuery(), QString());
+
+    EXPECT_CALL(*client, search(_, _, _, _, _, _))
+        .WillRepeatedly(InvokeArgument<5>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("photos", 1, true)})));
+    controller->search(QStringLiteral("q"));
+    flush();
+    EXPECT_EQ(controller->searchQuery(), QStringLiteral("q"));
+
+    controller->search(QStringLiteral("q")); // same query -- not a change
+    flush();
+
+    EXPECT_CALL(*client, getChildren(1, _, _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
+    controller->openFolder(1);
+    flush();
+
+    EXPECT_EQ(controller->searchQuery(), QString());
+    EXPECT_EQ(changes, 2);
+}
+
 TEST_F(FolderNavigationControllerTest, RecentsOpensNewestFirstRatherThanInTheWindowWideOrder)
 {
     std::vector<SortOrder> used;

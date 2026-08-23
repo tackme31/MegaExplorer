@@ -188,6 +188,32 @@ ToolBar {
                     filterPopup.revertPending();
                 }
             }
+
+            // One field serves every tab while the query is per-tab, so a switch has
+            // to re-read it -- otherwise the previous tab's query stays on screen and
+            // the field claims a tab is searching when it isn't. The popup beside it
+            // needs no equivalent: its applied* values are bindings, and its pending
+            // edit is reverted on every onAboutToShow.
+            Connections {
+                target: tabsController
+
+                // Which tab's query is on screen. A plain value, never a binding to
+                // currentNavigation: a binding would re-evaluate on the same signal as
+                // the handler below and the guard would always compare equal.
+                property var shownNavigation: null
+
+                // currentTabChanged also fires when the current tab merely shifts row --
+                // a reorder, or a tab closing ahead of it -- and re-reading then would
+                // throw away text typed but not yet submitted, which is the field's
+                // normal state while live is false.
+                function onCurrentTabChanged() {
+                    const nav = tabsController.currentNavigation ?? null;
+                    if (nav === shownNavigation)
+                        return;
+                    shownNavigation = nav;
+                    searchField.text = nav?.searchQuery ?? "";
+                }
+            }
         }
 
         ToolbarIconButton {

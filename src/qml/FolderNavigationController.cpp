@@ -136,6 +136,11 @@ bool FolderNavigationController::searchActive() const
     return !mLastSearchQuery.empty() || !mSearchFilter.isDefault();
 }
 
+QString FolderNavigationController::searchQuery() const
+{
+    return QString::fromStdString(mLastSearchQuery);
+}
+
 int FolderNavigationController::searchFilterNodeType() const
 {
     return static_cast<int>(mSearchFilter.nodeType);
@@ -411,10 +416,13 @@ void FolderNavigationController::dropSearchForNavigation()
     // Not mListingFromSearch: the results are still on screen until the navigation
     // lands, and applyResult() clears that flag when it does. Clearing it here would
     // claim the rows are one folder's children while they are still hits.
+    const bool queryDropped = !mLastSearchQuery.empty();
     mLastSearchQuery.clear();
     const bool filterDropped = !mSearchFilter.isDefault();
     mSearchFilter = SearchFilter{};
     emit searchActiveChanged();
+    if (queryDropped)
+        emit searchQueryChanged();
     if (filterDropped)
         emit searchFilterChanged();
     emit searchCleared();
@@ -423,7 +431,9 @@ void FolderNavigationController::dropSearchForNavigation()
 void FolderNavigationController::search(QString query)
 {
     const bool wasActive = searchActive();
-    mLastSearchQuery = query.toStdString();
+    const std::string previous = std::exchange(mLastSearchQuery, query.toStdString());
+    if (mLastSearchQuery != previous)
+        emit searchQueryChanged();
     applySearchCriteria(wasActive);
 }
 
@@ -763,6 +773,7 @@ void FolderNavigationController::reset()
     mLastFolderEntries.clear();
     const bool wasSearching = searchActive();
     const bool filterDropped = !mSearchFilter.isDefault();
+    const bool queryDropped = !mLastSearchQuery.empty();
     mLastSearchQuery.clear();
     mSearchFilter = SearchFilter{};
     mListingFromSearch = false;
@@ -776,6 +787,8 @@ void FolderNavigationController::reset()
     emit breadcrumbChanged();
     if (wasSearching)
         emit searchActiveChanged();
+    if (queryDropped)
+        emit searchQueryChanged();
     if (filterDropped)
         emit searchFilterChanged();
 }
