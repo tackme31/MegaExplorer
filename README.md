@@ -2,8 +2,6 @@
 
 # MEGA Explorer
 
-![](./img/screenshot.png)
-
 A Windows Explorer-style desktop client for [MEGA](https://mega.io) cloud storage. It is a browser
 for your cloud files, not a sync client.
 
@@ -11,6 +9,8 @@ for your cloud files, not a sync client.
 - Previews and thumbnails without downloading anything
 - Search and filtering across your whole account
 - Open the matching local file or folder in Windows Explorer
+
+![](./img/screenshot.png)
 
 **Note:** Windows only, and you need a MEGA account. This is a personal project, published in case
 it is useful to someone else. It is not released yet — there are no builds to download and anything
