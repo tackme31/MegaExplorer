@@ -202,12 +202,17 @@ TreeView {
         leftInset: Theme.spacing.sm
         rightInset: Theme.spacing.sm
 
-        readonly property bool isCurrent: root.navController ? (treeDelegate.isRoot
-                                                                ? root.navController.atRoot : (
-                                                                      !root.navController.atRoot
-                                                                      && treeDelegate.handle
-                                                                      === root.navController.currentHandle)) :
-                                                               false
+        // The kind term is what keeps this tree out of the other screens: the
+        // bin's own root reports atRoot as well, so without it opening the bin
+        // lights the Cloud Drive row too.
+        readonly property bool isCurrent: {
+            if (!root.navController || root.navController.viewKind !== ViewKind.CloudDrive)
+                return false;
+            if (treeDelegate.isRoot)
+                return root.navController.atRoot;
+            return !root.navController.atRoot
+                    && treeDelegate.handle === root.navController.currentHandle;
+        }
 
         // Basic's own indicator with the arrow PNG swapped for an icon-font
         // chevron. Only the glyph shrinks (D1b): the Item stays 20px wide
