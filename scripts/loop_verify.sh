@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Single machine-verification entry point for the /evolve loop: close the app,
+# Single machine-verification entry point for the /evolve loop: close our exes,
 # (re)configure if needed, build every target in the preset, fail on any /W4
 # warning of ours, then run ctest. Terse on success -- the loop pays for every
 # line of this output in context, so a clean run is a handful of lines and only
@@ -15,8 +15,9 @@
 #   --reconfigure  force the configure step (also implied by a missing cache or
 #                  by an uncommitted QML_FILES change)
 #   --no-tests     build and warning-gate only
-#   --keep-app     don't kill a running appMegaExplorer.exe (will likely fail at
-#                  link time with LNK1104; only useful when debugging by hand)
+#   --keep-app     don't kill a running appMegaExplorer.exe / megatool.exe (will
+#                  likely fail at link time with LNK1104; only useful when
+#                  debugging by hand)
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
@@ -45,22 +46,35 @@ done
 fail() { echo "[FAIL] $*"; exit 1; }
 step() { printf '[ok] %-12s %ss\n' "$1" "$2"; }
 
-# ---------------------------------------------------------------- 1. close app
-# A running appMegaExplorer.exe holds its own .exe open and the link dies with
-# LNK1104, which would stall an unattended cycle.
-if [ "$keep_app" -eq 0 ]; then
-    if tasklist //FI "IMAGENAME eq appMegaExplorer.exe" 2>/dev/null | grep -qi 'appMegaExplorer\.exe'; then
-        taskkill //IM appMegaExplorer.exe //F >/dev/null 2>&1
-        for _ in 1 2 3 4 5 6 7 8 9 10; do
-            tasklist //FI "IMAGENAME eq appMegaExplorer.exe" 2>/dev/null |
-                grep -qi 'appMegaExplorer\.exe' || break
-            sleep 1
-        done
-        if tasklist //FI "IMAGENAME eq appMegaExplorer.exe" 2>/dev/null | grep -qi 'appMegaExplorer\.exe'; then
-            fail "appMegaExplorer.exe is still running and could not be killed; the link would hit LNK1104. Report this and stop the cycle."
-        fi
-        echo "[ok] closed running appMegaExplorer.exe"
+# ------------------------------------------------------------- 1. close ours
+# A running appMegaExplorer.exe or megatool.exe holds its own .exe open and the
+# link dies with LNK1104, which would stall an unattended cycle.
+# No `tasklist | grep`: under `set -o pipefail` a SIGPIPE'd tasklist makes the
+# pipeline non-zero even when grep matched, which would read as "not running".
+# MSYS grep also aborts on a here-string, so the match is done in bash itself.
+running() {
+    local out
+    out=$(tasklist //FI "IMAGENAME eq $1" 2>/dev/null) || return 1
+    [[ ${out,,} == *"${1,,}"* ]]
+}
+
+close_exe() {
+    local name=$1
+    running "$name" || return 0
+    taskkill //IM "$name" //F >/dev/null 2>&1
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        running "$name" || break
+        sleep 1
+    done
+    if running "$name"; then
+        fail "$name is still running and could not be killed; the link would hit LNK1104. Report this and stop the cycle."
     fi
+    echo "[ok] closed running $name"
+}
+
+if [ "$keep_app" -eq 0 ]; then
+    close_exe appMegaExplorer.exe
+    close_exe megatool.exe
 fi
 
 # --------------------------------------------------------------- 2. full reset
@@ -115,8 +129,8 @@ if [ "$build_status" -ne 0 ]; then
     echo "--- build errors ---"
     grep -E 'error [A-Z]+[0-9]+|LNK[0-9]{4}' "$LOG" | grep -v 'third_party' | sed 's/^ *//' | sort -u | head -n 40
     if printf '%s' "$linker" | grep -q 'LNK1104'; then
-        echo "--- LNK1104: the output file was locked. Is appMegaExplorer.exe running?"
-        echo "    (loop_verify closes it automatically unless --keep-app was passed)"
+        echo "--- LNK1104: the output file was locked. Is appMegaExplorer.exe or megatool.exe running?"
+        echo "    (loop_verify closes them automatically unless --keep-app was passed)"
     fi
     fail "build (${build_time}s)"
 fi
