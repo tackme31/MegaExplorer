@@ -309,7 +309,7 @@ C:/Qt/Tools/CMake_64/bin/cmake.exe --build --preset msvc-debug
 
 `scripts/run.ps1` does close-app → (re)configure → build → launch in one step, with the DLL
 directories put on `PATH` for you: `scripts/run.ps1 [-Config Debug|Release] [-Preset <build preset>]
-[-Target appMegaExplorer] [-Theme light|dark|system] [-Reconfigure] [-NoBuild|-NoRun]`. It reads the
+[-Target MegaExplorer] [-Theme light|dark|system] [-Reconfigure] [-NoBuild|-NoRun]`. It reads the
 configuration out of `CMakePresets.json`, so an added preset needs no edit to the script.
 
 Manual equivalent of the configure, which also documents each variable (same full path):
@@ -324,10 +324,10 @@ cmake -S . -B build/msvc-debug -G "Visual Studio 17 2022" -A x64 ^
     -DVCPKG_OVERLAY_PORTS=third_party/sdk/cmake/vcpkg_overlay_ports ^
     -DVCPKG_OVERLAY_TRIPLETS=third_party/sdk/cmake/vcpkg_overlay_triplets ^
     -DVCPKG_MANIFEST_FEATURES="use-openssl;use-freeimage;use-ffmpeg;use-pdfium;sdk-tests"
-cmake --build build/msvc-debug --config Debug --target appMegaExplorer
+cmake --build build/msvc-debug --config Debug --target MegaExplorer
 ```
 
-Build only `appMegaExplorer`, not the full solution — the SDK's `gfxworker` tool currently fails to
+Build only `MegaExplorer`, not the full solution — the SDK's `gfxworker` tool currently fails to
 link, unrelated to our code (`docs/BUILD.md`). Test targets: `MegaExplorerTests` (GoogleTest) and
 `MegaExplorerQmlTests` (Qt Quick Test over `qml/`, sources in `tests/qml/`); `ctest --preset
 msvc-debug` runs both. The binaries are `build/msvc-debug/Debug/MegaExplorer{,Qml}Tests.exe`.
@@ -335,7 +335,7 @@ Running the QML one by hand needs `-o -,tap`: QtTest's default logger sends its 
 `OutputDebugString` instead of stdout whenever no console is attached to the process, which is
 every run from Git Bash, so without it a failure prints nothing at all.
 
-Binary: `build/msvc-debug/Debug/appMegaExplorer.exe`. Needs Qt's `bin`
+Binary: `build/msvc-debug/Debug/MegaExplorer.exe`. Needs Qt's `bin`
 and vcpkg's `debug/bin` on `PATH` to run outside Qt Creator:
 
 ```
@@ -350,14 +350,14 @@ C:/Qt/Tools/CMake_64/bin/cmake.exe --build --preset msvc-release
 set PATH=C:\Qt\6.11.1\msvc2022_64\bin;%CD%\build\msvc-debug\vcpkg_installed\x64-windows-mega\bin;%PATH%
 ```
 
-Binary `build/msvc-debug/Release/appMegaExplorer.exe` — the directory is named after the *configure*
+Binary `build/msvc-debug/Release/MegaExplorer.exe` — the directory is named after the *configure*
 preset, which is why a Release build lands under `msvc-debug`. Note `bin`, not `debug/bin`. **Never
 judge performance from a Debug run**: `_ITERATOR_DEBUG_LEVEL=2` and the debug CRT heap dominate the
 listing path, so folder navigation is visibly faster in Release for that reason alone
 (`docs/BUILD.md`).
 
 **Compiler warnings**: all six of our targets — `MegaExplorerCore`, `MegaExplorerQml`,
-`appMegaExplorer`, `megatool`, `MegaExplorerTests`, `MegaExplorerQmlTests` — build at `/W4`, via the
+`MegaExplorer`, `megatool`, `MegaExplorerTests`, `MegaExplorerQmlTests` — build at `/W4`, via the
 `MegaExplorerWarnings` interface
 target they each link (`docs/BUILD.md` covers that and the two Qt-header suppressions it carries).
 At the end of any task touching
@@ -368,7 +368,7 @@ command that does it — and builds and tests as well — is:
 bash scripts/loop_verify.sh          # add --full to see the generated sources' warnings
 ```
 
-It closes a running `appMegaExplorer.exe` first (otherwise the link dies with `LNK1104`),
+It closes a running `MegaExplorer.exe` first (otherwise the link dies with `LNK1104`),
 reconfigures when `QML_FILES` changed, **fails on a single warning of ours**, then runs `ctest`, and
 prints only a handful of lines unless something failed. It is what `/evolve` uses, so it must not
 depend on an IDE. The `qtcreator` MCP server (`mcp__qtcreator__build` / `list_issues` /

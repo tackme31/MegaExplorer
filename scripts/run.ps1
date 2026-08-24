@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Build appMegaExplorer from the CLI and launch it, in Debug or Release.
+    Build MegaExplorer from the CLI and launch it, in Debug or Release.
 
 .DESCRIPTION
     Wraps the whole CLI flow from CLAUDE.md's Build section: close a running
@@ -19,7 +19,7 @@
 
 .PARAMETER Target
     Build only these targets instead of everything the preset lists -- e.g.
-    -Target appMegaExplorer skips the two test binaries and megatool.
+    -Target MegaExplorer skips the two test binaries and megatool.
 
 .PARAMETER Reconfigure
     Force the CMake configure step. Required after adding/removing a .qml file
@@ -31,7 +31,7 @@
     without touching the Windows theme setting.
 
 .PARAMETER AppArgs
-    Arguments forwarded to appMegaExplorer.exe.
+    Arguments forwarded to MegaExplorer.exe.
 
 .EXAMPLE
     scripts\run.ps1
@@ -40,7 +40,7 @@
 .EXAMPLE
     scripts\run.ps1 -NoRun -Reconfigure
 .EXAMPLE
-    scripts\run.ps1 -Target appMegaExplorer
+    scripts\run.ps1 -Target MegaExplorer
 .EXAMPLE
     scripts\run.ps1 -Preset my-preset -AppArgs '--foo','bar'
 #>
@@ -91,18 +91,18 @@ $configuration = if ($bp.PSObject.Properties['configuration']) { $bp.configurati
 # binaryDir is named after the *configure* preset, so a Release build lands
 # under build/msvc-debug/Release.
 $buildDir = Join-Path $RepoRoot "build/$configurePreset"
-$exePath = Join-Path $buildDir "$configuration/appMegaExplorer.exe"
+$exePath = Join-Path $buildDir "$configuration/MegaExplorer.exe"
 
 Write-Host "preset $buildPreset ($configuration) -> build/$configurePreset" -ForegroundColor Cyan
 
 # --------------------------------------------------------------- close the app
-# A running appMegaExplorer.exe holds its own .exe open; the link dies LNK1104.
+# A running MegaExplorer.exe holds its own .exe open; the link dies LNK1104.
 if (-not $NoBuild) {
-    $running = Get-Process -Name appMegaExplorer -ErrorAction SilentlyContinue
+    $running = Get-Process -Name MegaExplorer -ErrorAction SilentlyContinue
     if ($running) {
         $running | Stop-Process -Force
         $running | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
-        Write-Host 'closed running appMegaExplorer.exe'
+        Write-Host 'closed running MegaExplorer.exe'
     }
 }
 

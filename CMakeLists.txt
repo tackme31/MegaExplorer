@@ -67,7 +67,7 @@ endif()
 add_library(MegaExplorerWarnings INTERFACE)
 target_compile_options(MegaExplorerWarnings INTERFACE /W4 /external:W0 /wd4702)
 
-# SDK-free domain logic, shared between appMegaExplorer and MegaExplorerTests.
+# SDK-free domain logic, shared between MegaExplorer and MegaExplorerTests.
 add_library(MegaExplorerCore STATIC
     src/core/IMegaClient.h
     src/core/ILocalFileSystem.h
@@ -131,7 +131,7 @@ target_include_directories(MegaExplorerCore PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src
 target_compile_features(MegaExplorerCore PUBLIC cxx_std_17)
 target_link_libraries(MegaExplorerCore PRIVATE MegaExplorerWarnings)
 
-# The QML module's backing target. A library rather than appMegaExplorer itself
+# The QML module's backing target. A library rather than MegaExplorer itself
 # so that MegaExplorerTests can link the same QML-facing C++ types, and
 # MegaExplorerQmlTests can import the MegaExplorer URI at all (R4-5), instead of
 # recompiling a hand-copied subset of src/qml -- the same reason
@@ -176,7 +176,7 @@ add_library(MegaExplorerQml STATIC
     src/qml/TransferListModel.cpp
 )
 
-qt_add_executable(appMegaExplorer
+qt_add_executable(MegaExplorer
     main.cpp
     resources/appicon.rc
     src/app/Logging.h
@@ -305,8 +305,8 @@ qt_add_qml_module(MegaExplorerQml
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an
 # explicit, fixed bundle identifier manually though.
-set_target_properties(appMegaExplorer PROPERTIES
-#    MACOSX_BUNDLE_GUI_IDENTIFIER com.example.appMegaExplorer
+set_target_properties(MegaExplorer PROPERTIES
+#    MACOSX_BUNDLE_GUI_IDENTIFIER com.example.MegaExplorer
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE
@@ -336,12 +336,12 @@ target_link_libraries(MegaExplorerQml
     PRIVATE MegaExplorerWarnings
 )
 
-target_include_directories(appMegaExplorer PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src)
+target_include_directories(MegaExplorer PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src)
 
 # Target-scoped for the same reason as /W4: SDKlib and third_party have no
 # business seeing our definitions. main.cpp forwards this to
 # QCoreApplication::setApplicationVersion, which is where QML reads it from.
-target_compile_definitions(appMegaExplorer PRIVATE
+target_compile_definitions(MegaExplorer PRIVATE
     MEGAEXPLORER_VERSION="${PROJECT_VERSION}")
 
 # MegaExplorerQmlplugin is the static QML plugin qt_add_qml_module generates
@@ -354,7 +354,7 @@ target_compile_definitions(appMegaExplorer PRIVATE
 # qml_register_types_MegaExplorer is present in the .lib and absent from the
 # .exe. main.cpp's Q_IMPORT_QML_PLUGIN is the other half; neither works alone.
 # tests/qml repeats both halves for the same reason.
-target_link_libraries(appMegaExplorer
+target_link_libraries(MegaExplorer
     PRIVATE MegaExplorerQml
     PRIVATE MegaExplorerQmlplugin
     PRIVATE MEGA::SDKlib
@@ -367,7 +367,7 @@ target_link_libraries(appMegaExplorer
 # Console CLI over IMegaClient, for MEGA-side fixtures and for the /evolve loop's
 # "is the app signed in to the test account?" check (CLAUDE.md, docs/MEGATOOL.md).
 # Recompiles src/mega and src/platform rather than linking them: they belong to
-# appMegaExplorer, and pulling them into a shared library just for this would
+# MegaExplorer, and pulling them into a shared library just for this would
 # make the app's own layering harder to read for one extra consumer.
 add_executable(megatool
     tools/megatool.cpp
@@ -394,7 +394,7 @@ target_link_libraries(megatool
 enable_testing()
 add_subdirectory(tests)
 
-install(TARGETS appMegaExplorer
+install(TARGETS MegaExplorer
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

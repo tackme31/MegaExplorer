@@ -15,7 +15,7 @@
 #   --reconfigure  force the configure step (also implied by a missing cache or
 #                  by an uncommitted QML_FILES change)
 #   --no-tests     build and warning-gate only
-#   --keep-app     don't kill a running appMegaExplorer.exe / megatool.exe (will
+#   --keep-app     don't kill a running MegaExplorer.exe / megatool.exe (will
 #                  likely fail at link time with LNK1104; only useful when
 #                  debugging by hand)
 set -uo pipefail
@@ -47,7 +47,7 @@ fail() { echo "[FAIL] $*"; exit 1; }
 step() { printf '[ok] %-12s %ss\n' "$1" "$2"; }
 
 # ------------------------------------------------------------- 1. close ours
-# A running appMegaExplorer.exe or megatool.exe holds its own .exe open and the
+# A running MegaExplorer.exe or megatool.exe holds its own .exe open and the
 # link dies with LNK1104, which would stall an unattended cycle.
 # No `tasklist | grep`: under `set -o pipefail` a SIGPIPE'd tasklist makes the
 # pipeline non-zero even when grep matched, which would read as "not running".
@@ -73,7 +73,7 @@ close_exe() {
 }
 
 if [ "$keep_app" -eq 0 ]; then
-    close_exe appMegaExplorer.exe
+    close_exe MegaExplorer.exe
     close_exe megatool.exe
 fi
 
@@ -85,7 +85,7 @@ if [ "$full" -eq 1 ]; then
     rm -rf \
         "$BUILD_DIR"/MegaExplorerCore.dir \
         "$BUILD_DIR"/MegaExplorerQml*.dir \
-        "$BUILD_DIR"/appMegaExplorer.dir \
+        "$BUILD_DIR"/MegaExplorer.dir \
         "$BUILD_DIR"/megatool.dir \
         "$BUILD_DIR"/tests/*.dir \
         "$BUILD_DIR"/CMakeFiles/*MegaExplorer*_autogen.dir
@@ -129,7 +129,7 @@ if [ "$build_status" -ne 0 ]; then
     echo "--- build errors ---"
     grep -E 'error [A-Z]+[0-9]+|LNK[0-9]{4}' "$LOG" | grep -v 'third_party' | sed 's/^ *//' | sort -u | head -n 40
     if printf '%s' "$linker" | grep -q 'LNK1104'; then
-        echo "--- LNK1104: the output file was locked. Is appMegaExplorer.exe or megatool.exe running?"
+        echo "--- LNK1104: the output file was locked. Is MegaExplorer.exe or megatool.exe running?"
         echo "    (loop_verify closes them automatically unless --keep-app was passed)"
     fi
     fail "build (${build_time}s)"

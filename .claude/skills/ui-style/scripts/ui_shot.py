@@ -32,7 +32,7 @@ from PIL import Image, ImageDraw
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 BUILD_DIR = REPO_ROOT / "build" / "msvc-debug"
-EXE_PATH = BUILD_DIR / "Debug" / "appMegaExplorer.exe"
+EXE_PATH = BUILD_DIR / "Debug" / "MegaExplorer.exe"
 VCPKG_BIN = BUILD_DIR / "vcpkg_installed" / "x64-windows-mega" / "debug" / "bin"
 OUT_DIR = REPO_ROOT / ".screenshots"
 SESSION_FILE = OUT_DIR / ".session.json"
@@ -49,7 +49,7 @@ QT_BIN = Path(os.environ.get("UI_SHOT_QT_BIN", r"C:/Qt/6.11.1/msvc2022_64/bin"))
 REG_PATH = r"Software\MegaExplorer\MegaExplorer"
 
 PRESET = "msvc-debug"
-DEFAULT_TARGET = "appMegaExplorer"
+DEFAULT_TARGET = "MegaExplorer"
 
 # --------------------------------------------------------------------------
 # Win32 plumbing

@@ -90,7 +90,7 @@ cmake --build --preset msvc-release
 ```
 
 The first configure builds the MEGA SDK's dependencies through vcpkg and takes a long time. The
-binary lands in `build/msvc-debug/Release/appMegaExplorer.exe`.
+binary lands in `build/msvc-debug/Release/MegaExplorer.exe`.
 
 `CMakePresets.json` expects Qt at `C:/Qt/6.11.1/msvc2022_64` — edit `CMAKE_PREFIX_PATH` there if
 yours is somewhere else. [docs/BUILD.md](docs/BUILD.md) has the detail, and the reasoning behind

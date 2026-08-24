@@ -68,9 +68,9 @@ Five targets; all but the last are defined in the root `CMakeLists.txt`:
 
 | Target | Holds | Why it is separate |
 | --- | --- | --- |
-| `MegaExplorerCore` (STATIC) | `src/core` | So `appMegaExplorer` and `MegaExplorerTests` link the same domain logic. Links no Qt at all. |
+| `MegaExplorerCore` (STATIC) | `src/core` | So `MegaExplorer` and `MegaExplorerTests` link the same domain logic. Links no Qt at all. |
 | `MegaExplorerQml` (STATIC) | `src/qml` + `qml/`, and carries `qt_add_qml_module` | Same reason, one level up: the QML module's backing target is a library rather than the executable so `MegaExplorerTests` can link the QML-facing C++ types instead of hand-copying the file list, and so a Qt Quick Test target can `import MegaExplorer` at all. |
-| `appMegaExplorer` (WIN32 executable) | `main.cpp` + `src/app`, `src/mega`, `src/platform` | The composition root and the only target that touches the SDK or the OS. |
+| `MegaExplorer` (WIN32 executable) | `main.cpp` + `src/app`, `src/mega`, `src/platform` | The composition root and the only target that touches the SDK or the OS. |
 | `MegaExplorerTests` | `tests/` | GoogleTest binary; links the two libraries above. |
 | `MegaExplorerQmlTests` (`tests/qml/CMakeLists.txt`) | `tests/qml/` | Qt Quick Test binary, separate from `MegaExplorerTests` because it needs a `QGuiApplication` and a QML engine, which `quick_test_main()` supplies and `tests/TestMain.cpp`'s `QCoreApplication` cannot. |
 
@@ -81,7 +81,7 @@ Two consequences worth knowing before editing the build files:
   `qmldir` keeps landing in `build/<preset>/MegaExplorer/`.
 - A static backing library means the generated type registration lives in a translation unit that
   nothing references by name, so the linker would drop it and every QML type would fail to
-  register at startup. `appMegaExplorer` therefore links `MegaExplorerQmlplugin` *and* `main.cpp`
+  register at startup. `MegaExplorer` therefore links `MegaExplorerQmlplugin` *and* `main.cpp`
   carries `Q_IMPORT_QML_PLUGIN(MegaExplorerPlugin)`. Neither half works without the other, and
   `MegaExplorerQmlTests` repeats both in `tests/qml/QmlTestMain.cpp` for the same reason.
 
@@ -189,7 +189,7 @@ not add a DI framework (Boost.DI, Fruit, etc.) — unneeded complexity at this p
     thread gets queued by Qt itself when the signal comes from another thread, so it reports the
     GUI thread no matter which thread emitted — and passes with the product code's own hop deleted.
 - **`MegaExplorerCore`**: a static library target (root `CMakeLists.txt`) bundling `src/core`'s
-  SDK-free headers/`.cpp` files. Exists so `appMegaExplorer` and `MegaExplorerTests` link the same
+  SDK-free headers/`.cpp` files. Exists so `MegaExplorer` and `MegaExplorerTests` link the same
   compiled domain logic instead of each recompiling it standalone.
 
 ## Threading model

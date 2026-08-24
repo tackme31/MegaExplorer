@@ -14,7 +14,7 @@ python .claude/skills/ui-style/scripts/ui_shot.py
 | `launch [--size WxH] [--pos X,Y] [--theme T] [--timeout 45]` | Snapshot the settings registry key, preset the geometry, start the app, wait until the scene stops changing. Refuses to run if a window is already open. |
 | `shot [NAME] [capture opts] [--window]` | Capture and save `.screenshots/NNN-NAME.png`. |
 | `cycle [NAME] [--size WxH] [--theme T] [--target T] [--reconfigure] [--no-build] [capture opts]` | `close` → `build` → `launch` → `shot` in one call. Aborts before relaunching if the build fails. |
-| `build [--target appMegaExplorer] [--reconfigure]` | Build and print a summary. Exit code 1 on failure. |
+| `build [--target MegaExplorer] [--reconfigure]` | Build and print a summary. Exit code 1 on failure. |
 | `close [--force] [--keep-settings]` | `WM_CLOSE`, wait up to 12s, then rewind the registry snapshot. |
 | `resize WxH` / `move X,Y` | Adjust the live window. `resize` compensates for the non-client delta so the *client* area matches. |
 | `info` | Window handle/title/class, pid, client size, screen origin, DPI scale, foreground flag, whether a settings backup is pending. |
@@ -89,7 +89,7 @@ position even if a step fails.
 
 | Item | Value | Override |
 | --- | --- | --- |
-| Exe | `build/msvc-debug/Debug/appMegaExplorer.exe` | — |
+| Exe | `build/msvc-debug/Debug/MegaExplorer.exe` | — |
 | CMake | `C:/Qt/Tools/CMake_64/bin/cmake.exe` (the `cmake` on PATH is Strawberry Perl's and is wrong) | `UI_SHOT_CMAKE` |
 | Qt bin | `C:/Qt/6.11.1/msvc2022_64/bin` | `UI_SHOT_QT_BIN` |
 | Runtime PATH | Qt bin + `build/msvc-debug/vcpkg_installed/x64-windows-mega/debug/bin`, prepended by `launch` | — |

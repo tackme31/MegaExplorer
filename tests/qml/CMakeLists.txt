@@ -1,6 +1,6 @@
 # Qt Quick Test instantiates the .qml TestCases inside this process, so the
 # MegaExplorer module has to be importable from here. That takes the same
-# two-part incantation appMegaExplorer uses (see the root CMakeLists.txt for the
+# two-part incantation MegaExplorer uses (see the root CMakeLists.txt for the
 # full story): linking MegaExplorerQml alone lets the linker drop the generated
 # type-registration object out of the static library, and every C++ type then
 # fails to register with no error until a QML file names one.

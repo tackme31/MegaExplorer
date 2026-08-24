@@ -69,7 +69,7 @@ LICENSE_OVERRIDES = {
     "libraw": "LGPL-2.1-only",
 }
 
-# Test-only, never linked into appMegaExplorer, so it is not part of the
+# Test-only, never linked into MegaExplorer, so it is not part of the
 # distribution and carries no attribution duty.
 EXCLUDED_PORTS = {"gtest"}
 

@@ -40,7 +40,7 @@ There is one configure preset, not two. The Visual Studio generator is multi-con
 `vcpkg_installed` directory that `msvc-debug` configured — vcpkg installs both the release and the
 debug variant of every dependency on first configure, so a Release build needs no second install
 (which would mean rebuilding ffmpeg, pdfium and OpenSSL from source). The cost of that reuse is the
-directory name: `build/msvc-debug/Release/appMegaExplorer.exe` is a Release binary living under a
+directory name: `build/msvc-debug/Release/MegaExplorer.exe` is a Release binary living under a
 path named for the *configure* preset. A second binary directory would buy a tidier name for hours
 of vcpkg time.
 
@@ -56,7 +56,7 @@ wrapper layer, the debug CRT heap guards and fills every one of those allocation
 (node-attribute decryption) and Qt's QML engine run their own debug builds underneath. Reproduce in
 Release before treating anything as a performance problem.
 
-## Why only `appMegaExplorer`, not the full solution
+## Why only `MegaExplorer`, not the full solution
 
 The SDK's `gfxworker` tool currently fails to link (`LNK2019`, unresolved FFmpeg `sws_*`) in this
 config — unrelated to our own code, not yet root-caused. Revisit if isolated GFX processing is
@@ -70,7 +70,7 @@ needed.
 searches `AVCODEC`/`AVFORMAT`/`AVUTIL` by default, so `FFmpeg::swscale` is never created even
 though vcpkg builds `swscale.lib`. `SDKlib`'s FreeImage backend
 (`GfxProviderFreeImage::readbitmapFfmpeg`) calls `sws_getContext`/`sws_scale`/`sws_freeContext`
-directly, so **without this fix `appMegaExplorer` itself fails at final link** (`LNK2019` on the
+directly, so **without this fix `MegaExplorer` itself fails at final link** (`LNK2019` on the
 three `sws_*` symbols), not just `gfxworker` — this was found while confirming a clean link is
 achievable for Phase 1's C++ layer. Root `CMakeLists.txt` re-requests the component and links it
 into `SDKlib` after `add_subdirectory(third_party/sdk)`:
@@ -109,7 +109,7 @@ set(QWINDOWKIT_BUILD_STATIC  ON  CACHE BOOL "" FORCE)   # keeps a DLL off the ru
 set(QWINDOWKIT_INSTALL       OFF CACHE BOOL "" FORCE)
 ```
 
-`find_package(Qt6 ...)` needs `Gui` for it, and `appMegaExplorer` links `QWindowKit::Quick`.
+`find_package(Qt6 ...)` needs `Gui` for it, and `MegaExplorer` links `QWindowKit::Quick`.
 Configure logs `The CorePrivate target is mentioned as a dependency for QWindowKit::Quick, but not
 declared` (likewise `GuiPrivate`/`QuickPrivate`) — cosmetic, from Qt 6.10+'s change to how private
 modules are exported. Linking succeeds; do not chase it.
@@ -145,11 +145,11 @@ is a reliable path-prefix check rather than a text-based `grep -v`. Confirmed 20
 raised only on our own targets (via `/W4`) don't leak SDKlib/third_party noise into the array at
 all, since those are separate CMake targets.
 
-`/W4` reaches all six of our targets — `MegaExplorerCore`, `MegaExplorerQml`, `appMegaExplorer`,
+`/W4` reaches all six of our targets — `MegaExplorerCore`, `MegaExplorerQml`, `MegaExplorer`,
 `megatool`, `MegaExplorerTests`, `MegaExplorerQmlTests` — through the `MegaExplorerWarnings`
 interface target they each link `PRIVATE`. `PRIVATE` is what keeps it off `third_party/sdk` and QWindowKit; putting `/W4` in
 `CMAKE_CXX_FLAGS` instead would hit everything and is why the flag was target-scoped from the
-start. Before R4-9 it was on `appMegaExplorer` alone, which meant `src/core` and all of `tests/`
+start. Before R4-9 it was on `MegaExplorer` alone, which meant `src/core` and all of `tests/`
 were never compiled at anything above MSVC's default `/W1`.
 
 That target also carries two suppressions, both about *Qt's* headers rather than ours:
