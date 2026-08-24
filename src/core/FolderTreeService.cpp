@@ -32,6 +32,11 @@ void FolderTreeService::loadSubfolders(std::uint64_t handle,
         mClient->getChildren(handle, order, std::move(filterFolders));
 }
 
+void FolderTreeService::syncWithServer(std::function<void(Result<void>)> onDone)
+{
+    mClient->syncPendingChanges(std::move(onDone));
+}
+
 bool FolderTreeService::hasSubfolders(std::uint64_t handle, bool isRoot) const
 {
     const Result<bool> result = mClient->hasSubfolders(handle, isRoot);

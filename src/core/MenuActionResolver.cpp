@@ -187,8 +187,12 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
+        // FolderRow too, where it re-reads that row's subfolders instead of the
+        // listing. Reaches a Quick access pin as well, which has no subtree to
+        // re-read; hiding it there is QML's job (ActionCatalog's `available`),
+        // since "is this row a tree row" is not something MenuContext carries.
         {MenuAction::Refresh,
-         {MenuSite::FolderBackground},
+         {MenuSite::FolderBackground, MenuSite::FolderRow},
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},

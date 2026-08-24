@@ -236,11 +236,26 @@ QtObject {
                                                        => ctx.navController.fileListModel.selectAll(
                                                               )
                                         },
-                                        // ctx: navController
+                                        // ctx: navController, or treeRow + handle
+                                        // + isRoot. Two targets because the C++
+                                        // table offers this at FolderBackground and
+                                        // FolderRow alike: from a view's empty space
+                                        // it re-reads that view's listing, from a
+                                        // folder-tree row that row's subfolders.
+                                        //
+                                        // Hidden on a Quick access pin, the third
+                                        // thing FolderRow reaches: a pin is not a
+                                        // tree node, so there is nothing below it to
+                                        // re-read.
                                         "refresh": {
                                             "icon": ctx => Theme.glyph.menu.refresh,
                                             "label": ctx => qsTr("Refresh"),
-                                            "trigger": ctx => ctx.navController.refresh()
+                                            "available": ctx => ctx.treeRow === true
+                                                        || ctx.navController !== undefined,
+                                            "trigger": ctx => ctx.treeRow === true
+                                                       ? folderTreeModel.refreshFolder(ctx.handle,
+                                                                                       ctx.isRoot)
+                                                       : ctx.navController.refresh()
                                         },
                                         // ctx: isRoot, entries. Straight to the
                                         // app-wide controller rather than a

@@ -24,6 +24,10 @@ public:
     // longer resolves simply gets no expand arrow.
     bool hasSubfolders(std::uint64_t handle, bool isRoot) const;
 
+    // Must precede a re-read that is meant to show someone else's changes: the
+    // getters above only report what the SDK was last told (IMegaClient.h).
+    void syncWithServer(std::function<void(Result<void>)> onDone);
+
 private:
     std::shared_ptr<IMegaClient> mClient;
 };

@@ -83,6 +83,7 @@ TreeView {
     // this TreeView nor clipped by its Flickable viewport.
     FolderPinMenu {
         id: pinMenu
+        treeRow: true
     }
 
     // Driven from the per-delegate DropAreas below. A stationary cursor at the

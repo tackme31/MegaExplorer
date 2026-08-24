@@ -177,7 +177,7 @@ int main(int argc, char* argv[])
 
     // Shared: the side panel is chrome beside the tab content, not per-tab state.
     auto folderTreeService = std::make_shared<FolderTreeService>(client);
-    FolderTreeModel folderTreeModel(folderTreeService);
+    FolderTreeModel folderTreeModel(folderTreeService, &notifications);
 
     // Same shared side-panel scope. The store needs no resolved path, unlike
     // sessionStore: QSettings resolves its own location from the names set above.

@@ -15,7 +15,14 @@ ActionMenu {
 
     // Always Cloud Drive: a tree row and a pin both name a real folder, whatever the
     // file view beside them happens to be showing.
-    actionIds: MenuActions.forSite(MenuActions.FolderRow, ViewKind.CloudDrive)
+    readonly property var siteActionIds: MenuActions.forSite(MenuActions.FolderRow,
+                                                             ViewKind.CloudDrive)
+    actionIds: root.siteActionIds
+
+    // Set by the folder tree, left false by the pins: only a tree row has a subtree
+    // that "Refresh" could re-read. Carried in the context below rather than read
+    // from the catalog, which cannot see which menu instance opened.
+    property bool treeRow: false
 
     // Fills in the context immediately before opening rather than binding to
     // anything: this describes one particular click.
@@ -24,6 +31,7 @@ ActionMenu {
             "handle": handle,
             "isRoot": isRoot,
             "name": name,
+            "treeRow": root.treeRow,
             // Sampled at open time, not bound: quickAccessModel emits no
             // per-handle change signal, so a binding would never re-evaluate
             // anyway -- and the menu is closed whenever the answer could change.
@@ -37,6 +45,13 @@ ActionMenu {
                 }
             ]
         };
+        // Filtered here, after the context and before popup(): ActionMenu.qml
+        // applies no availability rule of its own, so an entry hidden by one --
+        // Refresh on a pin row -- would otherwise still be listed. Same
+        // context-then-actionIds ordering as FileContextMenu.qml, for the reason
+        // given there.
+        root.actionIds = root.siteActionIds.filter(
+                    actionId => ActionCatalog.isAvailable(actionId, root.context));
         root.popup();
     }
 }

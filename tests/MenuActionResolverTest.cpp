@@ -596,12 +596,15 @@ TEST(MenuActionResolverTest, ClipboardActionIdsAreStable)
     EXPECT_STREQ(menuActionId(MenuAction::Refresh), "refresh");
 }
 
-TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabAndTogglePinOnAFolderRow)
+TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabTogglePinAndRefreshOnAFolderRow)
 {
     std::vector<MenuAction> result = resolveMenuActions(folderTarget(MenuSite::FolderRow));
-    ASSERT_EQ(result.size(), 2u);
+    ASSERT_EQ(result.size(), 3u);
     EXPECT_EQ(result[0], MenuAction::OpenInNewTab);
     EXPECT_EQ(result[1], MenuAction::TogglePin);
+    // Reaches every FolderRow, including a Quick access pin that has no subtree to
+    // re-read -- hiding it there is QML's job, not the resolver's.
+    EXPECT_EQ(result[2], MenuAction::Refresh);
 }
 
 TEST(MenuActionResolverTest, DefaultTableNeverOffersNewFolderAtTheOtherSites)
@@ -622,13 +625,23 @@ TEST(MenuActionResolverTest, SharedActionsKeepTheSameRelativeOrderAcrossSites)
     const std::vector<MenuAction> selection = resolveMenuActions(fileSelection(0, 1));
     const std::vector<MenuAction> row = resolveMenuActions(folderTarget(MenuSite::FolderRow));
 
+    // Intersected in both directions rather than compared against `row` whole:
+    // each site has entries the other never offers (Refresh is FolderRow's), and
+    // this test is about the order of what they share, not about membership.
     std::vector<MenuAction> sharedInSelection;
     for (MenuAction action : selection)
     {
         if (contains(row, action))
             sharedInSelection.push_back(action);
     }
-    EXPECT_EQ(sharedInSelection, row);
+    std::vector<MenuAction> sharedInRow;
+    for (MenuAction action : row)
+    {
+        if (contains(selection, action))
+            sharedInRow.push_back(action);
+    }
+    EXPECT_FALSE(sharedInSelection.empty());
+    EXPECT_EQ(sharedInSelection, sharedInRow);
 }
 
 TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourites)
