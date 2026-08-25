@@ -10,8 +10,8 @@
 **トークンを惜しんで手順を飛ばす必要は無い**。省いてよいのは 2. のコンテキスト予算ルールが名指しで
 禁じているものだけ。
 
-**1 サイクル = ROADMAP から 1 件 → 実装 → 検証 → レビュー → `evolve/NNN` に 1 コミット → push →
-`master` へマージ → 報告。**
+**1 サイクル = ROADMAP から 1 件 → 実装 → 検証 → レビュー → `evolve/NNN` に 1 コミット →
+`develop` へマージ → push → 報告。**
 
 無人で回る前提なので、**迷ったら最も妥当な案を選んで進める**。選んだ内容は
 `docs/roadmap-done.md` のメモ欄に 1 行、理由はコミット本文に残す。実機で見て違っていれば人間が
@@ -46,28 +46,29 @@ git status --porcelain
 
 空でなければ**中止**。前の周の残骸か人間の作業中なので、勝手に触らない。
 
-### 0-2. `evolve/NNN` ブランチを切る（master 上で作業しない）
+### 0-2. `evolve/NNN` ブランチを切る（develop 上で作業しない）
 
 ```
 git fetch origin --quiet
-n=$(git branch -a --list '*evolve/[0-9][0-9][0-9]' | grep -oE '[0-9]{3}$' | sort -n | tail -1)
+n=$(git branch --list 'evolve/[0-9][0-9][0-9]' | grep -oE '[0-9]{3}$' | sort -n | tail -1)
 next=$(printf '%03d' $((10#${n:-0} + 1)))
-git switch -c "evolve/$next" master
+git switch -c "evolve/$next" develop
 ```
 
 **枝を切る前に、未マージの `evolve/NNN` が残っていないか見る:**
 
 ```
-git branch --list 'evolve/[0-9][0-9][0-9]' --no-merged master
+git branch --list 'evolve/[0-9][0-9][0-9]' --no-merged develop
 ```
 
 **出力が空でなければ中止**し、そのブランチ名を報告に書いて 7. の通知行を優先度 4 で置く。6-2 のマージが衝突して止まった痕跡
-なので、勝手に解決しない。放置したまま次を回すと、古い `master` から枝を切って**完了済みの項目を
+なので、勝手に解決しない。放置したまま次を回すと、古い `develop` から枝を切って**完了済みの項目を
 もう一度選ぶ**。
 
-**起点は必ず `master`。** 長命なブランチは master だけで、人間が受信箱に書くのもそこ
-（`CLAUDE.md` の「Loop engineering」）。`master` が期待と違う位置にあると感じても勝手に別の
-ブランチを起点にせず、そのまま切って 7. の報告に書く。
+**起点は必ず `develop`。** 開発の幹は `develop` で、人間が受信箱に書くのもそこ
+（`CLAUDE.md` の「Loop engineering」）。**`master` はリリース済みの版を指すだけの枝で、ループは
+一切触らない**——マージも push も、`git switch master` もしない。`develop` が期待と違う位置に
+あると感じても勝手に別のブランチを起点にせず、そのまま切って 7. の報告に書く。
 
 ### 0-3. Serena の死活確認
 
@@ -185,8 +186,8 @@ git stash
 ```
 
 → その項目を `docs/ROADMAP.md` で `blocked` にし、メモ欄に失敗の原因を書く → **その 1 行の変更
-だけを** commit し、**6-2 で master へマージまで済ませてから** 7. の報告へ進む。マージを飛ばすと
-`blocked` が `master` に届かず、次の周が同じ項目でまた落ちる。
+だけを** commit し、**6-2 で develop へマージまで済ませてから** 7. の報告へ進む。マージを飛ばすと
+`blocked` が `develop` に届かず、次の周が同じ項目でまた落ちる。
 
 ### GUI の確認（QML を触った周のみ）
 
@@ -322,7 +323,7 @@ PYTHONIOENCODING=utf-8 python "$lint" <変更したファイル>
 ユーザー向けの機能が増減したときだけ `CLAUDE.md` の該当箇所を触る。
 **`docs/PROGRESS.md` / `docs/DESIGN_IMPROVEMENT.md` / `docs/investigations/` には書かない。**
 
-## 6. commit → push → master へマージ
+## 6. commit → develop へマージ → push
 
 **1 サイクル = 1 コミット。** メッセージは**英語**、件名 1 行（命令形、72 文字目安）。`(Phase 24b F7b)`
 のようなフェーズタグは付けない——ループのサイクルにフェーズ番号は無い。件名だけで説明が足りない
@@ -336,19 +337,20 @@ git commit -F - <<'EOF'
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
-git push -u origin HEAD
 ```
 
-`git add -A` / `git add .` は使わず名指しで。
+`git add -A` / `git add .` は使わず名指しで。**`evolve/NNN` は push しない**——リモートに出すと
+消さない運用と噛み合わず、ブランチが際限なく増える。remote に出るのは `develop` だけ。
 
-### 6-2. master へ取り込む
+### 6-2. develop へ取り込む
 
-**マージまでがサイクル。** `master` は「十分に検証してから入れる幹」ではなく、**人間がビルド物を
-触って確かめる場所**——不具合や期待と違う動きは、触った人間が `docs/REQUESTS.md` に起票して次の周で
-直る。ループ側の担保は 3. の単体テストと GUI 確認まで、と割り切る。
+**マージまでがサイクル。** `develop` は「十分に検証してから入れる幹」ではなく、**人間がビルド物を
+触って確かめる場所**——不具合や期待と違う動きは、触った人間が `docs/REQUESTS.md` に起票して
+次の周で直る。ループ側の担保は 3. の単体テストと GUI 確認まで、と割り切る。リリースは人間が
+`develop` を `master` へ入れる作業で、ループは関与しない。
 
 ```
-git switch master
+git switch develop
 git merge --ff-only "evolve/$next" || git merge --no-edit "evolve/$next"
 ```
 
@@ -360,10 +362,11 @@ git merge --ff-only "evolve/$next" || git merge --no-edit "evolve/$next"
 通ったら push する:
 
 ```
-git push origin master
+git push origin develop
 ```
 
 **`evolve/NNN` は消さない。** revert の入口であり、次の周の番号計算もブランチ名から行うため。
+ローカルにだけ残す。
 
 **衝突したら自力で解決しない**（マージは機械的でも、解決は設計判断になる）:
 
@@ -371,7 +374,7 @@ git push origin master
 git merge --abort
 ```
 
-→ `evolve/NNN` は push 済みのまま残す → 7. の報告に「衝突したので master へ入っていない」と衝突
+→ `evolve/NNN` はローカルにそのまま残す → 7. の報告に「衝突したので develop へ入っていない」と衝突
 ファイル名を書く → 通知は**優先度 4**。次の周は 0-2 で止まるので、人間が解決するまで待つ形になる。
 **マージ・push とも `--force` は禁止。**
 
@@ -386,7 +389,8 @@ git merge --abort
 - **受信箱** — 取り込んだ件数と、それぞれどのセクションへ何のサイズで入れたか。`[削除]` は消した
   行をそのまま引用。解釈できなかった行があればその文面も
 - **やったこと** — 選んだ項目、ブランチ名、コミットの件名
-- **マージ** — `master` に入ったか（ff / 通常マージ、通常マージなら再検証の結果）、push できたか。
+- **マージ** — `develop` に入ったか（ff / 通常マージ、通常マージなら再検証の結果）、push できたか
+  （push するのは `develop` だけ）。
   衝突して入らなかったなら衝突ファイル名と、次の周が 0-2 で止まること
 - **判断したこと** — 選択肢があった箇所、選んだ案とその理由（`roadmap-done.md` のメモと対応させる）
 - **検証結果** — `loop_verify.sh` の成否（ビルド / 警告 / テスト件数）
@@ -411,8 +415,10 @@ git merge --abort
 
 ## 禁止事項
 
-- **master 上で実装しない。** 作業は `evolve/NNN` で行い、`master` に触れるのは 6-2 のマージと
+- **develop 上で実装しない。** 作業は `evolve/NNN` で行い、`develop` に触れるのは 6-2 のマージと
   push だけ。**`--force` はどこでも禁止。**
+- **`master` に触らない。** リリース済みの版だけを指す枝で、そこへ入れるかどうかは人間の判断。
+- **`evolve/NNN` を push しない。** 消さずに積む枝なので、出すとリモートが際限なく増える。
 - **マージ衝突を自力で解決しない。** `--abort` して報告し、次の周は 0-2 で止める。
 - **`docs/PROGRESS.md`・`docs/DESIGN_IMPROVEMENT.md`・`docs/investigations/` に書かない。**
 - **out of scope（undo / 双方向同期 / タブの切り離し）を実装しない。提案もしない。**

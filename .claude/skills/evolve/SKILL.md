@@ -3,7 +3,7 @@ name: evolve
 description: >-
   Run one autonomous development cycle on MegaExplorer: pick the top item off
   docs/ROADMAP.md, implement it, verify it with scripts/loop_verify.sh, review
-  it, land it on an evolve/NNN branch, and merge that into master. Always runs one
+  it, land it on an evolve/NNN branch, and merge that into develop. Always runs one
   cycle starting now; the timer that fires it is registered separately by
   `/evolve-loop`. `/evolve force` runs the cycle even when the usage gate says the
   quota window is too far spent. Use only when asked to run a cycle -- ordinary

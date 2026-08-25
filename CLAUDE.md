@@ -175,12 +175,21 @@ where the loop reads them from.
 Development now runs mostly as an unattended loop: `/evolve-loop 2h` registers a cron that fires
 `.claude/skills/evolve/SKILL.md` every two hours, and each cycle takes **one** item off
 `docs/ROADMAP.md`, implements it, verifies it, reviews it, and lands it as a single commit on a
-fresh `evolve/NNN` branch, then merges that into `master` and pushes. Implementation only ever
-happens on the branch — `master` is touched by nothing but that merge. Started 2026-08-11; the
-reasoning behind each decision is in the skill, not here. **Not `/loop 2h /evolve`** — its last step
+fresh `evolve/NNN` branch, then merges that into `develop` and pushes. Implementation only ever
+happens on the branch — `develop` is touched by nothing but that merge, and `master` by nothing at
+all (see "Branches" below). Started 2026-08-11; the reasoning behind each decision is in the skill,
+not here. **Not `/loop 2h /evolve`** — its last step
 runs a cycle immediately, at a time unrelated to the schedule it just registered, so the first cron
 fire can land seconds after that cycle ends. `/evolve` by hand still means "one cycle, now";
 `/evolve-loop off` cancels the timer.
+
+**Branches.** `develop` is the development trunk: the loop branches from it, merges back into it,
+and pushes it, and requests are committed there. `master` holds released versions only — the first
+release landed there on 2026-08-26, and after that **nothing automated touches it**; a human merges
+`develop` into `master` when cutting a release. The only other branches are the `evolve/NNN` the
+loop creates: **local only, never pushed** — they are kept rather than deleted (a revert entry
+point, and the loop numbers the next one from them), so pushing them would grow the remote without
+bound. `develop` is the only branch the loop pushes.
 
 **The skill is two files, and the split is load-bearing.** `SKILL.md` is a dispatcher: it spawns
 one `general-purpose` subagent and relays its report, nothing else. The actual cycle — all seven
@@ -203,24 +212,24 @@ the split exists to prevent.
 | `docs/investigations/` | reads; never creates | new STUDY / SPEC / BUG |
 | `CLAUDE.md` | only when the user-facing feature set changed | anything |
 
-**Writing a request** is the only routine thing done by hand, and it goes on **`master`** — the
+**Writing a request** is the only routine thing done by hand, and it goes on **`develop`** — the
 trunk the loop branches from. Append to `docs/REQUESTS.md` and **commit it**: an uncommitted change
 aborts the next cycle at its clean-tree check (safe, but the slot is wasted). Nothing else needs a
-branch; `master` is the only long-lived one besides the `evolve/NNN` the loop creates.
+branch besides the `evolve/NNN` the loop creates.
 
-**The loop merges its own work into `master` and pushes it** (skill step 6-2, since 2026-08-12).
-`master` is therefore not a trunk holding only reviewed work — it is **the build you pick up and
-try**. Nothing reads the diff with eyes before it lands; the machine guarantee stops at the unit
-tests and the launch-and-screenshot check, and the rest of the verification is you using the app and
+**The loop merges its own work into `develop` and pushes it** (skill step 6-2, since 2026-08-12;
+the trunk was `master` until the first release, 2026-08-26). `develop` is therefore not a trunk
+holding only reviewed work — it is **the build you pick up and try**. Nothing reads the diff with
+eyes before it lands; the machine guarantee stops at the unit tests and the launch-and-screenshot check, and the rest of the verification is you using the app and
 filing what you notice. So the human loop is: run the build, spot something wrong or surprising,
 write it in `docs/REQUESTS.md`, and the next cycle picks it up.
 
 `--ff-only` first, ordinary merge as the fallback — it only refuses when a request was committed
 while that cycle was running, and after an ordinary merge the cycle re-runs `loop_verify.sh` because
 the combined tree was never built. A conflict is the one case the loop will not touch: it aborts the
-merge, leaves `evolve/NNN` pushed, notifies at priority 4, and the **next cycle refuses to start**
-until the branch is merged by hand — otherwise it would branch from a stale `master` and re-pick a
-finished item.
+merge, leaves `evolve/NNN` unmerged, notifies at priority 4, and the **next cycle refuses to start**
+until the branch is merged by hand — otherwise it would branch from a stale `develop` and re-pick
+a finished item.
 
 If something turns out wrong after it landed, the normal answer is a `[バグ]` line in
 `docs/REQUESTS.md`. For something worth pulling straight back out, `git revert` it and write the
