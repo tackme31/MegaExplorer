@@ -9,9 +9,10 @@
 //
 // This class carries no mutex, unlike DownloadService/UploadService/
 // ThumbnailService, and that is a borrowed guarantee: getRootChildren/getChildren/
-// search always answer synchronously on the calling thread, so mCurrent and the
-// back-stack are only ever touched from the GUI thread. If any of those three ever
-// starts answering from an SDK thread, this class needs one.
+// search always answer synchronously on the calling thread, so mCurrent, the
+// back-stack and the navigation counter are only ever touched from the GUI thread.
+// If any of those three ever starts answering from an SDK thread, this class needs
+// one.
 class FolderNavigationService
 {
 public:
@@ -21,8 +22,9 @@ public:
     // location that gets pushed and popped.
     void openRoot(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
-    // Pushes the previous location onto the back-stack on success only; a failure
-    // leaves all state unchanged.
+    // Pushes the previous location onto the back-stack before the fetch is issued, so
+    // the move is visible at click time; a failure rolls that back, leaving all state
+    // unchanged.
     void openFolder(std::uint64_t handle,
                     SortOrder order,
                     std::function<void(Result<std::vector<FileEntry>>)> onDone);
@@ -54,8 +56,8 @@ public:
     // shape of screen: a flat cross-drive query, not a folder.
     void openRecents(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
-    // Peeks the most recent back-stack entry and re-fetches it, popping only on
-    // success. Fails in-stack when canGoBack() is false.
+    // Pops the most recent back-stack entry and re-fetches it, restoring the entry on
+    // failure. Fails in-stack when canGoBack() is false.
     void goBack(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     // Re-fetches the current location with a new order, touching no state -- the
@@ -89,7 +91,8 @@ public:
     bool canGoBack() const;
 
     // Clears the back-stack without touching IMegaClient, so a login after logout
-    // can't retain handles belonging to the previous session's node tree.
+    // can't retain handles belonging to the previous session's node tree. Any fetch
+    // still in flight is dropped with it.
     void resetToRoot();
 
     // Public mirror of the private Location, for callers that scope an operation to
@@ -135,15 +138,26 @@ private:
                       SortOrder order,
                       std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
-    // Shared "call -> commit state on success -> onDone" sequence. network is the
-    // IMegaClient call already bound to handle/order; onCommit runs only on success
-    // and is kept separate so this stays agnostic of which entry point called it.
+    // Shared "commit the location -> call -> undo on failure" sequence. onCommit runs
+    // before network, so the breadcrumb and Back move at click time rather than when
+    // the listing lands; network is the IMegaClient call already bound to
+    // handle/order, and stays a parameter so this remains agnostic of the caller.
+    // onCommit may be empty for a re-fetch that changes no location.
+    //
+    // A result that arrives after a later navigation has committed is dropped whole:
+    // neither the rollback nor onDone runs, because both would speak for a screen the
+    // tab has already left. Per-request bookkeeping added around onDone must
+    // therefore not assume it is always reached.
     void
-    runAndCommit(std::function<void(std::function<void(Result<std::vector<FileEntry>>)>)> network,
-                 std::function<void()> onCommit,
-                 std::function<void(Result<std::vector<FileEntry>>)> onDone);
+    commitThenRun(std::function<void()> onCommit,
+                  std::function<void(std::function<void(Result<std::vector<FileEntry>>)>)> network,
+                  std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     std::shared_ptr<IMegaClient> mClient;
     std::vector<Location> mBackStack;
     Location mCurrent; // isRoot == true == currently at root (initial state)
+
+    // Bumped by every call that claims the current screen; an in-flight fetch holds
+    // the value it was issued under and is stale once they differ.
+    std::uint64_t mGeneration = 0;
 };

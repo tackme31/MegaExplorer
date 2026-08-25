@@ -6,14 +6,29 @@ FolderNavigationService::FolderNavigationService(std::shared_ptr<IMegaClient> cl
     : mClient(std::move(client))
 {}
 
-void FolderNavigationService::runAndCommit(
-    std::function<void(std::function<void(Result<std::vector<FileEntry>>)>)> network,
+void FolderNavigationService::commitThenRun(
     std::function<void()> onCommit,
+    std::function<void(std::function<void(Result<std::vector<FileEntry>>)>)> network,
     std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    network([onCommit, onDone](Result<std::vector<FileEntry>> result) {
-        if (result.success)
-            onCommit();
+    // The whole state is snapshotted rather than each caller supplying an inverse:
+    // pushes and goBack's pop then undo through one path, and there is no second
+    // place for a new screen kind to have to be taught about.
+    std::vector<Location> previousStack = mBackStack;
+    const Location previousCurrent = mCurrent;
+    if (onCommit)
+        onCommit();
+    const std::uint64_t token = ++mGeneration;
+
+    network([this, token, previousStack = std::move(previousStack), previousCurrent, onDone](
+                Result<std::vector<FileEntry>> result) {
+        if (token != mGeneration)
+            return;
+        if (!result.success)
+        {
+            mBackStack = previousStack;
+            mCurrent = previousCurrent;
+        }
         onDone(std::move(result));
     });
 }
@@ -21,11 +36,11 @@ void FolderNavigationService::runAndCommit(
 void FolderNavigationService::openRoot(SortOrder order,
                                        std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    runAndCommit(
+    commitThenRun(
+        {}, // root is never pushed/popped on the back-stack
         [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
             mClient->getRootChildren(order, std::move(onFetched));
         },
-        [] {}, // root is never pushed/popped on the back-stack
         std::move(onDone));
 }
 
@@ -49,7 +64,11 @@ void FolderNavigationService::navigateTo(std::uint64_t handle,
                                          SortOrder order,
                                          std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    runAndCommit(
+    commitThenRun(
+        [this, handle, isRoot, kind] {
+            mBackStack.push_back(mCurrent);
+            mCurrent = Location{kind, isRoot, handle};
+        },
         [this, handle, isRoot, kind, order](
             std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
             if (isRoot && kind == ViewKind::Rubbish)
@@ -59,29 +78,22 @@ void FolderNavigationService::navigateTo(std::uint64_t handle,
             else
                 mClient->getChildren(handle, order, std::move(onFetched));
         },
-        [this, handle, isRoot, kind] {
-            mBackStack.push_back(mCurrent);
-            mCurrent = Location{kind, isRoot, handle};
-        },
         std::move(onDone));
 }
 
 void FolderNavigationService::openFavourites(
     SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    if (mCurrent.kind == ViewKind::Favourites)
-    {
-        mClient->listFavourites(order, "", SearchFilter{}, std::move(onDone));
-        return;
-    }
-
-    runAndCommit(
-        [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
-            mClient->listFavourites(order, "", SearchFilter{}, std::move(onFetched));
-        },
-        [this] {
+    const bool alreadyThere = mCurrent.kind == ViewKind::Favourites;
+    commitThenRun(
+        [this, alreadyThere] {
+            if (alreadyThere)
+                return;
             mBackStack.push_back(mCurrent);
             mCurrent = Location{ViewKind::Favourites, false, 0};
+        },
+        [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
+            mClient->listFavourites(order, "", SearchFilter{}, std::move(onFetched));
         },
         std::move(onDone));
 }
@@ -91,19 +103,16 @@ void FolderNavigationService::openRubbish(
 {
     // Only the bin's own top counts as "already there": a folder inside it is a
     // different location, so clicking the side-panel row from there navigates.
-    if (mCurrent.kind == ViewKind::Rubbish && mCurrent.isRoot)
-    {
-        mClient->getRubbishChildren(order, std::move(onDone));
-        return;
-    }
-
-    runAndCommit(
-        [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
-            mClient->getRubbishChildren(order, std::move(onFetched));
-        },
-        [this] {
+    const bool alreadyThere = mCurrent.kind == ViewKind::Rubbish && mCurrent.isRoot;
+    commitThenRun(
+        [this, alreadyThere] {
+            if (alreadyThere)
+                return;
             mBackStack.push_back(mCurrent);
             mCurrent = Location{ViewKind::Rubbish, true, 0};
+        },
+        [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
+            mClient->getRubbishChildren(order, std::move(onFetched));
         },
         std::move(onDone));
 }
@@ -111,19 +120,16 @@ void FolderNavigationService::openRubbish(
 void FolderNavigationService::openRecents(
     SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    if (mCurrent.kind == ViewKind::Recents)
-    {
-        mClient->listRecent(order, "", SearchFilter{}, std::move(onDone));
-        return;
-    }
-
-    runAndCommit(
-        [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
-            mClient->listRecent(order, "", SearchFilter{}, std::move(onFetched));
-        },
-        [this] {
+    const bool alreadyThere = mCurrent.kind == ViewKind::Recents;
+    commitThenRun(
+        [this, alreadyThere] {
+            if (alreadyThere)
+                return;
             mBackStack.push_back(mCurrent);
             mCurrent = Location{ViewKind::Recents, false, 0};
+        },
+        [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
+            mClient->listRecent(order, "", SearchFilter{}, std::move(onFetched));
         },
         std::move(onDone));
 }
@@ -137,14 +143,14 @@ void FolderNavigationService::goBack(SortOrder order,
         return;
     }
 
-    Location target = mBackStack.back();
-    runAndCommit(
-        [this, target, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
-            fetchListing(target, order, std::move(onFetched));
-        },
+    const Location target = mBackStack.back();
+    commitThenRun(
         [this, target] {
             mBackStack.pop_back();
             mCurrent = target;
+        },
+        [this, target, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
+            fetchListing(target, order, std::move(onFetched));
         },
         std::move(onDone));
 }
@@ -169,7 +175,16 @@ void FolderNavigationService::fetchListing(
 void FolderNavigationService::refreshCurrent(
     SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    fetchListing(mCurrent, order, std::move(onDone));
+    // Copied, not read through mCurrent inside the callback: a navigation issued
+    // while this fetch is out moves mCurrent, and this one must still name the
+    // screen it was asked for.
+    const Location target = mCurrent;
+    commitThenRun(
+        {}, // a re-fetch of where we already are claims the screen but moves nothing
+        [this, target, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
+            fetchListing(target, order, std::move(onFetched));
+        },
+        std::move(onDone));
 }
 
 void FolderNavigationService::listChildrenOf(
@@ -210,6 +225,9 @@ void FolderNavigationService::resetToRoot()
 {
     mBackStack.clear();
     mCurrent = Location{};
+    // A fetch issued for the previous session must not land on the screen this reset
+    // just produced.
+    ++mGeneration;
 }
 
 FolderNavigationService::CurrentLocation FolderNavigationService::currentLocation() const

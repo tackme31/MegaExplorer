@@ -1,5 +1,6 @@
 #include "core/FolderNavigationService.h"
 
+#include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
 
 #include <gmock/gmock.h>
@@ -1049,6 +1050,218 @@ TEST(FolderNavigationServiceTest, ListRecentForwardsTheNameFilterAndTouchesNoSta
     // Assert
     ASSERT_TRUE(captured.doneResult.success);
     EXPECT_EQ(service.currentLocation().kind, ViewKind::CloudDrive);
+    EXPECT_TRUE(service.currentLocation().isRoot);
+    EXPECT_FALSE(service.canGoBack());
+}
+
+// The rest of this file drives the client synchronously, which is what the service
+// still promises today; these hold the listing back with SaveArg so the window
+// between "the user clicked" and "the listing landed" actually exists to assert on.
+
+TEST(FolderNavigationServiceTest, OpenFolderMovesTheLocationBeforeTheListingArrives)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::vector<FileEntry>>)> pending;
+
+    EXPECT_CALL(*mockClient, getChildren(7, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<2>(&pending));
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    // Act
+    service.openFolder(7, SortOrder{}, onDoneInto(captured));
+
+    // Assert -- the fetch is still out, but the tab has already moved
+    ASSERT_TRUE(pending);
+    EXPECT_FALSE(captured.doneCalled);
+    EXPECT_TRUE(service.canGoBack());
+    EXPECT_FALSE(service.currentLocation().isRoot);
+    EXPECT_EQ(service.currentLocation().handle, 7u);
+
+    pending(Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{}));
+
+    EXPECT_TRUE(captured.doneCalled);
+    EXPECT_EQ(service.currentLocation().handle, 7u);
+}
+
+TEST(FolderNavigationServiceTest, OpenFolderFailureArrivingLateRollsTheLocationBack)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::vector<FileEntry>>)> pending;
+
+    EXPECT_CALL(*mockClient, getChildren(7, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<2>(&pending));
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    // Act
+    service.openFolder(7, SortOrder{}, onDoneInto(captured));
+    ASSERT_TRUE(pending);
+    pending(Result<std::vector<FileEntry>>::fail("denied", MegaErrorCode::kEAccess));
+
+    // Assert
+    ASSERT_TRUE(captured.doneCalled);
+    EXPECT_FALSE(captured.doneResult.success);
+    EXPECT_FALSE(service.canGoBack());
+    EXPECT_TRUE(service.currentLocation().isRoot);
+}
+
+TEST(FolderNavigationServiceTest, GoBackFailureArrivingLatePutsTheEntryBackOnTheStack)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::vector<FileEntry>>)> pending;
+
+    EXPECT_CALL(*mockClient, getChildren(7, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<1>(&pending));
+
+    FolderNavigationService service(mockClient);
+    Captured opened;
+    Captured back;
+
+    service.openFolder(7, SortOrder{}, onDoneInto(opened));
+    ASSERT_TRUE(service.canGoBack());
+
+    // Act
+    service.goBack(SortOrder{}, onDoneInto(back));
+
+    // The pop is already visible while the root listing is still out
+    EXPECT_FALSE(service.canGoBack());
+    EXPECT_TRUE(service.currentLocation().isRoot);
+
+    ASSERT_TRUE(pending);
+    pending(Result<std::vector<FileEntry>>::fail("offline", MegaErrorCode::kEFailed));
+
+    // Assert
+    ASSERT_TRUE(back.doneCalled);
+    EXPECT_FALSE(back.doneResult.success);
+    EXPECT_TRUE(service.canGoBack());
+    EXPECT_EQ(service.currentLocation().handle, 7u);
+}
+
+TEST(FolderNavigationServiceTest, AListingThatLandsAfterALaterNavigationIsDropped)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::vector<FileEntry>>)> firstPending;
+    std::function<void(Result<std::vector<FileEntry>>)> secondPending;
+
+    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<2>(&firstPending));
+    EXPECT_CALL(*mockClient, getChildren(2, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<2>(&secondPending));
+
+    FolderNavigationService service(mockClient);
+    Captured first;
+    Captured second;
+
+    // Act -- both fetches are out at once, the newer one lands first
+    service.openFolder(1, SortOrder{}, onDoneInto(first));
+    service.openFolder(2, SortOrder{}, onDoneInto(second));
+    EXPECT_EQ(service.currentLocation().handle, 2u);
+
+    ASSERT_TRUE(secondPending);
+    secondPending(
+        Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{{"new.txt", 10, 50, false, 0}}));
+    ASSERT_TRUE(second.doneCalled);
+
+    ASSERT_TRUE(firstPending);
+    firstPending(Result<std::vector<FileEntry>>::ok(
+        std::vector<FileEntry>{{"stale.txt", 10, 50, false, 0}}));
+
+    // Assert -- the stale listing reaches nobody and moves nothing
+    EXPECT_FALSE(first.doneCalled);
+    EXPECT_EQ(service.currentLocation().handle, 2u);
+}
+
+TEST(FolderNavigationServiceTest, AFailureThatLandsAfterALaterNavigationDoesNotRollItBack)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::vector<FileEntry>>)> firstPending;
+    std::function<void(Result<std::vector<FileEntry>>)> secondPending;
+
+    EXPECT_CALL(*mockClient, getChildren(1, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<2>(&firstPending));
+    EXPECT_CALL(*mockClient, getChildren(2, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<2>(&secondPending));
+
+    FolderNavigationService service(mockClient);
+    Captured first;
+    Captured second;
+
+    service.openFolder(1, SortOrder{}, onDoneInto(first));
+    service.openFolder(2, SortOrder{}, onDoneInto(second));
+
+    // Act -- the abandoned fetch fails; its rollback would undo the newer screen
+    ASSERT_TRUE(firstPending);
+    firstPending(Result<std::vector<FileEntry>>::fail("denied", MegaErrorCode::kEAccess));
+
+    // Assert
+    EXPECT_FALSE(first.doneCalled);
+    EXPECT_EQ(service.currentLocation().handle, 2u);
+    EXPECT_TRUE(service.canGoBack());
+}
+
+TEST(FolderNavigationServiceTest, ARefreshThatLandsAfterANavigationIsDropped)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::vector<FileEntry>>)> refreshPending;
+
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<1>(&refreshPending));
+    EXPECT_CALL(*mockClient, getChildren(3, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured refreshed;
+    Captured opened;
+
+    // Act
+    service.refreshCurrent(SortOrder{}, onDoneInto(refreshed));
+    service.openFolder(3, SortOrder{}, onDoneInto(opened));
+    ASSERT_TRUE(opened.doneCalled);
+
+    ASSERT_TRUE(refreshPending);
+    refreshPending(
+        Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{{"root.txt", 10, 50, false, 0}}));
+
+    // Assert -- the root listing does not replace the folder the tab moved into
+    EXPECT_FALSE(refreshed.doneCalled);
+    EXPECT_EQ(service.currentLocation().handle, 3u);
+}
+
+TEST(FolderNavigationServiceTest, ResetToRootDropsAListingStillInFlight)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::vector<FileEntry>>)> pending;
+
+    EXPECT_CALL(*mockClient, getChildren(7, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<2>(&pending));
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    // Act
+    service.openFolder(7, SortOrder{}, onDoneInto(captured));
+    service.resetToRoot();
+
+    ASSERT_TRUE(pending);
+    pending(Result<std::vector<FileEntry>>::ok(
+        std::vector<FileEntry>{{"stale.txt", 10, 50, false, 0}}));
+
+    // Assert
+    EXPECT_FALSE(captured.doneCalled);
     EXPECT_TRUE(service.currentLocation().isRoot);
     EXPECT_FALSE(service.canGoBack());
 }
