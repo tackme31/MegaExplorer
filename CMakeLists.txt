@@ -2,6 +2,17 @@ cmake_minimum_required(VERSION 3.20)
 
 project(MegaExplorer VERSION 0.1.0 LANGUAGES CXX)
 
+# The distribution is a zip you unpack and double-click, not a Unix prefix: the
+# exe, its DLLs and the notices all sit at the root, with only plugins/ and qml/
+# below. windeployqt reads CMAKE_INSTALL_BINDIR through QT_DEPLOY_BIN_DIR, so
+# pinning it here is what flattens Qt's half of the layout too. Must precede
+# GNUInstallDirs, which only fills in defaults it does not already find, and
+# must be a normal variable rather than a cache one: a cache entry from an
+# earlier configure would win over a non-FORCE set() and quietly restore "bin".
+if(WIN32)
+    set(CMAKE_INSTALL_BINDIR ".")
+endif()
+
 # CMAKE_INSTALL_BINDIR below would otherwise rely on Qt's package including this
 # transitively.
 include(GNUInstallDirs)
@@ -408,3 +419,51 @@ install(FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/THIRD-PARTY-NOTICES.txt
     DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+# FFmpeg is the only shared library the x64-windows-mega triplet produces, and
+# windeployqt cannot see it: that tool walks Qt's dependency graph, while FFmpeg
+# enters through SDKlib. Globbed rather than named, so an FFmpeg version bump
+# cannot silently drop a DLL.
+set(_vcpkg_triplet_dir "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+file(GLOB _vcpkg_release_dlls "${_vcpkg_triplet_dir}/bin/*.dll")
+file(GLOB _vcpkg_debug_dlls   "${_vcpkg_triplet_dir}/debug/bin/*.dll")
+if(NOT _vcpkg_release_dlls OR NOT _vcpkg_debug_dlls)
+    message(FATAL_ERROR "No vcpkg runtime DLLs under ${_vcpkg_triplet_dir}")
+endif()
+install(FILES ${_vcpkg_release_dlls} DESTINATION ${CMAKE_INSTALL_BINDIR}
+        CONFIGURATIONS Release RelWithDebInfo MinSizeRel)
+install(FILES ${_vcpkg_debug_dlls} DESTINATION ${CMAKE_INSTALL_BINDIR}
+        CONFIGURATIONS Debug)
+
+# Qt's DLLs, its QML modules and the platform/imageformat/tls plugins. Runs at
+# install time, so `cmake --install` and `cpack` both get it while a plain
+# `cmake --build` does not -- which is why scripts/package.ps1 exists.
+qt_generate_deploy_qml_app_script(
+    TARGET MegaExplorer
+    OUTPUT_SCRIPT MEGAEXPLORER_DEPLOY_SCRIPT
+    NO_TRANSLATIONS
+    NO_COMPILER_RUNTIME
+    NO_UNSUPPORTED_PLATFORM_ERROR
+)
+install(SCRIPT ${MEGAEXPLORER_DEPLOY_SCRIPT})
+
+# NO_COMPILER_RUNTIME above hands the MSVC redistributable to CMake instead:
+# windeployqt finds it through %VCINSTALLDIR%, set only inside a Visual Studio
+# developer prompt, so from an ordinary shell it ships nothing and the receiving
+# machine fails on VCRUNTIME140.dll. This module reads the toolchain CMake
+# configured with. Debug's CRT stays out: it may not be redistributed.
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
+include(InstallRequiredSystemLibraries)
+
+# Zip only: there is no installer, no registry use and nothing to uninstall, so
+# unpacking the archive is the install. Configured last because CPack captures
+# the variables at include() time.
+set(CPACK_GENERATOR ZIP)
+set(CPACK_PACKAGE_NAME MegaExplorer)
+set(CPACK_PACKAGE_VENDOR "MegaExplorer contributors")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Windows-Explorer-like desktop client for MEGA cloud storage")
+set(CPACK_PACKAGE_FILE_NAME "MegaExplorer-${PROJECT_VERSION}-win64")
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/package")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_VERBATIM_VARIABLES ON)
+include(CPack)

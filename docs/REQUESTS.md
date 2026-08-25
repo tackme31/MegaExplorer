@@ -69,16 +69,6 @@
 
 <!-- 以下 2026-08-25 のリリース前監査から。0.1.0 のバイナリ配布を前提に取捨選択済み。 -->
 
-- [高] 配布物を作る仕組みが無い。ビルドに成功しても他人の PC では起動しない
-  `windeployqt` 相当の処理も CPack も無く、install 規則は .exe とテキスト 2 本のみ
-  （`CMakeLists.txt:397-410`）。Qt の DLL と QML プラグイン一式、FFmpeg の DLL 5 本、
-  MSVC ランタイムが同梱されないので、受け取った人がダブルクリックすると
-  「Qt6Core.dll が見つかりません」で終わる。
-  やること: `qt_generate_deploy_qml_app_script` を入れ、FFmpeg の DLL を明示 install し、
-  配布 zip を作る手順を固定する。**その zip に `LICENSE` と `THIRD-PARTY-NOTICES.txt` が
-  必ず入ること**（バイナリ配布なので LGPL・BSD・Apache いずれも通知の同梱が要る）。
-  triplet は FFmpeg 以外が静的で自前 QML も埋め込み済みなので、同梱物は見た目より少ない
-
 - [高] THIRD-PARTY-NOTICES.txt の記載を実態に合わせる（3 点まとめて）
   バイナリ配布だと通知の正確さが実際の義務になるので、1 回でまとめて直す。
   (a) 前文が 2 箇所で「非改変」を主張している（"None of them is modified."、

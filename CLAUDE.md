@@ -356,6 +356,12 @@ judge performance from a Debug run**: `_ITERATOR_DEBUG_LEVEL=2` and the debug CR
 listing path, so folder navigation is visibly faster in Release for that reason alone
 (`docs/BUILD.md`).
 
+**The distribution zip** is `scripts/package.ps1` — Release build, then CPack's ZIP generator over
+the install rules, then a check that the archive holds what a machine without Qt needs. Neither a
+build nor `cmake --install` produces a runnable tree on its own: `windeployqt` runs at install
+time, and the MSVC runtime and FFmpeg's DLLs arrive by rules of their own. Never ship a `-Config
+Debug` zip; its CRT may not be redistributed. Rationale: `docs/BUILD.md`.
+
 **Compiler warnings**: all six of our targets — `MegaExplorerCore`, `MegaExplorerQml`,
 `MegaExplorer`, `megatool`, `MegaExplorerTests`, `MegaExplorerQmlTests` — build at `/W4`, via the
 `MegaExplorerWarnings` interface

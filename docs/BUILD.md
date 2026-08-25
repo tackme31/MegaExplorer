@@ -163,3 +163,44 @@ That target also carries two suppressions, both about *Qt's* headers rather than
   every one inside `qjsengine.h`/`qvariant.h`/`qjsprimitivevalue.h` from qmlcachegen's AOT output
   and none in `src/`. These only appear on a *full* rebuild — incremental builds don't recompile
   the generated sources, which is why the sweep looked clean before R4-9.
+
+## The distribution zip (`scripts/package.ps1`)
+
+A build that runs here does not run anywhere else: outside Qt Creator the binary needs Qt's `bin`
+and vcpkg's `debug/bin` on `PATH`, and on a machine without a Qt install there is nothing to put
+there. Packaging is what turns that into a directory someone can unzip and double-click, and it is
+one command: `scripts\package.ps1` builds Release, runs CPack's ZIP generator over the install
+rules, and checks the archive before reporting success.
+
+Four install rules feed it, and they are separate because nothing knows about all four:
+
+- `install(TARGETS MegaExplorer)` — the exe.
+- `install(FILES LICENSE THIRD-PARTY-NOTICES.txt)` — a licence obligation of shipping binaries at
+  all, LGPL and BSD alike. The qrc copy behind `LicenseDialog` does not discharge it.
+- `qt_generate_deploy_qml_app_script` + `install(SCRIPT)` — Qt's DLLs, its QML modules, the
+  platform/imageformat/tls plugins, and the MSVC runtime, all via `windeployqt` at install time.
+  Note *install* time: `cmake --build` alone never produces a runnable tree, which is the whole
+  reason the packaging step is a script rather than a build target.
+- A glob over `vcpkg_installed/<triplet>/bin/*.dll` — FFmpeg, and only FFmpeg. The triplet is
+  static apart from it, and `windeployqt` cannot find it because it walks *Qt's* dependency graph
+  while FFmpeg enters through SDKlib. Globbed rather than named per version so an FFmpeg bump
+  cannot silently drop one, with a `FATAL_ERROR` on an empty result standing in for the compile
+  error we would otherwise get.
+
+`CMAKE_INSTALL_BINDIR` is pinned to `.` on Windows, before `include(GNUInstallDirs)`. That is what
+flattens the layout — the exe, the DLLs and the two text files at the archive root, with only
+`plugins/` and `qml/` below — because `windeployqt` takes its own destination from
+`QT_DEPLOY_BIN_DIR`, which Qt generates from `CMAKE_INSTALL_BINDIR`. It has to be a **normal**
+variable, not a cache one: a `bin` left in `CMakeCache.txt` by an earlier configure wins over a
+non-`FORCE` `set(... CACHE ...)`, and the symptom is a zip that works but buries everything one
+directory deep.
+
+The script's closing check — that `MegaExplorer.exe`, `qt.conf`, `Qt6Core.dll`, `Qt6Quick.dll`,
+`avcodec-61.dll`, `platforms/qwindows.dll`, `qml/QtQuick/qmldir`, `LICENSE` and
+`THIRD-PARTY-NOTICES.txt` are all present — is not ceremony. Every failure this exists to catch
+produces a zip that configures, builds and packages without a word and then dies on the receiving
+desktop, `qwindows.dll` with "no Qt platform plugin could be initialized" and the rest with a
+missing-DLL box.
+
+`-Config Debug` packages too, and is useful for checking the layout without a Release build, but
+the result must never be shipped: it carries the debug CRT, which is not redistributable.

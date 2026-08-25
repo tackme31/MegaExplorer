@@ -96,6 +96,18 @@ binary lands in `build/msvc-debug/Release/MegaExplorer.exe`.
 yours is somewhere else. [docs/BUILD.md](docs/BUILD.md) has the detail, and the reasoning behind
 each of these constraints.
 
+### Packaging
+
+That binary only runs on a machine that already has Qt — to get one that runs anywhere:
+
+```
+powershell -File scripts\package.ps1
+```
+
+It builds Release and writes `build/msvc-debug/package/MegaExplorer-<version>-win64.zip`, with Qt,
+FFmpeg and the MSVC runtime next to the exe and `LICENSE` / `THIRD-PARTY-NOTICES.txt` at the root.
+Unzip it anywhere and run `MegaExplorer.exe`; there is nothing to install.
+
 ## Author
 
 Takumi Yamada ([@tackme31](https://github.com/tackme31))
