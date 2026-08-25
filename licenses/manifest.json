@@ -252,9 +252,33 @@
       "id": "pdfium",
       "name": "pdfium",
       "version": "6778",
-      "license": "Apache-2.0",
+      "license": "BSD-3-Clause AND Apache-2.0",
       "homepage": "https://pdfium.googlesource.com/pdfium/",
       "text": "texts/pdfium.txt"
+    },
+    {
+      "id": "abseil-cpp-via-pdfium",
+      "name": "abseil-cpp (via PDFium)",
+      "version": "d2ea9f0eb1a3",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/abseil/abseil-cpp",
+      "text": "texts/abseil-cpp-via-pdfium.txt"
+    },
+    {
+      "id": "agg23-via-pdfium",
+      "name": "agg23 (via PDFium)",
+      "version": "2.3",
+      "license": "MIT",
+      "homepage": "https://sourceforge.net/projects/agg/",
+      "text": "texts/agg23-via-pdfium.txt"
+    },
+    {
+      "id": "fast-float-via-pdfium",
+      "name": "fast_float (via PDFium)",
+      "version": "3e57d8dcfb0a",
+      "license": "MIT",
+      "homepage": "https://github.com/fastfloat/fast_float",
+      "text": "texts/fast-float-via-pdfium.txt"
     },
     {
       "id": "sqlite3",

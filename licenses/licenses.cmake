@@ -36,6 +36,9 @@ set(MEGAEXPLORER_LICENSE_RESOURCES
     licenses/texts/openjpeg.txt
     licenses/texts/openssl.txt
     licenses/texts/pdfium.txt
+    licenses/texts/abseil-cpp-via-pdfium.txt
+    licenses/texts/agg23-via-pdfium.txt
+    licenses/texts/fast-float-via-pdfium.txt
     licenses/texts/sqlite3.txt
     licenses/texts/tiff.txt
     licenses/texts/zlib.txt

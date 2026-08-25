@@ -28,6 +28,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_VCPKG_INSTALLED = REPO_ROOT / "build/msvc-debug/vcpkg_installed/x64-windows-mega"
 
+# Both are pinned public submodules, which is what lets the notices point at a
+# patch set instead of reproducing it.
+VCPKG_REPO = "https://github.com/microsoft/vcpkg"
+VCPKG_PORTS = REPO_ROOT / "third_party/vcpkg/ports"
+SDK_REPO = "https://github.com/meganz/sdk"
+SDK_OVERLAY_PORTS = REPO_ROOT / "third_party/sdk/cmake/vcpkg_overlay_ports"
+
 # Pinned in CLAUDE.md / CMakeLists.txt respectively. Kept as constants rather
 # than probed from the build tree so that a version bump shows up as a reviewable
 # line in `git diff` alongside the license text it belongs to.
@@ -65,9 +72,52 @@ LICENSE_OVERRIDES = {
     # (LGPL-2.1-only OR CDDL-1.0) -- the LGPL side. This one reaches the exe
     # statically (the SDK's overlay triplet builds everything but ffmpeg
     # static), so section 6's relinking requirement is met by publishing this
-    # app's own source; NOTICES_PREAMBLE says so.
+    # app's own source; notices_preamble() says so.
     "libraw": "LGPL-2.1-only",
+    # The SDK's overlay port declares Apache-2.0, which contradicts the very
+    # text it installs: PDFium's own LICENSE is BSD-3-Clause. The Apache half is
+    # real but comes from the vendored Abseil (PDFIUM_BUNDLED below), so the
+    # static library as delivered is under both.
+    "pdfium": "BSD-3-Clause AND Apache-2.0",
 }
+
+# PDFium's static library carries three vendored dependencies whose texts are
+# not in the copyright file vcpkg installs -- that file is PDFium's LICENSE
+# alone. Their sources are fetched into buildtrees/ at build time and are gone
+# after a `vcpkg remove`, so the texts are vendored under licenses/upstream/
+# rather than read from there. All three are compiled into pdfium.lib and reach
+# the exe (verified against the overlay port's CMakeLists.txt source list).
+PDFIUM_BUNDLED = [
+    {
+        "name": "abseil-cpp",
+        "license": "Apache-2.0",
+        "homepage": "https://github.com/abseil/abseil-cpp",
+        "text": "pdfium-abseil-cpp.txt",
+        # Fetched by the port itself, outside vcpkg's versioning, so the commit
+        # pinned in portfile.cmake is the only thing that identifies the copy
+        # that shipped.
+        "ref": "third_party/abseil-cpp",
+    },
+    {
+        "name": "agg23",
+        # In PDFium's own tree rather than fetched, and PDFium patches it
+        # further; 2.3 is the upstream release it descends from.
+        "version": "2.3",
+        # PDFium's README.pdfium classifies the Anti-Grain Geometry notice as
+        # MIT. The notice itself is reproduced below the label either way.
+        "license": "MIT",
+        "homepage": "https://sourceforge.net/projects/agg/",
+        "text": "pdfium-agg23.txt",
+    },
+    {
+        "name": "fast_float",
+        # Offered as Apache-2.0 OR MIT OR BSL-1.0; MIT is the side taken.
+        "license": "MIT",
+        "homepage": "https://github.com/fastfloat/fast_float",
+        "text": "pdfium-fast-float.txt",
+        "ref": "third_party/fast_float/src",
+    },
+]
 
 # Test-only, never linked into MegaExplorer, so it is not part of the
 # distribution and carries no attribution duty.
@@ -105,7 +155,52 @@ Qt is a trademark of The Qt Company Ltd. in Finland and/or other countries
 worldwide.
 """
 
-NOTICES_PREAMBLE = f"""\
+BANNER = "=" * 79
+RULE = "-" * 79
+
+
+def port_patch_count(port_dir: Path) -> int:
+    """How many patches a vcpkg port applies.
+
+    Read out of portfile.cmake's PATCHES block rather than by counting *.patch
+    files: a port can carry one it no longer applies, and the notices may only
+    claim what actually shaped the binary. Counted rather than written into the
+    prose by hand so a vcpkg bump cannot leave the number behind."""
+    portfile = port_dir / "portfile.cmake"
+    if not portfile.is_file():
+        sys.exit(f"error: {portfile} not found; cannot count patches for the notices")
+    block = re.search(r"^\s*PATCHES\s*$(.*?)^\s*\)",
+                      portfile.read_text(encoding="utf-8"), re.S | re.M)
+    if not block:
+        sys.exit(f"error: no PATCHES block in {portfile}")
+    return len(re.findall(r"^\s*[^\s#]\S*\.patch", block.group(1), re.M))
+
+
+def pdfium_vendored_ref(destination: str) -> str:
+    """The commit PDFium's port pins one of its fetched dependencies to."""
+    portfile = SDK_OVERLAY_PORTS / "pdfium/portfile.cmake"
+    if not portfile.is_file():
+        sys.exit(f"error: {portfile} not found; cannot resolve {destination}")
+    call = re.compile(
+        r"pdfium_from_git\((?:(?!\)).)*?DESTINATION\s+" + re.escape(destination)
+        + r"(?:(?!\)).)*?REF\s+([0-9a-f]{7,40})", re.S)
+    match = call.search(portfile.read_text(encoding="utf-8"))
+    if not match:
+        sys.exit(f"error: no pdfium_from_git block for {destination} in {portfile}")
+    return match.group(1)[:12]
+
+
+def notices_preamble() -> str:
+    """The claims this file makes about what was modified and where to get it.
+
+    Generated rather than stored as a constant because the patch counts come
+    from the pinned submodules: an unqualified "unmodified" here is the one
+    error in this file that is a licence problem rather than a typo."""
+    ffmpeg_patches = port_patch_count(VCPKG_PORTS / "ffmpeg")
+    freeimage_patches = port_patch_count(VCPKG_PORTS / "freeimage")
+    libraw_patches = port_patch_count(VCPKG_PORTS / "libraw")
+
+    return f"""\
 MEGA Explorer
 Third-Party Software Notices and Information
 
@@ -124,38 +219,60 @@ that are subject to separate copyright and license terms, as detailed below.
 Reproducing this file, unmodified, alongside the LICENSE file satisfies the
 attribution requirements of those components.
 
+How the third-party components were built
+------------------------------------------
+Qt is used exactly as published by The Qt Company: the official Qt {QT_VERSION}
+binary release for MSVC, unmodified. Its corresponding sources are at
+  {QT_SOURCE_URL}
+
+Everything else is built from source through vcpkg, and most of those ports
+apply patches -- build fixes, MSVC portability, and redirecting a component's
+bundled copies of other libraries to external builds of them. Those patches are
+therefore part of what this distribution contains, and each one is a file in
+the port directory of a submodule of the source tree above:
+
+  ports/<component>/                     {VCPKG_REPO}
+  cmake/vcpkg_overlay_ports/<component>/ {SDK_REPO}
+
+Both submodules are pinned to a specific commit of a public repository, so the
+exact patched sources of any component here can be reconstructed from the
+source tree of MEGA Explorer.
+
 Components under the GNU Lesser General Public License
 ------------------------------------------------------
-Three components are used under the LGPL. None of them is modified.
+Three components are used under the LGPL.
 
   Qt ({QT_VERSION}, LGPLv3) and FFmpeg (LGPLv2.1) are shipped as separate
   dynamic libraries, so a recipient may substitute a modified,
-  interface-compatible build of either without relinking MEGA Explorer.
-  Their sources are published at {QT_SOURCE_URL}
-  and https://ffmpeg.org/download.html respectively.
+  interface-compatible build of either without relinking MEGA Explorer. Qt is
+  unmodified, as described above. FFmpeg is built from vcpkg's "ffmpeg" port,
+  which applies {ffmpeg_patches} patches; its upstream sources are at
+  https://ffmpeg.org/download.html.
 
-  LibRaw (LGPLv2.1), reached through FreeImage, is linked statically. To
-  satisfy section 6 of that license, the complete source code of MEGA
-  Explorer is published at the address above under the MIT License, which
-  permits modification and imposes no restriction on reverse engineering, so
-  a recipient can rebuild this program against a modified LibRaw. LibRaw's
-  own sources are published at https://www.libraw.org/download.
+  LibRaw (LGPLv2.1), reached through FreeImage, is linked statically and is
+  built from vcpkg's "libraw" port, which applies {libraw_patches} patches. To satisfy
+  section 6 of that license, the complete source code of MEGA Explorer is
+  published at the address above under the MIT License, which permits
+  modification and imposes no restriction on reverse engineering, so a
+  recipient can rebuild this program against a modified LibRaw. LibRaw's own
+  sources are published at https://www.libraw.org/download.
 
 Notice required by the FreeImage Public License
 ------------------------------------------------
 FreeImage 3.18.0 is used under the FreeImage Public License, version 1.0
 (section 3.6 of which permits the executable form to be distributed under a
-different license). It is used unmodified, so there are no modifications to
-publish under section 3.2. Its source code is available under that license at
-https://sourceforge.net/projects/freeimage/files/, and the build recipe used
-here is the "freeimage" port of vcpkg (https://github.com/microsoft/vcpkg).
+different license). It is modified: the build recipe used here is vcpkg's
+"freeimage" port, and its {freeimage_patches} patches are the modifications that
+section 3.2 requires to be made available. They are published as files in
+ports/freeimage of the vcpkg repository named above, and they redirect
+FreeImage's bundled copies of libjpeg, libpng, libtiff, OpenJPEG, OpenEXR,
+WebP, JPEG-XR and LibRaw to external builds of those libraries. FreeImage's
+own source code is available under the FreeImage license at
+https://sourceforge.net/projects/freeimage/files/.
 
 This file is generated by scripts/gen_third_party_notices.py -- do not edit it
 by hand.
 """
-
-BANNER = "=" * 79
-RULE = "-" * 79
 
 
 def slug(name: str) -> str:
@@ -308,7 +425,7 @@ def vcpkg_components(installed: Path) -> list[dict]:
 
 
 def render_notices(components: list[dict]) -> str:
-    parts = [NOTICES_PREAMBLE]
+    parts = [notices_preamble()]
     for index, component in enumerate(components, start=1):
         parts.append(
             f"\n{BANNER}\n{index}. {component['name']}\n{BANNER}\n\n"
@@ -336,8 +453,31 @@ def render_cmake(components: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def pdfium_bundled_components() -> list[dict]:
+    """PDFIUM_BUNDLED rendered as components."""
+    upstream = REPO_ROOT / "licenses/upstream"
+    return [
+        {
+            # Same "(via ...)" convention as the SDK's vendored set: these are
+            # not dependencies this app picked.
+            "name": f"{entry['name']} (via PDFium)",
+            "version": entry.get("version") or pdfium_vendored_ref(entry["ref"]),
+            "license": entry["license"],
+            "homepage": entry["homepage"],
+            "text": read_text(upstream / entry["text"]),
+        }
+        for entry in PDFIUM_BUNDLED
+    ]
+
+
 def build_outputs(installed: Path) -> dict[str, str]:
     components = fixed_components() + vcpkg_components(installed)
+
+    pdfium = next((c for c in components if c["name"] == "pdfium"), None)
+    if pdfium is None:
+        sys.exit("error: no pdfium component; PDFIUM_BUNDLED has nothing to attach to")
+    at = components.index(pdfium) + 1
+    components[at:at] = pdfium_bundled_components()
 
     seen = {}
     for component in components:

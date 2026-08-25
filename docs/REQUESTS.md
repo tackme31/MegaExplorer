@@ -69,19 +69,6 @@
 
 <!-- 以下 2026-08-25 のリリース前監査から。0.1.0 のバイナリ配布を前提に取捨選択済み。 -->
 
-- [高] THIRD-PARTY-NOTICES.txt の記載を実態に合わせる（3 点まとめて）
-  バイナリ配布だと通知の正確さが実際の義務になるので、1 回でまとめて直す。
-  (a) 前文が 2 箇所で「非改変」を主張している（"None of them is modified."、
-      FreeImage の "It is used unmodified"）が、事実に反する。vcpkg のポートが
-      FFmpeg に 13、FreeImage に 16、LibRaw に 2、pdfium に 3 のパッチを当てている。
-      ただし `third_party/vcpkg` は公開リポジトリへのピン留めサブモジュールで、
-      パッチ自体は公開済み＝**ソース提供義務は実体として満たしている。壊れているのは文章だけ**。
-      「vcpkg のポートが可搬性パッチを当てている / その内容は当該サブモジュールにある」と
-      書き換え、Qt はバージョンと入手先 URL を明記する
-  (b) PDFium 経由で静的に取り込んでいる abseil / agg23 / fast_float が載っていない（帰属漏れ）
-  (c) pdfium のライセンス表記を `BSD-3-Clause AND Apache-2.0` に直す
-  いずれも `scripts/gen_third_party_notices.py` を直してから実行し、生成物を更新する
-
 - 失敗したときのメッセージが実態に合っておらず、原因が分からない（2 点まとめて）
   (a) 転送量・容量の超過（`EOVERQUOTA` = -17）が `src/mega/MegaErrorCodes.h` に無いため
       `Unknown` に落ち、SDK の英語文字列がそのまま出るか、何も出ない。無料アカウントは
