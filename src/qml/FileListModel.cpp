@@ -483,10 +483,11 @@ void FileListModel::applyBandSelection(
                         firstColumn >= 0 && lastColumn >= firstColumn && rows > 0;
     if (covers)
     {
-        // Clamped before multiplying, so a band dragged far past the last row
-        // can't overflow gridRow * columns.
+        // Only the high end is clamped, which is what keeps gridRow * columns
+        // from overflowing. Clamping the low end as well would drag a band drawn
+        // entirely below the last row back onto it.
         const int lastValidGridRow = (rows - 1) / columns;
-        const int loRow = std::min(firstGridRow, lastValidGridRow);
+        const int loRow = firstGridRow;
         const int hiRow = std::min(lastGridRow, lastValidGridRow);
         const int hiColumn = std::min(lastColumn, columns - 1);
 

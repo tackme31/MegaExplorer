@@ -444,6 +444,47 @@ TEST(FileListModelTest, GridBandClampsPastTheLastPartialRow)
     EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{3, 4}));
 }
 
+TEST(FileListModelTest, BandBelowTheLastRowSelectsNothing)
+{
+    // Dragged over the empty space under a short list: the band covers no row,
+    // so it must not fall back onto the last one.
+    FileListModel model;
+    model.setEntries(makeEntries(5));
+
+    model.beginBandSelection(false);
+    model.updateBandSelection(7, 9);
+    model.endBandSelection();
+
+    EXPECT_TRUE(selectedHandlesSorted(model).empty());
+}
+
+TEST(FileListModelTest, GridBandBelowTheLastRowSelectsNothing)
+{
+    // 5 entries over 3 columns fill grid rows 0-1; a band over grid rows 2-3 is
+    // in the empty space below them.
+    FileListModel model;
+    model.setEntries(makeEntries(5));
+
+    model.beginBandSelection(false);
+    model.updateBandSelectionGrid(2, 3, 3, 0, 2);
+    model.endBandSelection();
+
+    EXPECT_TRUE(selectedHandlesSorted(model).empty());
+}
+
+TEST(FileListModelTest, AdditiveBandBelowTheLastRowKeepsTheSelectionItStartedFrom)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(5));
+    model.selectRow(1, 0);
+
+    model.beginBandSelection(true);
+    model.updateBandSelection(7, 9);
+    model.endBandSelection();
+
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{1}));
+}
+
 TEST(FileListModelTest, BandLeavesAnchorAndCursorOnItsFirstAndLastRow)
 {
     FileListModel model;
