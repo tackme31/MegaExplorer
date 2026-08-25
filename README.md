@@ -13,10 +13,19 @@ for your cloud files, not a sync client.
 ![](./img/screenshot.png)
 
 **Note:** Windows only, and you need a MEGA account. This is a personal project, published in case
-it is useful to someone else. It is not released yet — there are no builds to download and anything
-below may change. It is not affiliated with MEGA Limited, and comes with no warranty
-([LICENSE](LICENSE)): it talks to your real cloud storage and can permanently delete files there,
-so use it at your own risk.
+it is useful to someone else, and it is still before 1.0 — anything below may change. It is not
+affiliated with MEGA Limited, and comes with no warranty ([LICENSE](LICENSE)): it talks to your
+real cloud storage and can permanently delete files there, so use it at your own risk.
+
+## Install
+
+Download the latest `MegaExplorer-<version>-win64.zip` from the
+[releases page](https://github.com/tackme31/MegaExplorer/releases), unzip it anywhere, and run
+`MegaExplorer.exe`.
+
+To uninstall, delete the folder. Your saved session, the local cache
+and the log live in `%LOCALAPPDATA%\MegaExplorer`, and the settings are under
+`HKCU\Software\MegaExplorer`; delete those too if you want no trace left.
 
 ## Features
 
