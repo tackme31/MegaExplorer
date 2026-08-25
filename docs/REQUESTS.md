@@ -95,9 +95,6 @@
   (c) README の手順 4 が素の `cmake` を使っている（Strawberry Perl の 3.29 を拾って
       `CMakeCache.txt` を壊す罠。`CLAUDE.md` に既出）
 
-- `docs/MEGATOOL.md:49-50` にテスト用 MEGA アカウントの実メールアドレスが載っている
-  `megatool whoami` の出力例。パスワードは無いが、伏せ字にしておきたい（1 行の修正）
-
 - [低] exe にバージョン情報リソース（VERSIONINFO）が無い
   `resources/appicon.rc` はアイコンのみで、`FileVersion` / `ProductVersion` / `CompanyName` が空。
   バージョンを重ねて配布するなら、受け取った exe のプロパティで版が分かるようにしたい
