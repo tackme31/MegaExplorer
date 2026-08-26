@@ -199,13 +199,24 @@ void FolderNavigationService::listChildrenOf(
         mClient->getChildren(handle, order, std::move(onDone));
 }
 
+std::function<void(Result<std::vector<FileEntry>>)> FolderNavigationService::dropIfScreenChanged(
+    std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    return [this, token = mGeneration, onDone = std::move(onDone)](
+               Result<std::vector<FileEntry>> result) {
+        if (token != mGeneration)
+            return;
+        onDone(std::move(result));
+    };
+}
+
 void FolderNavigationService::listFavourites(
     SortOrder order,
     const std::string& nameFilter,
     const SearchFilter& filter,
     std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    mClient->listFavourites(order, nameFilter, filter, std::move(onDone));
+    mClient->listFavourites(order, nameFilter, filter, dropIfScreenChanged(std::move(onDone)));
 }
 
 void FolderNavigationService::listRecent(SortOrder order,
@@ -213,7 +224,7 @@ void FolderNavigationService::listRecent(SortOrder order,
                                          const SearchFilter& filter,
                                          std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
-    mClient->listRecent(order, nameFilter, filter, std::move(onDone));
+    mClient->listRecent(order, nameFilter, filter, dropIfScreenChanged(std::move(onDone)));
 }
 
 bool FolderNavigationService::canGoBack() const

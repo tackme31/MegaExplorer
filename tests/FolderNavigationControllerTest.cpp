@@ -1256,3 +1256,40 @@ TEST_F(FolderNavigationControllerTest, RecentsRefusesASortOrderTheHeaderAsksFor)
     EXPECT_FALSE(resetAscending);
     EXPECT_EQ(used.size(), 1u);
 }
+
+TEST_F(FolderNavigationControllerTest, RefreshingASearchedRecentsScreenStillReplacesTheHits)
+{
+    // The refresh claims the screen, and a search issued before that claim is
+    // dropped as stale now that the listing answers a turn late. Ordering the two
+    // the wrong way round leaves the old hits on screen for good.
+    EXPECT_CALL(*client, listRecent(_, std::string(), _, _))
+        .WillRepeatedly(InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("old.txt", 1)})));
+    int searches = 0;
+    EXPECT_CALL(*client, listRecent(_, std::string("q"), _, _))
+        .WillRepeatedly(Invoke([&searches](SortOrder,
+                                           const std::string&,
+                                           const SearchFilter&,
+                                           std::function<void(Result<std::vector<FileEntry>>)> f) {
+            ++searches;
+            f(Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{
+                entry(searches == 1 ? "before.txt" : "after.txt", 2)}));
+        }));
+
+    controller->openRecents();
+    flush();
+    controller->search(QStringLiteral("q"));
+    flush();
+    ASSERT_EQ(searches, 1);
+    ASSERT_GE(model()->rowForName(QStringLiteral("before.txt")), 0);
+
+    // Act: anything that re-reads the visible listing takes this path
+    controller->refreshVisibleListing();
+    flush();
+
+    // Assert -- the re-run search landed rather than being discarded
+    EXPECT_EQ(searches, 2);
+    EXPECT_GE(model()->rowForName(QStringLiteral("after.txt")), 0);
+    EXPECT_LT(model()->rowForName(QStringLiteral("before.txt")), 0);
+    EXPECT_TRUE(controller->searchActive());
+}

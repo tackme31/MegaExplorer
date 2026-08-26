@@ -8,11 +8,12 @@
 // fetchNodes is a precondition throughout.
 //
 // This class carries no mutex, unlike DownloadService/UploadService/
-// ThumbnailService, and that is a borrowed guarantee: getRootChildren/getChildren/
-// search always answer synchronously on the calling thread, so mCurrent, the
-// back-stack and the navigation counter are only ever touched from the GUI thread.
-// If any of those three ever starts answering from an SDK thread, this class needs
-// one.
+// ThumbnailService, and that is a borrowed guarantee: every listing call it makes
+// answers on the calling thread, so mCurrent, the back-stack and the navigation
+// counter are only ever touched from the GUI thread. getRootChildren/getChildren/
+// search answer there synchronously; listFavourites/listRecent answer there a turn
+// later, which is the same guarantee and not a weaker one. If any of them ever
+// starts answering from an SDK thread, this class needs a mutex.
 class FolderNavigationService
 {
 public:
@@ -77,6 +78,10 @@ public:
     // listChildrenOf's counterpart for the favourites listing: reads it without
     // going there. The name filter is what makes the search box narrow a favourites
     // listing instead of searching a folder (FAVOURITES_VIEW_SPEC.md 3.5).
+    //
+    // Claims no screen, but is still dropped when one was claimed while it was out:
+    // the listing behind it answers a turn late, so a search typed just before the
+    // user left could otherwise repaint the screen they went to.
     void listFavourites(SortOrder order,
                         const std::string& nameFilter,
                         const SearchFilter& filter,
@@ -152,6 +157,13 @@ private:
     commitThenRun(std::function<void()> onCommit,
                   std::function<void(std::function<void(Result<std::vector<FileEntry>>)>)> network,
                   std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
+    // commitThenRun's guard without its commit, for a read that re-reads the screen
+    // the user is already on: the result is dropped once a later call has claimed a
+    // screen, and the generation is deliberately not bumped -- a search is not a
+    // navigation, and bumping it here would discard the navigation's own fetch.
+    std::function<void(Result<std::vector<FileEntry>>)>
+    dropIfScreenChanged(std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
     std::shared_ptr<IMegaClient> mClient;
     std::vector<Location> mBackStack;

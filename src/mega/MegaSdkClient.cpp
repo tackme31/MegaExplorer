@@ -6,6 +6,11 @@
 #include "MegaSdkListeners.h"
 #include "MegaSdkLogger.h"
 
+#include <QMetaObject>
+#include <QObject>
+#include <QThreadPool>
+#include <Qt>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -246,8 +251,11 @@ std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
 
 MegaSdkClient::MegaSdkClient(std::string basePath, std::string userAgent)
     : mLogger(std::make_unique<MegaSdkLogger>()),
-      mApi(std::make_unique<mega::MegaApi>(nullptr, basePath.c_str(), userAgent.c_str()))
+      mApi(std::make_unique<mega::MegaApi>(nullptr, basePath.c_str(), userAgent.c_str())),
+      mCallbackTarget(std::make_unique<QObject>()),
+      mListingPool(std::make_unique<QThreadPool>())
 {
+    mListingPool->setMaxThreadCount(1);
     // Static: addLoggerObject/removeLoggerObject register process-wide, not
     // per-MegaApi-instance. Fine here since the app only ever constructs one
     // MegaSdkClient.
@@ -265,6 +273,14 @@ void MegaSdkClient::shutdown()
 {
     if (mShuttingDown.exchange(true))
         return; // main.cpp already called it; the destructor is the second call
+
+    // Before mApi.reset(): a listing worker is the one place that reads mApi from
+    // outside the SDK's own threads, and it has no null check that would survive the
+    // pointer going away underneath it. This drains the queue as well as the running
+    // job, but the flag above makes every queued one bail without touching mApi, so
+    // the wait is bounded by the single walk already under way -- which on a large
+    // account is seconds, and is why quitting mid-listing lingers (ROADMAP).
+    mListingPool->waitForDone();
 
     // ~MegaApi joins the SDK thread, which runs abortPendingActions() on the way
     // out: every pending request and transfer completes with API_EACCESS, so all our
@@ -491,6 +507,25 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
     onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
 }
 
+void MegaSdkClient::runOffThread(std::function<Result<std::vector<FileEntry>>()> work,
+                                 std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    mListingPool->start([this, work = std::move(work), onDone = std::move(onDone)]() mutable {
+        Result<std::vector<FileEntry>> result =
+            mShuttingDown ? Result<std::vector<FileEntry>>::fail(kShutDownMessage,
+                                                                 kClientShutDownCode)
+                          : work();
+        // The posted call deliberately captures nothing of `this`: shutdown() waits
+        // for the worker but cannot un-post an event already in the queue.
+        QMetaObject::invokeMethod(
+            mCallbackTarget.get(),
+            [onDone = std::move(onDone), result = std::move(result)]() mutable {
+                onDone(std::move(result));
+            },
+            Qt::QueuedConnection);
+    });
+}
+
 void MegaSdkClient::listFavourites(SortOrder order,
                                    const std::string& nameFilter,
                                    const SearchFilter& searchFilter,
@@ -501,25 +536,29 @@ void MegaSdkClient::listFavourites(SortOrder order,
         onDone(Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode));
         return;
     }
-    std::unique_ptr<mega::MegaNode> root = resolveNode(0, true);
-    if (!root)
-    {
-        onDone(Result<std::vector<FileEntry>>::fail(
-            "No root node (not logged in / nodes not fetched)", MegaErrorCode::kENoEnt));
-        return;
-    }
+    runOffThread(
+        [this, order, nameFilter, searchFilter]() -> Result<std::vector<FileEntry>> {
+            std::unique_ptr<mega::MegaNode> root = resolveNode(0, true);
+            if (!root)
+                return Result<std::vector<FileEntry>>::fail(
+                    "No root node (not logged in / nodes not fetched)", MegaErrorCode::kENoEnt);
 
-    std::unique_ptr<mega::MegaSearchFilter> filter(mega::MegaSearchFilter::createInstance());
-    filter->byFavourite(mega::MegaSearchFilter::BOOL_FILTER_ONLY_TRUE);
-    filter->byLocationHandle(root->getHandle());
-    // Left unset when empty on purpose: MegaSearchFilter's name predicate is skipped
-    // entirely for an empty pattern, so byName("") would not mean "match nothing".
-    if (!nameFilter.empty())
-        filter->byName(nameFilter.c_str());
-    applySearchFilter(*filter, searchFilter);
+            std::unique_ptr<mega::MegaSearchFilter> filter(
+                mega::MegaSearchFilter::createInstance());
+            filter->byFavourite(mega::MegaSearchFilter::BOOL_FILTER_ONLY_TRUE);
+            filter->byLocationHandle(root->getHandle());
+            // Left unset when empty on purpose: MegaSearchFilter's name predicate is
+            // skipped entirely for an empty pattern, so byName("") would not mean
+            // "match nothing".
+            if (!nameFilter.empty())
+                filter->byName(nameFilter.c_str());
+            applySearchFilter(*filter, searchFilter);
 
-    std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get(), toMegaOrder(order)));
-    onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
+            std::unique_ptr<mega::MegaNodeList> results(
+                mApi->search(filter.get(), toMegaOrder(order)));
+            return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
+        },
+        std::move(onDone));
 }
 
 void MegaSdkClient::listRecent(SortOrder order,
@@ -532,34 +571,39 @@ void MegaSdkClient::listRecent(SortOrder order,
         onDone(Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode));
         return;
     }
-    std::unique_ptr<mega::MegaNode> root = resolveNode(0, true);
-    if (!root)
-    {
-        onDone(Result<std::vector<FileEntry>>::fail(
-            "No root node (not logged in / nodes not fetched)", MegaErrorCode::kENoEnt));
-        return;
-    }
+    runOffThread(
+        [this, order, nameFilter, searchFilter]() -> Result<std::vector<FileEntry>> {
+            std::unique_ptr<mega::MegaNode> root = resolveNode(0, true);
+            if (!root)
+                return Result<std::vector<FileEntry>>::fail(
+                    "No root node (not logged in / nodes not fetched)", MegaErrorCode::kENoEnt);
 
-    std::unique_ptr<mega::MegaSearchFilter> filter(mega::MegaSearchFilter::createInstance());
-    filter->byLocationHandle(root->getHandle());
-    // Left unset when empty, for listFavourites' reason.
-    if (!nameFilter.empty())
-        filter->byName(nameFilter.c_str());
-    applySearchFilter(*filter, searchFilter);
+            std::unique_ptr<mega::MegaSearchFilter> filter(
+                mega::MegaSearchFilter::createInstance());
+            filter->byLocationHandle(root->getHandle());
+            // Left unset when empty, for listFavourites' reason.
+            if (!nameFilter.empty())
+                filter->byName(nameFilter.c_str());
+            applySearchFilter(*filter, searchFilter);
 
-    // Both facets below are ones applySearchFilter also writes, so they are set after
-    // it: what this listing means has to win over the popup's selection.
-    // Upper limit 0, which MegaSearchFilter reads as "no bound on that side" rather
-    // than as the epoch -- a clock skewed ahead on the uploading device must not
-    // hide a node from this listing. The later of the two lower bounds wins, so
-    // "past 24 hours" narrows the window but "past year" cannot widen it.
-    filter->byCreationTime(std::max(recentWindowStart(), filter->byCreationTimeLowerLimit()), 0);
-    // Files only: this is a listing of recently added files, and a folder's creation
-    // time would drag its whole subtree's container into it.
-    filter->byNodeType(mega::MegaNode::TYPE_FILE);
+            // Both facets below are ones applySearchFilter also writes, so they are
+            // set after it: what this listing means has to win over the popup's
+            // selection. Upper limit 0, which MegaSearchFilter reads as "no bound on
+            // that side" rather than as the epoch -- a clock skewed ahead on the
+            // uploading device must not hide a node from this listing. The later of
+            // the two lower bounds wins, so "past 24 hours" narrows the window but
+            // "past year" cannot widen it.
+            filter->byCreationTime(
+                std::max(recentWindowStart(), filter->byCreationTimeLowerLimit()), 0);
+            // Files only: this is a listing of recently added files, and a folder's
+            // creation time would drag its whole subtree's container into it.
+            filter->byNodeType(mega::MegaNode::TYPE_FILE);
 
-    std::unique_ptr<mega::MegaNodeList> results(mApi->search(filter.get(), toMegaOrder(order)));
-    onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
+            std::unique_ptr<mega::MegaNodeList> results(
+                mApi->search(filter.get(), toMegaOrder(order)));
+            return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
+        },
+        std::move(onDone));
 }
 
 void MegaSdkClient::download(std::uint64_t handle,

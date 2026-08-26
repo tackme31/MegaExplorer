@@ -16,6 +16,8 @@ class MegaNode;
 } // namespace mega
 
 class MegaSdkLogger;
+class QObject;
+class QThreadPool;
 
 // Only files under src/mega (this class and MegaSdkLogger) may include
 // <megaapi.h> or touch mega::* types.
@@ -221,6 +223,18 @@ private:
                       SortOrder order,
                       std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
+    // Runs work on mListingPool and hands its result to onDone back on the thread
+    // that *constructed* this client -- not the one that called, which is the same
+    // thread for every caller today but is not what is implemented. Only the two
+    // cross-drive listings take this route: each walks the entire node tree, so on a
+    // large account the synchronous form blocked the GUI for seconds.
+    //
+    // It buys less than it looks: MegaApiImpl::search holds the SDK's sdkMutex for
+    // the whole walk, so a GUI-thread call that also needs the SDK still waits it
+    // out. Idle painting and input do not, which is the case this is for.
+    void runOffThread(std::function<Result<std::vector<FileEntry>>()> work,
+                      std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
     // Declared before mApi so it is destroyed last, which is what lets the SDK's own
     // teardown lines reach the log. It does not help at startup: registration happens
     // in the constructor body, after MegaApiImpl::init has already logged.
@@ -249,4 +263,16 @@ private:
     std::mutex mCancelTokenMutex;
     std::map<std::uint64_t, std::unique_ptr<mega::MegaCancelToken>> mDownloadCancelTokens;
     std::map<std::uint64_t, std::unique_ptr<mega::MegaCancelToken>> mUploadCancelTokens;
+
+    // Plain QObject living on the constructing thread; posting to it is how
+    // runOffThread() gets back there. Nothing else is done with it.
+    //
+    // Declared before the pool so it is destroyed *after* it: ~QThreadPool waits for
+    // a running job, and that job's last act is to post here.
+    std::unique_ptr<QObject> mCallbackTarget;
+
+    // Capped at one thread, and that cap is load-bearing rather than frugal: it makes
+    // the pool answer in issue order, which is what lets a caller treat the last
+    // listing it asked for as the last one it will be handed.
+    std::unique_ptr<QThreadPool> mListingPool;
 };

@@ -28,10 +28,16 @@
 //        node tree fetchNodes built. Their callers (drag-hover feedback,
 //        QAbstractItemModel::hasChildren) have nowhere to put a callback.
 //      - Of the methods taking onDone, getRootChildren/getChildren/search/
-//        listFavourites/listRecent/getRubbishChildren/getPath/getNodeInfo run it
-//        synchronously on the calling thread, always -- they too are in-memory
-//        reads.
+//        getRubbishChildren/getPath/getNodeInfo run it synchronously on the
+//        calling thread, always -- they too are in-memory reads.
 //        FolderNavigationService's lock-free design rests on this.
+//      - listFavourites/listRecent are the two in-memory reads that do not:
+//        each walks the whole node tree, so the work happens on a worker and
+//        onDone arrives back on the thread that constructed the implementation
+//        -- the app's main thread -- in a later turn of its event loop. Same
+//        thread as every caller, so the lock-free design above still holds; but
+//        a caller with no event loop running never sees the result at all, and
+//        neither is safe to treat as answered by the time it returns.
 //      - The rest run onDone on an SDK-internal thread, *except* that any
 //        method resolving a handle fails in-stack when that handle is already
 //        gone. That case is easy to miss: the happy path looks purely async.
@@ -107,8 +113,9 @@ public:
                         SortOrder order,
                         std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
-    // Every favourite under the Cloud Drive root, recursively; same contract as
-    // search(). Rooting it there is what keeps the Rubbish bin, the Vault and
+    // Every favourite under the Cloud Drive root, recursively. Answers off-thread,
+    // unlike search() -- see the delivery note at the top of this file. Rooting it
+    // at the Cloud Drive root is what keeps the Rubbish bin, the Vault and
     // incoming shares out. An empty nameFilter means no name filtering at all --
     // MegaSearchFilter treats an unset name as "match everything", so the
     // favourite flag stays the only criterion. filter narrows further, exactly as in

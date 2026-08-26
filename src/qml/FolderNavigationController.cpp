@@ -612,7 +612,10 @@ void FolderNavigationController::refreshVisibleListing(QString revealName)
         // Re-run the visible search, and separately refresh the cached folder
         // listing (not the visible model) so that clearing the search
         // afterwards doesn't show stale contents/ordering.
-        runVisibleSearch();
+        //
+        // The refresh must be issued *before* the search, and not the other way
+        // round: it claims the screen, and a search issued first is dropped as
+        // stale by that claim on the screens whose listing answers a turn late.
         mService->refreshCurrent(
             mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                 invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
@@ -630,6 +633,7 @@ void FolderNavigationController::refreshVisibleListing(QString revealName)
                     mLastFolderEntries = std::move(result.value());
                 });
             });
+        runVisibleSearch();
         return;
     }
 

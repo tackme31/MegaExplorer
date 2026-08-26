@@ -1265,3 +1265,69 @@ TEST(FolderNavigationServiceTest, ResetToRootDropsAListingStillInFlight)
     EXPECT_TRUE(service.currentLocation().isRoot);
     EXPECT_FALSE(service.canGoBack());
 }
+
+TEST(FolderNavigationServiceTest, SearchingFavouritesDropsAResultThatLandsAfterNavigatingAway)
+{
+    // Arrange: the favourites listing answers a turn late now, so a query typed just
+    // before leaving the screen can come back while another one is showing.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::vector<FileEntry>>)> searchPending;
+
+    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, listFavourites(::testing::_, "typed", ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<3>(&searchPending));
+    EXPECT_CALL(*mockClient, getChildren(4, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured opened, searched;
+    service.openFavourites(SortOrder{}, onDoneInto(opened));
+    ASSERT_TRUE(opened.doneResult.success);
+
+    // Act: search, then leave before it answers
+    service.listFavourites(SortOrder{}, "typed", SearchFilter{}, onDoneInto(searched));
+    Captured navigated;
+    service.openFolder(4, SortOrder{}, onDoneInto(navigated));
+    ASSERT_TRUE(searchPending);
+    searchPending(Result<std::vector<FileEntry>>::ok(
+        std::vector<FileEntry>{{"stale.txt", 10, 50, false, 0}}));
+
+    // Assert -- the hits never reach the folder the tab moved into
+    EXPECT_FALSE(searched.doneCalled);
+    EXPECT_TRUE(navigated.doneCalled);
+    EXPECT_EQ(service.currentLocation().handle, 4u);
+}
+
+TEST(FolderNavigationServiceTest, SearchingRecentsStillAnswersWhenTheScreenWasNeverLeft)
+{
+    // The guard drops a result only when a screen was claimed meanwhile; a search
+    // that answers late on the screen it was typed on must still land.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::vector<FileEntry>>)> searchPending;
+
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, listRecent(::testing::_, "typed", ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<3>(&searchPending));
+
+    FolderNavigationService service(mockClient);
+    Captured opened, searched;
+    service.openRecents(SortOrder{}, onDoneInto(opened));
+    ASSERT_TRUE(opened.doneResult.success);
+
+    // Act
+    service.listRecent(SortOrder{}, "typed", SearchFilter{}, onDoneInto(searched));
+    ASSERT_TRUE(searchPending);
+    searchPending(Result<std::vector<FileEntry>>::ok(
+        std::vector<FileEntry>{{"hit.txt", 10, 50, false, 0}}));
+
+    // Assert
+    ASSERT_TRUE(searched.doneCalled);
+    EXPECT_TRUE(searched.doneResult.success);
+    EXPECT_EQ(searched.doneResult.value().size(), 1u);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::Recents);
+}
