@@ -173,7 +173,6 @@ ColumnLayout {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: parent.top
             anchors.topMargin: Theme.spacing.xl * 3
-            width: parent.width - 2 * Theme.spacing.xl
             navController: pane.navController
         }
     }
