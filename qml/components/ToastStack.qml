@@ -406,8 +406,11 @@ Item {
         case "openLocalFile":
             text = qsTr("Couldn't find this item locally — check the linked folder in Settings");
             break;
+            // Deliberately doesn't name the destination: the scan behind this also
+            // fails on local causes (nesting past the depth cap, an unreadable local
+            // folder). The cause itself only reaches the log.
         case "uploadSkipFailed":
-            text = qsTr("Couldn't check the destination — nothing was uploaded");
+            text = qsTr("Couldn't check what to skip — nothing was uploaded");
             break;
             // A context C++ sends that nothing here handles -- exactly what
             // R3-5 was. The old default printed rawMessage, which meant the
