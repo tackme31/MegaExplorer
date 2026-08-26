@@ -166,6 +166,16 @@ ColumnLayout {
             width: parent.width - 2 * Theme.spacing.xl
             navController: pane.navController
         }
+
+        // Same slot, and never on screen at the same time as the notice above --
+        // see its own header for the split.
+        ListingLoadingNotice {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: Theme.spacing.xl * 3
+            width: parent.width - 2 * Theme.spacing.xl
+            navController: pane.navController
+        }
     }
 
     // One per tab rather than per view: it reports through this tab's

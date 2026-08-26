@@ -74,11 +74,17 @@ class FolderNavigationController : public QObject,
         bool searchFilterFavouritesOnly READ searchFilterFavouritesOnly NOTIFY searchFilterChanged)
     Q_PROPERTY(
         bool searchFilterThisFolderOnly READ searchFilterThisFolderOnly NOTIFY searchFilterChanged)
-    // True while this tab has a mutating operation or a server sync in flight.
-    // Deliberately NOT set by listing/search/breadcrumb fetches -- those are
-    // synchronous in-memory reads and finish before anything could repaint. Nor by
-    // uploads, which belong to no tab; TabsController ORs those in by destination.
+    // True while this tab has a mutating operation, a server sync, or a
+    // favourites/recents listing in flight. Deliberately NOT set by folder or search
+    // fetches -- those are synchronous in-memory reads and finish before anything
+    // could repaint. Nor by uploads, which belong to no tab; TabsController ORs those
+    // in by destination.
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
+    // True from the click that asks for a favourites/recents listing until its rows
+    // land. Separate from busy because it carries no spinner delay: the model is
+    // emptied at the click, so the empty-state notice has to know straight away that
+    // the emptiness means "not fetched yet" and not "nothing here".
+    Q_PROPERTY(bool listingPending READ listingPending NOTIFY listingPendingChanged)
 
 public:
     explicit FolderNavigationController(std::shared_ptr<FolderNavigationService> navigationService,
@@ -99,6 +105,8 @@ public:
     bool canGoBack() const;
 
     bool busy() const;
+
+    bool listingPending() const;
 
     // False both before the breadcrumb has resolved and at the root, so the
     // "up" button is disabled in exactly the cases where there's no parent.
@@ -265,6 +273,7 @@ signals:
     void canGoBackChanged();
     void breadcrumbChanged();
     void busyChanged();
+    void listingPendingChanged();
     void searchActiveChanged();
     void searchQueryChanged();
     void searchFilterChanged();
@@ -288,6 +297,15 @@ signals:
 private:
     void applyResult(Result<std::vector<FileEntry>> result, const QString& revealName = QString());
     void applySearchResult(Result<std::vector<FileEntry>> result);
+
+    // The two halves of "a favourites/recents listing is on its way". Both are
+    // idempotent, and that is what keeps mBusy balanced: FolderNavigationService drops
+    // a superseded fetch's callback whole, so the second of two quick clicks must not
+    // add a second begin() that nothing will ever end(). Conversely every listing
+    // result -- including one from a screen that superseded this one -- clears the
+    // flag, so a dropped callback can't strand it.
+    void beginListing();
+    void endListing();
 
     // Shared tail of search() and setSearchFilter(): publishes searchActive if it
     // flipped, then either restores the cached listing or runs the search.
@@ -370,6 +388,8 @@ private:
     std::optional<SortOrder> mSortOrderBeforeView = std::nullopt;
     // Set by a fan-out this tab couldn't apply in place; cleared by the re-read.
     bool mStale = false;
+    // Publishes listingPending(); see beginListing()/endListing().
+    bool mListingPending = false;
     // Publishes busy() and owns the delay before a spinner appears. Shared because
     // the mutation half writes it too.
     std::shared_ptr<BusyState> mBusy;

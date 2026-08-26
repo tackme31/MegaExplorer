@@ -1202,9 +1202,10 @@ TEST_F(FolderNavigationControllerTest, ASortArrivingBeforeTheRecentsListingIsRef
     controller->loadRoot();
     flush();
 
-    // openRecents() states its order synchronously but the view kind only flips
-    // when the listing lands, so canSort() is still true right here -- and a tab
-    // opened straight onto Recents pushes its restored order into exactly this gap.
+    // openRecents() states its order synchronously but the view kind only flips once
+    // the queued breadcrumb resolve runs, so canSort() is still true right here --
+    // and a tab opened straight onto Recents pushes its restored order into exactly
+    // this gap.
     controller->openRecents();
     controller->setSortOrder(0, true);
     flush();
@@ -1292,4 +1293,93 @@ TEST_F(FolderNavigationControllerTest, RefreshingASearchedRecentsScreenStillRepl
     EXPECT_GE(model()->rowForName(QStringLiteral("after.txt")), 0);
     EXPECT_LT(model()->rowForName(QStringLiteral("before.txt")), 0);
     EXPECT_TRUE(controller->searchActive());
+}
+
+// --- Loading state of the cross-drive listings --------------------------------
+
+TEST_F(FolderNavigationControllerTest, OpenFavouritesEmptiesTheListingAndReportsItPending)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+    ASSERT_EQ(model()->rowCount(), 1);
+
+    // Held rather than answered, which is what the SDK-thread walk looks like from
+    // here: everything below happens while the query is still running.
+    std::function<void(Result<std::vector<FileEntry>>)> answer;
+    EXPECT_CALL(*client, listFavourites(_, std::string(), _, _))
+        .WillRepeatedly(
+            Invoke([&answer](SortOrder,
+                             const std::string&,
+                             const SearchFilter&,
+                             std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                answer = std::move(onDone);
+            }));
+
+    controller->openFavourites();
+    flush();
+
+    // The click owns the screen: the folder's rows are gone, the tab has moved,
+    // and the emptiness reads as "not fetched yet" rather than "no favourites".
+    EXPECT_EQ(model()->rowCount(), 0);
+    EXPECT_TRUE(controller->listingPending());
+    EXPECT_EQ(controller->viewKind(), ViewKindEnum::Favourites);
+    EXPECT_TRUE(waitForBusy(*busy, true));
+
+    ASSERT_TRUE(answer);
+    answer(Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("kept.txt", 5)}));
+    flush();
+
+    EXPECT_FALSE(controller->listingPending());
+    EXPECT_TRUE(waitForBusy(*busy, false));
+    EXPECT_EQ(model()->rowCount(), 1);
+}
+
+TEST_F(FolderNavigationControllerTest, OpenRecentsEmptiesTheListingAndReportsItPending)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, listRecent(_, std::string(), _, _))
+        .WillRepeatedly(Invoke([](SortOrder,
+                                  const std::string&,
+                                  const SearchFilter&,
+                                  std::function<void(Result<std::vector<FileEntry>>)>) {}));
+
+    controller->openRecents();
+    flush();
+
+    EXPECT_EQ(model()->rowCount(), 0);
+    EXPECT_TRUE(controller->listingPending());
+    EXPECT_EQ(controller->viewKind(), ViewKindEnum::Recents);
+}
+
+TEST_F(FolderNavigationControllerTest, NavigatingAwayFromAPendingListingClearsIt)
+{
+    givenRootListing({entry("photos", 1, true)});
+    controller->loadRoot();
+    flush();
+
+    // Never answered on purpose: FolderNavigationService drops a superseded fetch's
+    // callback whole, so the navigation below is the only thing that can clear this.
+    EXPECT_CALL(*client, listFavourites(_, std::string(), _, _))
+        .WillRepeatedly(Invoke([](SortOrder,
+                                  const std::string&,
+                                  const SearchFilter&,
+                                  std::function<void(Result<std::vector<FileEntry>>)>) {}));
+    controller->openFavourites();
+    flush();
+    ASSERT_TRUE(controller->listingPending());
+    ASSERT_TRUE(waitForBusy(*busy, true));
+
+    EXPECT_CALL(*client, getChildren(1, _, _))
+        .WillRepeatedly(InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
+    controller->openFolder(1);
+    flush();
+
+    EXPECT_FALSE(controller->listingPending());
+    // Balanced: a stranded begin() would leave the tab spinning for good.
+    EXPECT_TRUE(waitForBusy(*busy, false));
 }

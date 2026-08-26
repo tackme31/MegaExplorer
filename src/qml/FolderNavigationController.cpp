@@ -88,6 +88,29 @@ bool FolderNavigationController::busy() const
     return mBusy->visible();
 }
 
+bool FolderNavigationController::listingPending() const
+{
+    return mListingPending;
+}
+
+void FolderNavigationController::beginListing()
+{
+    if (mListingPending)
+        return;
+    mListingPending = true;
+    mBusy->begin();
+    emit listingPendingChanged();
+}
+
+void FolderNavigationController::endListing()
+{
+    if (!mListingPending)
+        return;
+    mListingPending = false;
+    mBusy->end();
+    emit listingPendingChanged();
+}
+
 QVariantList FolderNavigationController::breadcrumb() const
 {
     return mBreadcrumb;
@@ -195,12 +218,20 @@ void FolderNavigationController::openFavourites()
 {
     dropSearchForNavigation();
     restoreUserSortOrder();
+    // Emptied before the fetch rather than replaced after it: the walk runs on a
+    // worker now (evolve/089), so leaving the previous screen's rows up would read
+    // as "the click did nothing" for as long as it takes.
+    mFileListModel->setEntries({});
+    beginListing();
     mService->openFavourites(
         mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
             invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
                 applyResult(std::move(result));
             });
         });
+    // The service commits the location before it fetches, so the breadcrumb, the tab
+    // title and the view kind can all move now instead of waiting for the rows.
+    refreshBreadcrumb();
 }
 
 void FolderNavigationController::openRubbish()
@@ -219,12 +250,16 @@ void FolderNavigationController::openRecents()
 {
     dropSearchForNavigation();
     applyViewSortOrder(ViewKindEnum::Recents, kRecentsOrder);
+    // Same two reasons as openFavourites().
+    mFileListModel->setEntries({});
+    beginListing();
     mService->openRecents(mSortOrder,
                           [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
                               invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
                                   applyResult(std::move(result));
                               });
                           });
+    refreshBreadcrumb();
 }
 
 void FolderNavigationController::goBack()
@@ -311,6 +346,7 @@ void FolderNavigationController::goToContainingFolder(quint64 handle, QString na
 void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> result,
                                              const QString& revealName)
 {
+    endListing();
     if (!result.success)
     {
         qCWarning(lcNavigation) << "folder navigation failed:"
@@ -496,6 +532,7 @@ void FolderNavigationController::runVisibleSearch()
 
 void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>> result)
 {
+    endListing();
     if (!result.success)
     {
         qCWarning(lcSearch) << "search failed:" << QString::fromStdString(result.errorMessage)
@@ -794,6 +831,8 @@ void FolderNavigationController::reset()
     mBreadcrumb.clear();
     publishViewKind();
     mBusy->abandonAll();
+    // After abandonAll(), whose clamp swallows the end() this one carries.
+    endListing();
     emit canGoBackChanged();
     emit breadcrumbChanged();
     if (wasSearching)
