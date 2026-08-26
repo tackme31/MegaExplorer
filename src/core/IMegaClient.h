@@ -27,12 +27,12 @@
 //        local reads of session/account state, or in-memory queries against the
 //        node tree fetchNodes built. Their callers (drag-hover feedback,
 //        QAbstractItemModel::hasChildren) have nowhere to put a callback.
-//      - Of the methods taking onDone, getRootChildren/getChildren/search/
+//      - Of the methods taking onDone, getRootChildren/getChildren/
 //        getRubbishChildren/getPath/getNodeInfo run it synchronously on the
 //        calling thread, always -- they too are in-memory reads.
 //        FolderNavigationService's lock-free design rests on this.
-//      - listFavourites/listRecent are the two in-memory reads that do not:
-//        each walks the whole node tree, so the work happens on a worker and
+//      - search/listFavourites/listRecent are the in-memory reads that do not:
+//        each walks a whole subtree, so the work happens on a worker and
 //        onDone arrives back on the thread that constructed the implementation
 //        -- the app's main thread -- in a later turn of its event loop. Same
 //        thread as every caller, so the lock-free design above still holds; but
@@ -106,6 +106,7 @@ public:
     // asks for that node's direct children only. Must be called after a successful
     // fetchNodes(); order is forwarded to MegaApi::search's own order.
     // An empty query means "no name predicate", so filter alone is a valid search.
+    // Answers off-thread -- see the delivery note at the top of this file.
     virtual void search(std::uint64_t ancestorHandle,
                         bool isRoot,
                         const std::string& query,
@@ -114,7 +115,7 @@ public:
                         std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
     // Every favourite under the Cloud Drive root, recursively. Answers off-thread,
-    // unlike search() -- see the delivery note at the top of this file. Rooting it
+    // as search() does -- see the delivery note at the top of this file. Rooting it
     // at the Cloud Drive root is what keeps the Rubbish bin, the Vault and
     // incoming shares out. An empty nameFilter means no name filtering at all --
     // MegaSearchFilter treats an unset name as "match everything", so the

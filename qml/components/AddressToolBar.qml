@@ -160,9 +160,10 @@ ToolBar {
             // would squeeze the style's own 5px vertical padding and its two
             // indicators.
             Layout.alignment: Qt.AlignVCenter
-            // MegaApi::search() blocks the GUI thread synchronously, so search
-            // on Enter only rather than on every keystroke -- live: true would
-            // freeze the UI once per keystroke.
+            // One search is a walk of the whole subtree, holding the SDK's mutex
+            // for its duration, so search on Enter only rather than on every
+            // keystroke -- live: true would queue one such walk per character.
+            // The walk runs on a worker now, so this no longer freezes the UI.
             live: false
             // Enter (searchTriggered) and the magnifier (searchButtonPressed)
             // are separate signals; only the first is gated by live.

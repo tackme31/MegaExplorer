@@ -2,10 +2,10 @@ import QtQuick
 // Before any other QtQuick.Controls import, same rule as its siblings.
 import QtQuick.Controls.FluentWinUI3
 
-// What a view shows between the click that asks for a favourites/recents listing
-// and its rows arriving. It sits in the same slot as EmptyListingNotice and is
-// mutually exclusive with it: the model is emptied at the click, so without this
-// the screen would answer "No favourites yet" while the walk is still running.
+// What a view shows between the input that asks for a favourites/recents listing
+// or a search and its rows arriving. It sits in the same slot as EmptyListingNotice
+// and is mutually exclusive with it: the model is emptied at that point, so without
+// this the screen would answer "No favourites yet" while the walk is still running.
 // Wordless on purpose -- the spinner already says "wait", and a translated
 // "loading" label would only repeat it.
 //

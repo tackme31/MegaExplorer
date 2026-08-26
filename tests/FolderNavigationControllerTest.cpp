@@ -1383,3 +1383,154 @@ TEST_F(FolderNavigationControllerTest, NavigatingAwayFromAPendingListingClearsIt
     // Balanced: a stranded begin() would leave the tab spinning for good.
     EXPECT_TRUE(waitForBusy(*busy, false));
 }
+
+TEST_F(FolderNavigationControllerTest, SearchEmptiesTheListingAndReportsItPending)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+    ASSERT_EQ(model()->rowCount(), 1);
+
+    // Held rather than answered: the subtree walk behind a search runs on a worker
+    // now, so everything below happens while the query is still out.
+    std::function<void(Result<std::vector<FileEntry>>)> answer;
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
+        .WillRepeatedly(Invoke([&answer](std::uint64_t,
+                                         bool,
+                                         const std::string&,
+                                         const SearchFilter&,
+                                         SortOrder,
+                                         std::function<void(Result<std::vector<FileEntry>>)>
+                                             onDone) {
+            answer = std::move(onDone);
+        }));
+
+    controller->search(QStringLiteral("q"));
+    flush();
+
+    // The folder's rows are gone and the emptiness reads as "not searched yet"
+    // rather than "nothing matched".
+    EXPECT_EQ(model()->rowCount(), 0);
+    EXPECT_TRUE(controller->listingPending());
+    EXPECT_TRUE(waitForBusy(*busy, true));
+
+    ASSERT_TRUE(answer);
+    answer(Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("hit.txt", 5)}));
+    flush();
+
+    EXPECT_FALSE(controller->listingPending());
+    EXPECT_TRUE(waitForBusy(*busy, false));
+    EXPECT_EQ(model()->rowCount(), 1);
+    EXPECT_GE(model()->rowForName(QStringLiteral("hit.txt")), 0);
+}
+
+TEST_F(FolderNavigationControllerTest, ASearchAnsweringAfterItWasClearedDoesNotRepaintTheFolder)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    std::function<void(Result<std::vector<FileEntry>>)> answer;
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
+        .WillRepeatedly(Invoke([&answer](std::uint64_t,
+                                         bool,
+                                         const std::string&,
+                                         const SearchFilter&,
+                                         SortOrder,
+                                         std::function<void(Result<std::vector<FileEntry>>)>
+                                             onDone) {
+            answer = std::move(onDone);
+        }));
+
+    controller->search(QStringLiteral("q"));
+    flush();
+    ASSERT_TRUE(controller->searchActive());
+
+    controller->search(QString());
+    flush();
+    ASSERT_FALSE(controller->searchActive());
+    ASSERT_EQ(model()->rowCount(), 1);
+
+    // SearchService has no generation token of its own, so this late answer would
+    // otherwise put its hits back over the folder the clear button restored.
+    ASSERT_TRUE(answer);
+    answer(Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("hit.txt", 5)}));
+    flush();
+
+    EXPECT_EQ(model()->rowCount(), 1);
+    EXPECT_GE(model()->rowForName(QStringLiteral("a.txt")), 0);
+    EXPECT_FALSE(controller->listingPending());
+    EXPECT_TRUE(waitForBusy(*busy, false));
+}
+
+TEST_F(FolderNavigationControllerTest, ASupersededQueryNeitherPaintsNorEndsTheLoadingState)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    // Both queries are held, so both are in flight at once -- which the single-thread
+    // pool makes ordered but not instantaneous.
+    std::vector<std::function<void(Result<std::vector<FileEntry>>)>> answers;
+    EXPECT_CALL(*client, search(_, _, _, _, _, _))
+        .WillRepeatedly(Invoke([&answers](std::uint64_t,
+                                          bool,
+                                          const std::string&,
+                                          const SearchFilter&,
+                                          SortOrder,
+                                          std::function<void(Result<std::vector<FileEntry>>)>
+                                              onDone) {
+            answers.push_back(std::move(onDone));
+        }));
+
+    controller->search(QStringLiteral("a"));
+    flush();
+    controller->search(QStringLiteral("ab"));
+    flush();
+    ASSERT_EQ(answers.size(), 2u);
+
+    // The first query answers last-but-one. Its hits belong to a query the user has
+    // already replaced, and the loading state now belongs to the second one.
+    answers[0](Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("stale.txt", 5)}));
+    flush();
+
+    EXPECT_EQ(model()->rowCount(), 0);
+    EXPECT_TRUE(controller->listingPending());
+
+    answers[1](Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("fresh.txt", 6)}));
+    flush();
+
+    EXPECT_FALSE(controller->listingPending());
+    EXPECT_TRUE(waitForBusy(*busy, false));
+    EXPECT_EQ(model()->rowCount(), 1);
+    EXPECT_GE(model()->rowForName(QStringLiteral("fresh.txt")), 0);
+}
+
+TEST_F(FolderNavigationControllerTest, ClearingASearchStopsTheLoadingStateItStarted)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    // Never answered: the clear below is the only thing that can end the listing it
+    // started, since the abandoned walk's result is dropped whole.
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
+        .WillRepeatedly(Invoke([](std::uint64_t,
+                                  bool,
+                                  const std::string&,
+                                  const SearchFilter&,
+                                  SortOrder,
+                                  std::function<void(Result<std::vector<FileEntry>>)>) {}));
+
+    controller->search(QStringLiteral("q"));
+    flush();
+    ASSERT_TRUE(controller->listingPending());
+    ASSERT_TRUE(waitForBusy(*busy, true));
+
+    controller->search(QString());
+    flush();
+
+    EXPECT_FALSE(controller->listingPending());
+    EXPECT_TRUE(waitForBusy(*busy, false));
+    EXPECT_EQ(model()->rowCount(), 1);
+}

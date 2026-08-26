@@ -225,9 +225,10 @@ private:
 
     // Runs work on mListingPool and hands its result to onDone back on the thread
     // that *constructed* this client -- not the one that called, which is the same
-    // thread for every caller today but is not what is implemented. Only the two
-    // cross-drive listings take this route: each walks the entire node tree, so on a
-    // large account the synchronous form blocked the GUI for seconds.
+    // thread for every caller today but is not what is implemented. Only the tree
+    // walks take this route -- the two cross-drive listings and search: each walks a
+    // whole subtree, so on a large account the synchronous form blocked the GUI for
+    // seconds.
     //
     // It buys less than it looks: MegaApiImpl::search holds the SDK's sdkMutex for
     // the whole walk, so a GUI-thread call that also needs the SDK still waits it

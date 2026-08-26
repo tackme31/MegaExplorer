@@ -461,6 +461,9 @@ void FolderNavigationController::dropSearchForNavigation()
     mLastSearchQuery.clear();
     const bool filterDropped = !mSearchFilter.isDefault();
     mSearchFilter = SearchFilter{};
+    // The listing flag is not ended here: the navigation that called this always
+    // issues a fetch of its own, and applyResult() ends it at the far side.
+    ++mSearchGeneration;
     emit searchActiveChanged();
     if (queryDropped)
         emit searchQueryChanged();
@@ -504,20 +507,34 @@ void FolderNavigationController::applySearchCriteria(bool wasActive)
 
     if (!searchActive())
     {
+        // Only when a search is actually being abandoned: the clear button on an
+        // empty box lands here too, and must not end a navigation's listing.
+        if (wasActive)
+        {
+            ++mSearchGeneration;
+            endListing();
+        }
         mListingFromSearch = false;
         mFileListModel->setEntries(mLastFolderEntries);
         publishCrossFolderListing();
         return;
     }
 
+    // Emptied before the query rather than replaced after it, as openFavourites()
+    // does: every search route now walks the tree on a worker, so leaving the
+    // previous rows up would read as "Enter did nothing" for as long as it takes.
+    mFileListModel->setEntries({});
+    beginListing();
     runVisibleSearch();
 }
 
 void FolderNavigationController::runVisibleSearch()
 {
-    auto onSearched = [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
-        invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
-            applySearchResult(std::move(result));
+    const std::uint64_t token = ++mSearchGeneration;
+    auto onSearched = [this, token, self = shared_from_this()](
+                          Result<std::vector<FileEntry>> result) {
+        invokeOnGuiThread(this, [this, token, result = std::move(result)]() mutable {
+            applySearchResult(std::move(result), token);
         });
     };
 
@@ -530,8 +547,14 @@ void FolderNavigationController::runVisibleSearch()
         mSearchService->search(mLastSearchQuery, mSearchFilter, mSortOrder, std::move(onSearched));
 }
 
-void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>> result)
+void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>> result,
+                                                   std::uint64_t token)
 {
+    // Dropped whole, endListing() included: whatever superseded this query owns the
+    // flag now and clears it itself, so ending it here would uncover
+    // EmptyListingNotice over a walk that is still running.
+    if (token != mSearchGeneration)
+        return;
     endListing();
     if (!result.success)
     {
@@ -824,6 +847,7 @@ void FolderNavigationController::reset()
     const bool queryDropped = !mLastSearchQuery.empty();
     mLastSearchQuery.clear();
     mSearchFilter = SearchFilter{};
+    ++mSearchGeneration;
     mListingFromSearch = false;
     mHasLoadedOnce = false;
     mSortOrderSetByView = false;

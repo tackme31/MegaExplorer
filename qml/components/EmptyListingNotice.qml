@@ -21,9 +21,9 @@ ColumnLayout {
     readonly property bool searching: root.navController?.searchActive ?? false
 
     // A folder listing is an in-memory read that lands before anything repaints, so
-    // it needs no "has it loaded yet" guard. Favourites and recents do: they walk the
-    // tree on a worker and empty the model at the click, and this would otherwise
-    // answer "No favourites yet" about a listing nobody has fetched yet.
+    // it needs no "has it loaded yet" guard. Favourites, recents and search do: they
+    // walk the tree on a worker and empty the model at the click, and this would
+    // otherwise answer "No favourites yet" about a listing nobody has fetched yet.
     visible: (root.listModel?.count ?? 0) === 0
              && !(root.navController?.listingPending ?? false)
 

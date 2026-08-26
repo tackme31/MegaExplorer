@@ -482,29 +482,33 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
         onDone(Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode));
         return;
     }
-    std::unique_ptr<mega::MegaNode> ancestor = resolveNode(ancestorHandle, isRoot);
-    if (!ancestor)
-    {
-        onDone(Result<std::vector<FileEntry>>::fail(
-            "No ancestor node for search (not logged in / nodes not fetched / invalid handle)",
-            MegaErrorCode::kENoEnt));
-        return;
-    }
+    runOffThread(
+        [this, ancestorHandle, isRoot, query, searchFilter, order]()
+            -> Result<std::vector<FileEntry>> {
+            std::unique_ptr<mega::MegaNode> ancestor = resolveNode(ancestorHandle, isRoot);
+            if (!ancestor)
+                return Result<std::vector<FileEntry>>::fail(
+                    "No ancestor node for search (not logged in / nodes not fetched / invalid "
+                    "handle)",
+                    MegaErrorCode::kENoEnt);
 
-    std::unique_ptr<mega::MegaSearchFilter> filter(mega::MegaSearchFilter::createInstance());
-    // Left unset when empty, as in listFavourites(): an advanced-search filter with
-    // no typed query is a valid search, and the name predicate must not narrow it.
-    if (!query.empty())
-        filter->byName(query.c_str());
-    filter->byLocationHandle(ancestor->getHandle());
-    applySearchFilter(*filter, searchFilter);
+            std::unique_ptr<mega::MegaSearchFilter> filter(
+                mega::MegaSearchFilter::createInstance());
+            // Left unset when empty, as in listFavourites(): an advanced-search filter with
+            // no typed query is a valid search, and the name predicate must not narrow it.
+            if (!query.empty())
+                filter->byName(query.c_str());
+            filter->byLocationHandle(ancestor->getHandle());
+            applySearchFilter(*filter, searchFilter);
 
-    // Recursion is chosen by which call takes the filter, not by anything on it:
-    // MegaApi::search walks the subtree, getChildren stops at the location handle.
-    std::unique_ptr<mega::MegaNodeList> results(
-        searchFilter.thisFolderOnly ? mApi->getChildren(filter.get(), toMegaOrder(order))
-                                    : mApi->search(filter.get(), toMegaOrder(order)));
-    onDone(Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get())));
+            // Recursion is chosen by which call takes the filter, not by anything on it:
+            // MegaApi::search walks the subtree, getChildren stops at the location handle.
+            std::unique_ptr<mega::MegaNodeList> results(
+                searchFilter.thisFolderOnly ? mApi->getChildren(filter.get(), toMegaOrder(order))
+                                            : mApi->search(filter.get(), toMegaOrder(order)));
+            return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
+        },
+        std::move(onDone));
 }
 
 void MegaSdkClient::runOffThread(std::function<Result<std::vector<FileEntry>>()> work,

@@ -8,6 +8,7 @@
 #include <QObject>
 #include <QVariantList>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <set>
@@ -296,7 +297,10 @@ signals:
 
 private:
     void applyResult(Result<std::vector<FileEntry>> result, const QString& revealName = QString());
-    void applySearchResult(Result<std::vector<FileEntry>> result);
+    // token is the value mSearchGeneration held when the query was issued; a result
+    // carrying an older one is dropped whole. SearchService has no generation of its
+    // own, unlike FolderNavigationService's listings, so this is that guard.
+    void applySearchResult(Result<std::vector<FileEntry>> result, std::uint64_t token);
 
     // The two halves of "a favourites/recents listing is on its way". Both are
     // idempotent, and that is what keeps mBusy balanced: FolderNavigationService drops
@@ -390,6 +394,10 @@ private:
     bool mStale = false;
     // Publishes listingPending(); see beginListing()/endListing().
     bool mListingPending = false;
+    // Bumped by everything that ends the search a walk was issued for -- another
+    // query, the clear button, a navigation, a reset. Each of those also owns the
+    // listing flag from then on, which is why a dropped result must not end it.
+    std::uint64_t mSearchGeneration = 0;
     // Publishes busy() and owns the delay before a spinner appears. Shared because
     // the mutation half writes it too.
     std::shared_ptr<BusyState> mBusy;
