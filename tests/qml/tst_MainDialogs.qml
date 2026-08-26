@@ -208,6 +208,7 @@ TestCase {
             property var modificationTime: 0
             property string parentPath: ""
             property int rootKind: 0
+            property bool isRoot: false
             property int fileCount: -1
             property int folderCount: -1
             property bool loading: false
@@ -713,6 +714,21 @@ TestCase {
         controller.parentPath = data.parentPath;
 
         compare(dialog.locationText, data.expected);
+    }
+
+    // A root has no parent, so locationText degenerates to the root's own name and
+    // the row would say the root is inside itself.
+    function test_properties_locationIsDroppedForARootItself() {
+        const controller = makeProperties();
+        const dialog = makeDialog(propertiesComponent, {
+                                      "properties": controller
+                                  });
+
+        verify(dialog.showsLocation);
+
+        controller.isRoot = true;
+
+        verify(!dialog.showsLocation);
     }
 
     function test_properties_sizeDropsTheExactCountWhenItIsAlreadyShown_data() {

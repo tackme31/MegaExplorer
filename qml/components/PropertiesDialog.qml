@@ -39,6 +39,10 @@ Dialog {
     readonly property string locationText: ViewLabels.label(root.properties.rootKind, true, "")
                                            + root.properties.parentPath
 
+    // A root has nothing above it, so locationText would collapse to the root's own
+    // name and read as "Cloud Drive is inside Cloud Drive"; drop the row instead.
+    readonly property bool showsLocation: !root.properties.isRoot
+
     // "" once the lookup has landed, so every row below reads
     // `pendingText() || <the real value>`. Written as a function rather than three
     // inline conditionals because the formatter turns those into unreadable
@@ -100,10 +104,12 @@ Dialog {
         Label {
             text: qsTr("Location")
             color: Theme.color.textSecondary
+            visible: root.showsLocation
         }
         Label {
             Layout.maximumWidth: root.valueWidth
             wrapMode: Text.Wrap
+            visible: root.showsLocation
             text: root.pendingText() || root.locationText
         }
 

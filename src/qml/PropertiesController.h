@@ -35,6 +35,8 @@ class PropertiesController : public QObject
     // the root itself from rootKind. Empty means "directly under the root".
     Q_PROPERTY(QString parentPath READ parentPath NOTIFY changed)
     Q_PROPERTY(int rootKind READ rootKind NOTIFY changed)
+    // Whether the inspected node is a root itself, which has no location to name.
+    Q_PROPERTY(bool isRoot READ isRoot NOTIFY changed)
     // -1 until a folder's contents are known, and permanently for a file.
     Q_PROPERTY(int fileCount READ fileCount NOTIFY changed)
     Q_PROPERTY(int folderCount READ folderCount NOTIFY changed)
@@ -54,6 +56,7 @@ public:
     qlonglong modificationTime() const;
     QString parentPath() const;
     int rootKind() const;
+    bool isRoot() const;
     int fileCount() const;
     int folderCount() const;
     bool loading() const;
@@ -90,6 +93,7 @@ private:
     qlonglong mModificationTime = 0;
     QString mParentPath;
     int mRootKind = 0;
+    bool mIsRoot = false;
     int mFileCount = -1;
     int mFolderCount = -1;
     bool mLoading = false;

@@ -51,6 +51,11 @@ int PropertiesController::rootKind() const
     return mRootKind;
 }
 
+bool PropertiesController::isRoot() const
+{
+    return mIsRoot;
+}
+
 int PropertiesController::fileCount() const
 {
     return mFileCount;
@@ -89,6 +94,7 @@ void PropertiesController::show(quint64 handle,
     mModificationTime = modificationTime;
     mParentPath.clear();
     mRootKind = static_cast<int>(ViewKind::CloudDrive);
+    mIsRoot = isRoot;
     mFileCount = -1;
     mFolderCount = -1;
     mLoading = true;

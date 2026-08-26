@@ -62,6 +62,24 @@ TEST(PropertiesControllerTest, PublishesTheRowsOwnFactsBeforeTheLookupAnswers)
     EXPECT_EQ(f.controller.fileCount(), -1);
 }
 
+TEST(PropertiesControllerTest, MarksARootSoTheDialogCanDropItsLocation)
+{
+    Fixture f;
+    EXPECT_CALL(*f.client, getPath(::testing::_, ::testing::_, ::testing::_))
+        .WillRepeatedly(::testing::InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(pathOf({}))));
+    EXPECT_CALL(*f.client, getFolderInfo(::testing::_, ::testing::_, ::testing::_))
+        .WillRepeatedly(::testing::InvokeArgument<2>(Result<FolderInfo>::ok(FolderInfo{0, 0, 0})));
+
+    f.controller.show(0, true, QStringLiteral("Cloud Drive"), true, 0, 0);
+    drainEvents();
+    EXPECT_TRUE(f.controller.isRoot());
+
+    // The flag has to clear on the next show(), or a root inspected once would hide
+    // every later node's location too.
+    f.controller.show(42, false, QStringLiteral("a.jpg"), false, 1024, 0);
+    EXPECT_FALSE(f.controller.isRoot());
+}
+
 TEST(PropertiesControllerTest, IgnoresTheRowsSizeForAFolderAndTakesTheRecursiveTotal)
 {
     Fixture f;
