@@ -5,7 +5,7 @@ import QtQuick.Controls.FluentWinUI3
 // the grid, the tree, the pins and the tabs cannot drift apart (S4). D6 stops
 // this phase at two kinds; which glyph a file gets is FileTypeIcons.qml's
 // whitelist, and a caller that leaves fileName empty (the tree, the pins, the
-// tabs -- all folders) never reaches it.
+// tabs -- all folders) gets the fallback it never draws.
 //
 // An Item wrapping the Label rather than a Label itself: Text-derived types
 // declare implicitWidth/implicitHeight read-only, and a square box is the
@@ -18,7 +18,11 @@ Item {
     property string fileName: ""
     property int size: Theme.iconSize.sm
 
-    readonly property var typeIcon: root.isFolder ? null : FileTypeIcons.forFileName(root.fileName)
+    // Not gated on isFolder, even though a folder never draws it: the Label's
+    // ternaries below depend on isFolder too, and on a view's reused delegate
+    // flipping folder -> file they can re-evaluate before this binding does.
+    // A null here was then read for .family/.glyph (evolve/095).
+    readonly property var typeIcon: FileTypeIcons.forFileName(root.fileName)
 
     implicitWidth: root.size
     implicitHeight: root.size

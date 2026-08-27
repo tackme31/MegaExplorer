@@ -71,7 +71,6 @@
 
 | 状態 | 種類 | 項目 | サイズ | メモ |
 |---|---|---|---|---|
-| todo | 不具合 | Recent を開くと `FileIcon.qml` が null 参照の TypeError をログに吐く | S | `evolve/089` の実機確認で気づいた（**今回の変更以前からある**——同じ回数が変更前のビルドのログにも出る）。再現手順: サイドパネルの Recent を開く → アプリのログに `FileIcon.qml:31: TypeError: Cannot read property 'family' of null` と同 34 行目の `'glyph'` が 6 組出る。`typeIcon` は `isFolder` が false のときだけ引く前提だが、`FileTypeIcons.forFileName()` が null を返す入力（一覧の差し替え中に `fileName` がまだ空、等）があると三項の false 側が null を触る。**見た目は壊れていない**（アイコンは出る）のでログ汚染どまり。原因の特定は未了。受信箱の [編集] より「優先度: 低」から昇格 |
 
 ---
 
