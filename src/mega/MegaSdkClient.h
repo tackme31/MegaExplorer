@@ -265,6 +265,14 @@ private:
     std::map<std::uint64_t, std::unique_ptr<mega::MegaCancelToken>> mDownloadCancelTokens;
     std::map<std::uint64_t, std::unique_ptr<mega::MegaCancelToken>> mUploadCancelTokens;
 
+    // Handed to every tree walk runOffThread() runs, and cancelled once in shutdown(),
+    // so closing the window does not wait out a walk nobody will see. One long-lived
+    // token rather than one per call because it is never re-armed: past shutdown()
+    // every queued job already bails on mShuttingDown. Declared before the pool so it
+    // outlives the worker reading it, and cancel() takes no lock (see the
+    // mCancelTokenMutex note), so the GUI thread cannot invert against sdkMutex here.
+    std::unique_ptr<mega::MegaCancelToken> mListingCancelToken;
+
     // Plain QObject living on the constructing thread; posting to it is how
     // runOffThread() gets back there. Nothing else is done with it.
     //
@@ -274,6 +282,7 @@ private:
 
     // Capped at one thread, and that cap is load-bearing rather than frugal: it makes
     // the pool answer in issue order, which is what lets a caller treat the last
-    // listing it asked for as the last one it will be handed.
+    // listing it asked for as the last one it will be handed. It is also what keeps
+    // the single mListingCancelToken inside the SDK's "one operation at a time" rule.
     std::unique_ptr<QThreadPool> mListingPool;
 };

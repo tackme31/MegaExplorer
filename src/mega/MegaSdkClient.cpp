@@ -252,6 +252,7 @@ std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
 MegaSdkClient::MegaSdkClient(std::string basePath, std::string userAgent)
     : mLogger(std::make_unique<MegaSdkLogger>()),
       mApi(std::make_unique<mega::MegaApi>(nullptr, basePath.c_str(), userAgent.c_str())),
+      mListingCancelToken(mega::MegaCancelToken::createInstance()),
       mCallbackTarget(std::make_unique<QObject>()),
       mListingPool(std::make_unique<QThreadPool>())
 {
@@ -274,12 +275,14 @@ void MegaSdkClient::shutdown()
     if (mShuttingDown.exchange(true))
         return; // main.cpp already called it; the destructor is the second call
 
+    // Cuts the walk already under way short; without it the wait below is bounded by
+    // that walk, which on a large account is seconds of a window that is already gone.
+    mListingCancelToken->cancel();
+
     // Before mApi.reset(): a listing worker is the one place that reads mApi from
     // outside the SDK's own threads, and it has no null check that would survive the
     // pointer going away underneath it. This drains the queue as well as the running
-    // job, but the flag above makes every queued one bail without touching mApi, so
-    // the wait is bounded by the single walk already under way -- which on a large
-    // account is seconds, and is why quitting mid-listing lingers (ROADMAP).
+    // job, but the flag above makes every queued one bail without touching mApi.
     mListingPool->waitForDone();
 
     // ~MegaApi joins the SDK thread, which runs abortPendingActions() on the way
@@ -504,8 +507,11 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
             // Recursion is chosen by which call takes the filter, not by anything on it:
             // MegaApi::search walks the subtree, getChildren stops at the location handle.
             std::unique_ptr<mega::MegaNodeList> results(
-                searchFilter.thisFolderOnly ? mApi->getChildren(filter.get(), toMegaOrder(order))
-                                            : mApi->search(filter.get(), toMegaOrder(order)));
+                searchFilter.thisFolderOnly
+                    ? mApi->getChildren(filter.get(),
+                                        toMegaOrder(order),
+                                        mListingCancelToken.get())
+                    : mApi->search(filter.get(), toMegaOrder(order), mListingCancelToken.get()));
             return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
         },
         std::move(onDone));
@@ -519,6 +525,13 @@ void MegaSdkClient::runOffThread(std::function<Result<std::vector<FileEntry>>()>
             mShuttingDown ? Result<std::vector<FileEntry>>::fail(kShutDownMessage,
                                                                  kClientShutDownCode)
                           : work();
+        // Re-checked after work(): a walk cut short by mListingCancelToken hands back a
+        // truncated node list through the ordinary return, with no error channel of its
+        // own, so without this a cancelled listing is indistinguishable from a complete
+        // one. Today nothing drains the queue past shutdown(), but that is a property of
+        // main.cpp's ordering, not of this class.
+        if (mShuttingDown)
+            result = Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode);
         // The posted call deliberately captures nothing of `this`: shutdown() waits
         // for the worker but cannot un-post an event already in the queue.
         QMetaObject::invokeMethod(
@@ -559,7 +572,7 @@ void MegaSdkClient::listFavourites(SortOrder order,
             applySearchFilter(*filter, searchFilter);
 
             std::unique_ptr<mega::MegaNodeList> results(
-                mApi->search(filter.get(), toMegaOrder(order)));
+                mApi->search(filter.get(), toMegaOrder(order), mListingCancelToken.get()));
             return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
         },
         std::move(onDone));
@@ -604,7 +617,7 @@ void MegaSdkClient::listRecent(SortOrder order,
             filter->byNodeType(mega::MegaNode::TYPE_FILE);
 
             std::unique_ptr<mega::MegaNodeList> results(
-                mApi->search(filter.get(), toMegaOrder(order)));
+                mApi->search(filter.get(), toMegaOrder(order), mListingCancelToken.get()));
             return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
         },
         std::move(onDone));

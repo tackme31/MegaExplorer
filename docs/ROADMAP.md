@@ -71,7 +71,6 @@
 
 | 状態 | 種類 | 項目 | サイズ | メモ |
 |---|---|---|---|---|
-| todo | 不具合 | Favorites / Recent の取得中にウィンドウを閉じると、プロセスが取得の終わりまで残る | S | `evolve/089` のレビューで出た（**その周が入れた非同期化の副作用**）。再現手順: アイテム数の多いアカウントで Favorites か Recent を開き、一覧が出る前にウィンドウを閉じる → ウィンドウは消えるがプロセスが数秒残る。`main.cpp` は `app.exec()` が返ってから `shutdown()` を呼び、その `mListingPool->waitForDone()` が走行中のツリー走査を待ち切るため。以前は同じ時間だけ GUI が固まっていたので体感の総量は変わらないが、閉じたのに残るのは別の驚き方をする。**直し方は分かっている**（このクラスは転送用に `MegaCancelToken` を既に持っており、`MegaApi::search` は第 3 引数にそれを取る。1 つ持って `waitForDone()` の直前で `cancel()` する）が、トークンの寿命と付け替えを間違えると終了時の UAF になるため、`evolve/089` はその場で入れず起票に回した。受信箱の [編集] より「優先度: 低」から昇格 |
 | todo | 不具合 | Recent を開くと `FileIcon.qml` が null 参照の TypeError をログに吐く | S | `evolve/089` の実機確認で気づいた（**今回の変更以前からある**——同じ回数が変更前のビルドのログにも出る）。再現手順: サイドパネルの Recent を開く → アプリのログに `FileIcon.qml:31: TypeError: Cannot read property 'family' of null` と同 34 行目の `'glyph'` が 6 組出る。`typeIcon` は `isFolder` が false のときだけ引く前提だが、`FileTypeIcons.forFileName()` が null を返す入力（一覧の差し替え中に `fileName` がまだ空、等）があると三項の false 側が null を触る。**見た目は壊れていない**（アイコンは出る）のでログ汚染どまり。原因の特定は未了。受信箱の [編集] より「優先度: 低」から昇格 |
 
 ---
