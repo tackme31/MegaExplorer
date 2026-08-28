@@ -4,15 +4,17 @@ description: >-
   Cut a MegaExplorer release from develop: bump the version, write the release
   notes from master..develop, merge into master, tag it, build and package the
   Release zip, unpack that zip and check the app actually launches from it, then
-  push and create the GitHub release with gh. Takes the version as an argument
-  (`/release 0.2.0`). Stops for approval exactly twice -- on the release notes,
+  push and create the GitHub release with gh. Works with no argument -- it picks
+  the next version itself from what shipped since master; `/release 0.2.0`
+  overrides that. Stops for approval exactly twice -- on the release notes,
   and on the launch check. Use only when cutting a release.
 ---
 
 # /release — リリースを 1 本切る
 
-引数はバージョン `X.Y.Z`（`v` 付きで渡されたら剥がす）。**develop 上で人間が対話的に走らせる
-コマンド**で、サブエージェントには出さない——止まる箇所が 2 つあり、`AskUserQuestion` が要る。
+**引数は無くてよい**——次の版は 1. で自分で決める。渡されたときはそれが優先（`X.Y.Z`、`v`
+付きなら剥がす）。**develop 上で人間が対話的に走らせるコマンド**で、サブエージェントには
+出さない——止まる箇所が 2 つあり、`AskUserQuestion` が要る。
 
 止まるのはこの 2 箇所だけ。それ以外は失敗しない限り進む。
 
@@ -29,14 +31,12 @@ git rev-parse --abbrev-ref HEAD        # develop であること
 git status --porcelain                 # 空であること
 git fetch origin --tags
 git log --oneline origin/develop..develop develop..origin/develop   # 乖離していないこと
-git tag -l vX.Y.Z                      # 空であること
-gh release view vX.Y.Z                 # 「release not found」であること
 git rev-list --count master..develop   # 1 以上であること
 git branch --no-merged develop | grep evolve/   # 未マージの evolve/NNN が無いこと
 ```
 
-- バージョン形式は `X.Y.Z`（数字 3 つ）。壊れていたら聞き返す。引数が無ければ
-  `CMakeLists.txt` の現行版を示して何にするか聞く——勝手に採番しない。
+（タグと GitHub release の重複確認は、版が決まったあと 1. で行う。）
+
 - `origin/develop` が先行していたら `git pull --ff-only` で追いつく。乖離していたら中断。
 - 未マージの `evolve/NNN` があるのは、サイクルがマージに失敗して止まった跡（`CLAUDE.md`
   「ループエンジニアリング」）。**先にそれを片付けるのが筋なので中断する。**
@@ -47,7 +47,47 @@ git branch --no-merged develop | grep evolve/   # 未マージの evolve/NNN が
 - 最後に `bash scripts/loop_verify.sh` を通す。**警告 1 本でも落ちるのでそこで中断**——
   リリース版が壊れているかどうかを、後の Release ビルドの前にここで確定させる。
 
-## 1. バージョンを上げる
+## 1. 次のバージョンを決めて上げる
+
+引数で渡されていればそれを使う。無ければ**この 3 手で決める。人間に聞かない。**
+
+**手順 1 — 今回出荷されたものを数える。** 出荷の証拠は `docs/roadmap-done.md` に足された行で、
+`docs/ROADMAP.md` から消えた行**ではない**——ループは「やらないと決めた項目」も削除するので、
+消えただけの行を数えると出荷していない機能追加を数えてしまう（実例: `v0.1.0` 以降で消えた
+唯一の `機能追加` 行「目録が巨大な zip」は、実装ではなく取り下げだった）。
+
+```
+git diff master..develop -- docs/roadmap-done.md | grep '^+|'          # 出荷された項目
+git log -p master..develop -- docs/ROADMAP.md | grep '^-|'             # 種類の在処
+```
+
+**手順 2 — 出荷された項目の 種類 を突き合わせる。** 上の 2 つを項目名で対応付け、各項目が
+`機能追加` か `不具合` かを拾う。roadmap-done の行は 1 行が数千トークンあるので、
+`cut -c1-200` などで頭だけ見る——全文は読まない。
+
+**手順 3 — 数え方。**
+
+| 出荷された 種類 | 次の版 |
+| --- | --- |
+| `機能追加` が 1 つ以上 | MINOR を上げる（`0.1.3` → `0.2.0`） |
+| 全部 `不具合`（＋リファクタ・ドキュメント・スキル） | PATCH を上げる（`0.1.0` → `0.1.1`） |
+
+- **基準は ROADMAP の 種類 であって、画面に何が増えたかではない。** 不具合として起票された
+  ものは、直し方が新しい表示の追加であっても PATCH のまま（`evolve/090` `/091` の
+  「読み込み中」表示がこれ。無反応に見える不具合の是正であって、機能ではない）。
+- `.claude/` のスキルや `scripts/` の変更は配布物に入らないので、版の判断に数えない。
+- MAJOR は**人間が明示的に指示したときだけ**。1.0.0 を切るかどうかは採番の問題ではない。
+
+決めたら、版と理由（出荷 N 件、うち機能追加 0 件、など）を 1〜2 行でターミナルに出す。
+**ここでは止まらない**——版は 2. の承認①でリリース文と一緒に目に入るので、違うと言われたら
+まだ push していない版上げコミットを `git commit --amend` で作り直せばよい。
+
+版が決まったので、ここで重複を確認する。どちらかが埋まっていたら中断:
+
+```
+git tag -l vX.Y.Z                      # 空であること
+gh release view vX.Y.Z                 # 「release not found」であること
+```
 
 `CMakeLists.txt` 3 行目の `project(MegaExplorer VERSION ...)` が唯一の版の在処で、
 `MEGAEXPLORER_VERSION` も CPack の zip 名もそこから派生する。書き換えたら、旧版の文字列が
@@ -87,8 +127,10 @@ git log master..develop --format='%h %s%n%b%n---'
 - 冒頭 1 行は「何のリリースか」。初回リリースからの差分が大きいときだけ 2〜3 行の要約を足す。
 
 `build/release-notes-X.Y.Z.md` に書く（`/build*/` は gitignore 済み＝コミットされない）。
-そのままターミナルにも出し、**`AskUserQuestion` で「この文面で master へ進む / 直す / 中止」**
-を聞く。直すと言われたら直してもう一度聞く。
+そのままターミナルにも出し、**`AskUserQuestion` で「この版・この文面で master へ進む /
+直す / 中止」**を聞く。直すと言われたら直してもう一度聞く。**この承認は版も兼ねる**——版を
+変えると言われたら 1. の版上げコミットを `git commit --amend` で作り直し、zip 名もタグも
+そこから派生するので他に直す場所は無い。
 
 ## 3. master へマージしてタグを打つ
 
