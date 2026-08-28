@@ -92,12 +92,24 @@ gh release view vX.Y.Z                 # 「release not found」であること
 `CMakeLists.txt` 3 行目の `project(MegaExplorer VERSION ...)` が唯一の版の在処で、
 `MEGAEXPLORER_VERSION` も CPack の zip 名もそこから派生する。書き換えたら、旧版の文字列が
 他に残っていないか `grep -rn "<旧版>" --include='*.txt' --include='*.md' --include='*.json' .`
-で見る（`docs/` の履歴や `roadmap-done.md` の過去行は**直さない**——過去の記述だから）。
+で見る（`docs/` の履歴や `roadmap-done.md` の過去行、このスキル自身の例示は**直さない**——
+過去の記述だから）。
+
+**`licenses/manifest.json` と `THIRD-PARTY-NOTICES.txt` にもアプリ自身の版が入っていて、
+どちらも zip に同梱される**（`package.ps1` の検証対象）。生成物なので手で直さず、
+`CMakeLists.txt` を書き換えたあとに再生成する——スクリプトは版を `project()` から読む:
+
+```
+python scripts/gen_third_party_notices.py
+```
+
+差分が版の 1 行ずつだけかを `git diff` で見る。依存を上げていないのに他の行が動いていたら、
+生成側が変わっているということなので止まって理由を確かめる。
 
 develop に 1 コミット積む。本文は 1〜2 行で足りる。
 
 ```
-git add CMakeLists.txt
+git add CMakeLists.txt THIRD-PARTY-NOTICES.txt licenses/manifest.json
 git commit    # Subject: Bump the version to X.Y.Z
 ```
 
@@ -116,11 +128,12 @@ git log master..develop --format='%h %s%n%b%n---'
 
 書き方:
 
-- **日本語**、ユーザー視点。内部の設計判断・リファクタ・テスト追加・ドキュメント更新は
-  リリース文に出さない（コミットログに残っている）。
-- 見出しは中身のあるものだけ置く: `### 新機能` / `### 改善` / `### 不具合修正`。
-- **ユーザーが気づかないような細かい修正は 1 行にまとめる**——「その他いくつかの不具合を修正」。
-  一つ一つ並べない。
+- **英語**、ユーザー視点。GitHub の release ページに出るもので、読み手はこのリポジトリの
+  訪問者だから（`v0.1.1` から英語。`v0.1.0` だけ日本語で、そちらは直していない）。
+  内部の設計判断・リファクタ・テスト追加・ドキュメント更新は出さない（コミットログに残る）。
+- 見出しは中身のあるものだけ置く: `### New features` / `### Improvements` / `### Bug fixes`。
+- **ユーザーが気づかないような細かい修正は 1 行にまとめる**——"Fixed several other minor
+  issues."。一つ一つ並べない。
 - 末尾に環境の 1 行を置く。数字は覚えているものではなく、その場で確かめたものを書く:
   Qt は `CMakePresets.json` の `CMAKE_PREFIX_PATH`、SDK は
   `git -C third_party/sdk describe --tags`。
@@ -146,7 +159,7 @@ git tag -a vX.Y.Z                  # 注釈付き。v0.1.0 と同じ形
 `--no-ff` へ倒さず**、何が入っているかを見せて指示を仰ぐ。
 
 タグの注釈は「`MegaExplorer X.Y.Z`」＋空行＋リリース文の要約 3〜4 行（zip 名まで含める）。
-v0.1.0 の注釈が手本。
+リリース文と同じく**英語**で、v0.1.1 の注釈が手本（v0.1.0 は日本語なので手本にしない）。
 
 ## 4. Release ビルドとパッケージ
 
