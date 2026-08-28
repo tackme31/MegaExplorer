@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MegaExplorer VERSION 0.1.0 LANGUAGES CXX)
+project(MegaExplorer VERSION 0.1.1 LANGUAGES CXX)
 
 # The distribution is a zip you unpack and double-click, not a Unix prefix: the
 # exe, its DLLs and the notices all sit at the root, with only plugins/ and qml/
