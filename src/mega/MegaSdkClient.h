@@ -128,6 +128,8 @@ public:
                        std::uint64_t length,
                        std::function<void(Result<std::vector<char>>)> onDone) override;
 
+    Result<std::string> streamingUrl(std::uint64_t handle) override;
+
     void getPath(std::uint64_t handle,
                  bool isRoot,
                  std::function<void(Result<std::vector<PathSegment>>)> onDone) override;
@@ -247,6 +249,12 @@ private:
     // callbacks holding its own sdkMutex, which our synchronous methods take from the
     // GUI thread, so any lock wrapping both sides inverts the order and deadlocks.
     std::atomic<bool> mShuttingDown{false};
+
+    // The SDK's local HTTP server is started lazily by streamingUrl() and stopped in
+    // shutdown(). Plain bool rather than atomic: both are called from the thread that
+    // constructed this client, never from an SDK callback. httpServerIsRunning() is
+    // not usable in its place -- it answers with the port, which is a valid 0 too.
+    bool mHttpServerStarted = false;
 
     // One token per in-flight transfer, keyed by the caller's transferId, so
     // cancelDownload()/cancelUpload() can name one of several running transfers.

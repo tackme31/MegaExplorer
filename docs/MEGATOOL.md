@@ -30,12 +30,24 @@ SDK のステートキャッシュ DB はアプリと別ディレクトリ（`<A
 megatool whoami                  アプリの保存セッションがどのアカウントのものかを表示し、
                                  MEGAEXPLORER_TEST_ACCOUNT と比較する
 megatool ls <path>               フォルダの中身（ルートは '.'）
+megatool stream <path> [off [len]]
+                                 ファイルの中身を SDK 内蔵のローカル HTTP サーバ経由で読む。
+                                 off / len（バイト）で範囲取得、len 省略で丸ごと
 megatool mkdir <path>            フォルダ作成。途中の階層も作る（mkdir -p 相当）
 megatool put <local> <path>      ローカルのファイル 1 個をフォルダへアップロード
 megatool mv <path> <folder>      ノードをフォルダへ移動。宛先に同名があっても止めない
 megatool rm <path>               ノードをゴミ箱へ移動
 megatool fixture reset           /MegaExplorerFixture を既知の状態へ作り直す
 ```
+
+### `stream` — ディスクに落とさない読み出しの確認用
+
+アプリ内ビューアの土台（`IMegaClient::streamingUrl`）を CLI から叩くためだけにある。URL を表示し、
+そこへ `Range` 付きの GET を 1 回投げて、ステータス・`Content-Range`・受け取ったバイト数・先頭
+16 バイトを出す。206 と `Content-Range` が返れば途中位置からの取得が効いている。
+
+**表示される URL は capability そのもの**——同じマシンの別プロセスがそれを知れば中身を読める。
+このコマンドは意図して標準出力へ出すが、アプリ側ではログに出さない。
 
 ### `whoami` — ループの安全装置
 

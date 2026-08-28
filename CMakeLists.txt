@@ -21,7 +21,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Gui is for QWindowKit, which links Qt's Core/Gui/Quick *private* modules.
 # QuickTest backs tests/qml, which runs the .qml TestCases in-process.
-find_package(Qt6 REQUIRED COMPONENTS Gui Quick QuickTest)
+find_package(Qt6 REQUIRED COMPONENTS Gui Network Quick QuickTest)
 
 qt_standard_project_setup(REQUIRES 6.10)
 
@@ -395,6 +395,7 @@ add_executable(megatool
 )
 target_link_libraries(megatool
     PRIVATE Qt6::Core
+    PRIVATE Qt6::Network
     PRIVATE MEGA::SDKlib
     PRIVATE MegaExplorerCore
     PRIVATE crypt32

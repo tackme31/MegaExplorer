@@ -27,11 +27,15 @@ both in sync if one changes.
 
 The `VCPKG_*` flags exist because the SDK's CMake only auto-configures vcpkg when it's the
 top-level project; embedded via our `add_subdirectory`, we must replicate that manually. The
-feature list (`use-openssl;use-freeimage;use-ffmpeg;use-pdfium;sdk-tests`) mirrors the SDK's own
-Windows defaults — check `third_party/sdk/cmake/modules/sdklib_options.cmake` if the SDK version
-bumps and defaults change. `sdk-tests` is `third_party/sdk/vcpkg.json`'s own feature name for
-pulling in `gtest` — it only affects what vcpkg installs, unrelated to the SDK's own
-`ENABLE_SDKLIB_TESTS` option (still off).
+feature list (`use-openssl;use-freeimage;use-ffmpeg;use-pdfium;use-libuv;sdk-tests`) mirrors the
+SDK's own Windows defaults — check `third_party/sdk/cmake/modules/sdklib_options.cmake` if the SDK
+version bumps and defaults change. `use-libuv` is the exception that does *not* mirror a default:
+the SDK leaves `USE_LIBUV` off on desktop, and the preset also has to set `USE_LIBUV=ON` by hand,
+because the SDK only derives the vcpkg feature from that option when it is the top-level project.
+Both are needed for `HAVE_LIBUV`, which is what makes `megaapi.h` declare the local HTTP server
+`IMegaClient::streamingUrl()` uses — without them the declarations are not even in the header.
+`sdk-tests` is `third_party/sdk/vcpkg.json`'s own feature name for pulling in `gtest` — it only
+affects what vcpkg installs, unrelated to the SDK's own `ENABLE_SDKLIB_TESTS` option (still off).
 
 ## Debug vs Release
 

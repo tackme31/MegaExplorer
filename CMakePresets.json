@@ -19,7 +19,8 @@
         "VCPKG_TARGET_TRIPLET": "x64-windows-mega",
         "VCPKG_OVERLAY_PORTS": "${sourceDir}/third_party/sdk/cmake/vcpkg_overlay_ports",
         "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/third_party/sdk/cmake/vcpkg_overlay_triplets",
-        "VCPKG_MANIFEST_FEATURES": "use-openssl;use-freeimage;use-ffmpeg;use-pdfium;sdk-tests"
+        "VCPKG_MANIFEST_FEATURES": "use-openssl;use-freeimage;use-ffmpeg;use-pdfium;use-libuv;sdk-tests",
+        "USE_LIBUV": "ON"
       }
     }
   ],

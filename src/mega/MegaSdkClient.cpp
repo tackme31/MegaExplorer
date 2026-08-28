@@ -285,6 +285,11 @@ void MegaSdkClient::shutdown()
     // job, but the flag above makes every queued one bail without touching mApi.
     mListingPool->waitForDone();
 
+    // Before mApi.reset(): ~MegaApi does not stop the libuv server, and a request
+    // still in flight there would reach an SDK that is already tearing down.
+    if (mHttpServerStarted)
+        mApi->httpServerStop();
+
     // ~MegaApi joins the SDK thread, which runs abortPendingActions() on the way
     // out: every pending request and transfer completes with API_EACCESS, so all our
     // listeners fire here, on the SDK thread, while this call blocks. Those
@@ -865,6 +870,41 @@ void MegaSdkClient::readFileRange(std::uint64_t handle,
                          static_cast<std::int64_t>(offset),
                          static_cast<std::int64_t>(clamped),
                          new megasdk::StreamingContentListener(clamped, std::move(onDone)));
+}
+
+Result<std::string> MegaSdkClient::streamingUrl(std::uint64_t handle)
+{
+    if (mShuttingDown)
+        return Result<std::string>::fail(kShutDownMessage, kClientShutDownCode);
+
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+        return Result<std::string>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
+            MegaErrorCode::kENoEnt);
+
+    if (!mHttpServerStarted)
+    {
+        // port 0 asks for a free one. The SDK's default of 4443 fails when another
+        // process already holds it, and the failure is a bare false.
+        if (!mApi->httpServerStart(true, 0, false))
+            return Result<std::string>::fail("Could not start the local HTTP server",
+                                             MegaErrorCode::kEInternal);
+
+        // Same rate-check trap as readFileRange: the server reads through the same
+        // streaming transfers, so the SDK's default minimum rate aborts a slow one
+        // mid-way with API_EAGAIN.
+        mApi->setStreamingMinimumRate(0);
+        mHttpServerStarted = true;
+    }
+
+    char* link = mApi->httpServerGetLocalLink(node.get());
+    if (!link)
+        return Result<std::string>::fail("Could not build a local link for the node",
+                                         MegaErrorCode::kEInternal);
+    std::string url(link);
+    delete[] link; // megaapi.h: "Use delete[] to release the memory"
+    return Result<std::string>::ok(std::move(url));
 }
 
 void MegaSdkClient::getPath(std::uint64_t handle,

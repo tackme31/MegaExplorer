@@ -13,12 +13,19 @@
 #include "mega/MegaSdkClient.h"
 #include "platform/WindowsSessionStore.h"
 
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QLoggingCategory>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QStandardPaths>
+#include <QTimer>
+#include <QUrl>
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -387,6 +394,62 @@ int cmdLs(IMegaClient& client, const std::string& path)
     return 0;
 }
 
+// Fetches a node's bytes back over the SDK's local HTTP server -- deliberately
+// not over readFileRange, because what has to be proved here is that *that
+// server* is up and answers a range: it is the URL the in-app viewers will be
+// pointed at.
+//
+// The one place in this tool that runs an event loop. QNetworkAccessManager has
+// no blocking form, and await() cannot stand in: it parks the calling thread,
+// which is the very thread this reply is delivered on.
+int cmdStream(IMegaClient& client,
+              const std::string& path,
+              std::uint64_t offset,
+              std::uint64_t length)
+{
+    const Result<Node> node = resolve(client, path);
+    if (!node.success)
+        return fail("resolve " + path + ": " + node.errorMessage);
+    if (node.value().isRoot)
+        return fail("stream needs a file, not the Cloud Drive root");
+
+    const Result<std::string> url = client.streamingUrl(node.value().handle);
+    if (!url.success)
+        return fail("streamingUrl " + path + ": " + url.errorMessage);
+    std::printf("url    : %s\n", url.value().c_str());
+
+    QNetworkRequest request{QUrl(QString::fromStdString(url.value()))};
+    if (length > 0)
+    {
+        // Inclusive on both ends, per RFC 9110; length 0 means "no Range header",
+        // i.e. the whole node.
+        request.setRawHeader("Range",
+                             QByteArray("bytes=")
+                                 + QByteArray::number(static_cast<qulonglong>(offset)) + '-'
+                                 + QByteArray::number(static_cast<qulonglong>(offset + length - 1)));
+    }
+
+    QNetworkAccessManager nam;
+    const std::unique_ptr<QNetworkReply> reply(nam.get(request));
+    QEventLoop loop;
+    QObject::connect(reply.get(), &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(kAwaitBudget, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    if (!reply->isFinished())
+        return fail("the local HTTP server did not answer within the budget");
+    if (reply->error() != QNetworkReply::NoError)
+        return fail("GET failed: " + reply->errorString().toStdString());
+
+    const QByteArray body = reply->readAll();
+    std::printf("status : %d\n",
+                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt());
+    std::printf("range  : %s\n", reply->rawHeader("Content-Range").constData());
+    std::printf("bytes  : %lld\n", static_cast<long long>(body.size()));
+    std::printf("head   : %s\n", body.left(16).toHex(' ').constData());
+    return 0;
+}
+
 int cmdMkdir(IMegaClient& client, const std::string& path)
 {
     const Result<Node> node = makeDirs(client, path);
@@ -555,6 +618,10 @@ void usage()
                  "                          (exit 0 only when they match)\n"
                  "  ls <path>               list a folder ('.' for the Cloud Drive root -- Git\n"
                  "                          Bash rewrites a bare '/' before we see it)\n"
+                 "  stream <path> [off [len]]\n"
+                 "                          read a file back over the SDK's local HTTP server,\n"
+                 "                          without it touching the disk; off/len (bytes) ask\n"
+                 "                          for a range, and no len means the whole file\n"
                  "  mkdir <path>            create a folder, parents included\n"
                  "  put <local> <path>      upload one local file into a folder\n"
                  "  mv <path> <folder>      move a node into a folder, taken name or not\n"
@@ -616,6 +683,11 @@ int main(int argc, char* argv[])
     int rc = 2;
     if (command == "ls")
         rc = cmdLs(*client, args.size() > 1 ? args[1] : std::string());
+    else if (command == "stream" && args.size() > 1 && !emptyTarget)
+        rc = cmdStream(*client,
+                       args[1],
+                       args.size() > 2 ? std::strtoull(args[2].c_str(), nullptr, 10) : 0,
+                       args.size() > 3 ? std::strtoull(args[3].c_str(), nullptr, 10) : 0);
     else if (command == "mkdir" && args.size() > 1 && !emptyTarget)
         rc = cmdMkdir(*client, args[1]);
     else if (command == "put" && args.size() > 2 && !args[2].empty())

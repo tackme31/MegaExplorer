@@ -250,6 +250,19 @@ public:
                                std::uint64_t length,
                                std::function<void(Result<std::vector<char>>)> onDone) = 0;
 
+    // http://127.0.0.1:<port>/<handle>/<name>, served by the SDK's own local HTTP
+    // server, for the case readFileRange cannot cover: handing a whole node to
+    // something that only takes a URL. Nothing reaches the disk -- the SDK decrypts
+    // in memory -- and the server answers Range requests, so seeking works.
+    //
+    // Synchronous because the SDK's server start and link building both are. The
+    // server is started on the first call and lives as long as the client; only
+    // nodes handed out this way are served, which is the SDK's default mode.
+    //
+    // The URL is a capability: any process on this machine that learns it can read
+    // the file. Never log it.
+    virtual Result<std::string> streamingUrl(std::uint64_t handle) = 0;
+
     // Ancestor chain root-first, always including the root as the first element
     // and the node itself as the last. Must follow a successful fetchNodes().
     virtual void getPath(std::uint64_t handle,

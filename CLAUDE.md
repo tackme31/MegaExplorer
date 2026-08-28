@@ -336,7 +336,8 @@ cmake -S . -B build/msvc-debug -G "Visual Studio 17 2022" -A x64 ^
     -DVCPKG_TARGET_TRIPLET=x64-windows-mega ^
     -DVCPKG_OVERLAY_PORTS=third_party/sdk/cmake/vcpkg_overlay_ports ^
     -DVCPKG_OVERLAY_TRIPLETS=third_party/sdk/cmake/vcpkg_overlay_triplets ^
-    -DVCPKG_MANIFEST_FEATURES="use-openssl;use-freeimage;use-ffmpeg;use-pdfium;sdk-tests"
+    -DVCPKG_MANIFEST_FEATURES="use-openssl;use-freeimage;use-ffmpeg;use-pdfium;use-libuv;sdk-tests" ^
+    -DUSE_LIBUV=ON
 cmake --build build/msvc-debug --config Debug --target MegaExplorer
 ```
 

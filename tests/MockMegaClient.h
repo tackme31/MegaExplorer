@@ -95,6 +95,7 @@ public:
                  std::uint64_t,
                  std::function<void(Result<std::vector<char>>)>),
                 (override));
+    MOCK_METHOD(Result<std::string>, streamingUrl, (std::uint64_t), (override));
     MOCK_METHOD(void,
                 getPath,
                 (std::uint64_t, bool, std::function<void(Result<std::vector<PathSegment>>)>),
