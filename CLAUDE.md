@@ -185,11 +185,13 @@ fire can land seconds after that cycle ends. `/evolve` by hand still means "one 
 
 **Branches.** `develop` is the development trunk: the loop branches from it, merges back into it,
 and pushes it, and requests are committed there. `master` holds released versions only — the first
-release landed there on 2026-08-26, and after that **nothing automated touches it**; a human merges
-`develop` into `master` when cutting a release. The only other branches are the `evolve/NNN` the
-loop creates: **local only, never pushed** — they are kept rather than deleted (a revert entry
-point, and the loop numbers the next one from them), so pushing them would grow the remote without
-bound. `develop` is the only branch the loop pushes.
+release landed there on 2026-08-26, and after that **nothing automated touches it**; a human cuts a
+release with **`/release X.Y.Z`** (`.claude/skills/release/`), which bumps the version, writes the
+notes from `master..develop`, merges, tags, builds the zip, checks the app launches out of that zip,
+and publishes it with `gh` — stopping for approval on the notes and on the launch check. The only
+other branches are the `evolve/NNN` the loop creates: **local only, never pushed** — they are kept
+rather than deleted (a revert entry point, and the loop numbers the next one from them), so pushing
+them would grow the remote without bound. `develop` is the only branch the loop pushes.
 
 **The skill is two files, and the split is load-bearing.** `SKILL.md` is a dispatcher: it spawns
 one `general-purpose` subagent and relays its report, nothing else. The actual cycle — all seven
