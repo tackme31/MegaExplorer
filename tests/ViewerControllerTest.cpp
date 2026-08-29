@@ -18,17 +18,18 @@ struct Fixture
 
 } // namespace
 
-TEST(ViewerControllerTest, ViewableNamesAreImagesOnly)
+TEST(ViewerControllerTest, ViewerKindNamesTheViewerThatOpensTheFile)
 {
     Fixture f;
-    EXPECT_TRUE(f.controller.canView("photo.JPG"));
-    EXPECT_TRUE(f.controller.canView("raw.cr2"));
-    // Both have their own viewer still to come; until then double-click leaves them
-    // inert rather than opening them in the image viewer.
-    EXPECT_FALSE(f.controller.canView("clip.mp4"));
-    EXPECT_FALSE(f.controller.canView("manual.pdf"));
-    EXPECT_FALSE(f.controller.canView("notes.txt"));
-    EXPECT_FALSE(f.controller.canView("README"));
+    EXPECT_EQ(f.controller.viewerKind("photo.JPG"), QStringLiteral("image"));
+    EXPECT_EQ(f.controller.viewerKind("raw.cr2"), QStringLiteral("image"));
+    EXPECT_EQ(f.controller.viewerKind("clip.MP4"), QStringLiteral("video"));
+    EXPECT_EQ(f.controller.viewerKind("clip.mkv"), QStringLiteral("video"));
+    // PDF has its own viewer still to come; until then double-click leaves it inert
+    // rather than opening it in a viewer that cannot show it.
+    EXPECT_TRUE(f.controller.viewerKind("manual.pdf").isEmpty());
+    EXPECT_TRUE(f.controller.viewerKind("notes.txt").isEmpty());
+    EXPECT_TRUE(f.controller.viewerKind("README").isEmpty());
 }
 
 TEST(ViewerControllerTest, SourceUrlPassesTheClientsUrlThrough)

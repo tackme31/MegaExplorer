@@ -215,6 +215,13 @@ QtObject {
         // CaptionBar's window-close already paint this one.
         readonly property string close: "\uE8BB" // ChromeClose
 
+        // The video viewer's transport button, one glyph swapped for the other.
+        // Both checked in Segoe Fluent Icons' cmap and drawn: present, and
+        // monochrome -- that font carries no COLR table at all, so nothing in this
+        // set can spring E80A's colour-layer trap the way the note above expects.
+        readonly property string play: "\uE768"  // Play
+        readonly property string pause: "\uE769" // Pause
+
         // Direction markers on the transfer flyout's rows. Download is the code
         // point the More menu already paints; Upload is its neighbour in the same
         // font block and has not been drawn yet -- an absent code point renders as

@@ -294,13 +294,13 @@ ApplicationWindow {
                          ? mainContentComponent : loginComponent
     }
 
-    // One viewer window per double-click, so several images stand side by side and
-    // each is dismissed on its own.
+    // One viewer window per double-click, so several stand side by side and each is
+    // dismissed on its own.
     Component {
         id: imageViewerComponent
 
         ImageViewer {
-            id: viewerWindow
+            id: imageViewerWindow
             controller: viewerController
             // Set here rather than inherited from nesting, which is what supplied it
             // while the viewer was declared inside this window: a transient window
@@ -308,21 +308,37 @@ ApplicationWindow {
             // count towards quitOnLastWindowClosed -- so a viewer left open cannot
             // keep the app alive after the main window goes.
             transientParent: window
-            onVisibleChanged: if (!viewerWindow.visible)
-                                  viewerWindow.destroy()
+            onVisibleChanged: if (!imageViewerWindow.visible)
+                                  imageViewerWindow.destroy()
         }
     }
 
-    function openImageViewer(handle, name): void {
-    const viewer = imageViewerComponent.createObject(window);
-    if (!viewer)
-    return;
-    viewer.open(handle, name);
-    // open() refuses a name the controller cannot show, and a viewer that never
-    // became visible would never reach the onVisibleChanged that destroys it.
-    if (!viewer.showing)
-    viewer.destroy();
-}
+    Component {
+        id: videoViewerComponent
+
+        VideoViewer {
+            id: videoViewerWindow
+            controller: viewerController
+            transientParent: window
+            onVisibleChanged: if (!videoViewerWindow.visible)
+                                  videoViewerWindow.destroy()
+        }
+    }
+
+    function openViewer(handle, name): void {
+        const kind = viewerController.viewerKind(name);
+        const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : null;
+        if (!component)
+            return;
+        const viewer = component.createObject(window);
+        if (!viewer)
+            return;
+        viewer.open(handle, name);
+        // A viewer that never became visible would never reach the onVisibleChanged
+        // that destroys it.
+        if (!viewer.showing)
+            viewer.destroy();
+    }
 
     Component {
         id: loginComponent
@@ -432,7 +448,7 @@ ApplicationWindow {
                         initialColumnWidthSize: window.columnWidthSize
                         initialPreviewVisible: window.previewVisible
 
-                        onFileActivated: (handle, name) => window.openImageViewer(handle, name)
+                        onFileActivated: (handle, name) => window.openViewer(handle, name)
 
                         onViewModeWriteBack: vm => window.viewMode = vm
                         onPreviewVisibleWriteBack: v => window.previewVisible = v

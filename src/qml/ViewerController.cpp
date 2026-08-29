@@ -6,9 +6,22 @@ ViewerController::ViewerController(std::shared_ptr<IMegaClient> client, QObject*
     : QObject(parent), mClient(std::move(client))
 {}
 
-bool ViewerController::canView(const QString& name) const
+QString ViewerController::viewerKind(const QString& name) const
 {
-    return previewKindForName(name.toStdString()) == PreviewKind::Image;
+    switch (previewKindForName(name.toStdString()))
+    {
+        case PreviewKind::Image:
+            return QStringLiteral("image");
+        case PreviewKind::Video:
+            return QStringLiteral("video");
+        // Pdf has its own viewer still to come; the rest never get one.
+        case PreviewKind::Pdf:
+        case PreviewKind::Text:
+        case PreviewKind::Archive:
+        case PreviewKind::None:
+            break;
+    }
+    return {};
 }
 
 QString ViewerController::sourceUrl(quint64 handle)

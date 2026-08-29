@@ -64,6 +64,14 @@ if (-not $SkipBuild) {
         if ($LASTEXITCODE -ne 0) { throw "configure failed ($LASTEXITCODE)" }
     }
 
+    # windeployqt learns which QML modules to ship from a scan cached under
+    # .qt/qml_imports/<target>_build.cmake, and that cache is not reliably
+    # invalidated when a .qml gains a new `import` -- a stale one silently ships a
+    # zip missing a whole Qt module (hit while adding QtMultimedia). Deleted so the
+    # build below rescans; only safe here, since -SkipBuild has no build to
+    # regenerate it.
+    Remove-Item -Path (Join-Path $buildDir '.qt/qml_imports/*_build.cmake') -Force -ErrorAction SilentlyContinue
+
     Write-Host "building ($buildPreset)..." -ForegroundColor Cyan
     & $CMake --build --preset $buildPreset --target MegaExplorer
     if ($LASTEXITCODE -ne 0) { throw "build failed ($LASTEXITCODE)" }
@@ -90,7 +98,8 @@ try {
 }
 
 # One entry per thing that can go missing on its own: Qt's libraries and the
-# platform plugin (windeployqt), the QML modules (its import scan), FFmpeg (the
+# platform plugin (windeployqt), the QML modules and the media backend behind
+# VideoViewer.qml (its import scan), FFmpeg (the
 # vcpkg glob), the MSVC runtime (InstallRequiredSystemLibraries), and the two
 # text files a binary distribution is obliged to carry.
 $required = @(
@@ -100,6 +109,9 @@ $required = @(
     '/Qt6Quick.dll',
     '/platforms/qwindows.dll',
     '/qml/QtQuick/qmldir',
+    '/Qt6Multimedia.dll',
+    '/multimedia/ffmpegmediaplugin.dll',
+    '/qml/QtMultimedia/qmldir',
     '/avcodec-61.dll',
     '/VCRUNTIME140.dll',
     '/MSVCP140.dll',

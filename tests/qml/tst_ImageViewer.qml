@@ -3,7 +3,7 @@ import QtTest
 import MegaExplorer
 
 // Covers the viewer window's own logic, which is the part no C++ test can reach:
-// ViewerControllerTest.cpp owns canView()/sourceUrl(), and what is left here --
+// ViewerControllerTest.cpp owns viewerKind()/sourceUrl(), and what is left here --
 // refusing a name the controller cannot view, standing several windows at once,
 // releasing the image when the window hides -- lives in this file's QML.
 //
@@ -15,14 +15,17 @@ TestCase {
     when: windowShown
     visible: true
 
-    // Mirrors ViewerController's two invokables. canView() answers on the same
+    // Mirrors ViewerController's two invokables. viewerKind() answers on the same
     // basis the real one does (extension only), narrowed to what these cases use.
     Component {
         id: fakeControllerComponent
         QtObject {
             property int urlCallCount: 0
-            function canView(name) {
-                return String(name).toLowerCase().endsWith(".jpg");
+            function viewerKind(name) {
+                const lower = String(name).toLowerCase();
+                if (lower.endsWith(".jpg"))
+                    return "image";
+                return lower.endsWith(".mp4") ? "video" : "";
             }
             function sourceUrl(handle) {
                 urlCallCount++;
@@ -46,7 +49,7 @@ TestCase {
         return viewer;
     }
 
-    function test_opensOnlyWhatTheControllerCanView() {
+    function test_opensOnlyWhatBelongsToTheImageViewer() {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
         const viewer = makeViewer(controller);
 

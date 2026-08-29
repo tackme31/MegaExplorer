@@ -47,7 +47,7 @@ Window {
     color: "#1c1c1c"
 
     function open(handle, name) {
-        if (!root.controller || !root.controller.canView(name))
+        if (!root.controller || root.controller.viewerKind(name) !== "image")
             return;
         root.actualSize = false;
         root.currentHandle = handle;

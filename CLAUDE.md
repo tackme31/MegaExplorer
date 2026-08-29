@@ -128,7 +128,7 @@ Tips:
 ## What this project is
 
 Windows-Explorer-like desktop client for MEGA cloud storage — thumbnail grid, search,
-double-click-to-open folders, double-click-to-view an image without downloading it (gaps in
+double-click-to-open folders, double-click-to-play a video or view an image without downloading it (gaps in
 official MEGAsync). Not a sync client: only a one-shot background refresh when a folder is
 opened, no continuous watching.
 

@@ -21,7 +21,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Gui is for QWindowKit, which links Qt's Core/Gui/Quick *private* modules.
 # QuickTest backs tests/qml, which runs the .qml TestCases in-process.
-find_package(Qt6 REQUIRED COMPONENTS Gui Network Quick QuickTest)
+# Multimedia backs qml/components/VideoViewer.qml. Nothing in C++ calls it, but
+# linking it is what puts Qt6Multimedia.dll and the media backend plugin in front
+# of windeployqt -- the QML import scan alone finds the module, not its plugin.
+find_package(Qt6 REQUIRED COMPONENTS Gui Multimedia Network Quick QuickTest)
 
 qt_standard_project_setup(REQUIRES 6.10)
 
@@ -259,6 +262,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/FolderTreePanel.qml
         qml/components/IconMenuItem.qml
         qml/components/ImageViewer.qml
+        qml/components/VideoViewer.qml
         qml/components/InlineRenameField.qml
         qml/components/LicenseDialog.qml
         qml/components/ListingLoadingNotice.qml
@@ -345,6 +349,9 @@ target_link_libraries(MegaExplorerQml
     # MegaExplorerCore types, so consumers need both.
     PUBLIC Qt6::Quick
     PUBLIC MegaExplorerCore
+    # Private: only VideoViewer.qml's `import QtMultimedia` needs it (see the
+    # find_package comment above), and a static library still forwards this on.
+    PRIVATE Qt6::Multimedia
     # Private: only WindowAgentForeign.h's QML_FOREIGN(QWK::QuickWindowAgent)
     # needs it, and static libraries still forward private deps to their linkers.
     PRIVATE QWindowKit::Quick
