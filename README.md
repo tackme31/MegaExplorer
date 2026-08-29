@@ -7,6 +7,7 @@ for your cloud files, not a sync client.
 
 - Familiar Windows Explorer-like feel
 - Previews and thumbnails without downloading anything
+- Images, video and PDFs opened in a viewer of their own
 - Search and filtering across your whole account
 - Open the matching local file or folder in Windows Explorer
 
@@ -46,6 +47,15 @@ Thumbnails in the grid, and the selected file shown in the preview pane.
 - PDF
 - Text files
 - Zip archives — a list of what is inside
+
+### The viewer
+
+Double-click a file to open it in a window of its own, streamed from MEGA — nothing is written
+to disk.
+
+- Images — fit to the window, or double-click for actual size and pan
+- Video — play/pause and a seek bar
+- PDF — page by page, with the arrow keys
 
 ### Search and filtering
 ![](./img/search_and_filters.png)
