@@ -221,6 +221,30 @@ Window {
                                                                                    player.play()
                 }
 
+                ToolButton {
+                    objectName: "muteButton"
+                    focusPolicy: Qt.NoFocus
+                    implicitWidth: 32
+                    implicitHeight: 32
+                    Layout.alignment: Qt.AlignVCenter
+                    text: root.muted ? Theme.glyph.mute : Theme.glyph.volume
+                    font.family: Theme.font.iconFamily
+                    onClicked: root.muteToggleRequested()
+                }
+
+                Slider {
+                    id: volumeSlider
+
+                    objectName: "volumeSlider"
+                    Layout.preferredWidth: 96
+                    Layout.alignment: Qt.AlignVCenter
+                    focusPolicy: Qt.NoFocus
+                    from: 0
+                    to: 1
+                    enabled: !root.muted
+                    onMoved: root.volumeRequested(volumeSlider.value)
+                }
+
                 Label {
                     text: root.formatTime(player.position)
                     color: Theme.color.textSecondary
@@ -247,30 +271,6 @@ Window {
                     color: Theme.color.textSecondary
                     font.pixelSize: Theme.font.caption
                     Layout.alignment: Qt.AlignVCenter
-                }
-
-                ToolButton {
-                    objectName: "muteButton"
-                    focusPolicy: Qt.NoFocus
-                    implicitWidth: 32
-                    implicitHeight: 32
-                    Layout.alignment: Qt.AlignVCenter
-                    text: root.muted ? Theme.glyph.mute : Theme.glyph.volume
-                    font.family: Theme.font.iconFamily
-                    onClicked: root.muteToggleRequested()
-                }
-
-                Slider {
-                    id: volumeSlider
-
-                    objectName: "volumeSlider"
-                    Layout.preferredWidth: 96
-                    Layout.alignment: Qt.AlignVCenter
-                    focusPolicy: Qt.NoFocus
-                    from: 0
-                    to: 1
-                    enabled: !root.muted
-                    onMoved: root.volumeRequested(volumeSlider.value)
                 }
             }
         }

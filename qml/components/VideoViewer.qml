@@ -207,34 +207,6 @@ Window {
                                                                                    player.play()
                 }
 
-                Label {
-                    text: root.formatTime(player.position)
-                    color: "#ffffff"
-                    font.pixelSize: Theme.font.caption
-                    Layout.alignment: Qt.AlignVCenter
-                }
-
-                Slider {
-                    id: seek
-
-                    Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignVCenter
-                    focusPolicy: Qt.NoFocus
-                    from: 0
-                    // Never zero: a Slider whose range is empty puts its handle at the
-                    // far end and reports every press as the maximum.
-                    to: Math.max(1, player.duration)
-                    enabled: player.seekable
-                    onMoved: player.position = seek.value
-                }
-
-                Label {
-                    text: root.formatTime(player.duration)
-                    color: "#ffffff"
-                    font.pixelSize: Theme.font.caption
-                    Layout.alignment: Qt.AlignVCenter
-                }
-
                 ToolButton {
                     id: muteButton
 
@@ -268,6 +240,34 @@ Window {
                     to: 1
                     enabled: !root.muted
                     onMoved: root.volumeRequested(volumeSlider.value)
+                }
+
+                Label {
+                    text: root.formatTime(player.position)
+                    color: "#ffffff"
+                    font.pixelSize: Theme.font.caption
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                Slider {
+                    id: seek
+
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
+                    focusPolicy: Qt.NoFocus
+                    from: 0
+                    // Never zero: a Slider whose range is empty puts its handle at the
+                    // far end and reports every press as the maximum.
+                    to: Math.max(1, player.duration)
+                    enabled: player.seekable
+                    onMoved: player.position = seek.value
+                }
+
+                Label {
+                    text: root.formatTime(player.duration)
+                    color: "#ffffff"
+                    font.pixelSize: Theme.font.caption
+                    Layout.alignment: Qt.AlignVCenter
                 }
             }
         }
