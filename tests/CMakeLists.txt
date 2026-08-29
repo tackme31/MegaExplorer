@@ -22,6 +22,7 @@ add_executable(MegaExplorerTests
     PreviewKindTest.cpp
     PreviewServiceTest.cpp
     PreviewControllerTest.cpp
+    ViewerControllerTest.cpp
     TextPreviewDecoderTest.cpp
     ZipListingTest.cpp
     FolderTreeServiceTest.cpp

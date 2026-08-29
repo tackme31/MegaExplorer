@@ -151,6 +151,10 @@ QtObject {
         // both, and a rotation would need a transformOrigin to stay centred.
         readonly property string chevronRight: "\uE76C" // ChevronRight
         readonly property string chevronDown: "\uE70D"  // ChevronDown
+        // The viewer's previous/next buttons -- chevronRight above is the one
+        // already drawn; neither cmap check has been re-run for this one,
+        // fontTools being absent from this machine (as for filter below).
+        readonly property string chevronLeft: "\uE76B" // ChevronLeft
         // Ascending sort in the detail view's header (S6); descending reuses
         // chevronDown above.
         readonly property string chevronUp: "\uE70E" // ChevronUp

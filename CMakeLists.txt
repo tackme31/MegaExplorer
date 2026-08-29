@@ -258,6 +258,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
         qml/components/IconMenuItem.qml
+        qml/components/ImageViewer.qml
         qml/components/InlineRenameField.qml
         qml/components/LicenseDialog.qml
         qml/components/ListingLoadingNotice.qml
@@ -298,6 +299,8 @@ qt_add_qml_module(MegaExplorerQml
         src/qml/PreviewController.cpp
         src/qml/SearchFilterEnums.h
         src/qml/TransferEnums.h
+        src/qml/ViewerController.h
+        src/qml/ViewerController.cpp
         src/qml/ViewKindEnum.h
         src/qml/WindowAgentForeign.h
     RESOURCES

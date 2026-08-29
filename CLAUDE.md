@@ -126,8 +126,9 @@ Tips:
 ## What this project is
 
 Windows-Explorer-like desktop client for MEGA cloud storage — thumbnail grid, search,
-double-click-to-open folders (gaps in official MEGAsync). Not a sync client: only a one-shot
-background refresh when a folder is opened, no continuous watching.
+double-click-to-open folders, double-click-to-view an image without downloading it (gaps in
+official MEGAsync). Not a sync client: only a one-shot background refresh when a folder is
+opened, no continuous watching.
 
 Settings can point one **local folder** at the MEGA root, which the right-click "Open local
 location" uses to reveal an item in Explorer. It is a naming convention and nothing else —

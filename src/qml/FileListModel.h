@@ -141,6 +141,11 @@ public:
     // handlers can't reach data() from QML -- the Role enum isn't exposed there.
     Q_INVOKABLE QVariantMap entryAt(int row) const;
 
+    // Row index for handle within mEntries, or -1 if not present. Public and
+    // invokable because the viewer is handed a handle and has to walk the rows
+    // around it; the selection and cursor code below is the internal caller.
+    Q_INVOKABLE int rowForHandle(quint64 handle) const;
+
     // Rubber-band selection is a session: begin on press, update per move, end or
     // cancel on release. Covered rows are recomputed from scratch each update, so
     // shrinking the rectangle deselects again; what the band adds is layered over
@@ -172,9 +177,6 @@ private:
     // unique per node, so this alone clears the selection on navigation while
     // preserving it across a same-folder re-sort -- no caller-side special-casing.
     void pruneSelection();
-
-    // Row index for handle within mEntries, or -1 if not present.
-    int rowForHandle(quint64 handle) const;
 
     // Common tail of every selection mutator: selectionChanged() plus a full-table
     // dataChanged(SelectedRole) so both views repaint.

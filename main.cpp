@@ -37,6 +37,7 @@
 #include "qml/ThumbnailController.h"
 #include "qml/TransferListModel.h"
 #include "qml/UploadController.h"
+#include "qml/ViewerController.h"
 
 #include <QDebug>
 #include <QDir>
@@ -160,6 +161,7 @@ int main(int argc, char* argv[])
     AuthController authController(authService);
     AccountController accountController(accountService);
     PreviewController previewController(previewService, previewImageStore);
+    ViewerController viewerController(client);
     LocalFolderController localFolderController(localLinkService, &notifications);
     PropertiesController propertiesController(nodeDetailsService);
     TransferListModel transferListModel(&downloadController, &uploadController);
@@ -224,6 +226,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("clipboardController", &clipboard);
     engine.rootContext()->setContextProperty("accountController", &accountController);
     engine.rootContext()->setContextProperty("previewController", &previewController);
+    engine.rootContext()->setContextProperty("viewerController", &viewerController);
     engine.rootContext()->setContextProperty("localFolderController", &localFolderController);
     engine.rootContext()->setContextProperty("propertiesController", &propertiesController);
     engine.rootContext()->setContextProperty("transferListModel", &transferListModel);

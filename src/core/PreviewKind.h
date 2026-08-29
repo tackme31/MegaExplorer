@@ -2,12 +2,15 @@
 #include <cstdint>
 #include <string>
 
-// Image covers video and PDF as well: the server-side preview is a single JPEG for
-// all three, generated at upload time by FreeImage/FFmpeg/PDFium.
+// Image, Video and Pdf share one preview path -- the server-side preview is a single
+// JPEG for all three, generated at upload time by FreeImage/FFmpeg/PDFium. They are
+// separate values because the in-app viewer opens each with a different Qt type.
 enum class PreviewKind
 {
     None,
     Image,
+    Video,
+    Pdf,
     Text,
     Archive // listing only -- the entry names, never the contents
 };

@@ -82,12 +82,20 @@ ColumnLayout {
         });
     }
 
+    // Relayed to Main.qml's single ImageViewer, which owns the decision of whether
+    // that name is one it can show -- this pane knows nothing about viewers. A file
+    // it cannot show stays inert, which is what double-click has done since the
+    // download it used to trigger misfired once too often.
+    signal fileActivated(var handle, string name)
+
     // Single entry point both child views' activateRequested funnels into.
-    // Files are inert on purpose -- double-click used to download and misfired
-    // too easily, so name/sizeBytes go unused and downloading is context-menu only.
+    // sizeBytes goes unused: nothing downstream needs it, downloading is
+    // context-menu only.
     function activate(isFolder, handle, name, sizeBytes) {
         if (isFolder)
             pane.navController.openFolder(handle);
+        else
+            pane.fileActivated(handle, name);
     }
 
     // Plain Item, not the StackLayout itself: a StackLayout treats every Item

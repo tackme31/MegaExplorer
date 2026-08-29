@@ -2,12 +2,12 @@
 
 #include <gtest/gtest.h>
 
-TEST(PreviewKindTest, MediaExtensionsAreImageIncludingVideoAndPdf)
+TEST(PreviewKindTest, MediaExtensionsSplitIntoImageVideoAndPdf)
 {
     EXPECT_EQ(previewKindForName("photo.jpg"), PreviewKind::Image);
     EXPECT_EQ(previewKindForName("raw.cr2"), PreviewKind::Image);
-    EXPECT_EQ(previewKindForName("clip.mp4"), PreviewKind::Image);
-    EXPECT_EQ(previewKindForName("manual.pdf"), PreviewKind::Image);
+    EXPECT_EQ(previewKindForName("clip.mp4"), PreviewKind::Video);
+    EXPECT_EQ(previewKindForName("manual.pdf"), PreviewKind::Pdf);
 }
 
 TEST(PreviewKindTest, TextAndSourceExtensionsAreText)
@@ -35,7 +35,7 @@ TEST(PreviewKindTest, MediaWinsWhenAnExtensionIsClaimedByBothLists)
 {
     // ".ts" is MPEG-TS as well as TypeScript, and the media list is consulted first:
     // a real transport stream has a server-side preview, TypeScript source has none.
-    EXPECT_EQ(previewKindForName("stream.ts"), PreviewKind::Image);
+    EXPECT_EQ(previewKindForName("stream.ts"), PreviewKind::Video);
     EXPECT_EQ(previewKindForName("component.tsx"), PreviewKind::Text);
 }
 

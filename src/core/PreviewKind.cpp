@@ -9,29 +9,38 @@ namespace
 // Mirrors what the SDK's own generators cover (third_party/sdk/src/gfx/freeimage.cpp).
 // A file outside this list can still carry a preview uploaded by another client, but
 // the extension is the only thing knowable before spending a round trip.
-const std::unordered_set<std::string>& mediaExtensions()
+//
+// Split by generator rather than kept as one media set: all three preview identically,
+// but the in-app viewer needs to tell them apart.
+const std::unordered_set<std::string>& imageExtensions()
 {
     // clang-format off
     static const std::unordered_set<std::string> extensions{
         // FreeImage
         "jpg", "jpeg", "png", "bmp", "gif", "webp", "tga", "tif", "tiff", "ico",
         // FreeImage, RAW
-        "cr2", "nef", "arw", "dng", "raf", "orf", "rw2", "pef", "srw", "mrw",
-        // FFmpeg
-        "mp4", "mkv", "mov", "avi", "webm", "wmv", "ts", "m4v", "mpg", "mpeg", "flv",
-        "3gp", "ogv",
-        // PDFium
-        "pdf"};
+        "cr2", "nef", "arw", "dng", "raf", "orf", "rw2", "pef", "srw", "mrw"};
     // clang-format on
     return extensions;
 }
 
-// svg is here rather than in mediaExtensions(): whether the uploading client
+const std::unordered_set<std::string>& videoExtensions()
+{
+    // clang-format off
+    static const std::unordered_set<std::string> extensions{
+        // FFmpeg
+        "mp4", "mkv", "mov", "avi", "webm", "wmv", "ts", "m4v", "mpg", "mpeg", "flv",
+        "3gp", "ogv"};
+    // clang-format on
+    return extensions;
+}
+
+// svg is here rather than in imageExtensions(): whether the uploading client
 // rasterized one into a preview is not predictable, and the markup itself is
 // readable.
 const std::unordered_set<std::string>& textExtensions()
 {
-    // "ts" is deliberately absent: mediaExtensions() claims it for MPEG-TS and is
+    // "ts" is deliberately absent: videoExtensions() claims it for MPEG-TS and is
     // consulted first, so adding it here would be dead. A TypeScript file therefore
     // lands on "no preview available" rather than showing its source.
     // clang-format off
@@ -93,9 +102,18 @@ PreviewKind previewKindForName(const std::string& name)
     {
         return PreviewKind::None;
     }
-    if (mediaExtensions().count(extension) > 0)
+    if (imageExtensions().count(extension) > 0)
     {
         return PreviewKind::Image;
+    }
+    if (videoExtensions().count(extension) > 0)
+    {
+        return PreviewKind::Video;
+    }
+    // PDFium's whole share of the media set, so no table of its own.
+    if (extension == "pdf")
+    {
+        return PreviewKind::Pdf;
     }
     if (textExtensions().count(extension) > 0)
     {

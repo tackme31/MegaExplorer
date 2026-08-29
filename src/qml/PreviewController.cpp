@@ -145,7 +145,11 @@ void PreviewController::showSelection(quint64 handle,
 
     switch (previewKindForName(name.toStdString()))
     {
+        // All three arrive as the one server-generated JPEG, so the pane makes no
+        // distinction; only the in-app viewer does.
         case PreviewKind::Image:
+        case PreviewKind::Video:
+        case PreviewKind::Pdf:
             requestImage(handle);
             return;
         case PreviewKind::Text:
