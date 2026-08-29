@@ -24,7 +24,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Multimedia backs qml/components/VideoViewer.qml. Nothing in C++ calls it, but
 # linking it is what puts Qt6Multimedia.dll and the media backend plugin in front
 # of windeployqt -- the QML import scan alone finds the module, not its plugin.
-find_package(Qt6 REQUIRED COMPONENTS Gui Multimedia Network Quick QuickTest)
+find_package(Qt6 REQUIRED COMPONENTS Gui Multimedia Network Pdf Quick QuickTest)
 
 qt_standard_project_setup(REQUIRES 6.10)
 
@@ -262,6 +262,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/FolderTreePanel.qml
         qml/components/IconMenuItem.qml
         qml/components/ImageViewer.qml
+        qml/components/PdfViewer.qml
         qml/components/VideoViewer.qml
         qml/components/InlineRenameField.qml
         qml/components/LicenseDialog.qml
@@ -299,6 +300,8 @@ qt_add_qml_module(MegaExplorerQml
         src/qml/MenuActions.cpp
         src/qml/NotificationController.h
         src/qml/NotificationController.cpp
+        src/qml/PdfPageItem.h
+        src/qml/PdfPageItem.cpp
         src/qml/PreviewController.h
         src/qml/PreviewController.cpp
         src/qml/SearchFilterEnums.h
@@ -352,6 +355,10 @@ target_link_libraries(MegaExplorerQml
     # Private: only VideoViewer.qml's `import QtMultimedia` needs it (see the
     # find_package comment above), and a static library still forwards this on.
     PRIVATE Qt6::Multimedia
+    # Private: PdfPageItem alone -- Qt6::Pdf for QPdfDocument, Qt6::Network for the
+    # GET it makes against the SDK's local HTTP server.
+    PRIVATE Qt6::Pdf
+    PRIVATE Qt6::Network
     # Private: only WindowAgentForeign.h's QML_FOREIGN(QWK::QuickWindowAgent)
     # needs it, and static libraries still forward private deps to their linkers.
     PRIVATE QWindowKit::Quick

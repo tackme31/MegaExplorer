@@ -25,9 +25,7 @@ TEST(ViewerControllerTest, ViewerKindNamesTheViewerThatOpensTheFile)
     EXPECT_EQ(f.controller.viewerKind("raw.cr2"), QStringLiteral("image"));
     EXPECT_EQ(f.controller.viewerKind("clip.MP4"), QStringLiteral("video"));
     EXPECT_EQ(f.controller.viewerKind("clip.mkv"), QStringLiteral("video"));
-    // PDF has its own viewer still to come; until then double-click leaves it inert
-    // rather than opening it in a viewer that cannot show it.
-    EXPECT_TRUE(f.controller.viewerKind("manual.pdf").isEmpty());
+    EXPECT_EQ(f.controller.viewerKind("manual.PDF"), QStringLiteral("pdf"));
     EXPECT_TRUE(f.controller.viewerKind("notes.txt").isEmpty());
     EXPECT_TRUE(f.controller.viewerKind("README").isEmpty());
 }

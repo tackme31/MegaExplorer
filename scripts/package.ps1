@@ -99,7 +99,8 @@ try {
 
 # One entry per thing that can go missing on its own: Qt's libraries and the
 # platform plugin (windeployqt), the QML modules and the media backend behind
-# VideoViewer.qml (its import scan), FFmpeg (the
+# VideoViewer.qml (its import scan), the PDF engine PdfPageItem renders through
+# (linked, so windeployqt sees it as a dependency), FFmpeg (the
 # vcpkg glob), the MSVC runtime (InstallRequiredSystemLibraries), and the two
 # text files a binary distribution is obliged to carry.
 $required = @(
@@ -112,6 +113,7 @@ $required = @(
     '/Qt6Multimedia.dll',
     '/multimedia/ffmpegmediaplugin.dll',
     '/qml/QtMultimedia/qmldir',
+    '/Qt6Pdf.dll',
     '/avcodec-61.dll',
     '/VCRUNTIME140.dll',
     '/MSVCP140.dll',

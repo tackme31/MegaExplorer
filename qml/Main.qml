@@ -325,9 +325,21 @@ ApplicationWindow {
         }
     }
 
+    Component {
+        id: pdfViewerComponent
+
+        PdfViewer {
+            id: pdfViewerWindow
+            controller: viewerController
+            transientParent: window
+            onVisibleChanged: if (!pdfViewerWindow.visible)
+                                  pdfViewerWindow.destroy()
+        }
+    }
+
     function openViewer(handle, name): void {
         const kind = viewerController.viewerKind(name);
-        const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : null;
+        const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : kind === "pdf" ? pdfViewerComponent : null;
         if (!component)
             return;
         const viewer = component.createObject(window);

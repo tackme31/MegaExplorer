@@ -14,8 +14,9 @@ QString ViewerController::viewerKind(const QString& name) const
             return QStringLiteral("image");
         case PreviewKind::Video:
             return QStringLiteral("video");
-        // Pdf has its own viewer still to come; the rest never get one.
         case PreviewKind::Pdf:
+            return QStringLiteral("pdf");
+        // The rest never get one.
         case PreviewKind::Text:
         case PreviewKind::Archive:
         case PreviewKind::None:
