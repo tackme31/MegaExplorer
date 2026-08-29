@@ -11,11 +11,9 @@ import MegaExplorer
 // arrive over the SDK's local HTTP server, so Image.source is just a URL and
 // nothing is written to disk.
 //
-// Nested inside Main.qml's ApplicationWindow, which makes it transient for the
-// main window: it stays above it and goes away with it, and the app does not
-// outlive the main window because a viewer was left open.
-//
-// One window, reused: opening another image replaces what this one shows.
+// One instance per opened image: Main.qml creates a window per double-click and
+// destroys it when it hides, and sets transientParent so the window still belongs
+// to the main one. Nothing here assumes it is the only viewer standing.
 //
 // controller is untyped `var` for PreviewPane.qml's reasons: a typed property
 // would drag a views/ import into components/, and injecting the controller
@@ -77,23 +75,23 @@ Window {
         root.actualSize = false;
     }
 
-    // Not Keys.onEscapePressed: a Window is not an Item and holds no focus of its
-    // own, so the handler would need a focused item under it. A window-scoped
-    // Shortcut fires whenever this window is the active one.
-    Shortcut {
-        sequences: [StandardKey.Cancel]
-        onActivated: root.close()
-    }
-
     Flickable {
         id: flick
         anchors.fill: parent
+        // Focused so the Esc handler below is the one the keys reach.
+        focus: true
         contentWidth: Math.max(width, picture.width)
         contentHeight: Math.max(height, picture.height)
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         // Nothing to pan while the whole image fits.
         interactive: root.actualSize
+
+        // Esc closes the window, off the focused item rather than a window-scoped
+        // Shortcut: QWindow::isActive() is true for a transient child whenever its
+        // parent is active, so with two viewers up both Shortcuts matched and
+        // QShortcutMap dropped the key as ambiguous.
+        Keys.onEscapePressed: root.close()
 
         Image {
             id: picture

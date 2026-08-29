@@ -82,8 +82,8 @@ ColumnLayout {
         });
     }
 
-    // Relayed to Main.qml's single ImageViewer, which owns the decision of whether
-    // that name is one it can show -- this pane knows nothing about viewers. A file
+    // Relayed to Main.qml, which owns the viewer windows and the decision of whether
+    // that name is one they can show -- this pane knows nothing about viewers. A file
     // it cannot show stays inert, which is what double-click has done since the
     // download it used to trigger misfired once too often.
     signal fileActivated(var handle, string name)

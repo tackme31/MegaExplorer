@@ -294,13 +294,35 @@ ApplicationWindow {
                          ? mainContentComponent : loginComponent
     }
 
-    // A Window nested here, not an Item: it becomes transient for this window, so
-    // it floats above it, minimises and closes with it, and the app cannot outlive
-    // the main window through a viewer left open.
-    ImageViewer {
-        id: imageViewer
-        controller: viewerController
+    // One viewer window per double-click, so several images stand side by side and
+    // each is dismissed on its own.
+    Component {
+        id: imageViewerComponent
+
+        ImageViewer {
+            id: viewerWindow
+            controller: viewerController
+            // Set here rather than inherited from nesting, which is what supplied it
+            // while the viewer was declared inside this window: a transient window
+            // floats above its parent, minimises and closes with it, and does not
+            // count towards quitOnLastWindowClosed -- so a viewer left open cannot
+            // keep the app alive after the main window goes.
+            transientParent: window
+            onVisibleChanged: if (!viewerWindow.visible)
+                                  viewerWindow.destroy()
+        }
     }
+
+    function openImageViewer(handle, name): void {
+    const viewer = imageViewerComponent.createObject(window);
+    if (!viewer)
+    return;
+    viewer.open(handle, name);
+    // open() refuses a name the controller cannot show, and a viewer that never
+    // became visible would never reach the onVisibleChanged that destroys it.
+    if (!viewer.showing)
+    viewer.destroy();
+}
 
     Component {
         id: loginComponent
@@ -410,7 +432,7 @@ ApplicationWindow {
                         initialColumnWidthSize: window.columnWidthSize
                         initialPreviewVisible: window.previewVisible
 
-                        onFileActivated: (handle, name) => imageViewer.open(handle, name)
+                        onFileActivated: (handle, name) => window.openImageViewer(handle, name)
 
                         onViewModeWriteBack: vm => window.viewMode = vm
                         onPreviewVisibleWriteBack: v => window.previewVisible = v

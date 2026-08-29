@@ -4,7 +4,7 @@ import MegaExplorer
 
 // Covers the viewer window's own logic, which is the part no C++ test can reach:
 // ViewerControllerTest.cpp owns canView()/sourceUrl(), and what is left here --
-// refusing a name the controller cannot view, replacing what one window shows,
+// refusing a name the controller cannot view, standing several windows at once,
 // releasing the image when the window hides -- lives in this file's QML.
 //
 // The controller is a fake rather than the real type: ViewerController would open
@@ -65,18 +65,25 @@ TestCase {
         compare(String(viewer.source), "http://127.0.0.1:1/7/f.jpg");
     }
 
-    // One window, reused: a second double-click replaces what it shows rather than
-    // opening a second one.
-    function test_openAgainReplacesWhatIsShown() {
+    // A window per double-click: two viewers stand at once, each on its own image,
+    // and closing one leaves the other untouched.
+    function test_viewersStandAndCloseIndependently() {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
-        const viewer = makeViewer(controller);
+        const first = makeViewer(controller);
+        const second = makeViewer(controller);
 
-        viewer.open(7, "photo.jpg");
-        viewer.open(8, "other.jpg");
-        verify(viewer.showing);
-        compare(viewer.currentName, "other.jpg");
-        compare(String(viewer.source), "http://127.0.0.1:1/8/f.jpg");
+        first.open(7, "photo.jpg");
+        second.open(8, "other.jpg");
+        verify(first.showing);
+        verify(second.showing);
+        compare(String(first.source), "http://127.0.0.1:1/7/f.jpg");
         compare(controller.urlCallCount, 2);
+
+        first.close();
+        tryVerify(() => !first.showing);
+        verify(second.showing);
+        compare(second.currentName, "other.jpg");
+        compare(String(second.source), "http://127.0.0.1:1/8/f.jpg");
     }
 
     // Hiding is the single teardown path, so the megabytes the decoded original
