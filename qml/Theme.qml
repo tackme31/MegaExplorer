@@ -222,6 +222,13 @@ QtObject {
         readonly property string play: "\uE768"  // Play
         readonly property string pause: "\uE769" // Pause
 
+        // The same transport bar's mute button, one glyph swapped for the other.
+        // Both went through the same two checks play/pause did: rendered out of
+        // Segoe Fluent Icons and looked at -- a speaker with waves, and a speaker
+        // with a cross.
+        readonly property string volume: "\uE767" // Volume
+        readonly property string mute: "\uE74F"   // Mute
+
         // Direction markers on the transfer flyout's rows. Download is the code
         // point the More menu already paints; Upload is its neighbour in the same
         // font block and has not been drawn yet -- an absent code point renders as

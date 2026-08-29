@@ -104,6 +104,56 @@ TestCase {
         compare(viewer.currentName, "");
     }
 
+    SignalSpy {
+        id: volumeSpy
+        signalName: "volumeRequested"
+    }
+
+    SignalSpy {
+        id: muteSpy
+        signalName: "muteToggleRequested"
+    }
+
+    // Same contract as the video viewer's transport bar: Main.qml holds the app-wide,
+    // persisted level, so this window asks and takes the answer back down the binding
+    // instead of writing its own copy.
+    function test_theTransportBarAsksForVolumeRatherThanWritingIt() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+        viewer.open(1, "song.mp3");
+
+        const slider = findChild(viewer, "volumeSlider");
+        const mute = findChild(viewer, "muteButton");
+        verify(slider);
+        verify(mute);
+
+        viewer.volume = 0.4;
+        compare(slider.value, 0.4);
+
+        volumeSpy.target = viewer;
+        slider.value = 0.25;
+        slider.moved();
+        compare(volumeSpy.count, 1);
+        compare(volumeSpy.signalArguments[0][0], 0.25);
+        compare(viewer.volume, 0.4);
+
+        muteSpy.target = viewer;
+        mute.clicked();
+        compare(muteSpy.count, 1);
+        compare(viewer.muted, false);
+    }
+
+    function test_muteDisablesTheVolumeSlider() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+        viewer.open(1, "song.mp3");
+
+        const slider = findChild(viewer, "volumeSlider");
+        verify(slider.enabled);
+        viewer.muted = true;
+        verify(!slider.enabled);
+    }
+
     function test_formatTimeReadsAsAClock() {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
         const viewer = makeViewer(controller);

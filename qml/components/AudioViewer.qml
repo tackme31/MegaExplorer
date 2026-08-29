@@ -37,6 +37,15 @@ Window {
                                         player.mediaStatus === MediaPlayer.LoadingMedia
                                         || player.mediaStatus === MediaPlayer.StalledMedia)
 
+    // Audio settings on the slider's own 0..1 scale. Main.qml owns the value (it is
+    // app-wide and persisted), so this window asks for a change rather than writing
+    // one: assigning here would break the binding that keeps sibling viewers in step.
+    property real volume: 1.0
+    property bool muted: false
+
+    signal volumeRequested(real level)
+    signal muteToggleRequested
+
     width: 520
     height: 280
     minimumWidth: 360
@@ -92,7 +101,14 @@ Window {
         // Playback starts once the media has loaded, which saves open() from having
         // to guess when the source is ready to accept play().
         autoPlay: true
-        audioOutput: AudioOutput {}
+        audioOutput: AudioOutput {
+            // Cubed, not passed straight through: this property is a linear
+            // amplitude, and Qt's own docs say a UI control wants a nonlinear scale
+            // because perceived loudness is roughly logarithmic. The conversion Qt
+            // offers for it, QtAudio::convertVolume(), is C++-only.
+            volume: root.volume * root.volume * root.volume
+            muted: root.muted
+        }
     }
 
     // The slider follows playback except while the user has hold of it. A plain
@@ -103,6 +119,16 @@ Window {
         property: "value"
         value: player.position
         when: !seek.pressed
+        restoreMode: Binding.RestoreNone
+    }
+
+    // Same reason as the seek slider above: dragging assigns to value, so the level
+    // coming back down from Main.qml has to be re-applied rather than bound.
+    Binding {
+        target: volumeSlider
+        property: "value"
+        value: root.volume
+        when: !volumeSlider.pressed
         restoreMode: Binding.RestoreNone
     }
 
@@ -221,6 +247,30 @@ Window {
                     color: Theme.color.textSecondary
                     font.pixelSize: Theme.font.caption
                     Layout.alignment: Qt.AlignVCenter
+                }
+
+                ToolButton {
+                    objectName: "muteButton"
+                    focusPolicy: Qt.NoFocus
+                    implicitWidth: 32
+                    implicitHeight: 32
+                    Layout.alignment: Qt.AlignVCenter
+                    text: root.muted ? Theme.glyph.mute : Theme.glyph.volume
+                    font.family: Theme.font.iconFamily
+                    onClicked: root.muteToggleRequested()
+                }
+
+                Slider {
+                    id: volumeSlider
+
+                    objectName: "volumeSlider"
+                    Layout.preferredWidth: 96
+                    Layout.alignment: Qt.AlignVCenter
+                    focusPolicy: Qt.NoFocus
+                    from: 0
+                    to: 1
+                    enabled: !root.muted
+                    onMoved: root.volumeRequested(volumeSlider.value)
                 }
             }
         }

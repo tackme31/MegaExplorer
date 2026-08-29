@@ -139,6 +139,13 @@ ApplicationWindow {
     // place this value can come from.
     property string localRootFolder: ""
 
+    // What the video and audio viewers play at, on the same 0..1 scale their
+    // slider shows. Owned here rather than per viewer for viewMode's reason: a
+    // viewer window is created and destroyed per double-click, several stand at
+    // once, and N Settings items would fight over the one pair of keys.
+    property real playbackVolume: 1.0
+    property bool playbackMuted: false
+
     // The currently active tab's TabContentPane, kept in sync by the Binding
     // inside mainContentComponent below and injected into StatusBar.qml, which
     // reads/writes it to drive the view-mode toggle against whichever tab is
@@ -161,6 +168,8 @@ ApplicationWindow {
         property alias previewPaneWidth: window.previewPaneWidth
         property alias colorSchemePreference: window.colorSchemePreference
         property alias localRootFolder: window.localRootFolder
+        property alias playbackVolume: window.playbackVolume
+        property alias playbackMuted: window.playbackMuted
     }
 
     // Pushed rather than read: LocalFolderController keeps no persisted copy, so
@@ -320,6 +329,13 @@ ApplicationWindow {
             id: videoViewerWindow
             controller: viewerController
             transientParent: window
+            // Handed down as a binding and changed only by asking back up, so a
+            // second viewer's transport bar follows this one instead of the two
+            // drifting apart -- assigning to the property here would break it.
+            volume: window.playbackVolume
+            muted: window.playbackMuted
+            onVolumeRequested: level => window.playbackVolume = level
+            onMuteToggleRequested: window.playbackMuted = !window.playbackMuted
             onVisibleChanged: if (!videoViewerWindow.visible)
                                   videoViewerWindow.destroy()
         }
@@ -332,6 +348,10 @@ ApplicationWindow {
             id: audioViewerWindow
             controller: viewerController
             transientParent: window
+            volume: window.playbackVolume
+            muted: window.playbackMuted
+            onVolumeRequested: level => window.playbackVolume = level
+            onMuteToggleRequested: window.playbackMuted = !window.playbackMuted
             onVisibleChanged: if (!audioViewerWindow.visible)
                                   audioViewerWindow.destroy()
         }
