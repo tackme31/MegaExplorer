@@ -23,9 +23,10 @@ class ViewerController : public QObject
 public:
     explicit ViewerController(std::shared_ptr<IMegaClient> client, QObject* parent = nullptr);
 
-    // "image", "video", "pdf", or empty for anything the viewer cannot open yet. Extension-only,
-    // the same basis PreviewKind classifies on. A string rather than an enum because the
-    // only consumer is QML, which uses it to pick which viewer component to create.
+    // "image", "video", "pdf", "audio", or empty for anything the viewer cannot open yet.
+    // Extension-only, the same basis PreviewKind classifies on. A string rather than an
+    // enum because the only consumer is QML, which uses it to pick which viewer
+    // component to create.
     Q_INVOKABLE QString viewerKind(const QString& name) const;
 
     // Local HTTP URL for the node's original bytes, empty when the server refused to

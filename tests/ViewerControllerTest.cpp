@@ -26,6 +26,8 @@ TEST(ViewerControllerTest, ViewerKindNamesTheViewerThatOpensTheFile)
     EXPECT_EQ(f.controller.viewerKind("clip.MP4"), QStringLiteral("video"));
     EXPECT_EQ(f.controller.viewerKind("clip.mkv"), QStringLiteral("video"));
     EXPECT_EQ(f.controller.viewerKind("manual.PDF"), QStringLiteral("pdf"));
+    EXPECT_EQ(f.controller.viewerKind("song.MP3"), QStringLiteral("audio"));
+    EXPECT_EQ(f.controller.viewerKind("lossless.flac"), QStringLiteral("audio"));
     EXPECT_TRUE(f.controller.viewerKind("notes.txt").isEmpty());
     EXPECT_TRUE(f.controller.viewerKind("README").isEmpty());
 }

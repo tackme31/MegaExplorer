@@ -158,6 +158,9 @@ void PreviewController::showSelection(quint64 handle,
         case PreviewKind::Archive:
             requestArchive(handle, sizeBytes);
             return;
+        // Audio is classified for the viewer's sake only; the server generates no
+        // preview for it, so the pane says the same thing it says for anything else.
+        case PreviewKind::Audio:
         case PreviewKind::None:
             publish(Unsupported, NoKind, UnsupportedType);
             return;

@@ -7,7 +7,7 @@ for your cloud files, not a sync client.
 
 - Familiar Windows Explorer-like feel
 - Previews and thumbnails without downloading anything
-- Images, video and PDFs opened in a viewer of their own
+- Images, video, audio and PDFs opened in a viewer of their own
 - Search and filtering across your whole account
 - Open the matching local file or folder in Windows Explorer
 
@@ -55,6 +55,7 @@ to disk.
 
 - Images — fit to the window, or double-click for actual size and pan
 - Video — play/pause and a seek bar
+- Audio — play/pause and a seek bar
 - PDF — page by page, with the arrow keys
 
 ### Search and filtering

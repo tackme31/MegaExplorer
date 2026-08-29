@@ -16,6 +16,8 @@ QString ViewerController::viewerKind(const QString& name) const
             return QStringLiteral("video");
         case PreviewKind::Pdf:
             return QStringLiteral("pdf");
+        case PreviewKind::Audio:
+            return QStringLiteral("audio");
         // The rest never get one.
         case PreviewKind::Text:
         case PreviewKind::Archive:

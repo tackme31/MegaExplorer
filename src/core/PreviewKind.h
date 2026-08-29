@@ -12,7 +12,8 @@ enum class PreviewKind
     Video,
     Pdf,
     Text,
-    Archive // listing only -- the entry names, never the contents
+    Archive, // listing only -- the entry names, never the contents
+    Audio    // viewer only -- no server-side preview exists for it (USE_MEDIAINFO is off)
 };
 
 // Decided from the extension alone -- nothing else about a node is knowable without

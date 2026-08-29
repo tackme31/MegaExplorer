@@ -21,7 +21,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Gui is for QWindowKit, which links Qt's Core/Gui/Quick *private* modules.
 # QuickTest backs tests/qml, which runs the .qml TestCases in-process.
-# Multimedia backs qml/components/VideoViewer.qml. Nothing in C++ calls it, but
+# Multimedia backs the Video/Audio viewers. Nothing in C++ calls it, but
 # linking it is what puts Qt6Multimedia.dll and the media backend plugin in front
 # of windeployqt -- the QML import scan alone finds the module, not its plugin.
 find_package(Qt6 REQUIRED COMPONENTS Gui Multimedia Network Pdf Quick QuickTest)
@@ -261,6 +261,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
         qml/components/IconMenuItem.qml
+        qml/components/AudioViewer.qml
         qml/components/ImageViewer.qml
         qml/components/PdfViewer.qml
         qml/components/VideoViewer.qml
@@ -352,7 +353,7 @@ target_link_libraries(MegaExplorerQml
     # MegaExplorerCore types, so consumers need both.
     PUBLIC Qt6::Quick
     PUBLIC MegaExplorerCore
-    # Private: only VideoViewer.qml's `import QtMultimedia` needs it (see the
+    # Private: only the Video/Audio viewers' `import QtMultimedia` need it (see the
     # find_package comment above), and a static library still forwards this on.
     PRIVATE Qt6::Multimedia
     # Private: PdfPageItem alone -- Qt6::Pdf for QPdfDocument, Qt6::Network for the

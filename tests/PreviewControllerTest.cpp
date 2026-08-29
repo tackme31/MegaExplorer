@@ -147,6 +147,19 @@ TEST(PreviewControllerTest, UnsupportedExtensionNeverReachesTheClient)
     EXPECT_EQ(f.controller.reason(), PreviewController::UnsupportedType);
 }
 
+// Audio became its own PreviewKind so the in-app viewer could open it; the pane has
+// nothing new to show, since the server generates no preview for it.
+TEST(PreviewControllerTest, AudioStaysUnsupportedInThePane)
+{
+    Fixture f;
+    EXPECT_CALL(*f.client, getPreview(::testing::_, ::testing::_, ::testing::_)).Times(0);
+
+    f.controller.showSelection(1, QStringLiteral("song.mp3"), 4096, false);
+
+    EXPECT_EQ(f.controller.state(), PreviewController::Unsupported);
+    EXPECT_EQ(f.controller.reason(), PreviewController::UnsupportedType);
+}
+
 TEST(PreviewControllerTest, ImageArrivalPublishesReadyImageAndRemovesTheTempFile)
 {
     Fixture f;

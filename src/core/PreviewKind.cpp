@@ -35,6 +35,19 @@ const std::unordered_set<std::string>& videoExtensions()
     return extensions;
 }
 
+// Unlike the three above, nothing on the server side generates a preview for these --
+// they are classified only so the in-app viewer knows to open an audio window. Kept in
+// step with FileTypeIcons.qml's music-note list, so the icon and the viewer agree on
+// what counts as audio.
+const std::unordered_set<std::string>& audioExtensions()
+{
+    // clang-format off
+    static const std::unordered_set<std::string> extensions{
+        "mp3", "m4a", "flac", "wav", "aac", "ogg", "opus", "wma"};
+    // clang-format on
+    return extensions;
+}
+
 // svg is here rather than in imageExtensions(): whether the uploading client
 // rasterized one into a preview is not predictable, and the markup itself is
 // readable.
@@ -114,6 +127,10 @@ PreviewKind previewKindForName(const std::string& name)
     if (extension == "pdf")
     {
         return PreviewKind::Pdf;
+    }
+    if (audioExtensions().count(extension) > 0)
+    {
+        return PreviewKind::Audio;
     }
     if (textExtensions().count(extension) > 0)
     {

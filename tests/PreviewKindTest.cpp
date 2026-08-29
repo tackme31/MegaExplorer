@@ -49,8 +49,20 @@ TEST(PreviewKindTest, UnknownExtensionsAreNone)
 {
     EXPECT_EQ(previewKindForName("setup.exe"), PreviewKind::None);
     EXPECT_EQ(previewKindForName("archive.zip"), PreviewKind::Archive);
-    // Audio has no server-side preview: USE_MEDIAINFO is off, so not even cover art.
-    EXPECT_EQ(previewKindForName("song.mp3"), PreviewKind::None);
+}
+
+// Classified for the in-app viewer's sake only -- there is still no server-side
+// preview for audio (USE_MEDIAINFO is off, so not even cover art), which is what
+// PreviewControllerTest checks the pane still says.
+TEST(PreviewKindTest, AudioExtensionsAreAudio)
+{
+    EXPECT_EQ(previewKindForName("song.mp3"), PreviewKind::Audio);
+    EXPECT_EQ(previewKindForName("track.M4A"), PreviewKind::Audio);
+    EXPECT_EQ(previewKindForName("lossless.flac"), PreviewKind::Audio);
+    EXPECT_EQ(previewKindForName("clip.wav"), PreviewKind::Audio);
+    EXPECT_EQ(previewKindForName("voice.ogg"), PreviewKind::Audio);
+    // ogv stays with the video list, which is consulted first.
+    EXPECT_EQ(previewKindForName("clip.ogv"), PreviewKind::Video);
 }
 
 TEST(PreviewKindTest, NamesWithoutAUsableExtensionAreNone)

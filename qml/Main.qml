@@ -326,6 +326,18 @@ ApplicationWindow {
     }
 
     Component {
+        id: audioViewerComponent
+
+        AudioViewer {
+            id: audioViewerWindow
+            controller: viewerController
+            transientParent: window
+            onVisibleChanged: if (!audioViewerWindow.visible)
+                                  audioViewerWindow.destroy()
+        }
+    }
+
+    Component {
         id: pdfViewerComponent
 
         PdfViewer {
@@ -339,7 +351,7 @@ ApplicationWindow {
 
     function openViewer(handle, name): void {
         const kind = viewerController.viewerKind(name);
-        const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : kind === "pdf" ? pdfViewerComponent : null;
+        const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : kind === "pdf" ? pdfViewerComponent : kind === "audio" ? audioViewerComponent : null;
         if (!component)
             return;
         const viewer = component.createObject(window);
