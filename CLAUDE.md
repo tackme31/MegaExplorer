@@ -271,8 +271,8 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   resumes it with the answer. **The subagent never pushes** — firing from there rang the phone a whole
   turn before the question reached the app, so the phone said "answer me" and the app had nothing to
   answer yet (changed 2026-08-22). That one
-  answer covers every `drive` call belonging to that check — two states of the same screen, a `drag` and the shot after
-  it — while a different grain (re-checking after a review fix, another feature) asks again. A
+  answer covers every `drive` call made against the same binary — two states of the same screen, a `drag` and the shot
+  after it — and a rebuild ends it: re-checking after a review fix asks again, as does another feature. A
   refusal means the point is handed to the human as "needs checking on a real run" instead. An
   **expiring** flag file under `%LOCALAPPDATA%\MegaExplorerLoop\`, written by the desktop shortcuts
   (`drive ON 6h/8h/12h`, `drive OFF`), skips the asking: it means **"nobody is here to answer"**,
