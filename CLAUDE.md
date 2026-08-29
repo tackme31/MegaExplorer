@@ -10,7 +10,9 @@ session lives in companion docs, linked from the relevant section below rather t
   priority stays a human call.
 - `docs/ROADMAP.md` — **the backlog, and the single source of truth for what gets built next.** The
   `/evolve` loop reads it every cycle and picks one item off the top. Sized S/M/L, and an **L is
-  never implemented as-is** — a cycle that hits one only splits it. Every row also carries a 種類
+  split in the same cycle that works on it** — the cycle that hits one splits it into S/M rows and
+  then implements the first of them, so no cycle ends having only rewritten the table. Every row
+  also carries a 種類
   (機能追加 / 不具合), decided by whether intent and implementation agree; it is bookkeeping, not
   queue order, so a bug is picked earlier only when it was filed at a higher priority. Its
   "見送り (blocked)" section is what the loop must not touch. Written by the loop, not by hand: keeping the human out of this
