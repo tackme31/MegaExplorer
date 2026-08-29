@@ -6,28 +6,26 @@ import QtQuick.Controls.FluentWinUI3
 import QtQuick.Controls
 import MegaExplorer
 
-// The in-app image viewer: one per window, laid over the whole content area, showing
-// a file's *original* bytes rather than the small server-generated JPEG the preview
-// pane draws. The bytes arrive over the SDK's local HTTP server, so Image.source is
-// just a URL and nothing is written to disk.
+// The in-app image viewer: a window of its own, showing a file's *original* bytes
+// rather than the small server-generated JPEG the preview pane draws. The bytes
+// arrive over the SDK's local HTTP server, so Image.source is just a URL and
+// nothing is written to disk.
 //
-// controller and listModel are untyped `var` for PreviewPane.qml's reasons: a typed
-// property would drag a views/ import into components/, and injecting the controller
-// rather than reading the context property keeps the file loadable by the QML test
-// harness, which installs no context properties.
-Item {
+// Nested inside Main.qml's ApplicationWindow, which makes it transient for the
+// main window: it stays above it and goes away with it, and the app does not
+// outlive the main window because a viewer was left open.
+//
+// One window, reused: opening another image replaces what this one shows.
+//
+// controller is untyped `var` for PreviewPane.qml's reasons: a typed property
+// would drag a views/ import into components/, and injecting the controller
+// rather than reading the context property keeps the file loadable by the QML
+// test harness, which installs no context properties.
+Window {
     id: root
 
     required property var controller
 
-    // The FileListModel the shown row belongs to. Held from open() to close() so the
-    // previous/next walk stays in the folder the viewer was opened from; a navigation
-    // underneath the viewer shifts the rows, which is why closing drops it.
-    property var listModel: null
-    property int currentRow: -1
-    // Kept alongside the row because the row alone goes stale: the address bar and
-    // breadcrumb sit in the window's header, outside the area this covers, so the
-    // listing can be replaced under an open viewer. step() re-resolves from this.
     property var currentHandle: undefined
     property string currentName: ""
     property url source: ""
@@ -37,120 +35,59 @@ Item {
     // the Flickable below supplying the panning that then becomes necessary.
     property bool actualSize: false
 
-    readonly property bool showing: root.currentRow >= 0
+    readonly property bool showing: root.visible
     readonly property bool failed: root.showing && (String(root.source) === "" || picture.status
                                                     === Image.Error)
 
-    // Main.qml hands focus back to the file view on this -- an invisible item cannot
-    // hold activeFocus, so the arrow keys would go dead after a close otherwise.
-    signal closed
+    width: 960
+    height: 640
+    minimumWidth: 240
+    minimumHeight: 180
+    title: root.currentName
+    // Its own dark ground in both themes, the way image viewers generally are: a
+    // surface-coloured one tints the judgement of the image sitting on it.
+    color: "#1c1c1c"
 
-    visible: root.showing
-    enabled: root.showing
-    focus: root.showing
-
-    function open(model, handle, name) {
-        if (!root.controller || !model || !root.controller.canView(name))
+    function open(handle, name) {
+        if (!root.controller || !root.controller.canView(name))
             return;
-        const row = model.rowForHandle(handle);
-        if (row < 0)
-            return;
-        root.listModel = model;
-        root.showRow(row, handle, name);
-    }
-
-    function showRow(row, handle, name) {
         root.actualSize = false;
-        root.currentRow = row;
         root.currentHandle = handle;
         root.currentName = name;
         root.source = root.controller.sourceUrl(handle);
-        // Deferred, not called straight: the double-click that opens the viewer is
-        // still being delivered, and the file view's own tap handler takes focus
-        // back on that same release (FileViewInput.handleLeftTap).
-        Qt.callLater(root.takeFocus);
+        root.show();
+        root.raise();
+        root.requestActivate();
     }
 
-    function takeFocus() {
-        if (root.showing)
-            root.forceActiveFocus();
+    // Hiding is the only teardown path -- the native close button, close() and a
+    // plain visible = false all land here, so the image is released once for all
+    // three.
+    onVisibleChanged: {
+        if (!root.visible)
+            root.releaseImage();
     }
 
-    // Walks outwards a row at a time rather than collecting every viewable row up
-    // front: entryAt() builds a map per call, and the neighbour is nearly always
-    // adjacent.
-    function step(delta) {
-        if (!root.showing || !root.listModel)
-            return;
-        // Not root.currentRow: a navigation from the address bar above refills the
-        // same model, and walking from the old index would leave the folder on
-        // screen. A handle that is gone means this listing no longer holds it.
-        const from = root.listModel.rowForHandle(root.currentHandle);
-        if (from < 0) {
-            root.close();
-            return;
-        }
-        root.currentRow = from;
-        for (let row = from + delta; row >= 0 && row < root.listModel.count; row += delta) {
-            const entry = root.listModel.entryAt(row);
-            if (!entry || entry.name === undefined || entry.isFolder)
-                continue;
-            if (root.controller.canView(entry.name)) {
-                root.showRow(row, entry.handle, entry.name);
-                return;
-            }
-        }
-    }
-
-    function close() {
-        if (!root.showing)
-            return;
-        root.currentRow = -1;
+    function releaseImage() {
         root.currentHandle = undefined;
         root.currentName = "";
         // Cleared rather than left behind: an original can be tens of megabytes once
         // decoded, and Image holds it for as long as its source is set.
         root.source = "";
-        root.listModel = null;
-        root.closed();
+        root.actualSize = false;
     }
 
-    Keys.onEscapePressed: root.close()
-    Keys.onLeftPressed: root.step(-1)
-    Keys.onRightPressed: root.step(1)
-
-    // Its own dark ground in both themes, the way image viewers generally are: a
-    // surface-coloured one tints the judgement of the image sitting on it.
-    Rectangle {
-        anchors.fill: parent
-        color: "#1c1c1c"
-    }
-
-    // Swallows the mouse and wheel events the chrome and the picture don't take:
-    // a Flickable ignores both while `interactive` is false, and a plain Rectangle
-    // never accepted any. This stops item-level delivery only -- what makes the
-    // content underneath inert is Main.qml disabling it (see the Loader there).
-    // Declared before the Flickable so it stays underneath: panning and the
-    // picture's own double-click still win.
-    MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.AllButtons
-        hoverEnabled: true
-        onWheel: wheel => wheel.accepted = true
-    }
-
-    // A MouseArea does not see drags, and this file cannot rely on its host having
-    // disabled what is underneath: without a DropArea, a file dropped on the open
-    // viewer uploads into a folder the user can no longer see. A bare one accepts,
-    // which ends the search for a handler, and dropping on it does nothing.
-    DropArea {
-        anchors.fill: parent
+    // Not Keys.onEscapePressed: a Window is not an Item and holds no focus of its
+    // own, so the handler would need a focused item under it. A window-scoped
+    // Shortcut fires whenever this window is the active one.
+    Shortcut {
+        sequences: [StandardKey.Cancel]
+        onActivated: root.close()
     }
 
     Flickable {
         id: flick
         anchors.fill: parent
-        anchors.topMargin: topBar.height
         contentWidth: Math.max(width, picture.width)
         contentHeight: Math.max(height, picture.height)
         clip: true
@@ -195,8 +132,6 @@ Item {
         }
     }
 
-    // Centred in flick, not in the root: the root is taller by topBar.height, so
-    // anchoring to it would put both a half-bar above the picture's own centre.
     BusyIndicator {
         anchors.centerIn: flick
         running: root.showing && picture.status === Image.Loading
@@ -214,88 +149,5 @@ Item {
         text: String(root.source) === "" ? "This file could not be opened." :
                                            "This image could not be displayed."
         visible: root.failed
-    }
-
-    // Chrome, declared after the picture so it paints over it.
-    Rectangle {
-        id: topBar
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        height: Theme.rowHeight.caption
-        color: Qt.rgba(0, 0, 0, 0.6)
-
-        Label {
-            anchors.left: parent.left
-            anchors.leftMargin: Theme.spacing.lg
-            anchors.right: closeButton.left
-            anchors.rightMargin: Theme.spacing.md
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.currentName
-            elide: Text.ElideMiddle
-            color: "#ffffff"
-        }
-
-        ToolButton {
-            id: closeButton
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.height
-            height: parent.height
-            // NoFocus on all three buttons: a click that moved focus off the root
-            // item would leave Escape and the arrow keys dead.
-            focusPolicy: Qt.NoFocus
-            font.family: Theme.font.iconFamily
-            text: Theme.glyph.close
-            onClicked: root.close()
-
-            contentItem: Text {
-                text: closeButton.text
-                font: closeButton.font
-                color: "#ffffff"
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
-    }
-
-    ToolButton {
-        id: previousButton
-        anchors.left: parent.left
-        anchors.verticalCenter: parent.verticalCenter
-        width: Theme.rowHeight.caption
-        height: Theme.rowHeight.caption * 2
-        focusPolicy: Qt.NoFocus
-        font.family: Theme.font.iconFamily
-        text: Theme.glyph.chevronLeft
-        onClicked: root.step(-1)
-
-        contentItem: Text {
-            text: previousButton.text
-            font: previousButton.font
-            color: "#ffffff"
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
-    }
-
-    ToolButton {
-        id: nextButton
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        width: Theme.rowHeight.caption
-        height: Theme.rowHeight.caption * 2
-        focusPolicy: Qt.NoFocus
-        font.family: Theme.font.iconFamily
-        text: Theme.glyph.chevronRight
-        onClicked: root.step(1)
-
-        contentItem: Text {
-            text: nextButton.text
-            font: nextButton.font
-            color: "#ffffff"
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
     }
 }

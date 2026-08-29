@@ -146,10 +146,6 @@ ApplicationWindow {
     // can reach mainContentComponent's internal ids: the footer is a separately
     // loaded file, and even before R6-3 it was a sibling nested Component.
     property var currentPane: null
-    // The viewer is window-wide but its row walk belongs to one tab's listing, so a
-    // tab switch has to end it rather than leave it walking a listing nobody is
-    // looking at.
-    onCurrentPaneChanged: imageViewer.close()
 
     Settings {
         property alias viewMode: window.viewMode
@@ -296,23 +292,14 @@ ApplicationWindow {
         anchors.fill: parent
         sourceComponent: authController.authState === AuthController.LoggedIn
                          ? mainContentComponent : loginComponent
-        // Covering the file view with an opaque item is not enough to make it
-        // inert: the views drive selection from TapHandlers, and a pointer
-        // handler still sees a press that an Item above accepted -- so every
-        // click inside the viewer was re-selecting a row and taking active focus
-        // back, which left Escape and the arrow keys dead. Disabling the subtree
-        // is what actually stops handler delivery.
-        enabled: !imageViewer.showing
     }
 
-    // Over the content Loader above, so it covers the whole tab area including the
-    // tree and preview panes; under the toast stack below, which is the one thing
-    // that still has to be readable while the viewer is up.
+    // A Window nested here, not an Item: it becomes transient for this window, so
+    // it floats above it, minimises and closes with it, and the app cannot outlive
+    // the main window through a viewer left open.
     ImageViewer {
         id: imageViewer
-        anchors.fill: parent
         controller: viewerController
-        onClosed: window.currentPane?.focusActiveView()
     }
 
     Component {
@@ -423,13 +410,7 @@ ApplicationWindow {
                         initialColumnWidthSize: window.columnWidthSize
                         initialPreviewVisible: window.previewVisible
 
-                        // pane.navigation, not window.currentPane: the signal can
-                        // only come from the pane the user is looking at, and
-                        // reading it off the delegate avoids a lookup that would
-                        // be one frame stale during a tab switch.
-                        onFileActivated: (handle, name) => imageViewer.open(
-                                                               pane.navigation.fileListModel, handle,
-                                                               name)
+                        onFileActivated: (handle, name) => imageViewer.open(handle, name)
 
                         onViewModeWriteBack: vm => window.viewMode = vm
                         onPreviewVisibleWriteBack: v => window.previewVisible = v
