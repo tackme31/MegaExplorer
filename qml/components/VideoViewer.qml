@@ -38,9 +38,13 @@ Window {
     // one: assigning here would break the binding that keeps sibling viewers in step.
     property real volume: 1.0
     property bool muted: false
+    // Whether the file restarts when it ends. Owned by Main.qml for the same reason
+    // the two above are, and asked for the same way.
+    property bool looping: false
 
     signal volumeRequested(real level)
     signal muteToggleRequested
+    signal loopToggleRequested
 
     width: 960
     height: 640
@@ -96,6 +100,7 @@ Window {
         // Playback starts once the media has loaded, which saves open() from having
         // to guess when the source is ready to accept play().
         autoPlay: true
+        loops: root.looping ? MediaPlayer.Infinite : 1
         audioOutput: AudioOutput {
             // Cubed, not passed straight through: this property is a linear
             // amplitude, and Qt's own docs say a UI control wants a nonlinear scale
@@ -205,6 +210,28 @@ Window {
                     }
                     onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() :
                                                                                    player.play()
+                }
+
+                ToolButton {
+                    id: loopButton
+
+                    objectName: "loopButton"
+                    focusPolicy: Qt.NoFocus
+                    implicitWidth: 32
+                    implicitHeight: 32
+                    Layout.alignment: Qt.AlignVCenter
+                    text: Theme.glyph.loop
+                    font.family: Theme.font.iconFamily
+                    // One glyph for both states, so the colour is what says which one is
+                    // showing; spelled out for playPause's reason besides.
+                    contentItem: Text {
+                        text: loopButton.text
+                        font: loopButton.font
+                        color: root.looping ? Theme.color.accent : "#ffffff"
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: root.loopToggleRequested()
                 }
 
                 ToolButton {

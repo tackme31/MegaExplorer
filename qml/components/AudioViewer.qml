@@ -42,9 +42,13 @@ Window {
     // one: assigning here would break the binding that keeps sibling viewers in step.
     property real volume: 1.0
     property bool muted: false
+    // Whether the file restarts when it ends. Owned by Main.qml for the same reason
+    // the two above are, and asked for the same way.
+    property bool looping: false
 
     signal volumeRequested(real level)
     signal muteToggleRequested
+    signal loopToggleRequested
 
     width: 520
     height: 280
@@ -101,6 +105,7 @@ Window {
         // Playback starts once the media has loaded, which saves open() from having
         // to guess when the source is ready to accept play().
         autoPlay: true
+        loops: root.looping ? MediaPlayer.Infinite : 1
         audioOutput: AudioOutput {
             // Cubed, not passed straight through: this property is a linear
             // amplitude, and Qt's own docs say a UI control wants a nonlinear scale
@@ -219,6 +224,29 @@ Window {
                     font.family: Theme.font.iconFamily
                     onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() :
                                                                                    player.play()
+                }
+
+                ToolButton {
+                    id: loopButton
+
+                    objectName: "loopButton"
+                    focusPolicy: Qt.NoFocus
+                    implicitWidth: 32
+                    implicitHeight: 32
+                    Layout.alignment: Qt.AlignVCenter
+                    text: Theme.glyph.loop
+                    font.family: Theme.font.iconFamily
+                    // The only button on this row with a contentItem of its own: one
+                    // glyph stands for both states, so the colour is what says which is
+                    // showing, and the style's own text colour does not move with it.
+                    contentItem: Text {
+                        text: loopButton.text
+                        font: loopButton.font
+                        color: root.looping ? Theme.color.accent : Theme.color.text
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: root.loopToggleRequested()
                 }
 
                 ToolButton {

@@ -229,6 +229,13 @@ QtObject {
         readonly property string volume: "\uE767" // Volume
         readonly property string mute: "\uE74F"   // Mute
 
+        // The transport bar's loop toggle. One code point for both states -- the
+        // colour carries on/off, the way media transports generally show repeat --
+        // so no second, rarer glyph has to be trusted. Present in Segoe Fluent
+        // Icons; the Segoe MDL2 half of the cmap check was not re-run, fontTools
+        // being absent from this machine (as for filter above).
+        readonly property string loop: "\uE8EE" // RepeatAll
+
         // Direction markers on the transfer flyout's rows. Download is the code
         // point the More menu already paints; Upload is its neighbour in the same
         // font block and has not been drawn yet -- an absent code point renders as

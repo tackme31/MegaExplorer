@@ -145,6 +145,10 @@ ApplicationWindow {
     // once, and N Settings items would fight over the one pair of keys.
     property real playbackVolume: 1.0
     property bool playbackMuted: false
+    // Whether those viewers restart the file when it ends. Same ownership reason as
+    // the two above, and the same reason it is not per window: two viewers standing
+    // at once would otherwise disagree about a setting the user set once.
+    property bool playbackLooping: false
 
     // The currently active tab's TabContentPane, kept in sync by the Binding
     // inside mainContentComponent below and injected into StatusBar.qml, which
@@ -170,6 +174,7 @@ ApplicationWindow {
         property alias localRootFolder: window.localRootFolder
         property alias playbackVolume: window.playbackVolume
         property alias playbackMuted: window.playbackMuted
+        property alias playbackLooping: window.playbackLooping
     }
 
     // Pushed rather than read: LocalFolderController keeps no persisted copy, so
@@ -334,8 +339,10 @@ ApplicationWindow {
             // drifting apart -- assigning to the property here would break it.
             volume: window.playbackVolume
             muted: window.playbackMuted
+            looping: window.playbackLooping
             onVolumeRequested: level => window.playbackVolume = level
             onMuteToggleRequested: window.playbackMuted = !window.playbackMuted
+            onLoopToggleRequested: window.playbackLooping = !window.playbackLooping
             onVisibleChanged: if (!videoViewerWindow.visible)
                                   videoViewerWindow.destroy()
         }
@@ -350,8 +357,10 @@ ApplicationWindow {
             transientParent: window
             volume: window.playbackVolume
             muted: window.playbackMuted
+            looping: window.playbackLooping
             onVolumeRequested: level => window.playbackVolume = level
             onMuteToggleRequested: window.playbackMuted = !window.playbackMuted
+            onLoopToggleRequested: window.playbackLooping = !window.playbackLooping
             onVisibleChanged: if (!audioViewerWindow.visible)
                                   audioViewerWindow.destroy()
         }

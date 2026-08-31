@@ -166,4 +166,34 @@ TestCase {
         // reach the label as a negative clock.
         compare(viewer.formatTime(-1), "0:00");
     }
+
+    SignalSpy {
+        id: loopSpy
+        signalName: "loopToggleRequested"
+    }
+
+    // The loop flag follows the volume pair's contract: Main.qml holds the app-wide,
+    // persisted copy, so the button asks and takes the answer back down the binding.
+    // Writing it here would leave a second open viewer disagreeing about a setting
+    // the user set once.
+    function test_theTransportBarAsksForLoopRatherThanWritingIt() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+        viewer.open(1, "song.mp3");
+
+        const loop = findChild(viewer, "loopButton");
+        verify(loop);
+
+        loopSpy.target = viewer;
+        loop.clicked();
+        compare(loopSpy.count, 1);
+        compare(viewer.looping, false);
+
+        // Handed down: the glyph is one and the same for both states, so the colour
+        // is the only thing that moves and the property has to be what drives it.
+        viewer.looping = true;
+        compare(loop.contentItem.color, Theme.color.accent);
+        viewer.looping = false;
+        verify(loop.contentItem.color !== Theme.color.accent);
+    }
 }
