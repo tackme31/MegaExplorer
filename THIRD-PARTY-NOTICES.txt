@@ -75,7 +75,7 @@ by hand.
 ===============================================================================
 
 Project:    MegaExplorer
-Version:    0.1.1
+Version:    0.2.0
 Homepage:   https://github.com/tackme31/MegaExplorer
 License:    MIT
 
@@ -4927,7 +4927,38 @@ License:    ISC
 -------------------------------------------------------------------------------
 
 ===============================================================================
-28. libwebp
+28. libuv
+===============================================================================
+
+Project:    libuv
+Version:    1.51.0
+Homepage:   https://github.com/libuv/libuv
+License:    BSD-3-Clause
+
+-------------------------------------------------------------------------------
+Copyright (c) 2015-present libuv project contributors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+-------------------------------------------------------------------------------
+
+===============================================================================
+29. libwebp
 ===============================================================================
 
 Project:    libwebp
@@ -4998,7 +5029,7 @@ litigation is filed.
 -------------------------------------------------------------------------------
 
 ===============================================================================
-29. openexr
+30. openexr
 ===============================================================================
 
 Project:    openexr
@@ -5021,7 +5052,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 -------------------------------------------------------------------------------
 
 ===============================================================================
-30. openjpeg
+31. openjpeg
 ===============================================================================
 
 Project:    openjpeg
@@ -5072,7 +5103,7 @@ License:    BSD-2-Clause
 -------------------------------------------------------------------------------
 
 ===============================================================================
-31. openssl
+32. openssl
 ===============================================================================
 
 Project:    openssl
@@ -5261,7 +5292,7 @@ License:    Apache-2.0
 -------------------------------------------------------------------------------
 
 ===============================================================================
-32. pdfium
+33. pdfium
 ===============================================================================
 
 Project:    pdfium
@@ -5503,7 +5534,7 @@ License:    BSD-3-Clause AND Apache-2.0
 -------------------------------------------------------------------------------
 
 ===============================================================================
-33. abseil-cpp (via PDFium)
+34. abseil-cpp (via PDFium)
 ===============================================================================
 
 Project:    abseil-cpp (via PDFium)
@@ -5717,7 +5748,7 @@ License:    Apache-2.0
 -------------------------------------------------------------------------------
 
 ===============================================================================
-34. agg23 (via PDFium)
+35. agg23 (via PDFium)
 ===============================================================================
 
 Project:    agg23 (via PDFium)
@@ -5740,7 +5771,7 @@ warranty, and with no claim as to its suitability for any purpose.
 -------------------------------------------------------------------------------
 
 ===============================================================================
-35. fast_float (via PDFium)
+36. fast_float (via PDFium)
 ===============================================================================
 
 Project:    fast_float (via PDFium)
@@ -5779,7 +5810,7 @@ DEALINGS IN THE SOFTWARE.
 -------------------------------------------------------------------------------
 
 ===============================================================================
-36. sqlite3
+37. sqlite3
 ===============================================================================
 
 Project:    sqlite3
@@ -5793,7 +5824,7 @@ http://www.sqlite.org/copyright.html
 -------------------------------------------------------------------------------
 
 ===============================================================================
-37. tiff
+38. tiff
 ===============================================================================
 
 Project:    tiff
@@ -5828,7 +5859,7 @@ OF THIS SOFTWARE.
 -------------------------------------------------------------------------------
 
 ===============================================================================
-38. zlib
+39. zlib
 ===============================================================================
 
 Project:    zlib
@@ -5862,7 +5893,7 @@ Copyright notice:
 -------------------------------------------------------------------------------
 
 ===============================================================================
-39. zstd
+40. zstd
 ===============================================================================
 
 Project:    zstd

@@ -3,7 +3,7 @@
     {
       "id": "megaexplorer",
       "name": "MegaExplorer",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "license": "MIT",
       "homepage": "https://github.com/tackme31/MegaExplorer",
       "text": "texts/megaexplorer.txt"
@@ -215,6 +215,14 @@
       "license": "ISC",
       "homepage": "https://libsodium.org/",
       "text": "texts/libsodium.txt"
+    },
+    {
+      "id": "libuv",
+      "name": "libuv",
+      "version": "1.51.0",
+      "license": "BSD-3-Clause",
+      "homepage": "https://github.com/libuv/libuv",
+      "text": "texts/libuv.txt"
     },
     {
       "id": "libwebp",

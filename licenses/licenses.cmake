@@ -31,6 +31,7 @@ set(MEGAEXPLORER_LICENSE_RESOURCES
     licenses/texts/libpng.txt
     licenses/texts/libraw.txt
     licenses/texts/libsodium.txt
+    licenses/texts/libuv.txt
     licenses/texts/libwebp.txt
     licenses/texts/openexr.txt
     licenses/texts/openjpeg.txt
