@@ -502,6 +502,64 @@ TestCase {
         verify(text.indexOf("other 4") !== -1);
     }
 
+    // Which button is highlighted is the whole point of the three below, and it is
+    // invisible to a screenshot until someone presses Enter: Replace is the leftmost
+    // button, and with versioning off it deletes the existing files outright.
+
+    function makeNameConflict(versioningEnabled) {
+        const uploads = makeUploads();
+        const dialog = makeDialog(nameConflictComponent, {
+                                      "uploads": uploads,
+                                      "fileVersioningEnabled": versioningEnabled
+                                  });
+        return {
+            "uploads": uploads,
+            "dialog": dialog
+        };
+    }
+
+    function test_nameConflict_defaultIsReplaceWhenVersioningKeepsTheOldFile() {
+        const c = makeNameConflict(true);
+
+        c.uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, "", "", 0, true);
+
+        tryCompare(c.dialog, "opened", true);
+        compare(c.dialog.replaceLosesData, false);
+        tryCompare(buttonNamed(c.dialog, "Replace"), "highlighted", true);
+        compare(buttonNamed(c.dialog, "Skip").highlighted, false);
+        verify(buttonNamed(c.dialog, "Replace").activeFocus);
+    }
+
+    function test_nameConflict_defaultIsSkipWhenVersioningIsOff() {
+        const c = makeNameConflict(false);
+
+        c.uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, "", "", 0, true);
+
+        tryCompare(c.dialog, "opened", true);
+        compare(c.dialog.replaceLosesData, true);
+        tryCompare(buttonNamed(c.dialog, "Skip"), "highlighted", true);
+        compare(buttonNamed(c.dialog, "Replace").highlighted, false);
+        verify(buttonNamed(c.dialog, "Skip").activeFocus);
+    }
+
+    // The versioning answer is an SDK round-trip issued at login, so it can land
+    // after this dialog is already open. The wording follows it through a binding;
+    // the accent and the focus have to be re-applied by hand.
+    function test_nameConflict_versioningLandingWhileOpenMovesTheDefault() {
+        const c = makeNameConflict(true);
+
+        c.uploads.nameConflictRequiresConfirmation(["a.txt"], ["a.txt"], 0, "", "", 0, true);
+        tryCompare(c.dialog, "opened", true);
+        tryCompare(buttonNamed(c.dialog, "Replace"), "highlighted", true);
+
+        c.dialog.fileVersioningEnabled = false;
+
+        compare(c.dialog.replaceLosesData, true);
+        compare(buttonNamed(c.dialog, "Skip").highlighted, true);
+        compare(buttonNamed(c.dialog, "Replace").highlighted, false);
+        verify(buttonNamed(c.dialog, "Skip").activeFocus);
+    }
+
     // With versioning on, Replace is recoverable, so its sentence rides on the
     // button's tooltip instead of lengthening the body.
     function test_nameConflict_replaceSentenceLivesOnTheButton() {

@@ -82,7 +82,6 @@
 | 状態 | 種類 | 項目 | サイズ | メモ |
 |---|---|---|---|---|
 | todo | 不具合 | 失敗したときのトーストの文面が実態に合わず、原因が分からない | M | 受信箱より（2 点まとめて）。(a) 転送量・容量の超過（`EOVERQUOTA` = -17）が `src/mega/MegaErrorCodes.h` に無いため `Unknown` に落ち、SDK の英語文字列がそのまま出るか何も出ない。無料アカウントは転送量制限に日常的に当たるので、試した人が最初に踏みやすい。(b) `BulkOperationRunner` が `errorCode` を捨てて件数だけ通知するので、容量超過も権限不足も通信失敗も「Failed to move 3 item(s)」という同じ文面になる（ダウンロード／アップロードも同様）。**完了条件**: 代表的なエラーコードが文面に反映され、原因の区別が付く。(b) 側は設計どおりの挙動なので、そこは足りない情報を足す話 |
-| todo | 不具合 | アップロードの同名衝突ダイアログに既定ボタンとフォーカスが無い | S | 受信箱より。`qml/components/NameConflictDialog.qml` の `DialogButtonBox` は Replace / Skip / Cancel の 3 ボタンに `highlighted` もフォーカス指定も無い。左端が Replace（＝上書き。版管理 OFF なら旧ファイルは復元不能）なので、Enter や Tab の挙動がプラットフォーム任せになる。対になる `qml/components/CopyConflictDialog.qml` は `markDefaultAnswer()` で既定とフォーカスを明示し、データを失う場合だけ既定を安全側へ倒している。**完了条件**: 版管理 OFF のときの既定が Skip になり、開いた時点でフォーカスが定まる（2 ダイアログで実装を共有してよい） |
 
 ---
 

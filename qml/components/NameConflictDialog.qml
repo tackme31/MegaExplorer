@@ -42,6 +42,11 @@ Dialog {
     // account that never set the attribute.
     property bool fileVersioningEnabled: true
 
+    // The one case where "Replace" destroys something no one can get back: with
+    // versioning off the existing node is deleted outright and does not even reach
+    // the rubbish bin, so Replace must not be the answer Enter picks.
+    readonly property bool replaceLosesData: !root.fileVersioningEnabled
+
     // Questions that arrived while one was already being asked -- same hazard and
     // same fix as ConfirmUploadDialog.qml: a drop still reaches the app while this
     // is up, and open() does nothing on a visible Popup.
@@ -62,6 +67,15 @@ Dialog {
     // Every one of the three buttons closes, so this is the one place the next
     // question can start from.
     onClosed: root.showNextRequest()
+
+    onOpened: root.markDefaultAnswer()
+
+    // fileVersioningEnabled arrives from an SDK round-trip issued at login, so it can
+    // land while this dialog is already up: the message rewords itself to "cannot be
+    // recovered" through its binding, and without this the accent and the focus would
+    // stay on Replace, pointing Enter at the one answer that destroys data.
+    onReplaceLosesDataChanged: if (root.visible)
+                                   root.markDefaultAnswer()
 
     Column {
         spacing: Theme.spacing.sm
@@ -113,12 +127,18 @@ Dialog {
     ConflictNameListDialog {
         id: nameListDialog
         entries: root.listEntries()
+
+        // Opening a second popup takes the focus off the answer markDefaultAnswer()
+        // put it on, and nothing puts it back -- without this, Enter after a look at
+        // the list answers nothing, or the wrong thing once focus wanders.
+        onClosed: root.markDefaultAnswer()
     }
 
     footer: DialogButtonBox {
         Button {
             id: replaceButton
             text: qsTr("Replace")
+            // highlighted is set from onOpened above, not here.
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
                 root.uploads.uploadReplacingExisting(root.filePaths, root.destinationHandle,
@@ -138,6 +158,7 @@ Dialog {
             }
         }
         Button {
+            id: skipButton
             text: qsTr("Skip")
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
@@ -151,6 +172,20 @@ Dialog {
             DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
             onClicked: root.close()
         }
+    }
+
+    // Both halves of "this is the default": the accent fill, and the focus that makes
+    // Enter answer it -- none of the three buttons carries AcceptRole, so Dialog's own
+    // Enter handling never fires.
+    //
+    // Assigned imperatively rather than bound on the buttons because DialogButtonBox
+    // writes highlighted on every child it adopts, which kills any binding declared
+    // there -- even `highlighted: true` reads back false. A write after the box has
+    // taken them sticks.
+    function markDefaultAnswer() {
+        replaceButton.highlighted = !root.replaceLosesData;
+        skipButton.highlighted = root.replaceLosesData;
+        (root.replaceLosesData ? skipButton : replaceButton).forceActiveFocus();
     }
 
     // Whole sentences per case rather than clauses joined at runtime: a translator
