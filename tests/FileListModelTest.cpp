@@ -589,6 +589,30 @@ TEST(FileListModelTest, SelectedEntryCarriesSizeBytesUnlikeEntryAt)
     EXPECT_FALSE(model.entryAt(0).contains("sizeBytes"));
 }
 
+// The viewer window's step sequence starts here, so row order and the exclusion of
+// folders are the two things it depends on.
+TEST(FileListModelTest, FileEntriesListsEveryNonFolderRowInOrder)
+{
+    FileListModel model;
+    model.setEntries({makeFolderEntry("pictures", 1), makeEntry("b.jpg", 2),
+                      makeFolderEntry("clips", 3), makeEntry("a.jpg", 4)});
+
+    const QVariantList entries = model.fileEntries();
+    ASSERT_EQ(entries.size(), 2);
+    EXPECT_EQ(entries.at(0).toMap().value("handle").toULongLong(), 2u);
+    EXPECT_EQ(entries.at(0).toMap().value("name").toString(), QStringLiteral("b.jpg"));
+    EXPECT_EQ(entries.at(1).toMap().value("handle").toULongLong(), 4u);
+    EXPECT_FALSE(entries.at(0).toMap().contains("isFolder"));
+}
+
+TEST(FileListModelTest, FileEntriesIsEmptyWithoutFiles)
+{
+    FileListModel model;
+    model.setEntries({makeFolderEntry("only-a-folder", 1)});
+
+    EXPECT_TRUE(model.fileEntries().isEmpty());
+}
+
 TEST(FileListModelTest, IsFavouriteRoleReportsTheEntryFlag)
 {
     FileListModel model;

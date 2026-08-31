@@ -4,6 +4,7 @@ import QtQuick
 // Main.qml.
 import QtQuick.Controls.FluentWinUI3
 import QtQuick.Controls
+import QtQuick.Layouts
 import MegaExplorer
 
 // The in-app image viewer: a window of its own, showing a file's *original* bytes
@@ -27,6 +28,18 @@ Window {
     property var currentHandle: undefined
     property string currentName: ""
     property url source: ""
+
+    // The images this window can step through: row-ordered {handle, name} maps taken
+    // from the listing when it opened. A snapshot rather than the live model -- the
+    // window outlives the tab it came from, and a model held across that is a
+    // destroyed object (STUDY_VIEWER_SEPARATE_WINDOW 4-2-1). Going stale is the whole
+    // cost, and this window is "these images", not the tab's current position.
+    property var sequence: []
+    property int sequenceIndex: -1
+
+    readonly property bool canGoPrevious: root.sequenceIndex > 0
+    readonly property bool canGoNext: root.sequenceIndex >= 0
+                                      && root.sequenceIndex < root.sequence.length - 1
 
     // Fit-to-window is the default: the image is scaled to the window in both
     // directions, enlarging a small original as well as shrinking a large one.
@@ -55,16 +68,55 @@ Window {
     // surface-coloured one tints the judgement of the image sitting on it.
     color: "#1c1c1c"
 
-    function open(handle, name) {
+    // sequence is optional: without one the window shows this single image and the
+    // strip below stays hidden.
+    function open(handle, name, entries) {
         if (!root.controller || root.controller.viewerKind(name) !== "image")
             return;
+        root.sequence = entries ?? [];
+        root.sequenceIndex = root.indexOfHandle(handle);
+        root.showImage(handle, name);
+        root.show();
+        root.raise();
+        root.requestActivate();
+    }
+
+    function indexOfHandle(handle) {
+        for (let i = 0; i < root.sequence.length; ++i) {
+            if (root.sequence[i].handle === handle)
+                return i;
+        }
+        return -1;
+    }
+
+    function showImage(handle, name) {
         root.actualSize = false;
         root.currentHandle = handle;
         root.currentName = name;
         root.source = root.controller.sourceUrl(handle);
-        root.show();
-        root.raise();
+        // Reloading the image drops the keyboard away from this window -- measured:
+        // without this the arrow keys move once and every press after that lands in
+        // the window underneath. Deferred because the focus goes only once the
+        // reload has been processed. The overlay viewer this file grew out of
+        // carried the same call for the double-click that opened it.
+        Qt.callLater(root.takeFocus);
+    }
+
+    function takeFocus() {
+        if (!root.visible)
+            return;
         root.requestActivate();
+        flick.forceActiveFocus();
+    }
+
+    // Clamped, not wrapping -- the same choice FileListModel::moveCursor makes, so
+    // the ends of the listing stay ends here too.
+    function step(delta) {
+        const target = root.sequenceIndex + delta;
+        if (root.sequenceIndex < 0 || target < 0 || target >= root.sequence.length)
+            return;
+        root.sequenceIndex = target;
+        root.showImage(root.sequence[target].handle, root.sequence[target].name);
     }
 
     // Hiding is the only teardown path -- the native close button, close() and a
@@ -82,12 +134,19 @@ Window {
         // decoded, and Image holds it for as long as its source is set.
         root.source = "";
         root.actualSize = false;
+        root.sequence = [];
+        root.sequenceIndex = -1;
     }
 
     Flickable {
         id: flick
-        anchors.fill: parent
-        // Focused so the Esc handler below is the one the keys reach.
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        // Not anchors.fill: the strip below takes the bottom of the window when there
+        // is more than one image, and the fit maths reads flick's height.
+        anchors.bottom: navBar.visible ? navBar.top : parent.bottom
+        // Focused so the Esc and arrow handlers below are the ones the keys reach.
         focus: true
         contentWidth: Math.max(width, picture.width)
         contentHeight: Math.max(height, picture.height)
@@ -101,6 +160,8 @@ Window {
         // parent is active, so with two viewers up both Shortcuts matched and
         // QShortcutMap dropped the key as ambiguous.
         Keys.onEscapePressed: root.close()
+        Keys.onLeftPressed: root.step(-1)
+        Keys.onRightPressed: root.step(1)
 
         Image {
             id: picture
@@ -129,6 +190,81 @@ Window {
                 // Flickable filters child mouse events once the drag threshold is
                 // passed -- so this costs no panning.
                 onDoubleClicked: root.actualSize = !root.actualSize
+            }
+        }
+    }
+
+    // Only when there is somewhere to step to: a lone image keeps the whole window,
+    // which is what the fit-in-both-directions item just made the point of.
+    Rectangle {
+        id: navBar
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        implicitHeight: Theme.rowHeight.toolbar
+        // sequenceIndex too, not just the length: opened on a handle the snapshot does
+        // not hold, the strip would otherwise stand with both buttons dead.
+        visible: root.sequenceIndex >= 0 && root.sequence.length > 1
+        // A ground of its own rather than the window's, matching the PDF and video
+        // viewers' strips.
+        color: "#2b2b2b"
+
+        RowLayout {
+            anchors.centerIn: parent
+            spacing: Theme.spacing.md
+
+            ToolButton {
+                id: previous
+
+                // Focus stays on the Flickable, which carries the arrow keys; Space
+                // would otherwise re-trigger whichever button holds it.
+                focusPolicy: Qt.NoFocus
+                implicitWidth: 32
+                implicitHeight: 32
+                enabled: root.canGoPrevious
+                text: Theme.glyph.chevronLeft
+                font.family: Theme.font.iconFamily
+                // Spelled out rather than left to the style: the button sits on the
+                // dark strip, where the style's own text colour is the one picked for
+                // a light surface.
+                contentItem: Text {
+                    text: previous.text
+                    font: previous.font
+                    color: previous.enabled ? "#ffffff" : "#808080"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                onClicked: root.step(-1)
+            }
+
+            Label {
+                text: root.sequenceIndex >= 0 ? (root.sequenceIndex + 1) + " / "
+                                                + root.sequence.length : ""
+                color: "#ffffff"
+                font.pixelSize: Theme.font.caption
+                horizontalAlignment: Text.AlignHCenter
+                // Fixed so the strip does not jump as the position widens.
+                Layout.minimumWidth: 72
+            }
+
+            ToolButton {
+                id: next
+
+                focusPolicy: Qt.NoFocus
+                implicitWidth: 32
+                implicitHeight: 32
+                enabled: root.canGoNext
+                text: Theme.glyph.chevronRight
+                font.family: Theme.font.iconFamily
+                contentItem: Text {
+                    text: next.text
+                    font: next.font
+                    color: next.enabled ? "#ffffff" : "#808080"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                onClicked: root.step(1)
             }
         }
     }

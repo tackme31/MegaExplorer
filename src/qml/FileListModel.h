@@ -141,6 +141,11 @@ public:
     // handlers can't reach data() from QML -- the Role enum isn't exposed there.
     Q_INVOKABLE QVariantMap entryAt(int row) const;
 
+    // Row-ordered {handle, name} maps for every non-folder row. The viewer window
+    // takes this once when it opens and walks its own copy: it outlives the tab it
+    // was opened from, so holding the model would leave it on a destroyed object.
+    Q_INVOKABLE QVariantList fileEntries() const;
+
     // Row index for handle within mEntries, or -1 if not present. Public and
     // invokable because the viewer is handed a handle and has to walk the rows
     // around it; the selection and cursor code below is the internal caller.

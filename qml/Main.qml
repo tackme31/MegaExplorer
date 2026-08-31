@@ -378,7 +378,17 @@ ApplicationWindow {
         }
     }
 
-    function openViewer(handle, name): void {
+    // The images of one listing, in the order it is showing them, as {handle, name}
+    // maps. Taken once when a viewer opens: that window outlives the tab, so it walks
+    // a snapshot rather than the model (STUDY_VIEWER_SEPARATE_WINDOW 4-2-1).
+    function imageSequence(listModel) {
+        if (!listModel)
+            return [];
+        return listModel.fileEntries().filter(entry => viewerController.viewerKind(
+                                                  entry.name) === "image");
+    }
+
+    function openViewer(handle, name, listModel): void {
         const kind = viewerController.viewerKind(name);
         const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : kind === "pdf" ? pdfViewerComponent : kind === "audio" ? audioViewerComponent : null;
         if (!component)
@@ -386,7 +396,11 @@ ApplicationWindow {
         const viewer = component.createObject(window);
         if (!viewer)
             return;
-        viewer.open(handle, name);
+        // Only the image viewer steps through neighbours; the rest open one file.
+        if (kind === "image")
+            viewer.open(handle, name, window.imageSequence(listModel));
+        else
+            viewer.open(handle, name);
         // A viewer that never became visible would never reach the onVisibleChanged
         // that destroys it.
         if (!viewer.showing)
@@ -501,7 +515,9 @@ ApplicationWindow {
                         initialColumnWidthSize: window.columnWidthSize
                         initialPreviewVisible: window.previewVisible
 
-                        onFileActivated: (handle, name) => window.openViewer(handle, name)
+                        onFileActivated: (handle, name) => window.openViewer(
+                                             handle, name,
+                                             pane.navController.fileListModel)
 
                         onViewModeWriteBack: vm => window.viewMode = vm
                         onPreviewVisibleWriteBack: v => window.previewVisible = v

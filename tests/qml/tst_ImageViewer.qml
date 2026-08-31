@@ -103,18 +103,94 @@ TestCase {
         compare(viewer.fitScaleFor(100, 100, 0, 0), 1);
     }
 
+    // The sequence is a snapshot handed in at open time, so stepping asks the
+    // controller for the neighbour's URL and never touches a model.
+    function test_stepsThroughTheSequenceItWasOpenedWith() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+        const sequence = [{
+                              "handle": 7,
+                              "name": "a.jpg"
+                          }, {
+                              "handle": 8,
+                              "name": "b.jpg"
+                          }, {
+                              "handle": 9,
+                              "name": "c.jpg"
+                          }];
+
+        viewer.open(8, "b.jpg", sequence);
+        compare(viewer.sequenceIndex, 1);
+        verify(viewer.canGoPrevious);
+        verify(viewer.canGoNext);
+
+        viewer.step(1);
+        compare(viewer.currentName, "c.jpg");
+        compare(String(viewer.source), "http://127.0.0.1:1/9/f.jpg");
+
+        viewer.step(-1);
+        viewer.step(-1);
+        compare(viewer.currentName, "a.jpg");
+        compare(viewer.sequenceIndex, 0);
+    }
+
+    // Clamped rather than wrapping: past either end nothing moves.
+    function test_stepStopsAtBothEndsOfTheSequence() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+        const sequence = [{
+                              "handle": 7,
+                              "name": "a.jpg"
+                          }, {
+                              "handle": 8,
+                              "name": "b.jpg"
+                          }];
+
+        viewer.open(7, "a.jpg", sequence);
+        verify(!viewer.canGoPrevious);
+        viewer.step(-1);
+        compare(viewer.currentName, "a.jpg");
+        compare(controller.urlCallCount, 1);
+
+        viewer.step(1);
+        verify(!viewer.canGoNext);
+        viewer.step(1);
+        compare(viewer.currentName, "b.jpg");
+        compare(controller.urlCallCount, 2);
+    }
+
+    // Opened without one -- and opened on a handle the sequence does not hold --
+    // leaves the window on a single image with both directions dead.
+    function test_withoutASequenceThereIsNowhereToStep() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+
+        viewer.open(7, "photo.jpg");
+        verify(viewer.showing);
+        compare(viewer.sequenceIndex, -1);
+        verify(!viewer.canGoPrevious);
+        verify(!viewer.canGoNext);
+        viewer.step(1);
+        compare(viewer.currentName, "photo.jpg");
+    }
+
     // Hiding is the single teardown path, so the megabytes the decoded original
     // holds go back whichever way the window was dismissed.
     function test_hidingReleasesTheImage() {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
         const viewer = makeViewer(controller);
 
-        viewer.open(1, "a.jpg");
+        viewer.open(1, "a.jpg", [{
+                                     "handle": 1,
+                                     "name": "a.jpg"
+                                 }]);
         viewer.actualSize = true;
         viewer.close();
         tryVerify(() => !viewer.showing);
         compare(String(viewer.source), "");
         compare(viewer.currentName, "");
         verify(!viewer.actualSize);
+        compare(viewer.sequence.length, 0);
+        compare(viewer.sequenceIndex, -1);
     }
 }
