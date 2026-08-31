@@ -28,10 +28,19 @@ Window {
     property string currentName: ""
     property url source: ""
 
-    // Fit-to-window is the default and never enlarges past 1:1, so a small image is
-    // never blurred; double-clicking switches to the true pixel size and back, with
-    // the Flickable below supplying the panning that then becomes necessary.
+    // Fit-to-window is the default: the image is scaled to the window in both
+    // directions, enlarging a small original as well as shrinking a large one.
+    // Double-clicking switches to the true pixel size and back, with the Flickable
+    // below supplying the panning that then becomes necessary.
     property bool actualSize: false
+
+    // A function rather than an inline binding so the QML test can drive the fit
+    // maths without a decoded image behind Image.implicitWidth.
+    function fitScaleFor(imageWidth, imageHeight, boxWidth, boxHeight) {
+        if (imageWidth <= 0 || imageHeight <= 0 || boxWidth <= 0 || boxHeight <= 0)
+            return 1;
+        return Math.min(boxWidth / imageWidth, boxHeight / imageHeight);
+    }
 
     readonly property bool showing: root.visible
     readonly property bool failed: root.showing && (String(root.source) === "" || picture.status
@@ -96,14 +105,8 @@ Window {
         Image {
             id: picture
 
-            // Never above 1:1 -- blowing an image up to fill the window is not what
-            // "fit" means here.
-            readonly property real fitScale: (implicitWidth > 0 && implicitHeight > 0) ? Math.min(1,
-                                                                                                  flick.width
-                                                                                                  / implicitWidth,
-                                                                                                  flick.height
-                                                                                                  / implicitHeight) :
-                                                                                         1
+            readonly property real fitScale: root.fitScaleFor(implicitWidth, implicitHeight,
+                                                              flick.width, flick.height)
 
             source: root.source
             // Off: the cache is keyed by URL and would otherwise hold every original
@@ -112,8 +115,8 @@ Window {
             asynchronous: true
             fillMode: Image.PreserveAspectFit
             smooth: true
-            // Fit is the default view and it downscales the original hard, where
-            // bilinear filtering alone aliases badly on a photo.
+            // Fit downscales a large original hard, where bilinear filtering alone
+            // aliases badly on a photo.
             mipmap: true
             width: implicitWidth * (root.actualSize ? 1 : picture.fitScale)
             height: implicitHeight * (root.actualSize ? 1 : picture.fitScale)

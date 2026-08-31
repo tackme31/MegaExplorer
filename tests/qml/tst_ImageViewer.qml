@@ -89,6 +89,20 @@ TestCase {
         compare(String(second.source), "http://127.0.0.1:1/8/f.jpg");
     }
 
+    // Fit scales in both directions: the point of the item that introduced it was
+    // that an original smaller than the window used to open at 1:1 instead of
+    // filling it.
+    function test_fitScalesSmallAndLargeImagesToTheWindow() {
+        const viewer = makeViewer(createTemporaryObject(fakeControllerComponent, testCase));
+
+        fuzzyCompare(viewer.fitScaleFor(100, 100, 400, 800), 4, 0.001);
+        fuzzyCompare(viewer.fitScaleFor(100, 100, 800, 400), 4, 0.001);
+        fuzzyCompare(viewer.fitScaleFor(1000, 500, 400, 400), 0.4, 0.001);
+        // No image decoded yet, and a window not laid out yet, both leave 1:1.
+        compare(viewer.fitScaleFor(0, 0, 400, 400), 1);
+        compare(viewer.fitScaleFor(100, 100, 0, 0), 1);
+    }
+
     // Hiding is the single teardown path, so the megabytes the decoded original
     // holds go back whichever way the window was dismissed.
     function test_hidingReleasesTheImage() {
