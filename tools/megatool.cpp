@@ -52,6 +52,11 @@ namespace
 // cycle instead of parking it forever.
 constexpr std::chrono::minutes kAwaitBudget{10};
 
+// Only the closing logout waits on this. The command it follows has already
+// finished, so a MEGA that stopped answering must not park a completed run for
+// ten minutes.
+constexpr std::chrono::seconds kLogoutBudget{20};
+
 // IMegaClient is callback-based and its callbacks arrive on the SDK's own
 // thread, so a console tool needs to block on each one. The app instead marshals
 // them onto the GUI thread and never waits -- do not copy this helper into src/.
@@ -62,7 +67,8 @@ constexpr std::chrono::minutes kAwaitBudget{10};
 // until someone killed the process. R is always a Result<T>, so a timeout can be
 // reported through the same channel as any other failure.
 template<typename R>
-R await(const std::function<void(std::function<void(R)>)>& start)
+R await(const std::function<void(std::function<void(R)>)>& start,
+        std::chrono::seconds budget = kAwaitBudget)
 {
     struct State
     {
@@ -84,13 +90,13 @@ R await(const std::function<void(std::function<void(R)>)>& start)
     });
 
     std::unique_lock<std::mutex> lock(state->mutex);
-    if (!state->ready.wait_for(lock, kAwaitBudget, [&] {
+    if (!state->ready.wait_for(lock, budget, [&] {
             return state->result.has_value();
         }))
     {
         // Safe to walk away: the callback owns its own reference to the state,
         // so a late delivery writes into live storage and is simply ignored.
-        return R::fail("timed out after " + std::to_string(kAwaitBudget.count()) + " minutes", 0);
+        return R::fail("timed out after " + std::to_string(budget.count()) + " seconds", 0);
     }
     return std::move(*state->result);
 }
@@ -105,6 +111,27 @@ struct ClientStop
     {
         if (client)
             client->shutdown();
+    }
+};
+
+// MegaApi::logout is the only call that deletes the SDK's state-cache DB, and
+// that DB is named after the session id -- so without this every invocation
+// leaves a fresh set behind that nothing will ever reuse, plus a MEGA-side
+// session that stays listed. Best-effort: the command's own exit code stands.
+struct SessionEnd
+{
+    std::shared_ptr<MegaSdkClient> client;
+    ~SessionEnd()
+    {
+        if (!client)
+            return;
+        const Result<void> out = await<Result<void>>(
+            [&](auto done) {
+                client->logout(std::move(done));
+            },
+            kLogoutBudget);
+        if (!out.success)
+            std::fprintf(stderr, "megatool: logout: %s\n", out.errorMessage.c_str());
     }
 };
 
@@ -670,6 +697,10 @@ int main(int argc, char* argv[])
 
     auto client = makeClient();
     const ClientStop stop{client};
+    // After ClientStop so it runs first -- the logout needs the SDK thread that
+    // shutdown() stops. Before signIn so a login that got half-way is cleaned up
+    // too; logout on a client that never logged in only drops the local caches.
+    const SessionEnd sessionEnd{client};
 
     if (const int rc = signIn(*client))
         return rc;
