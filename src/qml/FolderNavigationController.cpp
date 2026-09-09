@@ -27,11 +27,12 @@ E clampEnum(int value, E last)
 }
 
 // The screens whose rows come from all over the drive rather than from one folder:
-// neither matches a (handle, isRoot), so both need the "refresh me on any mutation"
-// treatment and both offer "Go to folder".
+// none of them matches a (handle, isRoot), so each needs the "refresh me on any
+// mutation" treatment and each offers "Go to folder".
 bool isCrossDriveListing(ViewKind kind)
 {
-    return kind == ViewKind::Favourites || kind == ViewKind::Recents;
+    return kind == ViewKind::Favourites || kind == ViewKind::Recents ||
+           kind == ViewKind::SharedLinks;
 }
 
 // Recents answers "what turned up lately", so the window-wide default every other
@@ -259,6 +260,22 @@ void FolderNavigationController::openRecents()
                                   applyResult(std::move(result));
                               });
                           });
+    refreshBreadcrumb();
+}
+
+void FolderNavigationController::openSharedLinks()
+{
+    dropSearchForNavigation();
+    restoreUserSortOrder();
+    // Same two reasons as openFavourites().
+    mFileListModel->setEntries({});
+    beginListing();
+    mService->openSharedLinks(
+        mSortOrder, [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
+                applyResult(std::move(result));
+            });
+        });
     refreshBreadcrumb();
 }
 
@@ -543,6 +560,9 @@ void FolderNavigationController::runVisibleSearch()
             mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
     else if (viewKind() == ViewKindEnum::Recents)
         mService->listRecent(mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
+    else if (viewKind() == ViewKindEnum::SharedLinks)
+        mService->listSharedLinks(
+            mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
     else
         mSearchService->search(mLastSearchQuery, mSearchFilter, mSortOrder, std::move(onSearched));
 }

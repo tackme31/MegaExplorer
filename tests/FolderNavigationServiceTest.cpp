@@ -1054,6 +1054,162 @@ TEST(FolderNavigationServiceTest, ListRecentForwardsTheNameFilterAndTouchesNoSta
     EXPECT_FALSE(service.canGoBack());
 }
 
+// --- Shared links, the third location that is not a folder -------------------
+
+TEST(FolderNavigationServiceTest, OpenSharedLinksPushesTheCurrentLocationAndSwitchesKind)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    const std::vector<FileEntry> linked{{"shared.txt", 7, 1, false, 0, false, false, true}};
+
+    EXPECT_CALL(*mockClient, listPublicLinks(::testing::_, "", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(Result<std::vector<FileEntry>>::ok(linked)));
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    // Act
+    service.openSharedLinks(SortOrder{}, onDoneInto(captured));
+
+    // Assert
+    ASSERT_TRUE(captured.doneCalled);
+    EXPECT_TRUE(captured.doneResult.success);
+    EXPECT_EQ(captured.doneResult.value().size(), linked.size());
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::SharedLinks);
+    EXPECT_TRUE(service.canGoBack());
+}
+
+TEST(FolderNavigationServiceTest, OpenSharedLinksWhileAlreadyThereRefetchesWithoutPushing)
+{
+    // Arrange: the same guard the favourites and recents rows rely on.
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, listPublicLinks(::testing::_, "", ::testing::_, ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<1>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured first, second;
+    service.openSharedLinks(SortOrder{}, onDoneInto(first));
+    ASSERT_TRUE(first.doneResult.success);
+
+    // Act
+    service.openSharedLinks(SortOrder{}, onDoneInto(second));
+
+    // Assert
+    ASSERT_TRUE(second.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::SharedLinks);
+    ASSERT_TRUE(service.canGoBack());
+
+    Captured back;
+    service.goBack(SortOrder{}, onDoneInto(back));
+    ASSERT_TRUE(back.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::CloudDrive);
+    EXPECT_FALSE(service.canGoBack());
+}
+
+TEST(FolderNavigationServiceTest, GoBackReturnsToTheSharedLinksListingAFolderWasOpenedFrom)
+{
+    // Back has to re-issue the query rather than ask for a folder's children: this
+    // listing has no handle to go back to, exactly as recents has none.
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, listPublicLinks(::testing::_, "", ::testing::_, ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, getChildren(42u, ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured opened, entered;
+    service.openSharedLinks(SortOrder{}, onDoneInto(opened));
+    service.openFolder(42, SortOrder{}, onDoneInto(entered));
+    ASSERT_TRUE(entered.doneResult.success);
+
+    // Act
+    Captured back;
+    service.goBack(SortOrder{}, onDoneInto(back));
+
+    // Assert
+    ASSERT_TRUE(back.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::SharedLinks);
+}
+
+TEST(FolderNavigationServiceTest, RefreshCurrentInSharedLinksReQueriesTheLinks)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, listPublicLinks(::testing::_, "", ::testing::_, ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, getRootChildren(::testing::_, ::testing::_)).Times(0);
+
+    FolderNavigationService service(mockClient);
+    Captured opened;
+    service.openSharedLinks(SortOrder{}, onDoneInto(opened));
+    ASSERT_TRUE(opened.doneResult.success);
+
+    // Act
+    Captured refreshed;
+    service.refreshCurrent(SortOrder{}, onDoneInto(refreshed));
+
+    // Assert
+    ASSERT_TRUE(refreshed.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::SharedLinks);
+}
+
+TEST(FolderNavigationServiceTest, ResolveCurrentPathInSharedLinksSynthesizesOneNamelessSegment)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, listPublicLinks(::testing::_, "", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+    EXPECT_CALL(*mockClient, getPath(::testing::_, ::testing::_, ::testing::_)).Times(0);
+
+    FolderNavigationService service(mockClient);
+    Captured opened;
+    service.openSharedLinks(SortOrder{}, onDoneInto(opened));
+    ASSERT_TRUE(opened.doneResult.success);
+
+    // Act
+    CapturedPath captured;
+    service.resolveCurrentPath(onPathDoneInto(captured));
+
+    // Assert: the segment carries its own kind, which is what QML labels it from
+    ASSERT_TRUE(captured.doneResult.success);
+    const std::vector<PathSegment> expected{{"", 0, false, ViewKind::SharedLinks}};
+    EXPECT_EQ(captured.doneResult.value(), expected);
+}
+
+TEST(FolderNavigationServiceTest, ListSharedLinksForwardsTheNameFilterAndTouchesNoState)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+
+    EXPECT_CALL(*mockClient, listPublicLinks(::testing::_, "shared", ::testing::_, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{})));
+
+    FolderNavigationService service(mockClient);
+    Captured captured;
+
+    // Act
+    service.listSharedLinks(SortOrder{}, "shared", SearchFilter{}, onDoneInto(captured));
+
+    // Assert
+    ASSERT_TRUE(captured.doneResult.success);
+    EXPECT_EQ(service.currentLocation().kind, ViewKind::CloudDrive);
+    EXPECT_TRUE(service.currentLocation().isRoot);
+    EXPECT_FALSE(service.canGoBack());
+}
+
 // The rest of this file drives the client synchronously, which is what the service
 // still promises today; these hold the listing back with SaveArg so the window
 // between "the user clicked" and "the listing landed" actually exists to assert on.

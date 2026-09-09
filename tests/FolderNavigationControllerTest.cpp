@@ -705,6 +705,29 @@ TEST_F(FolderNavigationControllerTest, AFilterInRecentsReachesTheRecentsQuery)
     EXPECT_EQ(seen.createdWithin, SearchTimeWindow::PastDay);
 }
 
+TEST_F(FolderNavigationControllerTest, ASearchInSharedLinksReachesThePublicLinksQuery)
+{
+    // The point of the screen's own query route: SearchService would answer with
+    // every match in the drive, link or no link.
+    EXPECT_CALL(*client, listPublicLinks(_, std::string(), _, _))
+        .WillRepeatedly(InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a.txt", 1)})));
+    controller->openSharedLinks();
+    flush();
+    EXPECT_EQ(controller->viewKind(), static_cast<int>(ViewKind::SharedLinks));
+
+    EXPECT_CALL(*client, search(_, _, _, _, _, _)).Times(0);
+    EXPECT_CALL(*client, listPublicLinks(_, std::string("typed"), _, _))
+        .WillRepeatedly(InvokeArgument<3>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a.txt", 1)})));
+
+    controller->search(QStringLiteral("typed"));
+    flush();
+
+    EXPECT_TRUE(controller->searchActive());
+    ASSERT_EQ(model()->rowCount(), 1);
+}
+
 TEST_F(FolderNavigationControllerTest, ClearingTheSearchInFavouritesRestoresTheFullListing)
 {
     givenFavourites({entry("kept.txt", 5), entry("other.txt", 6)});

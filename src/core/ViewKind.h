@@ -8,4 +8,5 @@ enum class ViewKind
     Favourites,
     Rubbish,
     Recents,
+    SharedLinks,
 };

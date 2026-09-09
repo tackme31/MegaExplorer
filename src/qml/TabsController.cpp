@@ -237,6 +237,9 @@ void TabsController::duplicateTab(int index)
         case ViewKind::Recents:
             navigation->openRecents();
             break;
+        case ViewKind::SharedLinks:
+            navigation->openSharedLinks();
+            break;
     }
 
     setCurrentIndex(row);

@@ -139,6 +139,22 @@ public:
                             const SearchFilter& filter,
                             std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
 
+    // Every node in the Cloud Drive that carries a public link. Rooting, name filter
+    // and contract are listFavourites'.
+    // Unlike the two above, this one is served by two different SDK calls: with no
+    // name filter and a default SearchFilter it is MegaApi::getPublicLinks, and
+    // otherwise a rooted search whose results are narrowed to the exported ones.
+    // MegaSearchFilter has no "is exported" facet, so a search is the only way to
+    // honour the popup's facets server-side; getPublicLinks is the only way to avoid
+    // walking the whole drive when nothing is being asked of it.
+    // getPublicLinks accepts neither size nor modification-time order, so those two
+    // are sorted here instead -- folders first, then the key, matching what the SDK's
+    // own comparators do for every other listing.
+    virtual void listPublicLinks(SortOrder order,
+                                 const std::string& nameFilter,
+                                 const SearchFilter& filter,
+                                 std::function<void(Result<std::vector<FileEntry>>)> onDone) = 0;
+
     // The Rubbish bin's own top level, same contract as getRootChildren(). Only the
     // top needs its own call: everything below it is an ordinary node, so going
     // deeper is getChildren() with the handle, exactly as in the Cloud Drive.

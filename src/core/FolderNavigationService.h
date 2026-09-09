@@ -57,6 +57,11 @@ public:
     // shape of screen: a flat cross-drive query, not a folder.
     void openRecents(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
+    // openFavourites' counterpart for the public-link listing, which is the same
+    // shape of screen again.
+    void openSharedLinks(SortOrder order,
+                         std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
     // Pops the most recent back-stack entry and re-fetches it, restoring the entry on
     // failure. Fails in-stack when canGoBack() is false.
     void goBack(SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone);
@@ -93,6 +98,12 @@ public:
                     const SearchFilter& filter,
                     std::function<void(Result<std::vector<FileEntry>>)> onDone);
 
+    // listFavourites' counterpart for the public-link listing.
+    void listSharedLinks(SortOrder order,
+                         const std::string& nameFilter,
+                         const SearchFilter& filter,
+                         std::function<void(Result<std::vector<FileEntry>>)> onDone);
+
     bool canGoBack() const;
 
     // Clears the back-stack without touching IMegaClient, so a login after logout
@@ -126,7 +137,7 @@ public:
 
 private:
     // handle is meaningless while isRoot, the same sentinel nesting isRoot already
-    // has. Both are meaningless for Favourites and Recents, which are flat listings
+    // has. Both are meaningless for Favourites, Recents and SharedLinks, which are flat listings
     // with no node behind them; for Rubbish, isRoot means the bin's own top level
     // and a handle names a folder inside it.
     struct Location

@@ -232,6 +232,27 @@ void applySearchFilter(mega::MegaSearchFilter& target, const SearchFilter& filte
     }
 }
 
+// Orders a listing the way the SDK's own comparators do, for the one listing that
+// cannot ask the SDK to do it: folders before files, then the key. Ties are left
+// alone, so a caller that fetched in ORDER_DEFAULT_ASC keeps the SDK's natural-name
+// order underneath. Name needs nothing -- the SDK already served that order.
+void sortEntriesByKey(std::vector<FileEntry>& entries, SortOrder order)
+{
+    if (order.key == SortKey::Name)
+        return;
+    std::stable_sort(entries.begin(),
+                     entries.end(),
+                     [order](const FileEntry& a, const FileEntry& b) {
+                         if (a.isFolder != b.isFolder)
+                             return a.isFolder;
+                         const FileEntry& lhs = order.ascending ? a : b;
+                         const FileEntry& rhs = order.ascending ? b : a;
+                         return order.key == SortKey::Size
+                                    ? lhs.sizeBytes < rhs.sizeBytes
+                                    : lhs.modificationTime < rhs.modificationTime;
+                     });
+}
+
 std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
 {
     std::vector<FileEntry> entries;
@@ -624,6 +645,70 @@ void MegaSdkClient::listRecent(SortOrder order,
             std::unique_ptr<mega::MegaNodeList> results(
                 mApi->search(filter.get(), toMegaOrder(order), mListingCancelToken.get()));
             return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
+        },
+        std::move(onDone));
+}
+
+void MegaSdkClient::listPublicLinks(SortOrder order,
+                                    const std::string& nameFilter,
+                                    const SearchFilter& searchFilter,
+                                    std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    runOffThread(
+        [this, order, nameFilter, searchFilter]() -> Result<std::vector<FileEntry>> {
+            std::unique_ptr<mega::MegaNode> root = resolveNode(0, true);
+            if (!root)
+                return Result<std::vector<FileEntry>>::fail(
+                    "No root node (not logged in / nodes not fetched)", MegaErrorCode::kENoEnt);
+
+            if (!nameFilter.empty() || !searchFilter.isDefault())
+            {
+                // MegaSearchFilter has no "is exported" facet, so the narrowing to
+                // linked nodes is the only part of this that cannot stay server-side.
+                std::unique_ptr<mega::MegaSearchFilter> filter(
+                    mega::MegaSearchFilter::createInstance());
+                filter->byLocationHandle(root->getHandle());
+                // Left unset when empty, for listFavourites' reason.
+                if (!nameFilter.empty())
+                    filter->byName(nameFilter.c_str());
+                applySearchFilter(*filter, searchFilter);
+
+                std::unique_ptr<mega::MegaNodeList> results(
+                    mApi->search(filter.get(), toMegaOrder(order), mListingCancelToken.get()));
+                std::vector<FileEntry> entries = nodeListToEntries(results.get());
+                entries.erase(std::remove_if(entries.begin(),
+                                             entries.end(),
+                                             [](const FileEntry& entry) {
+                                                 return !entry.isExported;
+                                             }),
+                              entries.end());
+                return Result<std::vector<FileEntry>>::ok(std::move(entries));
+            }
+
+            // ORDER_DEFAULT_ASC even when the caller asked for size or time:
+            // getPublicLinks rejects those two orders, and fetching in the default one
+            // leaves sortEntriesByKey's ties in the SDK's natural-name order.
+            const int sdkOrder = order.key == SortKey::Name ? toMegaOrder(order)
+                                                            : mega::MegaApi::ORDER_DEFAULT_ASC;
+            std::unique_ptr<mega::MegaNodeList> results(mApi->getPublicLinks(sdkOrder));
+            std::vector<FileEntry> entries;
+            entries.reserve(results ? static_cast<std::size_t>(results->size()) : 0);
+            for (int i = 0; results && i < results->size(); ++i)
+            {
+                // getPublicLinks spans every root, unlike the rooted search above.
+                // Without this a link left on a binned node would appear here and then
+                // vanish the moment anything was typed into the search box.
+                mega::MegaNode* node = results->get(i); // owned by the list
+                if (node && mApi->isInCloud(node))
+                    entries.push_back(nodeToEntry(node));
+            }
+            sortEntriesByKey(entries, order);
+            return Result<std::vector<FileEntry>>::ok(std::move(entries));
         },
         std::move(onDone));
 }

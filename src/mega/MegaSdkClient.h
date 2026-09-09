@@ -88,6 +88,11 @@ public:
                     const SearchFilter& filter,
                     std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
+    void listPublicLinks(SortOrder order,
+                         const std::string& nameFilter,
+                         const SearchFilter& filter,
+                         std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
+
     void getRubbishChildren(SortOrder order,
                             std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 

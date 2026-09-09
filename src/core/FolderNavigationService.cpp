@@ -134,6 +134,23 @@ void FolderNavigationService::openRecents(
         std::move(onDone));
 }
 
+void FolderNavigationService::openSharedLinks(
+    SortOrder order, std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    const bool alreadyThere = mCurrent.kind == ViewKind::SharedLinks;
+    commitThenRun(
+        [this, alreadyThere] {
+            if (alreadyThere)
+                return;
+            mBackStack.push_back(mCurrent);
+            mCurrent = Location{ViewKind::SharedLinks, false, 0};
+        },
+        [this, order](std::function<void(Result<std::vector<FileEntry>>)> onFetched) {
+            mClient->listPublicLinks(order, "", SearchFilter{}, std::move(onFetched));
+        },
+        std::move(onDone));
+}
+
 void FolderNavigationService::goBack(SortOrder order,
                                      std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
@@ -164,6 +181,8 @@ void FolderNavigationService::fetchListing(
         mClient->listFavourites(order, "", SearchFilter{}, std::move(onDone));
     else if (location.kind == ViewKind::Recents)
         mClient->listRecent(order, "", SearchFilter{}, std::move(onDone));
+    else if (location.kind == ViewKind::SharedLinks)
+        mClient->listPublicLinks(order, "", SearchFilter{}, std::move(onDone));
     else if (location.kind == ViewKind::Rubbish && location.isRoot)
         mClient->getRubbishChildren(order, std::move(onDone));
     else if (location.isRoot)
@@ -227,6 +246,15 @@ void FolderNavigationService::listRecent(SortOrder order,
     mClient->listRecent(order, nameFilter, filter, dropIfScreenChanged(std::move(onDone)));
 }
 
+void FolderNavigationService::listSharedLinks(
+    SortOrder order,
+    const std::string& nameFilter,
+    const SearchFilter& filter,
+    std::function<void(Result<std::vector<FileEntry>>)> onDone)
+{
+    mClient->listPublicLinks(order, nameFilter, filter, dropIfScreenChanged(std::move(onDone)));
+}
+
 bool FolderNavigationService::canGoBack() const
 {
     return !mBackStack.empty();
@@ -249,11 +277,12 @@ FolderNavigationService::CurrentLocation FolderNavigationService::currentLocatio
 void FolderNavigationService::resolveCurrentPath(
     std::function<void(Result<std::vector<PathSegment>>)> onDone)
 {
-    // Neither flat listing has an ancestor chain to resolve: each is one synthesized
+    // No flat listing has an ancestor chain to resolve: each is one synthesized
     // segment, deliberately nameless so QML owns the label like it does the root's
     // (FAVOURITES_VIEW_SPEC.md 3.3, amended -- src/core links no Qt, so a literal
     // here could never be translated).
-    if (mCurrent.kind == ViewKind::Favourites || mCurrent.kind == ViewKind::Recents)
+    if (mCurrent.kind == ViewKind::Favourites || mCurrent.kind == ViewKind::Recents ||
+        mCurrent.kind == ViewKind::SharedLinks)
     {
         onDone(Result<std::vector<PathSegment>>::ok({PathSegment{"", 0, false, mCurrent.kind}}));
         return;

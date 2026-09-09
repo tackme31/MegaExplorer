@@ -169,6 +169,11 @@ public:
     // favourites one does.
     Q_INVOKABLE void openRecents();
 
+    // Same again for the public-link listing. Opens in the user's own order rather
+    // than one of its own, as the favourites listing does -- "which of my files are
+    // shared" has no reading order the way "what turned up lately" has.
+    Q_INVOKABLE void openSharedLinks();
+
     // Whether this tab's screen allows the action with that stable ID right now, for
     // the keyboard shortcuts that stand in for a menu row. The menu itself doesn't
     // need it -- its rows already come from the same resolver.
