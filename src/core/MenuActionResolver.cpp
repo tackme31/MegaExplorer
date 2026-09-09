@@ -122,6 +122,12 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::SingleOnly},
+        {MenuAction::LinkSettings,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
+         ActionTarget::Any,
+         ActionArity::SingleOnly},
+        // Last of the three so the destructive one sits at the bottom of the group.
         {MenuAction::RemoveLink,
          {MenuSite::FileSelection},
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
@@ -279,6 +285,8 @@ const char* menuActionId(MenuAction action)
             return "toggleFavourite";
         case MenuAction::CopyLink:
             return "copyLink";
+        case MenuAction::LinkSettings:
+            return "linkSettings";
         case MenuAction::RemoveLink:
             return "removeLink";
         case MenuAction::Cut:

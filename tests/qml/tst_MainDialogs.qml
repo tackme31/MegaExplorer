@@ -153,12 +153,34 @@ TestCase {
     }
 
     Component {
+        id: publicLinkComponent
+        PublicLinkDialog {}
+    }
+
+    Component {
         id: mutControllerComponent
 
         QtObject {
+            id: fakeMut
+
             property var lastRubbishHandles: null
             property var lastDeleteHandles: null
             property var lastRemoveLinkHandle: null
+            property var lastRequestLinkHandle: null
+            property var lastCopyLinkHandle: null
+
+            // Signature must track FileMutationController.h's: PublicLinkDialog
+            // leaves its loading state only on this, so a mismatch would leave it
+            // saying "Creating link…" forever with nothing else to show for it.
+            signal linkResolved(var handle, string link)
+
+            function requestLink(handle) {
+                fakeMut.lastRequestLinkHandle = handle;
+            }
+
+            function copyLinkToClipboard(handle) {
+                fakeMut.lastCopyLinkHandle = handle;
+            }
 
             function moveHandlesToRubbish(handles) {
                 lastRubbishHandles = handles;
@@ -973,6 +995,84 @@ TestCase {
         dialog.confirm();
 
         compare(dialog.opened, false);
+    }
+
+    // ---- PublicLinkDialog -----------------------------------------------
+    //
+    // Everything below is invisible to a screenshot: the dialog opens showing
+    // "Creating link…" whatever happens, and only the reply it filters by handle
+    // decides whether that ever becomes a URL.
+
+    function makePublicLinkDialog(names) {
+        const nav = makeSelection(names);
+        const mut = createTemporaryObject(mutControllerComponent, testCase);
+        verify(mut !== null);
+        const dialog = makeDialog(publicLinkComponent, {
+                                      "navController": nav,
+                                      "mutController": mut
+                                  });
+        return {
+            "nav": nav,
+            "mut": mut,
+            "dialog": dialog
+        };
+    }
+
+    // Opening on a node that was never shared is what creates its link, so the
+    // export has to go out with the sampled handle and not wait for a button.
+    function test_publicLink_showForSelectionExportsTheSampledHandle() {
+        const f = makePublicLinkDialog(["a.txt"]);
+
+        f.dialog.showForSelection();
+
+        tryCompare(f.dialog, "opened", true);
+        compare(f.dialog.entryName, "a.txt");
+        compare(f.mut.lastRequestLinkHandle, 1);
+        compare(f.dialog.loading, true);
+    }
+
+    function test_publicLink_showForSelectionWithNoSelectionDoesNothing() {
+        const f = makePublicLinkDialog([]);
+
+        f.dialog.showForSelection();
+
+        compare(f.dialog.opened, false);
+        compare(f.mut.lastRequestLinkHandle, null);
+    }
+
+    function test_publicLink_resolvedLinkLeavesTheLoadingState() {
+        const f = makePublicLinkDialog(["a.txt"]);
+        f.dialog.showForSelection();
+
+        f.mut.linkResolved(1, "https://mega.nz/file/abc");
+
+        compare(f.dialog.loading, false);
+        compare(f.dialog.link, "https://mega.nz/file/abc");
+        compare(f.dialog.linkFieldText(), "https://mega.nz/file/abc");
+    }
+
+    // A reply for another node must not land here: the dialog can be closed and
+    // reopened elsewhere while the first export is still in flight.
+    function test_publicLink_resolvedLinkForAnotherHandleIsIgnored() {
+        const f = makePublicLinkDialog(["a.txt", "b.txt"]);
+        f.dialog.showForSelection();
+
+        f.mut.linkResolved(2, "https://mega.nz/file/other");
+
+        compare(f.dialog.loading, true);
+        compare(f.dialog.link, "");
+    }
+
+    // The failure path is the same signal with an empty string, so "gave up" and
+    // "still working" have to stay distinguishable.
+    function test_publicLink_emptyLinkStopsLoadingAndSaysUnavailable() {
+        const f = makePublicLinkDialog(["a.txt"]);
+        f.dialog.showForSelection();
+
+        f.mut.linkResolved(1, "");
+
+        compare(f.dialog.loading, false);
+        compare(f.dialog.linkFieldText(), "Unavailable");
     }
 
     // ---- CopyConflictDialog --------------------------------------------

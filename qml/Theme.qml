@@ -277,6 +277,7 @@ QtObject {
             // broken-link counterpart, and the label says which direction it is.
             // Present in both icon fonts' cmaps; not yet checked drawn at 16px.
             readonly property string copyLink: glyphSet.link
+            readonly property string linkSettings: copyLink
             readonly property string removeLink: copyLink
             readonly property string cut: "\uE8C6"           // Cut
             readonly property string copy: "\uE8C8"          // Copy

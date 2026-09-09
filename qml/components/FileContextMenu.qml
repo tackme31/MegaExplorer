@@ -24,6 +24,7 @@ ActionMenu {
     signal moveToRubbishRequested
     signal deletePermanentlyRequested
     signal removeLinkRequested
+    signal linkSettingsRequested
 
     // Sampled by sampleActions() below, never bound to availableActions: that
     // property is notified by selectionChanged, and the Instantiator behind
@@ -84,7 +85,8 @@ ActionMenu {
             "requestRename": () => root.renameRequested(),
             "requestMoveToRubbish": () => root.moveToRubbishRequested(),
             "requestDeletePermanently": () => root.deletePermanentlyRequested(),
-            "requestRemoveLink": () => root.removeLinkRequested()
+            "requestRemoveLink": () => root.removeLinkRequested(),
+            "requestLinkSettings": () => root.linkSettingsRequested()
         };
     }
 }

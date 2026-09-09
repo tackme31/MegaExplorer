@@ -33,6 +33,10 @@ enum class MenuAction
     // listing doesn't carry -- IMegaClient::exportNode and disableExport are both
     // idempotent, so a stale menu still lands where the label promised.
     CopyLink,
+    // Opens the one place a link is looked at rather than acted on: the URL itself,
+    // and what removing it would do. Offered on the same terms as CopyLink -- it
+    // exports on open, so it needs no export-state flag either.
+    LinkSettings,
     RemoveLink,
     Cut,
     Copy,

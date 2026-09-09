@@ -233,6 +233,38 @@ void FileMutationController::copyLinkToClipboard(quint64 handle)
         });
 }
 
+void FileMutationController::requestLink(quint64 handle)
+{
+    mBusy->begin();
+    mFileOps->exportLink(
+        static_cast<std::uint64_t>(handle),
+        [this, self = shared_from_this(), handle](Result<std::string> result) {
+            invokeOnGuiThread(this, [this, handle, result = std::move(result)]() {
+                mBusy->end();
+                if (!result.success)
+                {
+                    qCWarning(lcFileOps)
+                        << "requestLink failed:" << QString::fromStdString(result.errorMessage)
+                        << "code=" << result.errorCode;
+                    // Shares copyLink's toast: its wording names the step that
+                    // failed, not where the URL was headed.
+                    mNotifications->notifyError(QStringLiteral("copyLink"),
+                                                result.errorCode,
+                                                QString::fromStdString(result.errorMessage));
+                    emit linkResolved(handle, QString());
+                    return;
+                }
+                // Marked exported even when the URL comes back empty, for the reason
+                // copyLinkToClipboard spells out: the node is shared either way, and
+                // a row without the marker greys out "Remove link" on a link the
+                // user then cannot revoke. No toast for that case -- the dialog that
+                // asked is showing the answer already.
+                markExported(handle, true);
+                emit linkResolved(handle, QString::fromStdString(result.value()));
+            });
+        });
+}
+
 void FileMutationController::markExported(quint64 handle, bool exported)
 {
     mNavigation->applyExportChange(handle, exported);

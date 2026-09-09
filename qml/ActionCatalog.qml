@@ -139,6 +139,17 @@ QtObject {
                                             "trigger": ctx => ctx.mutations.copyLinkToClipboard(
                                                                   ctx.handle)
                                         },
+                                        // ctx: requestLinkSettings(). Routed via the
+                                        // view like removeLink below, since what it
+                                        // opens is an Item no singleton can reach.
+                                        // Offered whether or not a link exists: the
+                                        // dialog exports on open, so there is always
+                                        // something to show.
+                                        "linkSettings": {
+                                            "icon": ctx => Theme.glyph.menu.linkSettings,
+                                            "label": ctx => qsTr("Link settings"),
+                                            "trigger": ctx => ctx.requestLinkSettings()
+                                        },
                                         // ctx: exported, requestRemoveLink(). Routed
                                         // via the view's confirmation like
                                         // moveToRubbish, not straight to the

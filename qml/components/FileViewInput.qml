@@ -323,6 +323,7 @@ Item {
         onMoveToRubbishRequested: confirmRubbishDialog.confirm()
         onDeletePermanentlyRequested: confirmPermanentDeleteDialog.confirm()
         onRemoveLinkRequested: confirmRemoveLinkDialog.confirm()
+        onLinkSettingsRequested: publicLinkDialog.showForSelection()
     }
 
     FolderBackgroundMenu {
@@ -349,6 +350,17 @@ Item {
         id: confirmRemoveLinkDialog
         navController: root.navController
         mutController: root.mutController
+    }
+
+    // Its "Remove link" goes through the same confirmation the menu entry does,
+    // rather than calling the controller itself: the URL stops working for
+    // everyone holding it either way, so the prompt cannot depend on which of
+    // the two doors was used.
+    PublicLinkDialog {
+        id: publicLinkDialog
+        navController: root.navController
+        mutController: root.mutController
+        onRemoveLinkRequested: confirmRemoveLinkDialog.confirm()
     }
 
     ConfirmEmptyRubbishDialog {

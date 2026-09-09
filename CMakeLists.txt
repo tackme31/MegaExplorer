@@ -276,6 +276,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/NodeDropArea.qml
         qml/components/PreviewPane.qml
         qml/components/PropertiesDialog.qml
+        qml/components/PublicLinkDialog.qml
         qml/components/QuickAccessSection.qml
         qml/components/SearchFilterPopup.qml
         qml/components/SettingsDialog.qml

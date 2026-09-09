@@ -73,6 +73,12 @@ public:
     // clipboard API at all.
     Q_INVOKABLE void copyLinkToClipboard(quint64 handle);
 
+    // copyLinkToClipboard's other half: the same export, but the URL comes back to
+    // QML through linkResolved below instead of going to the clipboard, so a dialog
+    // can show it. Minting on demand is the point -- opening the link dialog on a
+    // node that was never shared is what creates its link.
+    Q_INVOKABLE void requestLink(quint64 handle);
+
     // Stops the sharing copyLinkToClipboard started. Silent about whether a link
     // existed: IMegaClient::disableExport reports success either way, so a stale menu
     // cannot produce a failure toast for a node that was already unshared.
@@ -287,6 +293,13 @@ signals:
     // node has no link yet) and removeLink -- from the row's point of view the two
     // are the same event in opposite directions.
     void exportChanged(quint64 handle, bool exported);
+
+    // requestLink's answer. An empty link means the export failed or came back
+    // without a URL -- the reason is already on a toast, so the one signal covers
+    // both outcomes and the receiver only has to leave its loading state. Carries
+    // the handle because a dialog can be reopened on another node while the first
+    // export is still in flight.
+    void linkResolved(quint64 handle, const QString& link);
 
 private:
     // This tab's row plus every other tab's, in one call -- the three link

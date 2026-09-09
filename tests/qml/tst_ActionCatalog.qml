@@ -83,6 +83,11 @@ TestCase {
                         expected: "Copy link"
                     },
                     {
+                        tag: "linkSettings",
+                        id: "linkSettings",
+                        expected: "Link settings"
+                    },
+                    {
                         tag: "removeLink",
                         id: "removeLink",
                         expected: "Remove link"
@@ -184,6 +189,11 @@ TestCase {
                         expected: Theme.glyph.menu.copyLink
                     },
                     {
+                        tag: "linkSettings",
+                        id: "linkSettings",
+                        expected: Theme.glyph.menu.linkSettings
+                    },
+                    {
                         tag: "removeLink",
                         id: "removeLink",
                         expected: Theme.glyph.menu.removeLink
@@ -272,6 +282,12 @@ TestCase {
                     {
                         tag: "copyLink",
                         id: "copyLink"
+                    },
+                    // Always on, unlike removeLink below: the dialog exports on
+                    // open, so there is no state that makes it meaningless.
+                    {
+                        tag: "linkSettings",
+                        id: "linkSettings"
                     },
                     {
                         tag: "download",
@@ -437,6 +453,11 @@ TestCase {
                         tag: "removeLink",
                         id: "removeLink",
                         callback: "requestRemoveLink"
+                    },
+                    {
+                        tag: "linkSettings",
+                        id: "linkSettings",
+                        callback: "requestLinkSettings"
                     }
                 ];
     }

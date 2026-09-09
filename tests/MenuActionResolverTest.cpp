@@ -262,18 +262,19 @@ TEST(MenuActionResolverTest, EmptySelectionYieldsNoActions)
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(1, 0));
-    ASSERT_EQ(result.size(), 11u);
+    ASSERT_EQ(result.size(), 12u);
     EXPECT_EQ(result[0], MenuAction::Download);
     EXPECT_EQ(result[1], MenuAction::OpenLocalFile);
     EXPECT_EQ(result[2], MenuAction::OpenLocalLocation);
     EXPECT_EQ(result[3], MenuAction::ToggleFavourite);
     EXPECT_EQ(result[4], MenuAction::CopyLink);
-    EXPECT_EQ(result[5], MenuAction::RemoveLink);
-    EXPECT_EQ(result[6], MenuAction::Cut);
-    EXPECT_EQ(result[7], MenuAction::Copy);
-    EXPECT_EQ(result[8], MenuAction::Rename);
-    EXPECT_EQ(result[9], MenuAction::MoveToRubbish);
-    EXPECT_EQ(result[10], MenuAction::Properties);
+    EXPECT_EQ(result[5], MenuAction::LinkSettings);
+    EXPECT_EQ(result[6], MenuAction::RemoveLink);
+    EXPECT_EQ(result[7], MenuAction::Cut);
+    EXPECT_EQ(result[8], MenuAction::Copy);
+    EXPECT_EQ(result[9], MenuAction::Rename);
+    EXPECT_EQ(result[10], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[11], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForMultipleFiles)
@@ -379,18 +380,19 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsOpenLocalLocationWhereNoOneIte
 TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(0, 1));
-    ASSERT_EQ(result.size(), 11u);
+    ASSERT_EQ(result.size(), 12u);
     EXPECT_EQ(result[0], MenuAction::OpenLocalLocation);
     EXPECT_EQ(result[1], MenuAction::OpenInNewTab);
     EXPECT_EQ(result[2], MenuAction::TogglePin);
     EXPECT_EQ(result[3], MenuAction::ToggleFavourite);
     EXPECT_EQ(result[4], MenuAction::CopyLink);
-    EXPECT_EQ(result[5], MenuAction::RemoveLink);
-    EXPECT_EQ(result[6], MenuAction::Cut);
-    EXPECT_EQ(result[7], MenuAction::Copy);
-    EXPECT_EQ(result[8], MenuAction::Rename);
-    EXPECT_EQ(result[9], MenuAction::MoveToRubbish);
-    EXPECT_EQ(result[10], MenuAction::Properties);
+    EXPECT_EQ(result[5], MenuAction::LinkSettings);
+    EXPECT_EQ(result[6], MenuAction::RemoveLink);
+    EXPECT_EQ(result[7], MenuAction::Cut);
+    EXPECT_EQ(result[8], MenuAction::Copy);
+    EXPECT_EQ(result[9], MenuAction::Rename);
+    EXPECT_EQ(result[10], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[11], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, TogglePinIdIsStable)
@@ -447,6 +449,7 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersToggleFavouriteOnFixedTarget
 TEST(MenuActionResolverTest, LinkActionIdsAreStable)
 {
     EXPECT_STREQ(menuActionId(MenuAction::CopyLink), "copyLink");
+    EXPECT_STREQ(menuActionId(MenuAction::LinkSettings), "linkSettings");
     EXPECT_STREQ(menuActionId(MenuAction::RemoveLink), "removeLink");
 }
 
@@ -458,6 +461,9 @@ TEST(MenuActionResolverTest, DefaultTableOffersBothLinkActionsForASingleFileOrFo
     EXPECT_TRUE(contains(resolveMenuActions(fileSelection(1, 0)), MenuAction::RemoveLink));
     EXPECT_TRUE(contains(resolveMenuActions(fileSelection(0, 1)), MenuAction::CopyLink));
     EXPECT_TRUE(contains(resolveMenuActions(fileSelection(0, 1)), MenuAction::RemoveLink));
+    // The dialog exports on open, so it is offered on the same terms as CopyLink.
+    EXPECT_TRUE(contains(resolveMenuActions(fileSelection(1, 0)), MenuAction::LinkSettings));
+    EXPECT_TRUE(contains(resolveMenuActions(fileSelection(0, 1)), MenuAction::LinkSettings));
 }
 
 TEST(MenuActionResolverTest, DefaultTableNeverOffersLinkActionsForMultipleItems)
@@ -468,6 +474,8 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersLinkActionsForMultipleItems)
     EXPECT_FALSE(contains(resolveMenuActions(fileSelection(1, 1)), MenuAction::CopyLink));
     EXPECT_FALSE(contains(resolveMenuActions(fileSelection(2, 0)), MenuAction::RemoveLink));
     EXPECT_FALSE(contains(resolveMenuActions(fileSelection(1, 1)), MenuAction::RemoveLink));
+    EXPECT_FALSE(contains(resolveMenuActions(fileSelection(2, 0)), MenuAction::LinkSettings));
+    EXPECT_FALSE(contains(resolveMenuActions(fileSelection(1, 1)), MenuAction::LinkSettings));
 }
 
 TEST(MenuActionResolverTest, DefaultTableNeverOffersLinkActionsInTheRubbishBin)
@@ -476,6 +484,8 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersLinkActionsInTheRubbishBin)
         contains(resolveMenuActions(fileSelection(1, 0, ViewKind::Rubbish)), MenuAction::CopyLink));
     EXPECT_FALSE(contains(resolveMenuActions(fileSelection(1, 0, ViewKind::Rubbish)),
                           MenuAction::RemoveLink));
+    EXPECT_FALSE(contains(resolveMenuActions(fileSelection(1, 0, ViewKind::Rubbish)),
+                          MenuAction::LinkSettings));
 }
 
 TEST(MenuActionResolverTest, DefaultTableNeverOffersLinkActionsOnFixedTargetSites)
@@ -484,6 +494,8 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersLinkActionsOnFixedTargetSite
         contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::CopyLink));
     EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)),
                           MenuAction::RemoveLink));
+    EXPECT_FALSE(
+        contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::LinkSettings));
 }
 
 TEST(MenuActionResolverTest, DefaultTableNeverOffersOpenInNewTabForMultipleFolders)
@@ -650,16 +662,17 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     // never move, and cut is a deferred move (its decision 1).
     const std::vector<MenuAction> result =
         resolveMenuActions(fileSelection(1, 0, ViewKind::Favourites));
-    ASSERT_EQ(result.size(), 9u);
+    ASSERT_EQ(result.size(), 10u);
     EXPECT_EQ(result[0], MenuAction::Download);
     EXPECT_EQ(result[1], MenuAction::OpenLocalFile);
     EXPECT_EQ(result[2], MenuAction::OpenLocalLocation);
     EXPECT_EQ(result[3], MenuAction::ToggleFavourite);
     EXPECT_EQ(result[4], MenuAction::CopyLink);
-    EXPECT_EQ(result[5], MenuAction::RemoveLink);
-    EXPECT_EQ(result[6], MenuAction::Copy);
-    EXPECT_EQ(result[7], MenuAction::Rename);
-    EXPECT_EQ(result[8], MenuAction::Properties);
+    EXPECT_EQ(result[5], MenuAction::LinkSettings);
+    EXPECT_EQ(result[6], MenuAction::RemoveLink);
+    EXPECT_EQ(result[7], MenuAction::Copy);
+    EXPECT_EQ(result[8], MenuAction::Rename);
+    EXPECT_EQ(result[9], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableStillOffersOpenInNewTabAndTogglePinInFavourites)

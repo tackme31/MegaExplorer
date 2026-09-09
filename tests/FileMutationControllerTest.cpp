@@ -963,6 +963,86 @@ TEST_F(FileMutationControllerTest, CopyLinkReportsAFailedExportAsAnError)
     EXPECT_EQ(lastErrorReason, NotificationController::NoPermission);
 }
 
+// requestLink is copyLinkToClipboard's other half: same export, but the URL
+// leaves through linkResolved. The dialog that asked has no other way out of its
+// loading state, so the signal has to fire on every outcome.
+TEST_F(FileMutationControllerTest, RequestLinkHandsTheUrlBackAndMarksTheRowShared)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    int resolved = 0;
+    QString resolvedLink;
+    QObject::connect(mutations.get(),
+                     &FileMutationController::linkResolved,
+                     mutations.get(),
+                     [&](quint64, const QString& link) {
+                         ++resolved;
+                         resolvedLink = link;
+                     });
+
+    EXPECT_CALL(*client, exportNode(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<std::string>::ok("https://mega.nz/file/abc#key")));
+
+    mutations->requestLink(1);
+    flush();
+
+    ASSERT_EQ(resolved, 1);
+    EXPECT_EQ(resolvedLink, QStringLiteral("https://mega.nz/file/abc#key"));
+    EXPECT_EQ(errorCalls, 0);
+    // No success toast: the dialog is showing the link, which says it worked.
+    EXPECT_EQ(operationCalls, 0);
+    EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+}
+
+TEST_F(FileMutationControllerTest, RequestLinkStillAnswersWhenTheExportFailed)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    int resolved = 0;
+    QString resolvedLink = QStringLiteral("unset");
+    QObject::connect(mutations.get(),
+                     &FileMutationController::linkResolved,
+                     mutations.get(),
+                     [&](quint64, const QString& link) {
+                         ++resolved;
+                         resolvedLink = link;
+                     });
+
+    EXPECT_CALL(*client, exportNode(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<std::string>::fail("denied", MegaErrorCode::kEAccess)));
+
+    mutations->requestLink(1);
+    flush();
+
+    ASSERT_EQ(resolved, 1);
+    EXPECT_TRUE(resolvedLink.isEmpty());
+    ASSERT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("copyLink"));
+    EXPECT_FALSE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+}
+
+TEST_F(FileMutationControllerTest, RequestLinkMarksTheRowSharedWhenTheUrlCameBackEmpty)
+{
+    // Same reason CopyLink does it: the export succeeded, so the node is shared
+    // and "Remove link" has to stay reachable.
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, exportNode(1u, _))
+        .WillOnce(InvokeArgument<1>(Result<std::string>::ok("")));
+
+    mutations->requestLink(1);
+    flush();
+
+    EXPECT_EQ(errorCalls, 0);
+    EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+}
+
 TEST_F(FileMutationControllerTest, RemoveLinkDisablesTheExportAndReportsSuccessOnce)
 {
     givenRootListing({entry("a", 1)});
