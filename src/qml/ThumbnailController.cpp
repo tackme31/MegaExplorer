@@ -5,6 +5,7 @@
 #include "NotificationController.h"
 
 #include <QDebug>
+#include <QCoreApplication>
 #include <QDir>
 #include <QStandardPaths>
 
@@ -46,8 +47,10 @@ QString ThumbnailController::computeDestinationPath(quint64 handle) const
 {
     // One file per handle, so repeated requests overwrite the same cache slot rather
     // than accumulating files.
-    QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/MegaExplorerThumbnails";
+    // applicationName, not a literal: it carries MEGAEXPLORER_PROFILE, so a dev
+    // profile's cache never mixes with the everyday one's (src/app/AppIdentity.h).
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/" +
+                  QCoreApplication::applicationName() + "Thumbnails";
     QDir().mkpath(dir);
     // Same native-separator requirement as DownloadController's destination path.
     return QDir::toNativeSeparators(dir + "/" + QString::number(handle) + ".jpg");

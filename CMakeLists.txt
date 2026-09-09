@@ -193,6 +193,8 @@ add_library(MegaExplorerQml STATIC
 qt_add_executable(MegaExplorer
     main.cpp
     resources/appicon.rc
+    src/app/AppIdentity.h
+    src/app/AppIdentity.cpp
     src/app/Logging.h
     src/app/Logging.cpp
     src/mega/MegaSdkClient.h
@@ -401,6 +403,8 @@ target_link_libraries(MegaExplorer
 # make the app's own layering harder to read for one extra consumer.
 add_executable(megatool
     tools/megatool.cpp
+    src/app/AppIdentity.h
+    src/app/AppIdentity.cpp
     src/app/Logging.h
     src/app/Logging.cpp
     src/mega/MegaSdkClient.h

@@ -30,6 +30,10 @@
     light | dark | system -- sets MEGAEXPLORER_COLOR_SCHEME for this run only,
     without touching the Windows theme setting.
 
+.PARAMETER Profile
+    Suffixes the app's storage location for this run only (MEGAEXPLORER_PROFILE):
+    a separate MEGA login, settings and log from the everyday build.
+
 .PARAMETER AppArgs
     Arguments forwarded to MegaExplorer.exe.
 
@@ -60,6 +64,9 @@ param(
 
     [ValidateSet('light', 'dark', 'system')]
     [string]$Theme,
+
+    [ValidatePattern('^[A-Za-z0-9_-]+$')]
+    [string]$Profile,
 
     [string[]]$AppArgs = @()
 )
@@ -135,6 +142,8 @@ foreach ($dir in @($qtBin, $vcpkgBin)) {
     if (-not (Test-Path $dir)) { throw "DLL directory missing: $dir" }
 }
 $env:PATH = "$qtBin;$vcpkgBin;$env:PATH"
+
+if ($Profile) { $env:MEGAEXPLORER_PROFILE = $Profile }
 
 if ($Theme) {
     if ($Theme -eq 'system') { $env:MEGAEXPLORER_COLOR_SCHEME = $null }

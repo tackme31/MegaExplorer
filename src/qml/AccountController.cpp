@@ -4,6 +4,7 @@
 #include "GuiThread.h"
 
 #include <QDebug>
+#include <QCoreApplication>
 #include <QDir>
 #include <QLocale>
 #include <QStandardPaths>
@@ -197,8 +198,8 @@ void AccountController::loadFileVersioning()
 
 QString AccountController::computeAvatarPath(std::uint64_t userHandle) const
 {
-    const QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/MegaExplorerAvatars";
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/" +
+                        QCoreApplication::applicationName() + "Avatars";
     QDir().mkpath(dir);
     // Native separators are required, not cosmetic: the SDK's localpath.cpp
     // splits on '\' on Windows. Same rule as ThumbnailController's path.

@@ -1,3 +1,4 @@
+#include "app/AppIdentity.h"
 #include "app/Logging.h"
 #include "core/AccountService.h"
 #include "core/AuthService.h"
@@ -61,10 +62,10 @@ Q_IMPORT_QML_PLUGIN(MegaExplorerPlugin)
 int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
-    // QSettings resolves its registry location from these; without them it fails to
-    // initialize and every read/write silently no-ops.
-    QCoreApplication::setOrganizationName("MegaExplorer");
-    QCoreApplication::setApplicationName("MegaExplorer");
+    // Names every per-user storage location: QSettings' registry key and
+    // AppLocalDataLocation below. Without it QSettings fails to initialize and
+    // every read/write silently no-ops.
+    applyAppIdentity();
     // Reaches the About dialog as QML's Qt.application.version.
     QCoreApplication::setApplicationVersion(QStringLiteral(MEGAEXPLORER_VERSION));
 

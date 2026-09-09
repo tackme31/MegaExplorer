@@ -7,6 +7,7 @@
 // hits the test account even when the app happens to be signed in elsewhere.
 // `whoami` is the one command that reads the app's session, because comparing
 // the two is its whole job.
+#include "app/AppIdentity.h"
 #include "app/Logging.h"
 #include "core/IMegaClient.h"
 #include "core/MegaErrorCodes.h"
@@ -674,8 +675,10 @@ int main(int argc, char* argv[])
     });
 
     QCoreApplication app(argc, argv);
-    QCoreApplication::setOrganizationName("MegaExplorer");
-    QCoreApplication::setApplicationName("MegaExplorer");
+    // Same MEGAEXPLORER_PROFILE handling as the app: whoami reads the app's
+    // session.dat out of AppLocalDataLocation, so it must resolve to the same
+    // profile the app under test runs as.
+    applyAppIdentity();
 
     // Deliberately *not* installLogging(): it opens MegaExplorer.log WriteOnly,
     // so running this tool would truncate the app's log. Qt's default handler

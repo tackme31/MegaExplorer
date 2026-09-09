@@ -263,7 +263,12 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
 - **The app is signed in to a test MEGA account, and stays that way.** The loop launches the app,
   which auto-logs-in from the saved session, so a production session would put real files in front
   of destructive checks — and in `.screenshots/`. Every cycle aborts unless `megatool whoami`
-  matches `MEGAEXPLORER_TEST_ACCOUNT`.
+  matches `MEGAEXPLORER_TEST_ACCOUNT`. What keeps the two apart is `MEGAEXPLORER_PROFILE=dev` in
+  `.claude/settings.local.json`'s `env` block (see "Storage profiles" under Build): every Claude
+  Code session — the loop, `run.ps1`, `ui_shot.py`, `megatool` — inherits it, so the everyday
+  build's own login, settings and log are somewhere else entirely and never get signed out from
+  under the user. The test account has to be signed in **once per profile**, in a build launched
+  with that variable set.
 - `scripts/drive_gate.cmd` — `ui_shot.py drive` hijacks the real mouse and keyboard, so permission
   is taken **once per thing being verified**: the cycle runs in a subagent, which has no
   `AskUserQuestion`, so it ends its turn with a `DRIVE-PERMISSION-REQUEST` block carrying a ready-made
@@ -378,6 +383,18 @@ the install rules, then a check that the archive holds what a machine without Qt
 build nor `cmake --install` produces a runnable tree on its own: `windeployqt` runs at install
 time, and the MSVC runtime and FFmpeg's DLLs arrive by rules of their own. Never ship a `-Config
 Debug` zip; its CRT may not be redistributed. Rationale: `docs/BUILD.md`.
+
+**Storage profiles.** Everything per-user — the saved session, the SDK state cache, `QSettings`
+(a registry key on Windows), the log, the thumbnail/preview/avatar temp dirs — hangs off
+`QCoreApplication`'s application name, set in one place: `applyAppIdentity()` in
+`src/app/AppIdentity.cpp`, called by both `main.cpp` and `megatool`. `MEGAEXPLORER_PROFILE=dev`
+suffixes that name, so the build moves to `%LOCALAPPDATA%\MegaExplorer\MegaExplorer-dev` and
+`HKCU\Software\MegaExplorer\MegaExplorer-dev` and keeps a MEGA login of its own. Unset is
+production, unchanged. `scripts/run.ps1 -Profile dev` sets it for one run; the Claude Code sessions
+set it permanently (see the test-account bullet above). `megatool` reads the same variable
+deliberately: `whoami` compares the *app's* stored session against the test account, so it has to
+look in the same profile the app under test uses — and pointing it at a large production account
+means a full `fetchNodes` before it can answer, which is minutes, not seconds.
 
 **Compiler warnings**: all six of our targets — `MegaExplorerCore`, `MegaExplorerQml`,
 `MegaExplorer`, `megatool`, `MegaExplorerTests`, `MegaExplorerQmlTests` — build at `/W4`, via the

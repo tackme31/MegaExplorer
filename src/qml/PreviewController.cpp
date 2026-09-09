@@ -7,6 +7,7 @@
 #include "TextPreviewDecoder.h"
 
 #include <QByteArray>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QLocale>
@@ -404,8 +405,8 @@ void PreviewController::publish(State state, Kind kind, Reason reason)
 
 QString PreviewController::computeDestinationPath(quint64 handle, quint64 generation) const
 {
-    const QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/MegaExplorerPreviews";
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/" +
+                        QCoreApplication::applicationName() + "Previews";
     QDir().mkpath(dir);
     // Native separators are required, not cosmetic: the SDK's localpath.cpp splits
     // on '\' on Windows. Same rule as ThumbnailController's path.

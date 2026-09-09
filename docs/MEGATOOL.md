@@ -72,6 +72,12 @@ match  : yes
 
 一致しなかったときの復旧はアプリ側の操作: ログアウトしてテストアカウントでログインし直す。
 
+**どの `session.dat` を読むかは `MEGAEXPLORER_PROFILE` が決める。** megatool もアプリと同じ
+`applyAppIdentity()`（`src/app/AppIdentity.h`）を通っているので、`MEGAEXPLORER_PROFILE=dev` なら
+`%LOCALAPPDATA%\MegaExplorer\MegaExplorer-dev\session.dat`、未設定なら本番のそれを見る。Claude Code
+のセッションでは `.claude/settings.local.json` で `dev` に固定してあり、そこを外して本番アカウントに
+向けると `whoami` は `fetchNodes` 一周を待つことになる——大きなアカウントでは分単位。
+
 **これが見ているのは `session.dat` の中身であって、起動中のアプリのメモリ上のセッションではない。**
 両者がずれうるのは「別アカウントでログイン中だがまだ保存していないアプリが動いている」場合だけで、
 `loop_verify.sh` はどのみち先頭でアプリを終了させるため、**次に起動したときに使われるのは
