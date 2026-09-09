@@ -139,6 +139,22 @@ protected:
                 }));
     }
 
+    // givenFavourites' counterpart for the shared-links listing, which is a query
+    // in exactly the same sense.
+    void givenSharedLinks(std::vector<FileEntry> entries)
+    {
+        sharedLinkListing = std::move(entries);
+        EXPECT_CALL(*client, listPublicLinks(_, std::string(), _, _))
+            .WillRepeatedly(
+                Invoke([this](SortOrder,
+                              const std::string&,
+                              const SearchFilter&,
+                              std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                    ++sharedLinkFetches;
+                    onDone(Result<std::vector<FileEntry>>::ok(sharedLinkListing));
+                }));
+    }
+
     // A queued invoke can post another one (the refetch a mutation triggers),
     // so one drain isn't necessarily enough.
     static void flush()
@@ -163,6 +179,8 @@ protected:
     int rootFetches = 0;
     std::vector<FileEntry> favouriteListing;
     int favouriteFetches = 0;
+    std::vector<FileEntry> sharedLinkListing;
+    int sharedLinkFetches = 0;
     int operationCalls = 0;
     int errorCalls = 0;
     QString lastContext;
@@ -980,10 +998,80 @@ TEST_F(FolderNavigationControllerTest, ExportingUpdatesTheRowInPlaceInAFolderLis
     EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
 }
 
+TEST_F(FolderNavigationControllerTest, RemovingALinkInSharedLinksDropsTheRowByReQuerying)
+{
+    givenSharedLinks({entry("kept.txt", 5), entry("unlinked.txt", 6)});
+    controller->openSharedLinks();
+    flush();
+    const int fetchesBefore = sharedLinkFetches;
+
+    // Same shape as the favourites case: the link is already gone server-side, so
+    // only the re-query can make the row leave.
+    sharedLinkListing = {entry("kept.txt", 5)};
+    controller->applyExportChange(6, false);
+    flush();
+
+    EXPECT_EQ(sharedLinkFetches - fetchesBefore, 1);
+    ASSERT_EQ(model()->rowCount(), 1);
+    EXPECT_EQ(model()->entryAt(0).value(QStringLiteral("name")).toString(),
+              QStringLiteral("kept.txt"));
+}
+
+TEST_F(FolderNavigationControllerTest, CreatingALinkInSharedLinksBringsTheRowInByReQuerying)
+{
+    givenSharedLinks({entry("kept.txt", 5)});
+    controller->openSharedLinks();
+    flush();
+    const int fetchesBefore = sharedLinkFetches;
+
+    sharedLinkListing = {entry("kept.txt", 5), entry("linked.txt", 6)};
+    controller->applyExportChange(6, true);
+    flush();
+
+    EXPECT_EQ(sharedLinkFetches - fetchesBefore, 1);
+    EXPECT_EQ(model()->rowCount(), 2);
+}
+
+TEST_F(FolderNavigationControllerTest, ARemoteLinkRemovalInSharedLinksOnlyMarksTheTabStale)
+{
+    givenSharedLinks({entry("kept.txt", 5), entry("unlinked.txt", 6)});
+    controller->openSharedLinks();
+    flush();
+    const int fetchesBefore = sharedLinkFetches;
+
+    // Reached from another tab, so the user is not watching this one: one
+    // full-drive query per background tab is the refresh storm markStale avoids.
+    sharedLinkListing = {entry("kept.txt", 5)};
+    controller->applyRemoteExportChange(6, false);
+    flush();
+    EXPECT_EQ(sharedLinkFetches - fetchesBefore, 0);
+    EXPECT_EQ(model()->rowCount(), 2);
+
+    controller->refreshIfStale();
+    flush();
+
+    EXPECT_EQ(sharedLinkFetches - fetchesBefore, 1);
+    EXPECT_EQ(model()->rowCount(), 1);
+}
+
+TEST_F(FolderNavigationControllerTest, ARemoteExportChangeInAFolderStillWritesTheFlagInPlace)
+{
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+    const int fetchesBefore = rootFetches;
+
+    controller->applyRemoteExportChange(1, true);
+    flush();
+
+    EXPECT_EQ(rootFetches - fetchesBefore, 0);
+    EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+}
+
 TEST_F(FolderNavigationControllerTest, ExportingInFavouritesWritesInPlaceRatherThanReQuerying)
 {
-    // Unlike the favourite flag, no listing is defined by an export -- so even
-    // the favourites screen, which re-queries for a heart, just writes this one.
+    // Only the shared-links listing is defined by an export, so the favourites
+    // screen -- which re-queries for a heart -- just writes this one.
     givenFavourites({entry("shared.txt", 5)});
     controller->openFavourites();
     flush();

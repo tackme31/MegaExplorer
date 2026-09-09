@@ -774,6 +774,31 @@ void FolderNavigationController::applyRemoteFavouriteChange(quint64 handle, bool
 
 void FolderNavigationController::applyExportChange(quint64 handle, bool exported)
 {
+    if (viewKind() == ViewKindEnum::SharedLinks)
+    {
+        // On this screen the export is membership, not a flag: removing a link has
+        // to drop the row and adding one has to bring a row in, so re-read rather
+        // than write in place -- applyFavouriteChange's reasoning for favourites.
+        refreshVisibleListing();
+        return;
+    }
+
+    writeExportFlag(handle, exported);
+}
+
+void FolderNavigationController::applyRemoteExportChange(quint64 handle, bool exported)
+{
+    if (viewKind() == ViewKindEnum::SharedLinks)
+    {
+        markStale();
+        return;
+    }
+
+    writeExportFlag(handle, exported);
+}
+
+void FolderNavigationController::writeExportFlag(quint64 handle, bool exported)
+{
     mFileListModel->setExported(handle, exported);
     for (FileEntry& entry : mLastFolderEntries)
     {

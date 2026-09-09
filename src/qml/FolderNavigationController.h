@@ -256,10 +256,13 @@ public:
     void applyFavouriteChange(quint64 handle, bool favourite);
 
     // applyFavouriteChange's counterpart for "this node now has / no longer has a
-    // public link". One method for both this tab and the fan-out to the others,
-    // where the favourite flag needs two: no screen is *defined* by an export, so
-    // nothing has to re-query and nothing marks itself stale.
+    // public link". A shared-links listing is defined by the export, so there it
+    // re-queries instead of writing the flag: the row joins or leaves the listing.
     void applyExportChange(quint64 handle, bool exported);
+
+    // The same event reaching a tab that isn't the one the user acted in --
+    // applyRemoteFavouriteChange's split, for applyRemoteFavouriteChange's reason.
+    void applyRemoteExportChange(quint64 handle, bool exported);
 
     // What the mutation half gates paste on: before the first load there is no
     // folder for it to target.
@@ -340,6 +343,9 @@ private:
     // Writes one node's flag into the model and the cached listing. The folder
     // half of both favourite entry points.
     void writeFavouriteFlag(quint64 handle, bool favourite);
+
+    // Same, for the public-link flag: the folder half of both export entry points.
+    void writeExportFlag(quint64 handle, bool exported);
 
     // Records that what this tab shows no longer matches the account, for
     // refreshIfStale() to act on later.

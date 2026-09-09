@@ -436,8 +436,9 @@ TabContext TabsController::createTab()
                 refreshCurrentTabIfStale();
             });
 
-    // Same fan-out as the flag above, minus the stale handling: no screen is
-    // defined by an export, so every tab can write it in place.
+    // Same fan-out as the flag above, stale handling included: a shared-links
+    // listing is defined by the export, so it re-queries rather than writing it in
+    // place.
     connect(context.mutations.get(),
             &FileMutationController::exportChanged,
             this,
@@ -446,8 +447,9 @@ TabContext TabsController::createTab()
                 {
                     if (tab.navigation.get() == navigation)
                         continue;
-                    tab.navigation->applyExportChange(handle, exported);
+                    tab.navigation->applyRemoteExportChange(handle, exported);
                 }
+                refreshCurrentTabIfStale();
             });
 
     return context;
