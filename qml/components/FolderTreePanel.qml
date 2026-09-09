@@ -333,6 +333,13 @@ TreeView {
             }
         }
 
+        // Same pointing-hand cursor the panel's other two row kinds use
+        // (SpecialViewsSection.qml). Covers the chevron too, which sits inside
+        // the delegate.
+        HoverHandler {
+            cursorShape: Qt.PointingHandCursor
+        }
+
         TapHandler {
             acceptedButtons: Qt.LeftButton
             onTapped: root.navController?.navigateTo(treeDelegate.handle, treeDelegate.isRoot)

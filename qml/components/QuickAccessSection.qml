@@ -230,6 +230,12 @@ ColumnLayout {
             // tabs and dialogs).
             onClicked: quickAccessModel.activate(pinDelegate.handle, false)
 
+            // Same pointing-hand cursor the panel's other two row kinds use
+            // (SpecialViewsSection.qml).
+            HoverHandler {
+                cursorShape: Qt.PointingHandCursor
+            }
+
             // AbstractButton only accepts LeftButton itself, so these two never
             // compete with onClicked above -- the same arrangement
             // FolderTreePanel.qml's TreeViewDelegate already relies on.

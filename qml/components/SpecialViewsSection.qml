@@ -98,6 +98,13 @@ ColumnLayout {
 
         onClicked: viewRow.openHere()
 
+        // Marks the row as click-to-navigate. A handler because ItemDelegate
+        // has no cursorShape of its own, and cursorShape only applies while a
+        // handler is active -- for a HoverHandler, exactly while hovered.
+        HoverHandler {
+            cursorShape: Qt.PointingHandCursor
+        }
+
         // AbstractButton takes LeftButton itself, so this never competes with
         // onClicked -- the arrangement FolderTreePanel.qml already relies on.
         TapHandler {
