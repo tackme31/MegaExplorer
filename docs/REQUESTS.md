@@ -41,13 +41,24 @@
 
 <!-- ここから下に書く。ループが取り込んだら消える。 -->
 
-- サイドパネルの Favourites の下に、公開リンクを付けたファイル・フォルダの一覧ビューを追加する。
+- [最優先] サイドパネルの Favourites の下に、公開リンクを付けたファイル・フォルダの一覧ビューを追加する。
   Favourites / Recent と同じ扱い（クリックで表示、中クリックで新しいタブ）。名前は「共有済み
   ファイル」「共有済み」あたりから、パネルの他の行と並べて収まる適切なものを選ぶこと。
   一覧の見た目は通常のフォルダ一覧のままでよい。全項目がリンク持ちだからといってリンクの印を
   省く、といった調整は不要。
-  一覧は `MegaApi::getPublicLinks(order)` 一発で取れる。ただしこの API は `MegaSearchFilter` を
-  受け取らないので、ビュー内の検索とフィルタ popup、および名前・サイズ・更新日時でのソートは
-  取得後に自前でやる必要がある（SDK 側は既定順とリンク作成順しか持たない）。リンクの作成・
-  解除でこのビューが古くならないよう、再取得の経路も要る。
+  一覧そのものは `MegaApi::getPublicLinks(order)` 一発で取れる。この API は `MegaSearchFilter`
+  を受け取らず、order も既定順（＝アルファベット順）とリンク作成順しか持たない。ただし検索と
+  フィルタ popup を自前で書く必要はない——**検索・フィルタが有効なときだけ、Favourites と同じ
+  root 起点の `MegaApi::search(filter, order)` を投げ、結果を `isExported` で絞る**方式にすれば、
+  クエリも popup の全 facet も 3 キーのソートも server-side のまま使える（`nodeToEntry` は既に
+  `isExported` を埋めている）。無検索時だけ `getPublicLinks` を使うハイブリッド。代償は検索中の
+  全走査だが、それは Favourites/Recents が今払っているコストと同じ。`FILE_TYPE_*` 相当の分類を
+  自前の拡張子表で再現する羽目になる方式（`getPublicLinks` の結果を全部自前で絞る）は避けること。
+  ソートは、名前が `ORDER_DEFAULT_ASC/DESC` でそのまま賄えるので、アダプタ内で `std::sort` が
+  要るのはサイズと更新日時だけ。ヘッダークリックは有効のまま（`canSort` は true）でよい。
+  popup では `thisFolderOnly` だけ、この画面で意味を持たないので既存の
+  `SearchFilterPopup.qml` の `enabled: viewKind !== ...` と同じ 1 行で無効化する。
+  リンクの作成・解除でこのビューが古くならないよう、再取得の経路も要る。`applyExportChange()`
+  が既に model と cache の `isExported` を書き換えているので、この画面では行そのものを消す分岐を
+  足す形になる。
 
