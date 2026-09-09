@@ -19,6 +19,11 @@ TestCase {
         compare(ViewLabels.label(ViewKind.Favourites, false, ""), qsTr("Favourites"));
     }
 
+    function test_sharedLinksGetTheirOwnLabel() {
+        compare(ViewLabels.label(ViewKind.SharedLinks, false, ""), qsTr("Shared links"));
+        compare(ViewLabels.glyph(ViewKind.SharedLinks, false), Theme.glyph.link);
+    }
+
     function test_aRealFolderKeepsItsOwnName() {
         compare(ViewLabels.label(ViewKind.CloudDrive, false, "photos"), "photos");
     }

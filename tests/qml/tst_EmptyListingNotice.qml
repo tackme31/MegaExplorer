@@ -81,11 +81,29 @@ TestCase {
         verify(favourites.notice.children[1].text !== folder.notice.children[1].text);
     }
 
+    function test_sharedLinksGetTheirOwnWordingAndKeepAHint() {
+        const links = makeNotice({
+                                     "viewKind": ViewKind.SharedLinks
+                                 });
+        const favourites = makeNotice({});
+
+        verify(links.notice.visible);
+        verify(links.notice.children[0].text !== favourites.notice.children[0].text);
+        // Unlike Recent, this screen has an action that fills it -- so the hint
+        // stays, pointing at the menu row that makes a link.
+        verify(links.notice.children[1].visible);
+        verify(links.notice.children[1].text !== favourites.notice.children[1].text);
+    }
+
     function test_searchingSwapsTheWordingAndDropsTheHint_data() {
         return [
                     {
                         "tag": "favourites",
                         "kind": ViewKind.Favourites
+                    },
+                    {
+                        "tag": "shared links",
+                        "kind": ViewKind.SharedLinks
                     },
                     {
                         "tag": "folder",

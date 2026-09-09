@@ -179,6 +179,27 @@ TEST_F(TabsControllerTest, AddFavouritesTabSwitchesTheNewTabAndNotTheCurrentOne)
               ViewKindEnum::CloudDrive);
 }
 
+TEST_F(TabsControllerTest, AddSharedLinksTabOpensThePublicLinkListingInBackground)
+{
+    EXPECT_CALL(*client, listPublicLinks(_, _, _, _))
+        .WillRepeatedly(Invoke([](SortOrder,
+                                  const std::string&,
+                                  const SearchFilter&,
+                                  std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            onDone(Result<std::vector<FileEntry>>::ok({}));
+        }));
+    auto tabs = makeController();
+
+    tabs->addSharedLinksTab();
+    flushQueuedEvents();
+    flushQueuedEvents();
+
+    EXPECT_EQ(tabs->count(), 2);
+    EXPECT_EQ(tabs->currentIndex(), 0);
+    EXPECT_EQ(tabs->data(tabs->index(1), TabsController::ViewKindRole).toInt(),
+              ViewKindEnum::SharedLinks);
+}
+
 // The fan-out these three exercise had no coverage at all before F7b: every
 // assertion about a cross-tab refresh lived on the emitting side.
 TEST_F(TabsControllerTest, AFavouriteToggledElsewhereRefreshesTheFavouritesTabWhenItIsLookedAt)

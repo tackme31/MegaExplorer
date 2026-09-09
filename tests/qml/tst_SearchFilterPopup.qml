@@ -264,7 +264,7 @@ TestCase {
         verify(f.popup.filterActive);
     }
 
-    // The two listings ignore one facet each C++-side, and a control that pushes a
+    // The query listings ignore a facet each C++-side, and a control that pushes a
     // value nothing reads is what this popup was hidden from those views to avoid.
     function test_facetsTheQueryListingsIgnoreAreDisabled_data() {
         return [
@@ -288,6 +288,13 @@ TestCase {
                         type: false,
                         favourite: true,
                         thisFolder: false
+                    },
+                    {
+                        tag: "shared links",
+                        kind: ViewKind.SharedLinks,
+                        type: true,
+                        favourite: true,
+                        thisFolder: false
                     }
                 ];
     }
@@ -298,10 +305,10 @@ TestCase {
 
         compare(f.popup.typeSelector.enabled, data.type);
         compare(f.popup.favouriteSelector.enabled, data.favourite);
-        // Both listings are rooted at the Cloud Drive root, so there is no open folder
-        // to scope to and C++ ignores the facet there.
+        // The query listings are rooted at the Cloud Drive root, so there is no open
+        // folder to scope to and C++ ignores the facet there.
         compare(f.popup.thisFolderSelector.enabled, data.thisFolder);
-        // Never gated on the view: both listings honour it.
+        // Never gated on the view: every listing honours it.
         verify(f.popup.timeSelector.enabled);
     }
 

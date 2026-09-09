@@ -98,6 +98,9 @@ public:
     // And for the recently-added listing, a query like the favourites one.
     Q_INVOKABLE void addRecentsTab();
 
+    // And for the public-link listing, a query again.
+    Q_INVOKABLE void addSharedLinksTab();
+
     // Opens a second tab on the same screen as `index`, immediately to its right
     // and focused -- browser/Explorer "Duplicate tab". The copy takes the location
     // only, not the back stack, the search or the selection.

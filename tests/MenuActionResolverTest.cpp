@@ -696,6 +696,17 @@ TEST(MenuActionResolverTest, DefaultTableTreatsRecentsExactlyAsFavourites)
               resolveMenuActions(folderTarget(MenuSite::FolderBackground, ViewKind::Favourites)));
 }
 
+TEST(MenuActionResolverTest, DefaultTableTreatsSharedLinksExactlyAsFavourites)
+{
+    // The third screen of that shape, compared the same way and for the same reason.
+    EXPECT_EQ(resolveMenuActions(fileSelection(1, 0, ViewKind::SharedLinks)),
+              resolveMenuActions(fileSelection(1, 0, ViewKind::Favourites)));
+    EXPECT_EQ(resolveMenuActions(fileSelection(0, 1, ViewKind::SharedLinks)),
+              resolveMenuActions(fileSelection(0, 1, ViewKind::Favourites)));
+    EXPECT_EQ(resolveMenuActions(folderTarget(MenuSite::FolderBackground, ViewKind::SharedLinks)),
+              resolveMenuActions(folderTarget(MenuSite::FolderBackground, ViewKind::Favourites)));
+}
+
 TEST(MenuActionResolverTest, MenuActionAllowedAgreesWithTheResolvedMenu)
 {
     // The keyboard's entry point: same table, same answer, addressed by ID.
@@ -716,8 +727,11 @@ TEST(MenuActionResolverTest, DefaultTableOffersPropertiesForOneItemInEveryView)
 {
     // The one selection action the bin keeps: it only reads, and a binned node's
     // size and original location are exactly what gets looked up there.
-    for (ViewKind kind :
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::Rubbish})
+    for (ViewKind kind : {ViewKind::CloudDrive,
+                          ViewKind::Favourites,
+                          ViewKind::Recents,
+                          ViewKind::SharedLinks,
+                          ViewKind::Rubbish})
     {
         EXPECT_TRUE(contains(resolveMenuActions(fileSelection(1, 0, kind)), MenuAction::Properties))
             << static_cast<int>(kind);
@@ -733,11 +747,12 @@ TEST(MenuActionResolverTest, DefaultTableOffersPropertiesForOneItemInEveryView)
 TEST(MenuActionResolverTest, DefaultTableOffersPropertiesOnACloudDriveBackgroundOnly)
 {
     // The background's target is the folder on screen, which only the Cloud Drive
-    // always has as a real node: the two flat listings synthesize a handle-less
+    // always has as a real node: the flat listings synthesize a handle-less
     // location, and the bin's own top resolves to the Cloud Drive root instead.
     EXPECT_TRUE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)),
                          MenuAction::Properties));
-    for (ViewKind kind : {ViewKind::Favourites, ViewKind::Recents, ViewKind::Rubbish})
+    for (ViewKind kind :
+         {ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks, ViewKind::Rubbish})
     {
         EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground, kind)),
                               MenuAction::Properties))

@@ -18,6 +18,7 @@ ColumnLayout {
     readonly property var listModel: root.navController?.fileListModel ?? null
     readonly property bool favourites: root.navController?.viewKind === ViewKind.Favourites
     readonly property bool recents: root.navController?.viewKind === ViewKind.Recents
+    readonly property bool sharedLinks: root.navController?.viewKind === ViewKind.SharedLinks
     readonly property bool searching: root.navController?.searchActive ?? false
 
     // A folder listing is an in-memory read that lands before anything repaints, so
@@ -40,12 +41,16 @@ ColumnLayout {
                     return qsTr("No favourites match your search");
                 if (root.recents)
                     return qsTr("No recent items match your search");
+                if (root.sharedLinks)
+                    return qsTr("No shared links match your search");
                 return qsTr("No items match your search");
             }
             if (root.favourites)
                 return qsTr("No favourites yet");
             if (root.recents)
                 return qsTr("Nothing was added in the last 30 days");
+            if (root.sharedLinks)
+                return qsTr("Nothing is shared by link yet");
             return qsTr("This folder is empty");
         }
     }
@@ -60,12 +65,17 @@ ColumnLayout {
         visible: !root.searching && !root.recents
         // The menu rows' own wording, not a second copy of it: the two would
         // drift apart the first time either is reworded.
-        text: root.favourites ? qsTr("Right-click a file or folder and choose \"%1\".").arg(
-                                    ActionCatalog.entries["toggleFavourite"].label({
-                                                                                       "favourited":
-                                                                                       false
-                                                                                   })) : qsTr(
-                                    "Drop files here, or right-click and choose \"%1\".").arg(
-                                    ActionCatalog.entries["newFolder"].label({}))
+        text: {
+            if (root.favourites)
+                return qsTr("Right-click a file or folder and choose \"%1\".").arg(
+                            ActionCatalog.entries["toggleFavourite"].label({
+                                                                              "favourited": false
+                                                                          }));
+            if (root.sharedLinks)
+                return qsTr("Right-click a file or folder and choose \"%1\".").arg(
+                            ActionCatalog.entries["copyLink"].label({}));
+            return qsTr("Drop files here, or right-click and choose \"%1\".").arg(
+                        ActionCatalog.entries["newFolder"].label({}));
+        }
     }
 }

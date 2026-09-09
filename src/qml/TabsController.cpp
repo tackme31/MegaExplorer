@@ -189,6 +189,17 @@ void TabsController::addRecentsTab()
     mTabs.back().navigation->openRecents();
 }
 
+void TabsController::addSharedLinksTab()
+{
+    const int row = static_cast<int>(mTabs.size());
+    beginInsertRows(QModelIndex(), row, row);
+    mTabs.push_back(createTab());
+    endInsertRows();
+    emit countChanged();
+
+    mTabs.back().navigation->openSharedLinks();
+}
+
 void TabsController::duplicateTab(int index)
 {
     if (index < 0 || index >= static_cast<int>(mTabs.size()))

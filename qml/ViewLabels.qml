@@ -17,6 +17,8 @@ QtObject {
             return qsTr("Favourites");
         if (kind === ViewKind.Recents)
             return qsTr("Recent");
+        if (kind === ViewKind.SharedLinks)
+            return qsTr("Shared links");
         // Only the bin's own top is named here; a folder inside it keeps its own
         // name, which is why this is gated on isRoot and Favourites is not.
         if (kind === ViewKind.Rubbish && isRoot)
@@ -33,6 +35,8 @@ QtObject {
             return Theme.glyph.favouriteOutline;
         if (kind === ViewKind.Recents)
             return Theme.glyph.recent;
+        if (kind === ViewKind.SharedLinks)
+            return Theme.glyph.link;
         if (kind === ViewKind.Rubbish && isRoot)
             return Theme.glyph.menu.moveToRubbish;
         if (isRoot)

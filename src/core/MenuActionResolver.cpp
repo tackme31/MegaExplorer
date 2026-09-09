@@ -67,8 +67,8 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
     // The four actions a favourites listing withholds -- NewFolder, Cut, Paste,
     // MoveToRubbish -- are exactly the ones needing a destination folder, which a
     // flat cross-drive listing has none of (FAVOURITES_VIEW_SPEC.md 4.1; Cut is a
-    // deferred move, hence its decision 1). Recents is the same shape of screen and
-    // withholds the same four.
+    // deferred move, hence its decision 1). Recents and the public-link listing are the
+    // same shape of screen and withhold the same four.
     static const std::vector<MenuActionSpec> actions = {
         {MenuAction::NewFolder,
          {MenuSite::FolderBackground},
@@ -77,7 +77,7 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          ActionArity::SingleOnly},
         {MenuAction::Download,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::FilesOnly,
          ActionArity::Any},
         // SingleOnly, unlike Download above: each handle resolves through its own
@@ -85,7 +85,7 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
         // answer with one toast per item.
         {MenuAction::OpenLocalFile,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::FilesOnly,
          ActionArity::SingleOnly},
         // SingleOnly: Explorer selects one item per window, so a multi-selection
@@ -93,24 +93,24 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
         // has no counterpart under the linked folder.
         {MenuAction::OpenLocalLocation,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::SingleOnly},
         {MenuAction::OpenInNewTab,
          {MenuSite::FileSelection, MenuSite::FolderRow},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         {MenuAction::TogglePin,
          {MenuSite::FileSelection, MenuSite::FolderRow},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         // SingleOnly: with a mixed selection there is no one label to show, and the
         // resolver can't see the flag that would decide it anyway.
         {MenuAction::ToggleFavourite,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::SingleOnly},
         // SingleOnly for a reason the other two SingleOnly actions don't have: the
@@ -119,12 +119,12 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
         // to hand anyone.
         {MenuAction::CopyLink,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::SingleOnly},
         {MenuAction::RemoveLink,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::SingleOnly},
         // Cut before Copy, Windows' own order.
@@ -135,7 +135,7 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          ActionArity::Any},
         {MenuAction::Copy,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::Any},
         // FoldersOnly/SingleOnly like NewFolder, satisfied the same way:
@@ -149,7 +149,7 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
         // are selected".
         {MenuAction::Rename,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::SingleOnly},
         {MenuAction::MoveToRubbish,
@@ -178,13 +178,13 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
         // parents are gone, which is what Restore exists to answer.
         {MenuAction::GoToFolder,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::SingleOnly,
          true},
         {MenuAction::SelectAll,
          {MenuSite::FolderBackground},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         // FolderRow too, where it re-reads that row's subfolders instead of the
@@ -193,7 +193,7 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
         // since "is this row a tree row" is not something MenuContext carries.
         {MenuAction::Refresh,
          {MenuSite::FolderBackground, MenuSite::FolderRow},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         // SingleOnly: the dialog describes one node, and Rubbish is included --
@@ -201,7 +201,11 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
         // size and location is exactly when it is wanted.
         {MenuAction::Properties,
          {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::Rubbish},
+         {ViewKind::CloudDrive,
+          ViewKind::Favourites,
+          ViewKind::Recents,
+          ViewKind::SharedLinks,
+          ViewKind::Rubbish},
          ActionTarget::Any,
          ActionArity::SingleOnly},
         // The same action from a view's empty space, describing the folder on

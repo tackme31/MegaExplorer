@@ -32,6 +32,8 @@ std::optional<ViewKind> toViewKind(int kind)
         return ViewKind::Rubbish;
     if (kind == static_cast<int>(ViewKind::Recents))
         return ViewKind::Recents;
+    if (kind == static_cast<int>(ViewKind::SharedLinks))
+        return ViewKind::SharedLinks;
     return std::nullopt;
 }
 

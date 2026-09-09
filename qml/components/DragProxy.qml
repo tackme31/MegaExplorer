@@ -73,7 +73,8 @@ Item {
     // Spelled as a list of kinds rather than "anything but CloudDrive": this is each
     // screen's own policy, not a fact a later special view would inherit.
     readonly property bool refusedGesture: (root.sourceKind === ViewKind.Favourites
-                                            || root.sourceKind === ViewKind.Recents)
+                                            || root.sourceKind === ViewKind.Recents
+                                            || root.sourceKind === ViewKind.SharedLinks)
                                            && !root.copyMode
 
     function sampleCopyMode() {

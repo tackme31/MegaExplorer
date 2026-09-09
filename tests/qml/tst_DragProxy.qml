@@ -190,6 +190,18 @@ TestCase {
                         sourceKind: ViewKind.Favourites,
                         copyMode: true,
                         allowed: true
+                    },
+                    {
+                        tag: "shared links/move",
+                        sourceKind: ViewKind.SharedLinks,
+                        copyMode: false,
+                        allowed: false
+                    },
+                    {
+                        tag: "shared links/copy",
+                        sourceKind: ViewKind.SharedLinks,
+                        copyMode: true,
+                        allowed: true
                     }
                 ];
     }

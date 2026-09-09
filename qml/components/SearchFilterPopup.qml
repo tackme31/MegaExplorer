@@ -213,11 +213,12 @@ Popup {
         CheckBox {
             id: thisFolderCheck
 
-            // The favourites and recents listings are rooted at the Cloud Drive root
-            // rather than at an open folder, so there is nothing for this to scope to
-            // and C++ ignores it there.
+            // The flat cross-drive listings are rooted at the Cloud Drive root rather
+            // than at an open folder, so there is nothing for this to scope to and
+            // C++ ignores it there.
             enabled: root.navController?.viewKind !== ViewKind.Favourites
                      && root.navController?.viewKind !== ViewKind.Recents
+                     && root.navController?.viewKind !== ViewKind.SharedLinks
             text: qsTr("This folder only")
         }
 

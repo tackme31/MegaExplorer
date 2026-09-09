@@ -22,9 +22,9 @@ ColumnLayout {
 
         required property int kind
         required property string glyph
-        // Stated per row rather than derived here: the two screens differ in what
-        // "on it" means. Favourites cannot be navigated into, so its kind alone
-        // settles it; the bin can, and a folder inside it must not light this row
+        // Stated per row rather than derived here: the screens differ in what
+        // "on it" means. The query screens cannot be navigated into, so kind alone
+        // settles them; the bin can, and a folder inside it must not light this row
         // (the tree marks that instead).
         required property bool current
         // Called on click (this tab) and middle-click (background tab).
@@ -121,8 +121,8 @@ ColumnLayout {
         }
     }
 
-    // Above Favourites, with the bin left last: the bin is where every file manager
-    // puts it, and the two query screens read as a pair above it.
+    // The bin is left last, where every file manager puts it; the query screens
+    // read as a group above it.
     SpecialViewRow {
         kind: ViewKind.Recents
         // No atRoot term, for the Favourites row's reason below.
@@ -143,6 +143,18 @@ ColumnLayout {
         glyph: Theme.glyph.favouriteOutline
         openHere: () => root.navController?.openFavourites()
         openInNewTab: () => tabsController.addFavouritesTab()
+        openContextMenu: null
+    }
+
+    SpecialViewRow {
+        kind: ViewKind.SharedLinks
+        // No atRoot term, for the Favourites row's reason above.
+        current: root.navController ? root.navController.viewKind === ViewKind.SharedLinks : false
+        // The same chain link the file rows draw as their "this node has a public
+        // link" marker: one screen, one symbol.
+        glyph: Theme.glyph.link
+        openHere: () => root.navController?.openSharedLinks()
+        openInNewTab: () => tabsController.addSharedLinksTab()
         openContextMenu: null
     }
 
