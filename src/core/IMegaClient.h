@@ -389,6 +389,13 @@ public:
     // otherwise Unix seconds.
     virtual Result<std::int64_t> getLinkExpiry(std::uint64_t handle) const = 0;
 
+    // Wraps an existing public link (key included) into MEGA's password-protected
+    // `#P!` form. Computed locally with nothing stored on MEGA, so the original link
+    // stays valid and nothing can later report that a password was ever set.
+    virtual void encryptLinkWithPassword(const std::string& link,
+                                         const std::string& password,
+                                         std::function<void(Result<std::string>)> onDone) = 0;
+
     // exportNode's inverse. Reports success for a node that has no link, so a caller
     // whose view of the export state is stale still ends up where it asked to be.
     virtual void disableExport(std::uint64_t handle, std::function<void(Result<void>)> onDone) = 0;

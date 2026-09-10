@@ -1267,6 +1267,19 @@ Result<std::int64_t> MegaSdkClient::getLinkExpiry(std::uint64_t handle) const
     return Result<std::int64_t>::ok(node->getExpirationTime());
 }
 
+void MegaSdkClient::encryptLinkWithPassword(const std::string& link,
+                                            const std::string& password,
+                                            std::function<void(Result<std::string>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::string>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    mApi->encryptLinkWithPassword(
+        link.c_str(), password.c_str(), new megasdk::TextResultListener(std::move(onDone)));
+}
+
 void MegaSdkClient::disableExport(std::uint64_t handle, std::function<void(Result<void>)> onDone)
 {
     if (mShuttingDown)

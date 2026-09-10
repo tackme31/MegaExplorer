@@ -1144,6 +1144,73 @@ TEST_F(FileMutationControllerTest, LinkExpiryReadsThroughAndFallsBackToNoLink)
     EXPECT_EQ(mutations->linkExpiry(2), -1);
 }
 
+// The protected form is made from the link the dialog already shows, so the call
+// must carry that string and the password untouched, and hand the answer back
+// under the handle the dialog filters on.
+TEST_F(FileMutationControllerTest, RequestPasswordLinkHandsBackTheProtectedLink)
+{
+    quint64 resolvedHandle = 0;
+    QString resolved = QStringLiteral("unset");
+    QObject::connect(mutations.get(),
+                     &FileMutationController::passwordLinkResolved,
+                     mutations.get(),
+                     [&](quint64 handle, const QString& link) {
+                         resolvedHandle = handle;
+                         resolved = link;
+                     });
+
+    EXPECT_CALL(*client,
+                encryptLinkWithPassword(
+                    std::string("https://mega.nz/file/abc#key"), std::string("s3cret pass"), _))
+        .WillOnce(InvokeArgument<2>(Result<std::string>::ok("https://mega.nz/#P!protected")));
+
+    mutations->requestPasswordLink(
+        7, QStringLiteral("https://mega.nz/file/abc#key"), QStringLiteral("s3cret pass"));
+    flush();
+
+    EXPECT_EQ(errorCalls, 0);
+    EXPECT_EQ(resolvedHandle, 7u);
+    EXPECT_EQ(resolved, QStringLiteral("https://mega.nz/#P!protected"));
+}
+
+// The dialog leaves its busy state only on the resolved signal, so a failure has
+// to arrive there too -- empty -- and not just as a toast.
+TEST_F(FileMutationControllerTest, RequestPasswordLinkFailureToastsAndResolvesEmpty)
+{
+    QString resolved = QStringLiteral("unset");
+    QObject::connect(mutations.get(),
+                     &FileMutationController::passwordLinkResolved,
+                     mutations.get(),
+                     [&](quint64, const QString& link) {
+                         resolved = link;
+                     });
+
+    EXPECT_CALL(*client, encryptLinkWithPassword(_, _, _))
+        .WillOnce(InvokeArgument<2>(Result<std::string>::fail("bad link", MegaErrorCode::kEArgs)));
+
+    mutations->requestPasswordLink(7, QStringLiteral("not a link"), QStringLiteral("pw"));
+    flush();
+
+    ASSERT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("passwordLink"));
+    EXPECT_TRUE(resolved.isEmpty());
+}
+
+// The protected link exists nowhere but in the dialog, so copying it must not go
+// back to MEGA for "the" link -- that would put the plain one on the clipboard.
+TEST_F(FileMutationControllerTest, CopyLinkTextAnnouncesTheCopyWithoutExporting)
+{
+    EXPECT_CALL(*client, exportNode(_, _)).Times(0);
+
+    mutations->copyLinkTextToClipboard(QStringLiteral("https://mega.nz/#P!protected"));
+    flush();
+
+    ASSERT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastContext, QStringLiteral("copyLink"));
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(errorCalls, 0);
+}
+
 TEST_F(FileMutationControllerTest, CopyLinkMarksTheRowSharedAndAnnouncesIt)
 {
     givenRootListing({entry("a", 1)});

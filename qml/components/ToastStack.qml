@@ -398,6 +398,10 @@ Item {
         case "linkExpiry":
             text = root.describeReason(qsTr("Couldn't change the expiry date"), reason, rawMessage);
             break;
+        case "passwordLink":
+            text = root.describeReason(qsTr("Couldn't add a password to the link"), reason,
+                                       rawMessage);
+            break;
             // Fixed sentence: the export succeeded but handed back no URL, so
             // there is no code to classify and nothing was put on the clipboard.
         case "copyLinkEmpty":

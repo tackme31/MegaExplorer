@@ -137,7 +137,7 @@ private:
     std::function<void(Result<std::string>)> mOnDone;
 };
 
-// getMyUserAttribute: a public user attribute's value arrives as text.
+// getMyUserAttribute and encryptLinkWithPassword: both answers arrive as text.
 class TextResultListener : public mega::MegaRequestListener
 {
 public:

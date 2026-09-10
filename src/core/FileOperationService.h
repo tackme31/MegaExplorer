@@ -82,6 +82,12 @@ public:
     // 0 = never expires, otherwise Unix seconds.
     Result<std::int64_t> linkExpiryFor(std::uint64_t handle) const;
 
+    // The `#P!` form of an existing link. Local to this machine: the plain link it was
+    // made from keeps working.
+    void protectLinkWithPassword(const std::string& link,
+                                 const std::string& password,
+                                 std::function<void(Result<std::string>)> onDone);
+
     // "Would move() be accepted?", answered without an API round-trip so a drag
     // hovering over a drop target can query it continuously. Failures carry a
     // MegaErrorCodes.h code (kENoEnt / kECircular / kEAccess), not just text.

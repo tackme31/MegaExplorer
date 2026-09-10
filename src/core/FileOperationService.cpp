@@ -186,6 +186,13 @@ Result<std::int64_t> FileOperationService::linkExpiryFor(std::uint64_t handle) c
     return mClient->getLinkExpiry(handle);
 }
 
+void FileOperationService::protectLinkWithPassword(const std::string& link,
+                                                   const std::string& password,
+                                                   std::function<void(Result<std::string>)> onDone)
+{
+    mClient->encryptLinkWithPassword(link, password, std::move(onDone));
+}
+
 void FileOperationService::move(std::uint64_t handle,
                                 std::uint64_t newParentHandle,
                                 bool newParentIsRoot,

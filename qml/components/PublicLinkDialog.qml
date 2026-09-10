@@ -13,8 +13,7 @@ import QtQuick.Layouts
 // Opening it on a node that was never shared *creates* the link (mutController
 // .requestLink exports on demand), which is why there is no "create" button --
 // the dialog has nothing to show until the export lands, so it does it itself.
-// docs/investigations/STUDY_PUBLIC_LINK_SETTINGS.md section 2 has the shape;
-// the expiry and password rows it describes are separate ROADMAP items.
+// docs/investigations/STUDY_PUBLIC_LINK_SETTINGS.md section 2 has the shape.
 Dialog {
     id: root
 
@@ -55,6 +54,26 @@ Dialog {
     readonly property bool expiryEditable: !root.loading && root.link !== "" && !root.expiryBusy
                                            && root.expiryAllowed
 
+    // The `#P!` form of `link`, made on this machine and stored nowhere: MEGA keeps
+    // no trace of it, so there is nothing to read back and every opening starts
+    // without one (STUDY_PUBLIC_LINK_SETTINGS section 1.3).
+    property string passwordLink: ""
+    property bool passwordBusy: false
+    property string passwordError: ""
+    readonly property bool passwordWanted: passwordToggle.checked
+
+    // Technically free accounts could do this (it never reaches MEGA), but MEGA's
+    // own clients sell it as a Pro feature and the study chose to match them.
+    readonly property bool passwordAllowed: root.planLevel > 0
+    readonly property bool passwordEditable: !root.loading && root.link !== "" && !root.passwordBusy
+                                             && root.passwordAllowed
+
+    // With the switch on, the plain link must not leave through the Copy button:
+    // the user has said they want it protected, and the field may not show the
+    // protected form yet.
+    readonly property bool copyable: !root.loading && root.link !== ""
+                                     && (!root.passwordWanted || root.passwordLink !== "")
+
     // The action is offered on a single node only (MenuActionResolver's
     // SingleOnly), so only the first entry is ever the target.
     function showForSelection() {
@@ -66,6 +85,8 @@ Dialog {
         root.link = "";
         root.loading = true;
         root.expiryBusy = false;
+        root.setPasswordWanted(false);
+        root.passwordBusy = false;
         root.open();
         root.showExpiry(root.mutController.linkExpiry(root.handle));
         root.mutController.requestLink(root.handle);
@@ -137,12 +158,55 @@ Dialog {
     // Why the row is unusable, for the tooltip rather than a caption line: it
     // only ever has something to say while the control is off, so as a caption
     // it would appear and vanish and shift everything under it.
-    function expiryHint(): string {
+    function proOnlyHint(refusal: string): string {
         if (root.planLevel < 0)
             return qsTr("Checking your plan…");
-        if (!root.expiryAllowed)
-            return qsTr("Expiry dates need a Pro plan.");
+        if (root.planLevel === 0)
+            return refusal;
         return "";
+    }
+
+    function expiryHint(): string {
+        return root.proOnlyHint(qsTr("Expiry dates need a Pro plan."));
+    }
+
+    function passwordHint(): string {
+        return root.proOnlyHint(qsTr("Password-protected links need a Pro plan."));
+    }
+
+    // The one place the password row is switched, so the switch, the field and the
+    // link on screen never disagree. Off always means back to the plain link.
+    function setPasswordWanted(on: bool) {
+        passwordToggle.checked = on;
+        passwordField.text = "";
+        root.passwordLink = "";
+        root.passwordError = "";
+        if (on)
+            passwordField.forceActiveFocus();
+    }
+
+    function createPasswordLink(password: string) {
+        // A second Enter after success would mint another `#P!` string (fresh salt)
+        // for the same password -- the same reason Create greys out.
+        if (password === "" || !root.passwordEditable || !root.passwordWanted
+                || root.passwordLink !== "")
+            return;
+        root.passwordError = "";
+        root.passwordBusy = true;
+        root.mutController.requestPasswordLink(root.handle, root.link, password);
+    }
+
+    // Whatever the link field shows is what gets copied -- never the other form.
+    function copyLink() {
+        if (!root.copyable)
+            return;
+        if (root.passwordLink !== "")
+            root.mutController.copyLinkTextToClipboard(root.passwordLink);
+        else
+            // Straight back through the controller rather than a clipboard write
+            // here: Qt Quick exposes no clipboard API at all, and the same call
+            // also raises the "Link copied" toast.
+            root.mutController.copyLinkToClipboard(root.handle);
     }
 
     signal removeLinkRequested
@@ -174,7 +238,17 @@ Dialog {
             return qsTr("Creating link…");
         if (root.link === "")
             return qsTr("Unavailable");
+        if (root.passwordLink !== "")
+            return root.passwordLink;
         return root.link;
+    }
+
+    // Says outright that the plain link survives: the protected form is a second
+    // string, not a lock on the first (STUDY_PUBLIC_LINK_SETTINGS section 1.3).
+    function linkCaption(): string {
+        if (root.passwordLink !== "")
+            return qsTr("Opening this link needs the password. The link without a password still works for anyone who already has it.");
+        return qsTr("Anyone with this link can open the item without signing in.");
     }
 
     ColumnLayout {
@@ -205,7 +279,7 @@ Dialog {
             wrapMode: Text.Wrap
             font.pixelSize: Theme.font.caption
             color: Theme.color.textSecondary
-            text: qsTr("Anyone with this link can open the item without signing in.")
+            text: root.linkCaption()
         }
 
         Rectangle {
@@ -272,6 +346,78 @@ Dialog {
             color: Theme.color.danger
             text: root.expiryError
         }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.spacing.xs
+            implicitHeight: Theme.border.thin
+            color: Theme.color.stroke
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacing.md
+
+            // Wrapped with its own hover target for the reason the expiry switch
+            // is: a disabled Switch hears no hover, so the tooltip would never show.
+            Item {
+                implicitWidth: passwordToggle.implicitWidth
+                implicitHeight: passwordToggle.implicitHeight
+
+                Switch {
+                    id: passwordToggle
+                    text: qsTr("Password")
+                    enabled: root.passwordEditable
+                    onToggled: root.setPasswordWanted(checked)
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: !passwordToggle.enabled && root.passwordHint() !== ""
+                    hoverEnabled: true
+                    ToolTip.text: root.passwordHint()
+                    ToolTip.delay: 500
+                    ToolTip.visible: containsMouse
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            TextField {
+                id: passwordField
+                visible: passwordToggle.checked
+                enabled: root.passwordEditable
+                implicitWidth: 150
+                echoMode: TextInput.Password
+                placeholderText: qsTr("Password")
+                // The protected link on screen was made from the old text, so it
+                // goes the moment the text changes; Copy waits for a new Create.
+                onTextEdited: {
+                    root.passwordLink = "";
+                    root.passwordError = "";
+                }
+                onAccepted: root.createPasswordLink(text)
+            }
+
+            Button {
+                visible: passwordToggle.checked
+                text: qsTr("Create")
+                enabled: root.passwordEditable && passwordField.text !== ""
+                         && root.passwordLink === ""
+                onClicked: root.createPasswordLink(passwordField.text)
+            }
+        }
+
+        Label {
+            Layout.fillWidth: true
+            visible: text !== ""
+            wrapMode: Text.Wrap
+            font.pixelSize: Theme.font.caption
+            color: Theme.color.danger
+            text: root.passwordError
+        }
     }
 
     // A plain Item rather than a DialogButtonBox: the destructive button belongs
@@ -304,11 +450,8 @@ Dialog {
             Button {
                 text: qsTr("Copy link")
                 highlighted: true
-                enabled: !root.loading && root.link !== ""
-                // Straight back through the controller rather than a clipboard
-                // write here: Qt Quick exposes no clipboard API at all, and the
-                // same call also raises the "Link copied" toast.
-                onClicked: root.mutController.copyLinkToClipboard(root.handle)
+                enabled: root.copyable
+                onClicked: root.copyLink()
             }
 
             Button {
@@ -342,6 +485,21 @@ Dialog {
             // where it was instead of leaving it on what the user asked for. The
             // reason is on a toast; showExpiry clears the inline message with it.
             root.showExpiry(expiry);
+        }
+
+        function onPasswordLinkResolved(handle, link) {
+            // Not busy means the dialog was reopened since the request went out,
+            // on this node or another: the reply belongs to a password that is gone.
+            if (handle !== root.handle || !root.passwordBusy)
+                return;
+            root.passwordBusy = false;
+            if (link === "") {
+                root.passwordError = qsTr("Couldn't add the password. Try again.");
+                // Disabling the field while busy took its focus away.
+                passwordField.forceActiveFocus();
+                return;
+            }
+            root.passwordLink = link;
         }
     }
 }

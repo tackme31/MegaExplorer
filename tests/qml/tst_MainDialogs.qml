@@ -174,6 +174,22 @@ TestCase {
             // saying "Creating link…" forever with nothing else to show for it.
             signal linkResolved(var handle, string link)
             signal linkExpiryResolved(var handle, real expiry)
+            signal passwordLinkResolved(var handle, string link)
+
+            property var lastPasswordRequest: null
+            property var lastCopiedLinkText: null
+
+            function requestPasswordLink(handle, link, password) {
+                fakeMut.lastPasswordRequest = {
+                    "handle": handle,
+                    "link": link,
+                    "password": password
+                };
+            }
+
+            function copyLinkTextToClipboard(link) {
+                fakeMut.lastCopiedLinkText = link;
+            }
 
             // What linkExpiry() hands back; -1 is the C++ answer for a node with
             // no link, which is what an unshared node looks like on open.
@@ -1180,6 +1196,119 @@ TestCase {
         compare(f.dialog.parseDate("17/05/2031"), null);
         verify(f.dialog.parseDate("2031-05-17") !== null);
         compare(f.mut.lastSetExpiry, null);
+    }
+
+    // ---- PublicLinkDialog, the password row ----------------------------
+    //
+    // The protected link lives only in the dialog, so which string Copy hands over
+    // -- plain or protected -- is decided entirely here, out of a screenshot's reach.
+
+    function makeLinkedDialog(planLevel) {
+        const f = makePublicLinkDialog(["a.txt"]);
+        f.dialog.planLevel = planLevel;
+        f.dialog.showForSelection();
+        f.mut.linkResolved(1, "https://mega.nz/file/abc#key");
+        return f;
+    }
+
+    function test_publicLink_passwordIsWithheldFromAFreeAccount() {
+        const f = makeLinkedDialog(0);
+
+        compare(f.dialog.passwordEditable, false);
+        compare(f.dialog.passwordHint(), "Password-protected links need a Pro plan.");
+        f.dialog.createPasswordLink("pw");
+        compare(f.mut.lastPasswordRequest, null);
+    }
+
+    // Created from the link on screen, and once back it replaces that link in both
+    // the field and the Copy button, with the caption owning up to the plain one.
+    function test_publicLink_passwordLinkReplacesWhatIsShownAndCopied() {
+        const f = makeLinkedDialog(1);
+        const plainCaption = f.dialog.linkCaption();
+
+        f.dialog.setPasswordWanted(true);
+        compare(f.dialog.copyable, false);
+        f.dialog.createPasswordLink("pw");
+        compare(f.mut.lastPasswordRequest.handle, 1);
+        compare(f.mut.lastPasswordRequest.link, "https://mega.nz/file/abc#key");
+        compare(f.mut.lastPasswordRequest.password, "pw");
+        compare(f.dialog.passwordBusy, true);
+
+        f.mut.passwordLinkResolved(1, "https://mega.nz/#P!protected");
+
+        compare(f.dialog.passwordBusy, false);
+        compare(f.dialog.linkFieldText(), "https://mega.nz/#P!protected");
+        verify(f.dialog.linkCaption() !== plainCaption);
+        compare(f.dialog.copyable, true);
+        f.dialog.copyLink();
+        compare(f.mut.lastCopiedLinkText, "https://mega.nz/#P!protected");
+        compare(f.mut.lastCopyLinkHandle, null);
+
+        // Enter again must not swap in a different string for the same password.
+        f.mut.lastPasswordRequest = null;
+        f.dialog.createPasswordLink("pw");
+        compare(f.mut.lastPasswordRequest, null);
+    }
+
+    // Off means the plain link again, in the field and on the clipboard.
+    function test_publicLink_switchingPasswordOffRestoresThePlainLink() {
+        const f = makeLinkedDialog(1);
+        f.dialog.setPasswordWanted(true);
+        f.dialog.createPasswordLink("pw");
+        f.mut.passwordLinkResolved(1, "https://mega.nz/#P!protected");
+
+        f.dialog.setPasswordWanted(false);
+
+        compare(f.dialog.linkFieldText(), "https://mega.nz/file/abc#key");
+        f.dialog.copyLink();
+        compare(f.mut.lastCopyLinkHandle, 1);
+        compare(f.mut.lastCopiedLinkText, null);
+    }
+
+    // Nothing on MEGA remembers the password, so every opening starts from off --
+    // including a reopen on the node that had one a moment ago.
+    function test_publicLink_reopeningStartsWithoutAPassword() {
+        const f = makeLinkedDialog(1);
+        f.dialog.setPasswordWanted(true);
+        f.dialog.createPasswordLink("pw");
+        f.mut.passwordLinkResolved(1, "https://mega.nz/#P!protected");
+
+        f.dialog.showForSelection();
+        f.mut.linkResolved(1, "https://mega.nz/file/abc#key");
+
+        compare(f.dialog.passwordWanted, false);
+        compare(f.dialog.passwordLink, "");
+        compare(f.dialog.linkFieldText(), "https://mega.nz/file/abc#key");
+    }
+
+    // A failure keeps the switch on and Copy withheld: falling back to the plain
+    // link silently would hand out exactly what the user asked to protect.
+    function test_publicLink_failedPasswordLinkKeepsCopyWithheld() {
+        const f = makeLinkedDialog(1);
+        f.dialog.setPasswordWanted(true);
+        f.dialog.createPasswordLink("pw");
+
+        f.mut.passwordLinkResolved(1, "");
+
+        compare(f.dialog.passwordBusy, false);
+        compare(f.dialog.passwordWanted, true);
+        verify(f.dialog.passwordError !== "");
+        compare(f.dialog.copyable, false);
+    }
+
+    // A reply that outlived its request -- the dialog was reopened meanwhile --
+    // must not install a link made from a password nobody can see any more.
+    function test_publicLink_staleReplyIsIgnored() {
+        const f = makeLinkedDialog(1);
+        f.dialog.setPasswordWanted(true);
+        f.dialog.createPasswordLink("pw");
+        f.dialog.showForSelection();
+        f.mut.linkResolved(1, "https://mega.nz/file/abc#key");
+
+        f.mut.passwordLinkResolved(1, "https://mega.nz/#P!stale");
+
+        compare(f.dialog.passwordLink, "");
+        compare(f.dialog.linkFieldText(), "https://mega.nz/file/abc#key");
     }
 
     // ---- CopyConflictDialog --------------------------------------------

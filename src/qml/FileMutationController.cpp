@@ -41,6 +41,15 @@ QString sizeText(std::uint64_t bytes)
     return QLocale::c().formattedDataSize(
         static_cast<qint64>(bytes), 1, QLocale::DataSizeTraditionalFormat);
 }
+
+void putOnClipboard(const QString& text)
+{
+    // Via the cast, not a bare QGuiApplication::clipboard(): the unit-test binary
+    // runs on a plain QCoreApplication, where building a QClipboard finds no
+    // platform integration to talk to.
+    if (qobject_cast<QGuiApplication*>(QCoreApplication::instance()) != nullptr)
+        QGuiApplication::clipboard()->setText(text);
+}
 } // namespace
 
 FileMutationController::DestinationSnapshot
@@ -223,11 +232,7 @@ void FileMutationController::copyLinkToClipboard(quint64 handle)
                     mNotifications->notifyError(QStringLiteral("copyLinkEmpty"));
                     return;
                 }
-                // Via the cast, not a bare QGuiApplication::clipboard(): the unit-test
-                // binary runs on a plain QCoreApplication, where building a QClipboard
-                // finds no platform integration to talk to.
-                if (qobject_cast<QGuiApplication*>(QCoreApplication::instance()) != nullptr)
-                    QGuiApplication::clipboard()->setText(QString::fromStdString(result.value()));
+                putOnClipboard(QString::fromStdString(result.value()));
                 markExported(handle, true);
                 mNotifications->notifyOperation(QStringLiteral("copyLink"), 1, 0);
             });
@@ -307,6 +312,39 @@ void FileMutationController::setLinkExpiry(quint64 handle, qint64 expireTime)
                 emit linkExpiryResolved(handle, expireTime);
             });
         });
+}
+
+void FileMutationController::requestPasswordLink(quint64 handle,
+                                                 const QString& link,
+                                                 const QString& password)
+{
+    mBusy->begin();
+    mFileOps->protectLinkWithPassword(
+        link.toStdString(),
+        password.toStdString(),
+        [this, self = shared_from_this(), handle](Result<std::string> result) {
+            invokeOnGuiThread(this, [this, handle, result = std::move(result)]() {
+                mBusy->end();
+                if (!result.success)
+                {
+                    qCWarning(lcFileOps)
+                        << "requestPasswordLink failed:" << QString::fromStdString(result.errorMessage)
+                        << "code=" << result.errorCode;
+                    mNotifications->notifyError(QStringLiteral("passwordLink"),
+                                                result.errorCode,
+                                                QString::fromStdString(result.errorMessage));
+                    emit passwordLinkResolved(handle, QString());
+                    return;
+                }
+                emit passwordLinkResolved(handle, QString::fromStdString(result.value()));
+            });
+        });
+}
+
+void FileMutationController::copyLinkTextToClipboard(const QString& link)
+{
+    putOnClipboard(link);
+    mNotifications->notifyOperation(QStringLiteral("copyLink"), 1, 0);
 }
 
 void FileMutationController::markExported(quint64 handle, bool exported)

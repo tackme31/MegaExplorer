@@ -184,6 +184,10 @@ public:
 
     Result<std::int64_t> getLinkExpiry(std::uint64_t handle) const override;
 
+    void encryptLinkWithPassword(const std::string& link,
+                                 const std::string& password,
+                                 std::function<void(Result<std::string>)> onDone) override;
+
     void disableExport(std::uint64_t handle, std::function<void(Result<void>)> onDone) override;
 
     Result<void> checkMove(std::uint64_t handle,

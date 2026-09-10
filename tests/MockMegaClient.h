@@ -151,6 +151,10 @@ public:
                 (override));
     MOCK_METHOD(Result<std::int64_t>, getLinkExpiry, (std::uint64_t), (const, override));
     MOCK_METHOD(void,
+                encryptLinkWithPassword,
+                (const std::string&, const std::string&, std::function<void(Result<std::string>)>),
+                (override));
+    MOCK_METHOD(void,
                 disableExport,
                 (std::uint64_t, std::function<void(Result<void>)>),
                 (override));
