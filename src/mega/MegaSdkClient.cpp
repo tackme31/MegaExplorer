@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <ctime>
 #include <megaapi.h>
+#include <optional>
 #include <utility>
 
 // Keeps MegaErrorCodes.h's mirror in sync with the SDK's real values. This is the
@@ -912,6 +913,19 @@ void MegaSdkClient::readFileContent(std::uint64_t handle,
                          new megasdk::StreamingContentListener(maxBytes, std::move(onDone)));
 }
 
+// The range actually readable from a file node, or nullopt when offset is at or past
+// its end. getSize() is negative for anything that isn't a file, so the signed
+// compare has to happen before the width cast. Non-const: getSize() is not const.
+static std::optional<std::uint64_t> readableRangeLength(mega::MegaNode& node,
+                                                        std::uint64_t offset,
+                                                        std::uint64_t length)
+{
+    const std::int64_t size = node.getSize();
+    if (size <= 0 || offset >= static_cast<std::uint64_t>(size))
+        return std::nullopt;
+    return std::min<std::uint64_t>(length, static_cast<std::uint64_t>(size) - offset);
+}
+
 void MegaSdkClient::readFileRange(std::uint64_t handle,
                                   std::uint64_t offset,
                                   std::uint64_t length,
@@ -931,18 +945,14 @@ void MegaSdkClient::readFileRange(std::uint64_t handle,
         return;
     }
 
-    // getSize() is negative for anything that isn't a file, so the signed compare
-    // has to happen before the width cast.
-    const std::int64_t size = node->getSize();
-    if (size <= 0 || offset >= static_cast<std::uint64_t>(size))
+    const std::optional<std::uint64_t> clamped = readableRangeLength(*node, offset, length);
+    if (!clamped)
     {
         onDone(Result<std::vector<char>>::fail("Range starts at or past the end of the file",
                                                MegaErrorCode::kEArgs));
         return;
     }
-    const std::uint64_t clamped =
-        std::min<std::uint64_t>(length, static_cast<std::uint64_t>(size) - offset);
-    if (clamped == 0)
+    if (*clamped == 0)
     {
         onDone(Result<std::vector<char>>::ok({}));
         return;
@@ -953,8 +963,51 @@ void MegaSdkClient::readFileRange(std::uint64_t handle,
     mApi->setStreamingMinimumRate(0);
     mApi->startStreaming(node.get(),
                          static_cast<std::int64_t>(offset),
-                         static_cast<std::int64_t>(clamped),
-                         new megasdk::StreamingContentListener(clamped, std::move(onDone)));
+                         static_cast<std::int64_t>(*clamped),
+                         new megasdk::StreamingContentListener(*clamped, std::move(onDone)));
+}
+
+void MegaSdkClient::readFileRangeStreamed(std::uint64_t handle,
+                                          std::uint64_t offset,
+                                          std::uint64_t length,
+                                          std::function<bool(const char*, std::size_t)> onChunk,
+                                          std::function<void(Result<void>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<void>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / invalid handle)",
+            MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    const std::optional<std::uint64_t> clamped = readableRangeLength(*node, offset, length);
+    if (!clamped)
+    {
+        onDone(Result<void>::fail("Range starts at or past the end of the file",
+                                  MegaErrorCode::kEArgs));
+        return;
+    }
+    if (*clamped == 0)
+    {
+        onDone(Result<void>::ok());
+        return;
+    }
+
+    // The rate-check trap again, and here it bites harder: a receiver that inflates
+    // and writes each piece slows the transfer down by exactly what the check measures.
+    mApi->setStreamingMinimumRate(0);
+    mApi->startStreaming(
+        node.get(),
+        static_cast<std::int64_t>(offset),
+        static_cast<std::int64_t>(*clamped),
+        new megasdk::StreamingChunkListener(std::move(onChunk), std::move(onDone)));
 }
 
 Result<std::string> MegaSdkClient::streamingUrl(std::uint64_t handle)

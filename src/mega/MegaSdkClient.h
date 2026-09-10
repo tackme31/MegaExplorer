@@ -133,6 +133,12 @@ public:
                        std::uint64_t length,
                        std::function<void(Result<std::vector<char>>)> onDone) override;
 
+    void readFileRangeStreamed(std::uint64_t handle,
+                               std::uint64_t offset,
+                               std::uint64_t length,
+                               std::function<bool(const char* data, std::size_t size)> onChunk,
+                               std::function<void(Result<void>)> onDone) override;
+
     Result<std::string> streamingUrl(std::uint64_t handle) override;
 
     void getPath(std::uint64_t handle,

@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QString>
 
 #include <filesystem>
@@ -9,6 +10,34 @@
 
 namespace
 {
+// QSaveFile is the port's temporary-name-then-rename, and its destructor discards
+// an uncommitted file. It never needs an event loop, so the SDK thread may own it.
+class QtLocalFileWriter final : public ILocalFileWriter
+{
+public:
+    explicit QtLocalFileWriter(const QString& path)
+        : mFile(path)
+    {}
+
+    bool open()
+    {
+        return mFile.open(QIODevice::WriteOnly);
+    }
+
+    bool write(const char* data, std::size_t size) override
+    {
+        return mFile.write(data, static_cast<qint64>(size)) == static_cast<qint64>(size);
+    }
+
+    bool commit() override
+    {
+        return mFile.commit();
+    }
+
+private:
+    QSaveFile mFile;
+};
+
 LocalEntry toEntry(const QFileInfo& info)
 {
     LocalEntry entry;
@@ -26,6 +55,14 @@ LocalEntry toEntry(const QFileInfo& info)
     return entry;
 }
 } // namespace
+
+std::unique_ptr<ILocalFileWriter> QtLocalFileSystem::createFile(const std::string& path)
+{
+    auto writer = std::make_unique<QtLocalFileWriter>(QString::fromStdString(path));
+    if (!writer->open())
+        return nullptr;
+    return writer;
+}
 
 std::optional<LocalEntry> QtLocalFileSystem::entryFor(const std::string& path) const
 {

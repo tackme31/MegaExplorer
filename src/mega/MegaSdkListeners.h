@@ -418,4 +418,68 @@ private:
     bool mOverflowed = false;
 };
 
+// readFileRangeStreamed's listener: hands each piece on instead of keeping it.
+class StreamingChunkListener : public mega::MegaTransferListener
+{
+public:
+    StreamingChunkListener(std::function<bool(const char*, std::size_t)> onChunk,
+                           std::function<void(Result<void>)> onDone)
+        : mOnChunk(std::move(onChunk)), mOnDone(std::move(onDone))
+    {}
+
+    bool onTransferData(mega::MegaApi* /*api*/,
+                        mega::MegaTransfer* transfer,
+                        char* buffer,
+                        size_t size) override
+    {
+        // The piece's offset never reaches us (pread_data drops it), but the SDK adds
+        // the piece to getTransferredBytes() first, so a gap or a repeat shows here.
+        mReceived += size;
+        if (mReceived != static_cast<std::uint64_t>(transfer->getTransferredBytes()))
+        {
+            mOutOfStep = true;
+            return false;
+        }
+        if (!mOnChunk(buffer, size))
+        {
+            mRefused = true;
+            return false;
+        }
+        return true;
+    }
+
+    void onTransferFinish(mega::MegaApi* /*api*/,
+                          mega::MegaTransfer* /*transfer*/,
+                          mega::MegaError* e) override
+    {
+        // Our own refusals before the error code: pread_data reports a transfer whose
+        // *last* piece was refused as API_OK.
+        if (mOutOfStep)
+        {
+            mOnDone(Result<void>::fail("Streamed data fell out of step with the transfer",
+                                       MegaErrorCode::kEInternal));
+        }
+        else if (mRefused)
+        {
+            mOnDone(Result<void>::fail("Stopped by the receiver", MegaErrorCode::kEIncomplete));
+        }
+        else if (e->getErrorCode() == mega::MegaError::API_OK)
+        {
+            mOnDone(Result<void>::ok());
+        }
+        else
+        {
+            mOnDone(Result<void>::fail(e->getErrorString(), e->getErrorCode()));
+        }
+        delete this;
+    }
+
+private:
+    std::function<bool(const char*, std::size_t)> mOnChunk;
+    std::function<void(Result<void>)> mOnDone;
+    std::uint64_t mReceived = 0;
+    bool mOutOfStep = false;
+    bool mRefused = false;
+};
+
 } // namespace megasdk

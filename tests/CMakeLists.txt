@@ -26,6 +26,7 @@ add_executable(MegaExplorerTests
     TextPreviewDecoderTest.cpp
     ZipListingTest.cpp
     ZipExtractTest.cpp
+    ZipEntryExtractionTest.cpp
     FolderTreeServiceTest.cpp
     LocalLinkServiceTest.cpp
     NodeDetailsServiceTest.cpp

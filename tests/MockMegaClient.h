@@ -102,6 +102,14 @@ public:
                  std::uint64_t,
                  std::function<void(Result<std::vector<char>>)>),
                 (override));
+    MOCK_METHOD(void,
+                readFileRangeStreamed,
+                (std::uint64_t,
+                 std::uint64_t,
+                 std::uint64_t,
+                 (std::function<bool(const char*, std::size_t)>),
+                 std::function<void(Result<void>)>),
+                (override));
     MOCK_METHOD(Result<std::string>, streamingUrl, (std::uint64_t), (override));
     MOCK_METHOD(void,
                 getPath,

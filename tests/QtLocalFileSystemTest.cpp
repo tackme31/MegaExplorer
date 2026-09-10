@@ -7,6 +7,9 @@
 #include <fstream>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <iterator>
+#include <memory>
+#include <string>
 #include <windows.h> // SetFileAttributesW, for the hidden-file case
 
 namespace
@@ -154,4 +157,47 @@ TEST(QtLocalFileSystemTest, EntryForDistinguishesFilesFoldersAndMissingPaths)
     EXPECT_TRUE(aFolder->isDirectory);
 
     EXPECT_FALSE(fs.entryFor((root / "nope").string()).has_value());
+}
+
+TEST(QtLocalFileSystemTest, CreatedFileAppearsAtItsPathOnlyOnCommit)
+{
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const std::filesystem::path target = std::filesystem::path(dir.path().toStdWString()) / "out.bin";
+    QtLocalFileSystem fs;
+
+    std::unique_ptr<ILocalFileWriter> writer = fs.createFile(target.string());
+    ASSERT_NE(writer, nullptr);
+    ASSERT_TRUE(writer->write("hello", 5));
+    EXPECT_FALSE(std::filesystem::exists(target));
+    ASSERT_TRUE(writer->commit());
+
+    std::ifstream in(target, std::ios::binary);
+    const std::string contents((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(contents, "hello");
+}
+
+TEST(QtLocalFileSystemTest, DroppingAnUncommittedFileLeavesNothingBehind)
+{
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const std::filesystem::path root(dir.path().toStdWString());
+    QtLocalFileSystem fs;
+
+    std::unique_ptr<ILocalFileWriter> writer = fs.createFile((root / "out.bin").string());
+    ASSERT_NE(writer, nullptr);
+    ASSERT_TRUE(writer->write("hello", 5));
+    writer.reset();
+
+    EXPECT_TRUE(mustList(fs, dir.path()).empty());
+}
+
+TEST(QtLocalFileSystemTest, CreateFileFailsInAMissingDirectory)
+{
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const std::filesystem::path root(dir.path().toStdWString());
+    QtLocalFileSystem fs;
+
+    EXPECT_EQ(fs.createFile((root / "missing" / "out.bin").string()), nullptr);
 }

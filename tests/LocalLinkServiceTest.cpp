@@ -34,6 +34,11 @@ public:
         return std::nullopt;
     }
 
+    std::unique_ptr<ILocalFileWriter> createFile(const std::string&) override
+    {
+        return nullptr;
+    }
+
 private:
     std::set<std::string> mPaths;
 };

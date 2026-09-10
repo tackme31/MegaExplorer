@@ -1,5 +1,7 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -12,7 +14,18 @@ struct LocalEntry
     std::uint64_t sizeBytes = 0; // 0 for a directory
 };
 
-// Local-side counterpart of IMegaClient: the only way src/core reads the local
+// A file that appears at its path only once commit() succeeds: until then the bytes
+// go to a temporary name beside it, and dropping the writer removes them.
+class ILocalFileWriter
+{
+public:
+    virtual ~ILocalFileWriter() = default;
+    virtual bool write(const char* data, std::size_t size) = 0;
+    // Replaces a file already at the path; picking a free name is the caller's job.
+    virtual bool commit() = 0;
+};
+
+// Local-side counterpart of IMegaClient: the only way src/core touches the local
 // filesystem. One level at a time on purpose -- the upload scan descends only
 // into branches that collide, so a recursive listing would cost far more than
 // the answer needs (SPEC_NAME_CONFLICT_UPLOAD.md 5-1).
@@ -22,6 +35,10 @@ class ILocalFileSystem
 {
 public:
     virtual ~ILocalFileSystem() = default;
+
+    // Nullptr when the file cannot be started (a missing directory, no permission).
+    // One thread at a time may use the writer, not necessarily the creating one.
+    virtual std::unique_ptr<ILocalFileWriter> createFile(const std::string& path) = 0;
 
     // Nullopt when the path does not exist. Hidden files are ordinary entries:
     // the SDK's recursive upload sends them, so a scan that skipped them would

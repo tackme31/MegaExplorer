@@ -133,6 +133,8 @@ add_library(MegaExplorerCore STATIC
     src/core/ZipListing.cpp
     src/core/ZipExtract.h
     src/core/ZipExtract.cpp
+    src/core/ZipEntryExtraction.h
+    src/core/ZipEntryExtraction.cpp
     src/core/FolderTreeService.h
     src/core/FolderTreeService.cpp
     src/core/LocalLinkService.h
@@ -427,6 +429,8 @@ add_executable(megatool
     src/mega/MegaSdkLogger.cpp
     src/platform/WindowsSessionStore.h
     src/platform/WindowsSessionStore.cpp
+    src/platform/QtLocalFileSystem.h
+    src/platform/QtLocalFileSystem.cpp
 )
 target_link_libraries(megatool
     PRIVATE Qt6::Core

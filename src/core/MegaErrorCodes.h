@@ -13,6 +13,7 @@
 //              1 kNoStoredSession    (src/core/AuthService.h)
 //              2 kClientShutDownCode (src/mega/MegaSdkClient.cpp)
 //              3 kPreviewSuperseded  (src/core/PreviewService.h)
+//              4 kArchiveEntryInvalid (src/core/ZipEntryExtraction.h)
 namespace MegaErrorCode
 {
 constexpr int kEInternal = -1;     // Internal error -- also what an unclassified failure gets

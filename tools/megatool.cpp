@@ -11,7 +11,11 @@
 #include "app/Logging.h"
 #include "core/IMegaClient.h"
 #include "core/MegaErrorCodes.h"
+#include "core/ZipEntryExtraction.h"
+#include "core/ZipExtract.h"
+#include "core/ZipListing.h"
 #include "mega/MegaSdkClient.h"
+#include "platform/QtLocalFileSystem.h"
 #include "platform/WindowsSessionStore.h"
 
 #include <QByteArray>
@@ -25,6 +29,8 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QStandardPaths>
+#include <QStringList>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QUrl>
 
@@ -179,6 +185,7 @@ struct Node
 {
     std::uint64_t handle = 0;
     bool isRoot = false;
+    std::uint64_t sizeBytes = 0;
 };
 
 const SortOrder kByName{};
@@ -247,7 +254,7 @@ Result<Node> resolve(IMegaClient& client, const std::string& path)
         // by `fixture reset`) from "the listing itself failed" (not fine).
         if (!match)
             return Result<Node>::fail("no such path component: " + part, MegaErrorCode::kENoEnt);
-        node = Node{match->handle, false};
+        node = Node{match->handle, false, match->sizeBytes};
     }
     return Result<Node>::ok(node);
 }
@@ -478,6 +485,224 @@ int cmdStream(IMegaClient& client,
     return 0;
 }
 
+using Clock = std::chrono::steady_clock;
+
+double millisecondsSince(Clock::time_point from)
+{
+    return std::chrono::duration<double, std::milli>(Clock::now() - from).count();
+}
+
+double megabytesPerSecond(std::uint64_t bytes, double milliseconds)
+{
+    return milliseconds > 0 ? static_cast<double>(bytes) / 1e6 / (milliseconds / 1000) : 0;
+}
+
+Result<std::vector<char>> readRange(IMegaClient& client,
+                                    std::uint64_t handle,
+                                    std::uint64_t offset,
+                                    std::uint64_t length)
+{
+    return await<Result<std::vector<char>>>([&](auto done) {
+        client.readFileRange(handle, offset, length, std::move(done));
+    });
+}
+
+// Times an ordinary download of the node while work() runs, so that the SDK's one
+// thread serves both at once. Negative when the download failed.
+double downloadMillisecondsAlongside(IMegaClient& client,
+                                     std::uint64_t handle,
+                                     const std::string& target,
+                                     const std::function<void()>& work)
+{
+    auto finishedMs = std::make_shared<double>(-1);
+    const Clock::time_point started = Clock::now();
+    const Result<DownloadOutcome> downloaded = await<Result<DownloadOutcome>>([&](auto done) {
+        client.download(handle,
+                        target,
+                        /*transferId*/ 2,
+                        kIgnoreProgress,
+                        [done, finishedMs, started](Result<DownloadOutcome> outcome) {
+                            if (outcome.success)
+                                *finishedMs = millisecondsSince(started);
+                            done(std::move(outcome));
+                        });
+        work();
+    });
+    return downloaded.success ? *finishedMs : -1;
+}
+
+// Pulls one entry out of a zip on MEGA through ZipEntryExtraction, timing each step
+// for STUDY_ARCHIVE_EXTRACTION.md section 7. --bench adds baselines over the same
+// link: the entry's bytes streamed with nothing done to them, an ordinary download of
+// the whole archive, and that download again beside each of the two -- the SDK thread
+// serves every transfer, so the gap between those last two is what inflating and
+// writing on it cost a transfer running alongside.
+int cmdUnzip(const std::shared_ptr<IMegaClient>& client,
+             const std::string& zipPath,
+             const std::string& entryName,
+             const std::string& localPath,
+             bool bench)
+{
+    const Result<Node> node = resolve(*client, zipPath);
+    if (!node.success)
+        return fail("resolve " + zipPath + ": " + node.errorMessage);
+    if (node.value().isRoot)
+        return fail("unzip needs a file, not the Cloud Drive root");
+    const std::uint64_t handle = node.value().handle;
+    const std::uint64_t size = node.value().sizeBytes;
+
+    auto fileSystem = std::make_shared<QtLocalFileSystem>();
+    const std::string destination =
+        QDir::toNativeSeparators(QFileInfo(QString::fromStdString(localPath)).absoluteFilePath())
+            .toStdString();
+    if (fileSystem->entryFor(destination))
+        return fail("refusing to overwrite " + destination);
+
+    const std::uint64_t tailLength = (std::min)(size, kZipTailScanBytes);
+    Clock::time_point started = Clock::now();
+    const Result<std::vector<char>> tail = readRange(*client, handle, size - tailLength, tailLength);
+    const double tailMs = millisecondsSince(started);
+    if (!tail.success)
+        return fail("read the archive's tail: " + tail.errorMessage);
+    const std::optional<ZipDirectoryLocation> location =
+        findZipDirectory(tail.value(), size - tailLength);
+    if (!location || location->offset >= size || location->size == 0)
+        return fail(zipPath + " has no readable zip directory");
+
+    started = Clock::now();
+    const Result<std::vector<char>> directory =
+        readRange(*client, handle, location->offset, location->size);
+    const double directoryMs = millisecondsSince(started);
+    if (!directory.success)
+        return fail("read the archive's directory: " + directory.errorMessage);
+
+    const std::vector<ZipEntry> entries = parseZipDirectory(directory.value());
+    const auto match = std::find_if(entries.begin(), entries.end(), [&](const ZipEntry& e) {
+        return e.rawName == entryName;
+    });
+    if (match == entries.end())
+        return fail("no entry named " + entryName + " in " + zipPath);
+    const ZipEntry entry = *match;
+
+    std::printf("range  : tail %llu bytes in %.0f ms, directory %llu bytes in %.0f ms\n",
+                static_cast<unsigned long long>(tailLength),
+                tailMs,
+                static_cast<unsigned long long>(location->size),
+                directoryMs);
+    std::printf("entry  : method %u, %llu -> %llu bytes\n",
+                static_cast<unsigned>(entry.compressionMethod),
+                static_cast<unsigned long long>(entry.compressedSize),
+                static_cast<unsigned long long>(entry.uncompressedSize));
+
+    struct Chunks
+    {
+        std::uint64_t count = 0;
+        std::uint64_t largest = 0;
+        std::uint64_t last = 0;
+    };
+    // Shared: after a timeout await() has returned, yet the SDK thread may still report.
+    const auto extractTo = [&](const std::string& target, const std::shared_ptr<Chunks>& chunks) {
+        ZipEntryExtraction extraction(
+            client, fileSystem, handle, entry, location->localHeaderShift, target);
+        return await<Result<void>>([&](auto done) {
+            extraction.start(
+                [chunks](std::uint64_t received, std::uint64_t) {
+                    ++chunks->count;
+                    chunks->largest = (std::max)(chunks->largest, received - chunks->last);
+                    chunks->last = received;
+                },
+                std::move(done));
+        });
+    };
+
+    const auto chunks = std::make_shared<Chunks>();
+    started = Clock::now();
+    const Result<void> extracted = extractTo(destination, chunks);
+    const double extractMs = millisecondsSince(started);
+    if (!extracted.success)
+        return fail("extract " + entryName, extracted);
+    std::printf("unzip  : %llu bytes in %llu chunks (largest %llu) in %.0f ms, %.2f MB/s\n",
+                static_cast<unsigned long long>(entry.compressedSize),
+                static_cast<unsigned long long>(chunks->count),
+                static_cast<unsigned long long>(chunks->largest),
+                extractMs,
+                megabytesPerSecond(entry.compressedSize, extractMs));
+    std::printf("wrote  : %s\n", destination.c_str());
+    if (!bench)
+        return 0;
+
+    const std::uint64_t localHeaderOffset = entry.localHeaderOffset + location->localHeaderShift;
+    const Result<std::vector<char>> header =
+        readRange(*client, handle, localHeaderOffset, kZipLocalHeaderFixedSize);
+    const std::optional<std::uint64_t> dataOffset =
+        header.success ? zipEntryDataOffset(header.value(), localHeaderOffset) : std::nullopt;
+    if (!dataOffset)
+        return fail("read the entry's local header again");
+    const auto streamEntry = [&] {
+        return await<Result<void>>([&](auto done) {
+            client->readFileRangeStreamed(
+                handle,
+                *dataOffset,
+                entry.compressedSize,
+                [](const char*, std::size_t) {
+                    return true;
+                },
+                std::move(done));
+        });
+    };
+    started = Clock::now();
+    const Result<void> plain = streamEntry();
+    const double plainMs = millisecondsSince(started);
+    if (!plain.success)
+        return fail("stream the same range", plain);
+    std::printf("stream : same bytes, not inflated or written, in %.0f ms, %.2f MB/s\n",
+                plainMs,
+                megabytesPerSecond(entry.compressedSize, plainMs));
+
+    QTemporaryDir scratch;
+    if (!scratch.isValid())
+        return fail("could not create a temporary directory");
+    const auto scratchPath = [&scratch](const char* leaf) {
+        return QDir::toNativeSeparators(scratch.filePath(QString::fromLatin1(leaf))).toStdString();
+    };
+    const double downloadMs = downloadMillisecondsAlongside(*client, handle, scratchPath("alone.zip"), [] {});
+    if (downloadMs < 0)
+        return fail("download the whole archive");
+    std::printf("get    : whole archive, %llu bytes by ordinary download, in %.0f ms, %.2f MB/s\n",
+                static_cast<unsigned long long>(size),
+                downloadMs,
+                megabytesPerSecond(size, downloadMs));
+
+    Result<void> besideStream = Result<void>::fail("not run", 0);
+    double besideStreamMs = 0;
+    const double downloadBesideStreamMs =
+        downloadMillisecondsAlongside(*client, handle, scratchPath("beside-stream.zip"), [&] {
+            const Clock::time_point from = Clock::now();
+            besideStream = streamEntry();
+            besideStreamMs = millisecondsSince(from);
+        });
+    Result<void> besideExtraction = Result<void>::fail("not run", 0);
+    double besideExtractionMs = 0;
+    const double downloadBesideExtractionMs =
+        downloadMillisecondsAlongside(*client, handle, scratchPath("beside-unzip.zip"), [&] {
+            const Clock::time_point from = Clock::now();
+            besideExtraction = extractTo(scratchPath("beside.bin"), std::make_shared<Chunks>());
+            besideExtractionMs = millisecondsSince(from);
+        });
+    if (downloadBesideStreamMs < 0 || downloadBesideExtractionMs < 0 || !besideStream.success ||
+        !besideExtraction.success)
+    {
+        return fail("the side-by-side runs did not both finish");
+    }
+    std::printf("beside : download %.0f ms beside the plain stream (%.0f ms), "
+                "%.0f ms beside the extraction (%.0f ms)\n",
+                downloadBesideStreamMs,
+                besideStreamMs,
+                downloadBesideExtractionMs,
+                besideExtractionMs);
+    return 0;
+}
+
 int cmdMkdir(IMegaClient& client, const std::string& path)
 {
     const Result<Node> node = makeDirs(client, path);
@@ -650,6 +875,10 @@ void usage()
                  "                          read a file back over the SDK's local HTTP server,\n"
                  "                          without it touching the disk; off/len (bytes) ask\n"
                  "                          for a range, and no len means the whole file\n"
+                 "  unzip <zip> <entry> <local> [--bench]\n"
+                 "                          write one entry of a zip on MEGA to a local file,\n"
+                 "                          transferring only that entry; --bench also times\n"
+                 "                          the same bytes unprocessed and a whole download\n"
                  "  mkdir <path>            create a folder, parents included\n"
                  "  put <local> <path>      upload one local file into a folder\n"
                  "  mv <path> <folder>      move a node into a folder, taken name or not\n"
@@ -722,6 +951,17 @@ int main(int argc, char* argv[])
                        args[1],
                        args.size() > 2 ? std::strtoull(args[2].c_str(), nullptr, 10) : 0,
                        args.size() > 3 ? std::strtoull(args[3].c_str(), nullptr, 10) : 0);
+    else if (command == "unzip" && args.size() > 3 && !emptyTarget && !args[3].empty())
+    {
+        // arguments() rather than argv: argv is in the ANSI code page, which cannot
+        // spell every name a zip stores as UTF-8.
+        const QStringList wide = QCoreApplication::arguments();
+        rc = cmdUnzip(client,
+                      wide.value(2).toStdString(),
+                      wide.value(3).toStdString(),
+                      wide.value(4).toStdString(),
+                      args.size() > 4 && args[4] == "--bench");
+    }
     else if (command == "mkdir" && args.size() > 1 && !emptyTarget)
         rc = cmdMkdir(*client, args[1]);
     else if (command == "put" && args.size() > 2 && !args[2].empty())

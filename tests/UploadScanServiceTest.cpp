@@ -31,6 +31,11 @@ public:
         mChildren[entry.path]; // an empty directory still exists
     }
 
+    std::unique_ptr<ILocalFileWriter> createFile(const std::string&) override
+    {
+        return nullptr;
+    }
+
     // Resolves a forward-slash spelling too, the way the real adapter turns a
     // dropped URL into a native path -- so a test can hand the same file in under
     // two names, as a QML drop can.
@@ -264,6 +269,11 @@ TEST(UploadScanServiceTest, StopsDescendingAtTheDepthLimit)
         {
             ++levels;
             return std::vector<LocalEntry>{*entryFor(path + "\\loop")};
+        }
+
+        std::unique_ptr<ILocalFileWriter> createFile(const std::string&) override
+        {
+            return nullptr;
         }
 
         mutable int levels = 0;
