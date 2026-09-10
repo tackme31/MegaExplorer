@@ -2,6 +2,7 @@
 #include "core/Result.h"
 #include "core/ZipListing.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -20,8 +21,15 @@ constexpr int kArchiveEntryInvalid = 4;
 // A file appears at destinationPath only once every byte arrived and the CRC-32
 // matched; a failure, a cancel or a mismatch leaves nothing under that name.
 //
-// Inflating and writing happen inside the SDK's data callback, on its thread, and so
-// do onProgress and onDone.
+// Inflating and writing run on the extraction's own thread, fed copies of the SDK's
+// pieces, so the SDK's one thread stays free for other transfers. onProgress and onDone
+// arrive there (a failure before any data, on the caller's or the SDK's thread), and
+// onProgress must not wait on the SDK, whose thread may be waiting on it.
+//
+// The bytes copied but not yet written. Past it the SDK's thread waits for the disk; a
+// piece is always taken when nothing is queued, as one can be ~33 MiB (STUDY section 7).
+constexpr std::size_t kZipExtractionBufferLimit = 64 * 1024 * 1024;
+
 class ZipEntryExtraction
 {
 public:
@@ -33,7 +41,8 @@ public:
                        std::uint64_t archiveHandle,
                        const ZipEntry& entry,
                        std::uint64_t localHeaderShift,
-                       std::string destinationPath);
+                       std::string destinationPath,
+                       std::size_t bufferLimit = kZipExtractionBufferLimit);
     // Cancels, so an extraction its owner has dropped does not run on to the end.
     ~ZipEntryExtraction();
     ZipEntryExtraction(const ZipEntryExtraction&) = delete;

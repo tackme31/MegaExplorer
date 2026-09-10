@@ -6,8 +6,13 @@
 #include "core/ZipExtract.h"
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <limits>
+#include <mutex>
 #include <optional>
+#include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -79,9 +84,18 @@ struct ZipEntryExtraction::State : std::enable_shared_from_this<State>
     ZipEntry entry;
     std::uint64_t localHeaderShift = 0;
     std::string destinationPath;
+    std::size_t bufferLimit = kZipExtractionBufferLimit;
 
-    // The one member written from outside the SDK thread.
     std::atomic<bool> cancelled{false};
+
+    // Guarded by queueMutex. The members after these are the worker's alone once it
+    // has started.
+    std::mutex queueMutex;
+    std::condition_variable queueChanged;
+    std::deque<std::vector<char>> pieces;
+    std::size_t queuedBytes = 0;
+    bool workerStopped = false;
+    std::optional<Result<void>> transferResult;
 
     Progress onProgress;
     std::function<void(Result<void>)> onDone;
@@ -99,6 +113,16 @@ struct ZipEntryExtraction::State : std::enable_shared_from_this<State>
         onDone = nullptr;
         if (done)
             done(std::move(result));
+    }
+
+    void requestCancel()
+    {
+        cancelled = true;
+        // Taking the lock orders the store before any waiter's next look at the flag.
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+        }
+        queueChanged.notify_all();
     }
 
     void onLocalHeader(std::uint64_t localHeaderOffset, Result<std::vector<char>> header)
@@ -138,10 +162,23 @@ struct ZipEntryExtraction::State : std::enable_shared_from_this<State>
 
         if (entry.compressedSize == 0)
         {
-            onStreamDone(Result<void>::ok());
+            conclude(Result<void>::ok());
             return;
         }
         const std::shared_ptr<State> self = shared_from_this();
+        // Detached: it owns a share of this state and ends once the transfer has, so
+        // nothing has to be joined from a thread that might be the SDK's.
+        try
+        {
+            std::thread([self] {
+                self->drain();
+            }).detach();
+        }
+        catch (const std::system_error&)
+        {
+            finish(Result<void>::fail("Could not start the extraction", MegaErrorCode::kEFailed));
+            return;
+        }
         client->readFileRangeStreamed(
             archiveHandle,
             *dataOffset,
@@ -154,17 +191,80 @@ struct ZipEntryExtraction::State : std::enable_shared_from_this<State>
             });
     }
 
+    // SDK thread. The copy is unavoidable: the SDK reuses its buffer once this returns.
     bool onChunk(const char* data, std::size_t size)
     {
-        if (cancelled || !inflater->feed(data, size))
+        if (cancelled)
             return false;
-        received += size;
-        if (onProgress)
-            onProgress(received, entry.compressedSize);
+        std::vector<char> piece(data, data + size);
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            queueChanged.wait(lock, [&] {
+                return cancelled || workerStopped || queuedBytes == 0 ||
+                       queuedBytes + size <= bufferLimit;
+            });
+            if (cancelled || workerStopped)
+                return false;
+            pieces.push_back(std::move(piece));
+            queuedBytes += size;
+        }
+        queueChanged.notify_all();
         return true;
     }
 
+    // SDK thread.
     void onStreamDone(Result<void> transfer)
+    {
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            transferResult = std::move(transfer);
+        }
+        queueChanged.notify_all();
+    }
+
+    // Worker thread. The verdict waits for the transfer's end even after a failure here,
+    // so that onDone still means nothing more is moving.
+    void drain()
+    {
+        for (;;)
+        {
+            std::vector<char> piece;
+            {
+                std::unique_lock<std::mutex> lock(queueMutex);
+                queueChanged.wait(lock, [&] {
+                    return cancelled || !pieces.empty() || transferResult.has_value();
+                });
+                if (cancelled || pieces.empty())
+                    break;
+                piece = std::move(pieces.front());
+                pieces.pop_front();
+                queuedBytes -= piece.size();
+            }
+            queueChanged.notify_all();
+
+            if (!inflater->feed(piece.data(), piece.size()))
+                break;
+            received += piece.size();
+            if (onProgress)
+                onProgress(received, entry.compressedSize);
+        }
+
+        Result<void> transfer = Result<void>::ok();
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            workerStopped = true;
+            pieces.clear();
+            queuedBytes = 0;
+            queueChanged.notify_all();
+            queueChanged.wait(lock, [&] {
+                return transferResult.has_value();
+            });
+            transfer = std::move(*transferResult);
+        }
+        conclude(std::move(transfer));
+    }
+
+    void conclude(Result<void> transfer)
     {
         // Ahead of the transfer's own result: refusing a chunk fails the transfer too,
         // and its message would hide why.
@@ -200,7 +300,8 @@ ZipEntryExtraction::ZipEntryExtraction(std::shared_ptr<IMegaClient> client,
                                        std::uint64_t archiveHandle,
                                        const ZipEntry& entry,
                                        std::uint64_t localHeaderShift,
-                                       std::string destinationPath)
+                                       std::string destinationPath,
+                                       std::size_t bufferLimit)
     : mState(std::make_shared<State>())
 {
     State& s = *mState;
@@ -210,6 +311,7 @@ ZipEntryExtraction::ZipEntryExtraction(std::shared_ptr<IMegaClient> client,
     s.entry = entry;
     s.localHeaderShift = localHeaderShift;
     s.destinationPath = std::move(destinationPath);
+    s.bufferLimit = bufferLimit;
 }
 
 ZipEntryExtraction::~ZipEntryExtraction()
@@ -247,5 +349,5 @@ void ZipEntryExtraction::start(Progress onProgress, std::function<void(Result<vo
 
 void ZipEntryExtraction::cancel()
 {
-    mState->cancelled = true;
+    mState->requestCancel();
 }

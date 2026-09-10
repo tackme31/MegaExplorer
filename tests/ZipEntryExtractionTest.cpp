@@ -5,12 +5,18 @@
 #include "MockMegaClient.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 #include <zlib.h>
@@ -103,11 +109,51 @@ struct Archive
     }
 };
 
+// Opens once; wait() blocks until then.
+class Gate
+{
+public:
+    void open()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            mOpen = true;
+        }
+        mChanged.notify_all();
+    }
+    void wait()
+    {
+        std::unique_lock<std::mutex> lock(mMutex);
+        mChanged.wait(lock, [this] {
+            return mOpen;
+        });
+    }
+
+private:
+    std::mutex mMutex;
+    std::condition_variable mChanged;
+    bool mOpen = false;
+};
+
+template<typename Predicate>
+bool eventually(Predicate predicate)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!predicate())
+    {
+        if (std::chrono::steady_clock::now() > deadline)
+            return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
+
 class MemoryFileSystem : public ILocalFileSystem
 {
 public:
+    // Written by the extraction's worker; read only after onDone, which orders it.
     std::map<std::string, std::string> committed;
-    int liveWriters = 0;
+    std::atomic<int> liveWriters{0};
     bool refuseCreate = false;
     bool failWrites = false;
 
@@ -166,9 +212,60 @@ struct Fixture
     std::shared_ptr<MemoryFileSystem> fs = std::make_shared<MemoryFileSystem>();
     Archive archive;
     std::size_t chunk = 97;
-    int chunksServed = 0;
+    std::size_t bufferLimit = kZipExtractionBufferLimit;
+    std::atomic<int> chunksServed{0};
+    std::atomic<int> chunksAccepted{0};
     std::optional<Result<void>> failAfterFirstChunk;
+    std::function<void()> afterAcceptedChunk;
     std::vector<std::pair<std::uint64_t, std::uint64_t>> streamed;
+    // Serving from a thread of its own, as the SDK does, lets a test hold the worker
+    // while the "SDK" is waiting on it.
+    bool serveOnOwnThread = false;
+    std::thread server;
+
+    ~Fixture()
+    {
+        if (server.joinable())
+            server.join();
+        // The detached worker lets go of the state just after onDone; without this the
+        // mock could be destroyed on it while the next test runs.
+        EXPECT_TRUE(eventually([this] {
+            return client.use_count() == 1 && fs.use_count() == 1;
+        }));
+    }
+
+    std::uint64_t totalChunks() const
+    {
+        return (archive.entry.compressedSize + chunk - 1) / chunk;
+    }
+
+    void streamPieces(std::uint64_t offset,
+                      std::uint64_t length,
+                      const std::function<bool(const char*, std::size_t)>& onChunk,
+                      const std::function<void(Result<void>)>& onDone)
+    {
+        length = std::min<std::uint64_t>(length, archive.bytes.size() - offset);
+        const char* data = archive.bytes.data() + offset;
+        for (std::uint64_t at = 0; at < length; at += chunk)
+        {
+            ++chunksServed;
+            const auto size = static_cast<std::size_t>(std::min<std::uint64_t>(chunk, length - at));
+            if (!onChunk(data + at, size))
+            {
+                onDone(Result<void>::fail("aborted", MegaErrorCode::kEIncomplete));
+                return;
+            }
+            ++chunksAccepted;
+            if (afterAcceptedChunk)
+                afterAcceptedChunk();
+            if (failAfterFirstChunk)
+            {
+                onDone(*failAfterFirstChunk);
+                return;
+            }
+        }
+        onDone(Result<void>::ok());
+    }
 
     // Mimics the SDK: pieces in order, and a refused piece fails the transfer.
     void serve()
@@ -192,43 +289,70 @@ struct Fixture
                                   std::function<bool(const char*, std::size_t)> onChunk,
                                   std::function<void(Result<void>)> onDone) {
                 streamed.emplace_back(offset, length);
-                length = std::min<std::uint64_t>(length, archive.bytes.size() - offset);
-                const char* data = archive.bytes.data() + offset;
-                for (std::uint64_t at = 0; at < length; at += chunk)
+                if (!serveOnOwnThread)
                 {
-                    ++chunksServed;
-                    const auto size =
-                        static_cast<std::size_t>(std::min<std::uint64_t>(chunk, length - at));
-                    if (!onChunk(data + at, size))
-                    {
-                        onDone(Result<void>::fail("aborted", MegaErrorCode::kEIncomplete));
-                        return;
-                    }
-                    if (failAfterFirstChunk)
-                    {
-                        onDone(*failAfterFirstChunk);
-                        return;
-                    }
+                    streamPieces(offset, length, onChunk, onDone);
+                    return;
                 }
-                onDone(Result<void>::ok());
+                server = std::thread([this, offset, length, onChunk, onDone] {
+                    streamPieces(offset, length, onChunk, onDone);
+                });
             });
     }
 
     std::unique_ptr<ZipEntryExtraction> make()
     {
         return std::make_unique<ZipEntryExtraction>(
-            client, fs, kArchive, archive.entry, kStubSize, kDestination);
+            client, fs, kArchive, archive.entry, kStubSize, kDestination, bufferLimit);
     }
 };
 
+// onDone arrives on the extraction's worker, so the test waits for it.
+class Outcome
+{
+public:
+    void set(Result<void> result)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            mResult = std::move(result);
+        }
+        mReady.notify_all();
+    }
+    bool arrived()
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        return mResult.has_value();
+    }
+    Result<void> wait()
+    {
+        std::unique_lock<std::mutex> lock(mMutex);
+        const bool finished = mReady.wait_for(lock, std::chrono::seconds(10), [this] {
+            return mResult.has_value();
+        });
+        EXPECT_TRUE(finished);
+        return mResult.value_or(Result<void>::fail("never finished", 0));
+    }
+
+private:
+    std::mutex mMutex;
+    std::condition_variable mReady;
+    std::optional<Result<void>> mResult;
+};
+
+std::shared_ptr<Outcome> begin(ZipEntryExtraction& extraction,
+                               const ZipEntryExtraction::Progress& progress = {})
+{
+    auto outcome = std::make_shared<Outcome>();
+    extraction.start(progress, [outcome](Result<void> r) {
+        outcome->set(std::move(r));
+    });
+    return outcome;
+}
+
 Result<void> run(ZipEntryExtraction& extraction, const ZipEntryExtraction::Progress& progress = {})
 {
-    std::optional<Result<void>> outcome;
-    extraction.start(progress, [&outcome](Result<void> r) {
-        outcome = std::move(r);
-    });
-    EXPECT_TRUE(outcome.has_value());
-    return outcome.value_or(Result<void>::fail("never finished", 0));
+    return begin(extraction, progress)->wait();
 }
 
 } // namespace
@@ -257,7 +381,7 @@ TEST(ZipEntryExtractionTest, WritesTheEntryFromItsOwnBytesOnly)
     EXPECT_EQ(f.streamed[0].first, f.archive.dataOffset);
     EXPECT_EQ(f.streamed[0].second, f.archive.entry.compressedSize);
     EXPECT_EQ(lastReceived, f.archive.entry.compressedSize);
-    EXPECT_EQ(f.fs->liveWriters, 0);
+    EXPECT_EQ(f.fs->liveWriters.load(), 0);
 }
 
 TEST(ZipEntryExtractionTest, LeavesNothingWhenTheCrcDoesNotMatch)
@@ -272,10 +396,29 @@ TEST(ZipEntryExtractionTest, LeavesNothingWhenTheCrcDoesNotMatch)
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.errorCode, kArchiveEntryInvalid);
     EXPECT_TRUE(f.fs->committed.empty());
-    EXPECT_EQ(f.fs->liveWriters, 0);
+    EXPECT_EQ(f.fs->liveWriters.load(), 0);
 }
 
 TEST(ZipEntryExtractionTest, CancelStopsTheTransferAtTheNextChunk)
+{
+    Fixture f;
+    std::unique_ptr<ZipEntryExtraction> extraction;
+    f.afterAcceptedChunk = [&] {
+        extraction->cancel();
+    };
+    f.serve();
+    extraction = f.make();
+
+    const Result<void> result = run(*extraction);
+
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.errorCode, MegaErrorCode::kEIncomplete);
+    EXPECT_EQ(f.chunksServed.load(), 2); // the one taken before the cancel, and the one refused
+    EXPECT_TRUE(f.fs->committed.empty());
+    EXPECT_EQ(f.fs->liveWriters.load(), 0);
+}
+
+TEST(ZipEntryExtractionTest, CancelFromTheWorkerSideEndsIncompleteAndLeavesNothing)
 {
     Fixture f;
     f.serve();
@@ -287,9 +430,76 @@ TEST(ZipEntryExtractionTest, CancelStopsTheTransferAtTheNextChunk)
 
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.errorCode, MegaErrorCode::kEIncomplete);
-    EXPECT_EQ(f.chunksServed, 2); // the one that reported progress, and the one refused
     EXPECT_TRUE(f.fs->committed.empty());
-    EXPECT_EQ(f.fs->liveWriters, 0);
+    EXPECT_EQ(f.fs->liveWriters.load(), 0);
+}
+
+TEST(ZipEntryExtractionTest, TheTransferDoesNotWaitForTheWriting)
+{
+    // Arrange: the worker stops at its first piece until the gate opens.
+    Fixture f;
+    f.serve();
+    Gate gate;
+    const auto extraction = f.make();
+
+    // Act
+    const std::shared_ptr<Outcome> outcome =
+        begin(*extraction, [&gate](std::uint64_t, std::uint64_t) {
+            gate.wait();
+        });
+
+    // Assert: every piece was taken and the transfer ended with the worker still held.
+    EXPECT_EQ(static_cast<std::uint64_t>(f.chunksAccepted), f.totalChunks());
+    EXPECT_FALSE(outcome->arrived());
+    gate.open();
+    const Result<void> result = outcome->wait();
+    ASSERT_TRUE(result.success) << result.errorMessage;
+    EXPECT_EQ(f.fs->committed[kDestination], f.archive.original);
+    EXPECT_EQ(f.fs->liveWriters.load(), 0);
+}
+
+TEST(ZipEntryExtractionTest, TheTransferWaitsOnceTheBufferIsFull)
+{
+    // Arrange: room for two pieces of 97 bytes but not three.
+    Fixture f;
+    f.bufferLimit = 200;
+    f.serveOnOwnThread = true;
+    f.serve();
+    Gate gate;
+    const auto extraction = f.make();
+
+    // Act
+    const std::shared_ptr<Outcome> outcome =
+        begin(*extraction, [&gate](std::uint64_t, std::uint64_t) {
+            gate.wait();
+        });
+
+    // Assert: the worker holds the first piece, two more wait in the buffer, and the
+    // fourth is held back until the worker moves.
+    EXPECT_TRUE(eventually([&] {
+        return f.chunksServed == 4;
+    }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_EQ(f.chunksAccepted.load(), 3);
+    EXPECT_FALSE(outcome->arrived());
+    gate.open();
+    const Result<void> result = outcome->wait();
+    ASSERT_TRUE(result.success) << result.errorMessage;
+    EXPECT_EQ(static_cast<std::uint64_t>(f.chunksAccepted), f.totalChunks());
+    EXPECT_EQ(f.fs->committed[kDestination], f.archive.original);
+}
+
+TEST(ZipEntryExtractionTest, APieceLargerThanTheBufferStillGoesThrough)
+{
+    Fixture f;
+    f.bufferLimit = 10;
+    f.serve();
+    const auto extraction = f.make();
+
+    const Result<void> result = run(*extraction);
+
+    ASSERT_TRUE(result.success) << result.errorMessage;
+    EXPECT_EQ(f.fs->committed[kDestination], f.archive.original);
 }
 
 TEST(ZipEntryExtractionTest, PassesATransferFailureThroughAndLeavesNothing)
@@ -304,7 +514,7 @@ TEST(ZipEntryExtractionTest, PassesATransferFailureThroughAndLeavesNothing)
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.errorCode, MegaErrorCode::kEAgain);
     EXPECT_TRUE(f.fs->committed.empty());
-    EXPECT_EQ(f.fs->liveWriters, 0);
+    EXPECT_EQ(f.fs->liveWriters.load(), 0);
 }
 
 TEST(ZipEntryExtractionTest, RefusesAnEncryptedEntryWithoutTransferring)
@@ -380,13 +590,15 @@ TEST(ZipEntryExtractionTest, AnArchiveCutShortOfTheEntryLeavesNothing)
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.errorCode, kArchiveEntryInvalid);
     EXPECT_TRUE(f.fs->committed.empty());
-    EXPECT_EQ(f.fs->liveWriters, 0);
+    EXPECT_EQ(f.fs->liveWriters.load(), 0);
 }
 
 TEST(ZipEntryExtractionTest, AWriteFailureStopsTheTransfer)
 {
+    // A buffer of one piece keeps the "SDK" at most two pieces ahead of the worker.
     Fixture f;
     f.fs->failWrites = true;
+    f.bufferLimit = 1;
     f.serve();
     const auto extraction = f.make();
 
@@ -394,7 +606,7 @@ TEST(ZipEntryExtractionTest, AWriteFailureStopsTheTransfer)
 
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.errorCode, MegaErrorCode::kEFailed);
-    EXPECT_EQ(f.chunksServed, 1);
+    EXPECT_LE(f.chunksServed.load(), 3);
     EXPECT_TRUE(f.fs->committed.empty());
-    EXPECT_EQ(f.fs->liveWriters, 0);
+    EXPECT_EQ(f.fs->liveWriters.load(), 0);
 }
