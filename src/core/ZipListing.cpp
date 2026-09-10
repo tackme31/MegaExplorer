@@ -193,6 +193,7 @@ std::optional<ZipDirectoryLocation> findZipDirectory(const std::vector<char>& ta
             if (!startIsPlausible(tail, tailOffset, recordAt, location))
                 continue;
         }
+        location.localHeaderShift = location.offset > offset ? location.offset - offset : 0;
         return location;
     }
     return std::nullopt;
@@ -220,12 +221,16 @@ std::vector<ZipEntry> parseZipDirectory(const std::vector<char>& directory)
         entry.uncompressedSize = readU32(directory, at + 24);
         entry.encrypted = (flags & 0x0001) != 0;
         entry.nameIsUtf8 = (flags & 0x0800) != 0;
+        entry.compressionMethod = readU16(directory, at + 10);
+        entry.crc = readU32(directory, at + 16);
+        entry.localHeaderOffset = readU32(directory, at + 42);
         entry.rawName.assign(directory.data() + at + kCentralHeaderFixedSize, nameLength);
 
         const std::size_t extraAt = at + kCentralHeaderFixedSize + nameLength;
         std::size_t payloadAt = 0;
         std::size_t payloadLength = 0;
-        if ((entry.compressedSize == 0xFFFFFFFFu || entry.uncompressedSize == 0xFFFFFFFFu) &&
+        if ((entry.compressedSize == 0xFFFFFFFFu || entry.uncompressedSize == 0xFFFFFFFFu ||
+             entry.localHeaderOffset == 0xFFFFFFFFu) &&
             findExtraField(directory, extraAt, extraLength, 0x0001, payloadAt, payloadLength))
         {
             // Only the saturated fields are present, in a fixed order, with the rest
@@ -240,7 +245,10 @@ std::vector<ZipEntry> parseZipDirectory(const std::vector<char>& directory)
             if (entry.compressedSize == 0xFFFFFFFFu && cursor + 8 <= end)
             {
                 entry.compressedSize = readU64(directory, cursor);
+                cursor += 8;
             }
+            if (entry.localHeaderOffset == 0xFFFFFFFFu && cursor + 8 <= end)
+                entry.localHeaderOffset = readU64(directory, cursor);
         }
         // Info-ZIP Unicode Path: version(1) + CRC32 of the original name(4) + UTF-8
         // name. Present exactly when the stored name is not UTF-8, which is the

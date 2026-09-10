@@ -19,6 +19,10 @@ struct ZipEntry
     bool isDirectory = false;
     bool encrypted = false;
     bool nameIsUtf8 = false; // general-purpose flag bit 11
+    std::uint16_t compressionMethod = 0;
+    std::uint32_t crc = 0;
+    // As stored: add ZipDirectoryLocation::localHeaderShift to get a file offset.
+    std::uint64_t localHeaderOffset = 0;
 };
 
 // Where the central directory sits, as read out of the End Of Central Directory
@@ -27,6 +31,9 @@ struct ZipDirectoryLocation
 {
     std::uint64_t offset = 0;
     std::uint64_t size = 0;
+    // Bytes of prepended data (a self-extracting stub): the stored offsets are
+    // relative to the archive, not to the file.
+    std::uint64_t localHeaderShift = 0;
 };
 
 // tail is the last tailOffset..fileSize bytes of the archive; tailOffset is where

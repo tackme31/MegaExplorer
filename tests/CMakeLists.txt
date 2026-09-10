@@ -25,6 +25,7 @@ add_executable(MegaExplorerTests
     ViewerControllerTest.cpp
     TextPreviewDecoderTest.cpp
     ZipListingTest.cpp
+    ZipExtractTest.cpp
     FolderTreeServiceTest.cpp
     LocalLinkServiceTest.cpp
     NodeDetailsServiceTest.cpp
@@ -79,6 +80,8 @@ target_link_libraries(MegaExplorerTests PRIVATE
     GTest::gtest
     GTest::gmock
     MegaExplorerWarnings
+    # ZipExtractTest compresses its own fixtures.
+    ZLIB::ZLIB
 )
 
 # LicenseModelTest reads the working copy's licenses/ directly rather than the

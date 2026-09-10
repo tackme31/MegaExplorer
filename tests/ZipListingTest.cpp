@@ -49,6 +49,9 @@ struct Entry
     std::uint16_t flags = 0;
     std::string extra;
     std::string comment;
+    std::uint16_t method = 8;
+    std::uint32_t crc = 0;
+    std::uint32_t localOffset = 0;
 };
 
 std::vector<char> centralHeader(const Entry& entry)
@@ -58,10 +61,10 @@ std::vector<char> centralHeader(const Entry& entry)
     putU16(out, 20); // version made by
     putU16(out, 20); // version needed
     putU16(out, entry.flags);
-    putU16(out, 8); // deflate
+    putU16(out, entry.method);
     putU16(out, 0); // modified time
     putU16(out, 0); // modified date
-    putU32(out, 0); // crc-32
+    putU32(out, entry.crc);
     putU32(out, entry.compressed);
     putU32(out, entry.uncompressed);
     putU16(out, static_cast<std::uint16_t>(entry.name.size()));
@@ -70,7 +73,7 @@ std::vector<char> centralHeader(const Entry& entry)
     putU16(out, 0); // disk number start
     putU16(out, 0); // internal attributes
     putU32(out, 0); // external attributes
-    putU32(out, 0); // local header offset
+    putU32(out, entry.localOffset);
     putText(out, entry.name);
     putText(out, entry.extra);
     putText(out, entry.comment);
@@ -191,7 +194,79 @@ TEST(ZipListingTest, CorrectsOffsetsForPrependedData)
     ASSERT_TRUE(location.has_value());
     EXPECT_EQ(location->offset, 600u);
     EXPECT_EQ(location->offset, directoryAt);
+    EXPECT_EQ(location->localHeaderShift, 500u);
     EXPECT_EQ(parseZipDirectory(directoryBytes(file, *location)).size(), 2u);
+}
+
+TEST(ZipListingTest, LeavesLocalHeaderOffsetsAloneWithoutPrependedData)
+{
+    std::size_t directoryAt = 0;
+    const std::vector<char> file = buildArchive(0, 100, directoryAt);
+
+    const auto location = findZipDirectory(file, 0);
+    ASSERT_TRUE(location.has_value());
+    EXPECT_EQ(location->localHeaderShift, 0u);
+}
+
+TEST(ZipListingTest, ReadsMethodCrcAndLocalHeaderOffsetOfEachEntry)
+{
+    Entry stored{"a.bin", 20, 20, 0, "", ""};
+    stored.method = 0;
+    stored.crc = 0xDEADBEEFu;
+    stored.localOffset = 1234;
+    Entry deflated{"b.txt", 10, 40, 0, "", ""};
+    deflated.crc = 0x01020304u;
+    deflated.localOffset = 5678;
+
+    std::vector<char> directory;
+    append(directory, centralHeader(stored));
+    append(directory, centralHeader(deflated));
+
+    const std::vector<ZipEntry> entries = parseZipDirectory(directory);
+    ASSERT_EQ(entries.size(), 2u);
+    EXPECT_EQ(entries[0].compressionMethod, 0u);
+    EXPECT_EQ(entries[0].crc, 0xDEADBEEFu);
+    EXPECT_EQ(entries[0].localHeaderOffset, 1234u);
+    EXPECT_EQ(entries[1].compressionMethod, 8u);
+    EXPECT_EQ(entries[1].crc, 0x01020304u);
+    EXPECT_EQ(entries[1].localHeaderOffset, 5678u);
+}
+
+TEST(ZipListingTest, ReadsALocalHeaderOffsetOnlyTheZip64ExtraFieldHolds)
+{
+    // Only the offset saturated, so it is the extra field's only value.
+    std::vector<char> extra;
+    putU16(extra, 0x0001);
+    putU16(extra, 8);
+    putU64(extra, 6000000000ull);
+
+    Entry entry{"late.txt", 10, 20, 0, asText(extra), ""};
+    entry.localOffset = 0xFFFFFFFFu;
+
+    const std::vector<ZipEntry> entries = parseZipDirectory(centralHeader(entry));
+    ASSERT_EQ(entries.size(), 1u);
+    EXPECT_EQ(entries[0].compressedSize, 10u);
+    EXPECT_EQ(entries[0].uncompressedSize, 20u);
+    EXPECT_EQ(entries[0].localHeaderOffset, 6000000000ull);
+}
+
+TEST(ZipListingTest, ReadsTheLocalHeaderOffsetAfterBothZip64Sizes)
+{
+    std::vector<char> extra;
+    putU16(extra, 0x0001);
+    putU16(extra, 24);
+    putU64(extra, 5000000000ull); // uncompressed
+    putU64(extra, 4000000000ull); // compressed
+    putU64(extra, 7000000000ull); // local header offset
+
+    Entry entry{"huge.bin", 0xFFFFFFFFu, 0xFFFFFFFFu, 0, asText(extra), ""};
+    entry.localOffset = 0xFFFFFFFFu;
+
+    const std::vector<ZipEntry> entries = parseZipDirectory(centralHeader(entry));
+    ASSERT_EQ(entries.size(), 1u);
+    EXPECT_EQ(entries[0].uncompressedSize, 5000000000ull);
+    EXPECT_EQ(entries[0].compressedSize, 4000000000ull);
+    EXPECT_EQ(entries[0].localHeaderOffset, 7000000000ull);
 }
 
 TEST(ZipListingTest, IgnoresAnEocdSignatureHiddenInStoredData)

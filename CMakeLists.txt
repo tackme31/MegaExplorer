@@ -81,6 +81,10 @@ endif()
 add_library(MegaExplorerWarnings INTERFACE)
 target_compile_options(MegaExplorerWarnings INTERFACE /W4 /external:W0 /wd4702)
 
+# vcpkg only installs zlib as a dependency of the SDK's own ports; asking for it
+# here keeps ZipExtract from leaning on that.
+find_package(ZLIB REQUIRED)
+
 # SDK-free domain logic, shared between MegaExplorer and MegaExplorerTests.
 add_library(MegaExplorerCore STATIC
     src/core/IMegaClient.h
@@ -127,6 +131,8 @@ add_library(MegaExplorerCore STATIC
     src/core/PreviewService.cpp
     src/core/ZipListing.h
     src/core/ZipListing.cpp
+    src/core/ZipExtract.h
+    src/core/ZipExtract.cpp
     src/core/FolderTreeService.h
     src/core/FolderTreeService.cpp
     src/core/LocalLinkService.h
@@ -143,7 +149,7 @@ target_include_directories(MegaExplorerCore PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src
 # no Qt at all and would otherwise fall back to MSVC's C++14 default, where
 # std::optional doesn't exist.
 target_compile_features(MegaExplorerCore PUBLIC cxx_std_17)
-target_link_libraries(MegaExplorerCore PRIVATE MegaExplorerWarnings)
+target_link_libraries(MegaExplorerCore PRIVATE MegaExplorerWarnings ZLIB::ZLIB)
 
 # The QML module's backing target. A library rather than MegaExplorer itself
 # so that MegaExplorerTests can link the same QML-facing C++ types, and
