@@ -9,7 +9,7 @@ for your cloud files, not a sync client.
 - Thumbnails and previews without downloading, camera RAW included
 - Images, video, audio and PDFs opened in a viewer of their own
 - Search and filter across everything you have
-- Public links, favourites, and a Rubbish bin you can restore from
+- Sharing, favourites, and a Rubbish bin you can restore from
 - Jump to the matching file in a paired local folder
 
 ![](./img/screenshot.png)
@@ -62,16 +62,15 @@ parallel, with per-file progress and cancellation in the transfer flyout.
 
 ### Side panel views
 
-Quick access for the folders you pin, plus Favourites and Recent.
+Quick access for the folders you pin, plus Favourites, Recent and Shared links.
 
-### Rubbish bin
+### Sharing
 
-Deleted items go here rather than disappearing. Restore them, or delete them for good.
+![](./img/sharing.png)
 
-### Public links
-
-Create, copy and remove MEGA share links from the context menu. Files that already have one are
-marked in the list.
+Create, copy and remove MEGA share links from the context menu's Share submenu, and give them an
+expiry date or a password (both need a Pro plan). Files that already have one are marked in the
+list.
 
 ### Local folder
 
@@ -81,7 +80,6 @@ local file, or reveal it in Windows Explorer. The two are never synced.
 ## Roadmap
 
 - [ ] Live updates, watching the server for changes made elsewhere
-- [ ] More control over public links (visibility, expiry, and so on)
 - [ ] Albums
 - [ ] Localisation, starting with Japanese
 
