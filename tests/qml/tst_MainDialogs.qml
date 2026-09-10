@@ -173,9 +173,23 @@ TestCase {
             // leaves its loading state only on this, so a mismatch would leave it
             // saying "Creating link…" forever with nothing else to show for it.
             signal linkResolved(var handle, string link)
+            signal linkExpiryResolved(var handle, real expiry)
+
+            // What linkExpiry() hands back; -1 is the C++ answer for a node with
+            // no link, which is what an unshared node looks like on open.
+            property real expiry: -1
+            property var lastSetExpiry: null
 
             function requestLink(handle) {
                 fakeMut.lastRequestLinkHandle = handle;
+            }
+
+            function linkExpiry(handle) {
+                return fakeMut.expiry;
+            }
+
+            function setLinkExpiry(handle, expireTime) {
+                fakeMut.lastSetExpiry = expireTime;
             }
 
             function copyLinkToClipboard(handle) {
@@ -1073,6 +1087,81 @@ TestCase {
 
         compare(f.dialog.loading, false);
         compare(f.dialog.linkFieldText(), "Unavailable");
+    }
+
+    // ---- PublicLinkDialog, the expiry row ------------------------------
+    //
+    // The row is Pro-only, applies without a save button, and settles on what MEGA
+    // reports rather than on what was asked for -- so every test below is about a
+    // value the screenshot check cannot see.
+
+    // A free account must never be offered the control: the SDK answers kEAccess
+    // and the only thing on screen would be a toast.
+    function test_publicLink_expiryIsWithheldFromAFreeAccount() {
+        const f = makePublicLinkDialog(["a.txt"]);
+        f.dialog.planLevel = 0;
+        f.dialog.showForSelection();
+        f.mut.linkResolved(1, "https://mega.nz/file/abc");
+
+        compare(f.dialog.expiryAllowed, false);
+        compare(f.dialog.expiryEditable, false);
+        compare(f.dialog.expiryCaption(), "Expiry dates need a Pro plan.");
+    }
+
+    // -1 is "the account read has not landed", which must read differently from
+    // "free" -- withheld either way, but for a reason that will go away.
+    function test_publicLink_expiryWaitsForTheAccountRead() {
+        const f = makePublicLinkDialog(["a.txt"]);
+        f.dialog.showForSelection();
+        f.mut.linkResolved(1, "https://mega.nz/file/abc");
+
+        compare(f.dialog.expiryEditable, false);
+        compare(f.dialog.expiryCaption(), "Checking your plan…");
+    }
+
+    // The stored expiry has to be on screen before anything is typed, which is
+    // what the local (round-trip-free) read is for.
+    function test_publicLink_showsTheStoredExpiry() {
+        const f = makePublicLinkDialog(["a.txt"]);
+        f.dialog.planLevel = 1;
+        f.mut.expiry = f.dialog.endOfDay(new Date(2031, 4, 17));
+        f.dialog.showForSelection();
+        f.mut.linkResolved(1, "https://mega.nz/file/abc");
+
+        compare(f.dialog.expiryEditable, true);
+        compare(Qt.formatDate(new Date(f.dialog.expiry * 1000), "yyyy-MM-dd"), "2031-05-17");
+    }
+
+    // A refusal has to put the row back on the value MEGA still holds; the reply
+    // carries it, so the dialog never keeps the value that was rejected.
+    function test_publicLink_refusedExpiryRevertsTheRow() {
+        const f = makePublicLinkDialog(["a.txt"]);
+        f.dialog.planLevel = 1;
+        f.dialog.showForSelection();
+        f.mut.linkResolved(1, "https://mega.nz/file/abc");
+
+        f.dialog.requestExpiry(f.dialog.endOfDay(new Date(2031, 4, 17)));
+        compare(f.dialog.expiryBusy, true);
+        compare(f.dialog.expiryEditable, false);
+        f.mut.linkExpiryResolved(1, 0);
+
+        compare(f.dialog.expiryBusy, false);
+        compare(f.dialog.expiry, 0);
+    }
+
+    // Both rejections stay inside the dialog rather than reaching the SDK: a
+    // malformed date has no value to send, and a past one would expire the link
+    // the moment it was set.
+    function test_publicLink_badDatesNeverReachTheController() {
+        const f = makePublicLinkDialog(["a.txt"]);
+        f.dialog.planLevel = 1;
+        f.dialog.showForSelection();
+        f.mut.linkResolved(1, "https://mega.nz/file/abc");
+
+        compare(f.dialog.parseDate("2031-02-31"), null);
+        compare(f.dialog.parseDate("17/05/2031"), null);
+        verify(f.dialog.parseDate("2031-05-17") !== null);
+        compare(f.mut.lastSetExpiry, null);
     }
 
     // ---- CopyConflictDialog --------------------------------------------

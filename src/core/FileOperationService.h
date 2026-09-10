@@ -72,6 +72,16 @@ public:
     void exportLink(std::uint64_t handle, std::function<void(Result<std::string>)> onDone);
     void removeLink(std::uint64_t handle, std::function<void(Result<void>)> onDone);
 
+    // Sets, changes or clears (expireTime 0) the link's expiry, minting a link if the
+    // node has none. Free accounts are refused by MEGA with kEAccess.
+    void setLinkExpiry(std::uint64_t handle,
+                       std::int64_t expireTime,
+                       std::function<void(Result<std::string>)> onDone);
+
+    // Synchronous, like canMove: the SDK holds the value locally. -1 = no link,
+    // 0 = never expires, otherwise Unix seconds.
+    Result<std::int64_t> linkExpiryFor(std::uint64_t handle) const;
+
     // "Would move() be accepted?", answered without an API round-trip so a drag
     // hovering over a drop target can query it continuously. Failures carry a
     // MegaErrorCodes.h code (kENoEnt / kECircular / kEAccess), not just text.

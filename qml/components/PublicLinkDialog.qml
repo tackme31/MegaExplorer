@@ -34,6 +34,27 @@ Dialog {
     property string link: ""
     property bool loading: false
 
+    // The expiry MEGA holds for this link: -1 no link at all, 0 never expires,
+    // otherwise Unix seconds. Read locally (no round trip), so it is right before
+    // the export even lands.
+    property real expiry: -1
+    property bool expiryBusy: false
+    property string expiryError: ""
+
+    // Bound to accountController by whoever declares this dialog, rather than read
+    // off the root context here, so the QML test can instantiate it without
+    // main.cpp's context properties -- the same arrangement CopyConflictDialog uses.
+    // AccountController::PlanLevel: -1 until the account read lands, 0 free.
+    property int planLevel: -1
+
+    // Expiry dates are a MEGA plan feature: the SDK refuses them with kEAccess on a
+    // free account (STUDY_PUBLIC_LINK_SETTINGS section 1.2). Withheld while the plan
+    // is still unknown as well, so a free account is never briefly offered a control
+    // that would fail.
+    readonly property bool expiryAllowed: root.planLevel > 0
+    readonly property bool expiryEditable: !root.loading && root.link !== "" && !root.expiryBusy
+                                           && root.expiryAllowed
+
     // The action is offered on a single node only (MenuActionResolver's
     // SingleOnly), so only the first entry is ever the target.
     function showForSelection() {
@@ -44,8 +65,84 @@ Dialog {
         root.handle = entries[0].handle;
         root.link = "";
         root.loading = true;
+        root.expiryBusy = false;
         root.open();
+        root.showExpiry(root.mutController.linkExpiry(root.handle));
         root.mutController.requestLink(root.handle);
+    }
+
+    // The one place the expiry row is written from, so the checkbox and the field
+    // never disagree. The checkbox's `checked` is assigned rather than bound: a
+    // click writes that property itself, which would drop a binding and leave the
+    // box stuck on the user's guess the next time MEGA refused the change.
+    function showExpiry(seconds: real) {
+        root.expiry = seconds;
+        root.expiryError = "";
+        expiryToggle.checked = seconds > 0;
+        expiryField.text = seconds > 0 ? Qt.formatDate(new Date(seconds * 1000), "yyyy-MM-dd") : "";
+    }
+
+    // End of the chosen day in local time, which is what the date in the field
+    // means: a link set to expire "on the 5th" has to survive the whole 5th.
+    function endOfDay(day: date): real {
+        return Math.floor(
+            new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59).getTime()
+            / 1000);
+    }
+
+    // Deliberately not Date.fromLocaleDateString: that accepts sloppy input and
+    // rolls overflow over silently, so "2026-02-31" would come back as 3 March
+    // rather than as the typo it is. The round-trip check below is what rejects it.
+    function parseDate(text: string) {
+        const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text.trim());
+        if (parts === null)
+            return null;
+        const year = parseInt(parts[1], 10);
+        const month = parseInt(parts[2], 10) - 1;
+        const day = parseInt(parts[3], 10);
+        const parsed = new Date(year, month, day);
+        if (parsed.getFullYear() !== year || parsed.getMonth() !== month
+                || parsed.getDate() !== day)
+            return null;
+        return parsed;
+    }
+
+    function requestExpiry(seconds: real) {
+        root.expiryError = "";
+        root.expiryBusy = true;
+        root.mutController.setLinkExpiry(root.handle, seconds);
+    }
+
+    function applyTypedDate() {
+        if (!expiryToggle.checked || root.expiryBusy)
+            return;
+        const parsed = root.parseDate(expiryField.text);
+        if (parsed === null) {
+            root.expiryError = qsTr("Enter a date as YYYY-MM-DD.");
+            return;
+        }
+        const seconds = root.endOfDay(parsed);
+        if (seconds * 1000 <= Date.now()) {
+            root.expiryError = qsTr("Pick a date in the future.");
+            return;
+        }
+        // editingFinished also fires on focus loss, so an untouched field would
+        // otherwise re-issue the link every time the dialog was closed.
+        if (seconds === root.expiry) {
+            root.expiryError = "";
+            return;
+        }
+        root.requestExpiry(seconds);
+    }
+
+    function expiryCaption(): string {
+        if (root.expiryError !== "")
+            return root.expiryError;
+        if (root.planLevel < 0)
+            return qsTr("Checking your plan…");
+        if (!root.expiryAllowed)
+            return qsTr("Expiry dates need a Pro plan.");
+        return qsTr("The link stops working at the end of the day you pick.");
     }
 
     signal removeLinkRequested
@@ -110,6 +207,50 @@ Dialog {
             color: Theme.color.textSecondary
             text: qsTr("Anyone with this link can open the item without signing in.")
         }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.spacing.xs
+            implicitHeight: Theme.border.thin
+            color: Theme.color.stroke
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacing.md
+
+            CheckBox {
+                id: expiryToggle
+                text: qsTr("Set an expiry date")
+                enabled: root.expiryEditable
+                // Turning it on has to name a day, and applying happens on the
+                // click (there is no save button), so a week out is the value
+                // offered -- the field is editable straight afterwards.
+                onToggled: root.requestExpiry(
+                               checked ? root.endOfDay(new Date(Date.now() + 7 * 86400 * 1000)) : 0)
+            }
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            TextField {
+                id: expiryField
+                visible: expiryToggle.checked
+                enabled: root.expiryEditable
+                implicitWidth: 110
+                placeholderText: "YYYY-MM-DD"
+                onEditingFinished: root.applyTypedDate()
+            }
+        }
+
+        Label {
+            Layout.fillWidth: true
+            wrapMode: Text.Wrap
+            font.pixelSize: Theme.font.caption
+            color: root.expiryError !== "" ? Theme.color.danger : Theme.color.textSecondary
+            text: root.expiryCaption()
+        }
     }
 
     // A plain Item rather than a DialogButtonBox: the destructive button belongs
@@ -166,6 +307,20 @@ Dialog {
                 return;
             root.loading = false;
             root.link = link;
+            // Re-read rather than trusted from before the export: the node may not
+            // have had a link at all when the dialog opened, and only now does it
+            // carry the expiry the row has to show.
+            root.showExpiry(root.mutController.linkExpiry(handle));
+        }
+
+        function onLinkExpiryResolved(handle, expiry) {
+            if (handle !== root.handle)
+                return;
+            root.expiryBusy = false;
+            // Carries the value MEGA actually holds, so a refusal puts the row back
+            // where it was instead of leaving it on what the user asked for. The
+            // reason is on a toast; showExpiry clears the inline message with it.
+            root.showExpiry(expiry);
         }
     }
 }

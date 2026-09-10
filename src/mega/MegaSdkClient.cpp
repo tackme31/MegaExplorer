@@ -1219,11 +1219,52 @@ void MegaSdkClient::exportNode(std::uint64_t handle,
         return;
     }
 
-    // The plain read-only link, which is the only one the UI offers: no expiry (0 is
-    // the SDK's "never"), not writable, and not MEGA-hosted -- the writable variants
-    // also hand back a key the caller would have to keep, and nothing here does.
+    // The plain read-only link, which is the only one the UI offers: not writable and
+    // not MEGA-hosted -- the writable variants also hand back a key the caller would
+    // have to keep, and nothing here does.
+    //
+    // The expiry is echoed back rather than passed as 0: exportNode re-issues the
+    // link whenever the value differs from the stored one, so a hardcoded "never"
+    // here would strip a date set elsewhere every time the link was merely read.
+    // getExpirationTime answers -1 for a node that has no link yet, which is not a
+    // value exportNode accepts.
+    const std::int64_t keepExpiry = std::max<std::int64_t>(node->getExpirationTime(), 0);
     mApi->exportNode(
-        node.get(), 0, false, false, new megasdk::LinkResultListener(std::move(onDone)));
+        node.get(), keepExpiry, false, false, new megasdk::LinkResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::setLinkExpiry(std::uint64_t handle,
+                                  std::int64_t expireTime,
+                                  std::function<void(Result<std::string>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::string>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<std::string>::fail(
+            "No node with the given handle (not logged in / nodes not fetched / node deleted)",
+            MegaErrorCode::kENoEnt));
+        return;
+    }
+
+    mApi->exportNode(
+        node.get(), expireTime, false, false, new megasdk::LinkResultListener(std::move(onDone)));
+}
+
+Result<std::int64_t> MegaSdkClient::getLinkExpiry(std::uint64_t handle) const
+{
+    if (mShuttingDown)
+        return Result<std::int64_t>::fail(kShutDownMessage, kClientShutDownCode);
+
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+        return Result<std::int64_t>::fail("No node with the given handle", MegaErrorCode::kENoEnt);
+
+    return Result<std::int64_t>::ok(node->getExpirationTime());
 }
 
 void MegaSdkClient::disableExport(std::uint64_t handle, std::function<void(Result<void>)> onDone)

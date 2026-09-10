@@ -15,6 +15,8 @@
 #include <QTimer>
 #include <QVariantMap>
 
+#include <cstdint>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -1075,6 +1077,71 @@ TEST_F(FileMutationControllerTest, RemoveLinkReportsAFailureUnderItsOwnContext)
     ASSERT_EQ(errorCalls, 1);
     EXPECT_EQ(lastErrorContext, QStringLiteral("removeLink"));
     EXPECT_EQ(lastErrorReason, NotificationController::NotFound);
+}
+
+TEST_F(FileMutationControllerTest, SetLinkExpiryMarksTheRowSharedAndEchoesTheRequestedValue)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    qint64 resolved = -99;
+    QObject::connect(mutations.get(),
+                     &FileMutationController::linkExpiryResolved,
+                     mutations.get(),
+                     [&resolved](quint64, qint64 expiry) { resolved = expiry; });
+
+    EXPECT_CALL(*client, setLinkExpiry(1u, std::int64_t{1893456000}, _))
+        .WillOnce(InvokeArgument<2>(Result<std::string>::ok("https://mega.nz/file/x")));
+
+    mutations->setLinkExpiry(1, 1893456000);
+    flush();
+
+    EXPECT_EQ(errorCalls, 0);
+    // The value asked for, not a re-read: the SDK's node may not carry the new
+    // expiry yet when the listener runs.
+    EXPECT_EQ(resolved, 1893456000);
+    EXPECT_TRUE(model()->data(model()->index(0, 0), FileListModel::IsExportedRole).toBool());
+}
+
+// A free account is refused here, so the row has to settle on what MEGA still
+// holds rather than on the date the user picked.
+TEST_F(FileMutationControllerTest, SetLinkExpiryRefusedRevertsToTheStoredValue)
+{
+    givenRootListing({entry("a", 1)});
+    controller->loadRoot();
+    flush();
+
+    qint64 resolved = -99;
+    QObject::connect(mutations.get(),
+                     &FileMutationController::linkExpiryResolved,
+                     mutations.get(),
+                     [&resolved](quint64, qint64 expiry) { resolved = expiry; });
+
+    EXPECT_CALL(*client, setLinkExpiry(1u, std::int64_t{1893456000}, _))
+        .WillOnce(InvokeArgument<2>(
+            Result<std::string>::fail("pro only", MegaErrorCode::kEAccess)));
+    EXPECT_CALL(*client, getLinkExpiry(1u)).WillOnce(Return(Result<std::int64_t>::ok(0)));
+
+    mutations->setLinkExpiry(1, 1893456000);
+    flush();
+
+    ASSERT_EQ(errorCalls, 1);
+    EXPECT_EQ(lastErrorContext, QStringLiteral("linkExpiry"));
+    EXPECT_EQ(lastErrorReason, NotificationController::NoPermission);
+    EXPECT_EQ(resolved, 0);
+}
+
+// The dialog paints its initial state from this before any export lands, so a
+// node the SDK cannot resolve has to read as "no expiry" and not as a failure.
+TEST_F(FileMutationControllerTest, LinkExpiryReadsThroughAndFallsBackToNoLink)
+{
+    EXPECT_CALL(*client, getLinkExpiry(1u)).WillOnce(Return(Result<std::int64_t>::ok(1893456000)));
+    EXPECT_EQ(mutations->linkExpiry(1), 1893456000);
+
+    EXPECT_CALL(*client, getLinkExpiry(2u))
+        .WillOnce(Return(Result<std::int64_t>::fail("gone", MegaErrorCode::kENoEnt)));
+    EXPECT_EQ(mutations->linkExpiry(2), -1);
 }
 
 TEST_F(FileMutationControllerTest, CopyLinkMarksTheRowSharedAndAnnouncesIt)

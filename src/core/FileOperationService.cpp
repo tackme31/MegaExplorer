@@ -174,6 +174,18 @@ void FileOperationService::removeLink(std::uint64_t handle,
     mClient->disableExport(handle, std::move(onDone));
 }
 
+void FileOperationService::setLinkExpiry(std::uint64_t handle,
+                                         std::int64_t expireTime,
+                                         std::function<void(Result<std::string>)> onDone)
+{
+    mClient->setLinkExpiry(handle, expireTime, std::move(onDone));
+}
+
+Result<std::int64_t> FileOperationService::linkExpiryFor(std::uint64_t handle) const
+{
+    return mClient->getLinkExpiry(handle);
+}
+
 void FileOperationService::move(std::uint64_t handle,
                                 std::uint64_t newParentHandle,
                                 bool newParentIsRoot,

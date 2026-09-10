@@ -391,6 +391,13 @@ Item {
         case "removeLink":
             text = root.describeReason(qsTr("Couldn't remove the link"), reason, rawMessage);
             break;
+            // The common refusal here is a plan restriction, which arrives as
+            // NoPermission -- describeReason's "you don't have permission" reads
+            // oddly for it, but the dialog has already said a Pro plan is needed
+            // and the toast only fires when that guard was out of date.
+        case "linkExpiry":
+            text = root.describeReason(qsTr("Couldn't change the expiry date"), reason, rawMessage);
+            break;
             // Fixed sentence: the export succeeded but handed back no URL, so
             // there is no code to classify and nothing was put on the clipboard.
         case "copyLinkEmpty":

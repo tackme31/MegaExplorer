@@ -84,6 +84,17 @@ public:
     // cannot produce a failure toast for a node that was already unshared.
     Q_INVOKABLE void removeLink(quint64 handle);
 
+    // The expiry stored on the node's link right now: -1 no link, 0 never expires,
+    // otherwise Unix seconds. Synchronous because the SDK holds it locally, which is
+    // what lets the link dialog paint its initial state before the export lands.
+    Q_INVOKABLE qint64 linkExpiry(quint64 handle) const;
+
+    // Sets, changes or clears (0) that expiry, applied the moment the control is
+    // touched -- the dialog has no save button. The answer always comes back on
+    // linkExpiryResolved, so a refusal (a free account gets kEAccess) puts the
+    // control back on the value MEGA actually holds instead of the requested one.
+    Q_INVOKABLE void setLinkExpiry(quint64 handle, qint64 expireTime);
+
     // One SDK call per handle, tallied once through
     // NotificationController::notifyOperation.
     //
@@ -300,6 +311,11 @@ signals:
     // the handle because a dialog can be reopened on another node while the first
     // export is still in flight.
     void linkResolved(quint64 handle, const QString& link);
+
+    // setLinkExpiry's answer, and the only way the dialog learns the outcome: on
+    // success it carries the value that was asked for, on failure the value the node
+    // still holds. Emitted for both, so the control has one place to settle on.
+    void linkExpiryResolved(quint64 handle, qint64 expiry);
 
 private:
     // This tab's row plus every other tab's, in one call -- the three link

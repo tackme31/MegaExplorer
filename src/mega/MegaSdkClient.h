@@ -178,6 +178,12 @@ public:
 
     void exportNode(std::uint64_t handle, std::function<void(Result<std::string>)> onDone) override;
 
+    void setLinkExpiry(std::uint64_t handle,
+                       std::int64_t expireTime,
+                       std::function<void(Result<std::string>)> onDone) override;
+
+    Result<std::int64_t> getLinkExpiry(std::uint64_t handle) const override;
+
     void disableExport(std::uint64_t handle, std::function<void(Result<void>)> onDone) override;
 
     Result<void> checkMove(std::uint64_t handle,

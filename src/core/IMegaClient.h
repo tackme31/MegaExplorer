@@ -368,8 +368,26 @@ public:
     // call on a node that already has one: MEGA returns the existing link rather than
     // minting a second, so this doubles as "get the link" and no caller has to know
     // which of the two it is doing.
+    //
+    // An expiry already on the link survives: MEGA re-issues the link whenever the
+    // requested expiry differs from the stored one, so asking for "never" here would
+    // silently strip a date set from another client. setLinkExpiry is the only door
+    // that changes it.
     virtual void exportNode(std::uint64_t handle,
                             std::function<void(Result<std::string>)> onDone) = 0;
+
+    // Re-issues the link with a new expiry, handing back the URL like exportNode --
+    // the SDK has no separate call for it, and a node with no link yet gets one. Unix
+    // seconds; 0 clears the expiry. Rejected with kEAccess on a free account, which
+    // is a MEGA plan restriction and not something the caller can retry.
+    virtual void setLinkExpiry(std::uint64_t handle,
+                               std::int64_t expireTime,
+                               std::function<void(Result<std::string>)> onDone) = 0;
+
+    // The expiry currently stored on the node's link, as a local read with no round
+    // trip: -1 when the node has no link at all, 0 when the link never expires,
+    // otherwise Unix seconds.
+    virtual Result<std::int64_t> getLinkExpiry(std::uint64_t handle) const = 0;
 
     // exportNode's inverse. Reports success for a node that has no link, so a caller
     // whose view of the export state is stale still ends up where it asked to be.

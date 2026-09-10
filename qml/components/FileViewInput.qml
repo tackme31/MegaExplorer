@@ -323,7 +323,22 @@ Item {
         onMoveToRubbishRequested: confirmRubbishDialog.confirm()
         onDeletePermanentlyRequested: confirmPermanentDeleteDialog.confirm()
         onRemoveLinkRequested: confirmRemoveLinkDialog.confirm()
-        onLinkSettingsRequested: publicLinkDialog.showForSelection()
+        onLinkSettingsRequested: {
+            // The dialog's expiry row is gated on the account's plan, which is
+            // otherwise only fetched when the account menu is opened -- a session
+            // may never have opened it. Cheap: a read already in flight is not
+            // duplicated.
+            //
+            // Bound here rather than declared on publicLinkDialog below, because
+            // accountController is a root context property and tst_FileViewInput
+            // instantiates this component without one: a declared binding would be
+            // evaluated at load and throw there, a handler body only runs when the
+            // menu entry is actually used. Qt.binding, not an assignment -- the
+            // refresh above is asynchronous and may land while the dialog is open.
+            accountController.refresh();
+            publicLinkDialog.planLevel = Qt.binding(() => accountController.planLevel);
+            publicLinkDialog.showForSelection();
+        }
     }
 
     FolderBackgroundMenu {
@@ -360,6 +375,7 @@ Item {
         id: publicLinkDialog
         navController: root.navController
         mutController: root.mutController
+        // planLevel is bound in onLinkSettingsRequested above, not here.
         onRemoveLinkRequested: confirmRemoveLinkDialog.confirm()
     }
 

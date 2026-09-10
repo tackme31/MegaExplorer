@@ -18,6 +18,7 @@
 #include <QVariantMap>
 
 #include <algorithm>
+#include <cstdint>
 #include <set>
 #include <utility>
 #include <vector>
@@ -261,6 +262,49 @@ void FileMutationController::requestLink(quint64 handle)
                 // asked is showing the answer already.
                 markExported(handle, true);
                 emit linkResolved(handle, QString::fromStdString(result.value()));
+            });
+        });
+}
+
+qint64 FileMutationController::linkExpiry(quint64 handle) const
+{
+    const Result<std::int64_t> result = mFileOps->linkExpiryFor(static_cast<std::uint64_t>(handle));
+    // A node the SDK can no longer resolve reads the same as one with no link: the
+    // dialog's only use for this is "which value should the control start on", and
+    // both answers are "no expiry".
+    return result.success ? static_cast<qint64>(result.value()) : -1;
+}
+
+void FileMutationController::setLinkExpiry(quint64 handle, qint64 expireTime)
+{
+    mBusy->begin();
+    mFileOps->setLinkExpiry(
+        static_cast<std::uint64_t>(handle),
+        static_cast<std::int64_t>(expireTime),
+        [this, self = shared_from_this(), handle, expireTime](Result<std::string> result) {
+            invokeOnGuiThread(this, [this, handle, expireTime, result = std::move(result)]() {
+                mBusy->end();
+                if (!result.success)
+                {
+                    qCWarning(lcFileOps)
+                        << "setLinkExpiry failed:" << QString::fromStdString(result.errorMessage)
+                        << "code=" << result.errorCode;
+                    mNotifications->notifyError(QStringLiteral("linkExpiry"),
+                                                result.errorCode,
+                                                QString::fromStdString(result.errorMessage));
+                    // Re-read rather than echoed: the request may have been refused
+                    // outright (a free account) or have failed after MEGA took it,
+                    // and only the node knows which.
+                    emit linkExpiryResolved(handle, linkExpiry(handle));
+                    return;
+                }
+                // The call mints a link for a node that had none, so the row's
+                // marker has to follow -- same reason copyLinkToClipboard sets it.
+                markExported(handle, true);
+                // The value asked for, not one re-read here: the SDK updates its
+                // node from the command's reply, and nothing guarantees that has
+                // happened by the time this listener runs.
+                emit linkExpiryResolved(handle, expireTime);
             });
         });
 }
