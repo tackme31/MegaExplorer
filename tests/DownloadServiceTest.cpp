@@ -831,3 +831,248 @@ TEST(DownloadServiceTest, AThrowingStartGivesItsSlotBackAndReportsTheJob)
     enqueueMany(service, kSlots); // every slot is still free, so all of these start
     EXPECT_EQ(onDone.size(), kSlots);
 }
+
+namespace
+{
+
+using ProgressFn = std::function<void(std::uint64_t, std::uint64_t)>;
+
+// A job that is not IMegaClient::download: keeps its callbacks so the test drives it,
+// and counts the cancels the service sends it.
+struct FakeRunner final : DownloadRunner
+{
+    int starts = 0;
+    int cancels = 0;
+    ProgressFn onProgress;
+    DownloadDone onDone;
+
+    void start(ProgressFn progress, DownloadDone done) override
+    {
+        ++starts;
+        onProgress = std::move(progress);
+        onDone = std::move(done);
+    }
+
+    void cancel() override
+    {
+        ++cancels;
+    }
+};
+
+void expectNoClientDownload(MockMegaClient& client)
+{
+    EXPECT_CALL(client,
+                download(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .Times(0);
+    EXPECT_CALL(client, cancelDownload(::testing::_)).Times(0);
+}
+
+} // namespace
+
+TEST(DownloadServiceTest, ARunnerJobReportsProgressAndCompletionWithoutTheClient)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    expectNoClientDownload(*mockClient);
+    DownloadService service(mockClient);
+    std::vector<DownloadJob> progress;
+    std::vector<DownloadJob> finished;
+    service.setOnProgress([&progress](DownloadJob job) {
+        progress.push_back(std::move(job));
+    });
+    service.setOnJobFinished([&finished](DownloadJob job) {
+        finished.push_back(std::move(job));
+    });
+    auto runner = std::make_shared<FakeRunner>();
+
+    // Act
+    const std::uint64_t id =
+        service.enqueueRunner(7, "dir/entry.bin", "entry.bin", "/tmp/entry.bin", 50, runner);
+
+    // Assert: started, and visible in the queue like any download
+    ASSERT_EQ(runner->starts, 1);
+    ASSERT_TRUE(service.currentJob().has_value());
+    EXPECT_EQ(service.currentJob()->id, id);
+    EXPECT_EQ(service.currentJob()->state, DownloadState::Active);
+    EXPECT_EQ(service.currentJob()->subPath, "dir/entry.bin");
+    EXPECT_EQ(service.currentJob()->totalBytes, 50u);
+
+    runner->onProgress(20, 50);
+    ASSERT_EQ(progress.size(), 1u);
+    EXPECT_EQ(progress.front().id, id);
+    EXPECT_EQ(progress.front().transferredBytes, 20u);
+
+    runner->onDone(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/entry (1).bin"}));
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished.front().state, DownloadState::Completed);
+    EXPECT_EQ(finished.front().resolvedLocalPath, "/tmp/entry (1).bin");
+    EXPECT_TRUE(service.jobs().empty());
+}
+
+TEST(DownloadServiceTest, RunnerJobsShareTheConcurrencyLimitWithPlainDownloads)
+{
+    // Arrange: every slot taken by ordinary downloads
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::vector<DownloadDone> onDone;
+    expectCapturedDownloads(*mockClient, onDone, kSlots);
+    DownloadService service(mockClient);
+    enqueueMany(service, kSlots);
+    auto runner = std::make_shared<FakeRunner>();
+
+    // Act
+    service.enqueueRunner(1, "a/b.txt", "b.txt", "/tmp/b.txt", 10, runner);
+
+    // Assert: waits for a slot, then starts in turn
+    EXPECT_EQ(runner->starts, 0);
+    EXPECT_EQ(service.jobs().back().state, DownloadState::Queued);
+    onDone.front()(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/f1.txt"}));
+    EXPECT_EQ(runner->starts, 1);
+}
+
+TEST(DownloadServiceTest, CancellingARunnerJobGoesToItsRunnerAndReportsCancelled)
+{
+    // Arrange
+    auto mockClient = std::make_shared<MockMegaClient>();
+    expectNoClientDownload(*mockClient);
+    DownloadService service(mockClient);
+    std::vector<DownloadJob> finished;
+    service.setOnJobFinished([&finished](DownloadJob job) {
+        finished.push_back(std::move(job));
+    });
+    auto runner = std::make_shared<FakeRunner>();
+    const std::uint64_t id = service.enqueueRunner(1, "x", "x", "/tmp/x", 10, runner);
+
+    // Act
+    service.cancel(id);
+
+    // Assert: the runner decides when it stopped; any failure after the cancel reads
+    // as the user's stop, not an error
+    EXPECT_EQ(runner->cancels, 1);
+    EXPECT_TRUE(finished.empty());
+    runner->onDone(Result<DownloadOutcome>::fail("stream aborted", -1));
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished.front().state, DownloadState::Cancelled);
+}
+
+TEST(DownloadServiceTest, CancelAllReachesRunnerJobsAndDropsQueuedOnes)
+{
+    // Arrange: one runner job running, a second still queued behind full slots
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::vector<DownloadDone> onDone;
+    expectCapturedDownloads(*mockClient, onDone, kSlots - 1);
+    EXPECT_CALL(*mockClient, cancelDownload(::testing::_)).Times(static_cast<int>(kSlots - 1));
+    DownloadService service(mockClient);
+    auto running = std::make_shared<FakeRunner>();
+    auto queued = std::make_shared<FakeRunner>();
+    service.enqueueRunner(1, "a", "a", "/tmp/a", 10, running);
+    enqueueMany(service, kSlots - 1);
+    service.enqueueRunner(1, "b", "b", "/tmp/b", 10, queued);
+    std::vector<DownloadJob> finished;
+    service.setOnJobFinished([&finished](DownloadJob job) {
+        finished.push_back(std::move(job));
+    });
+
+    // Act
+    service.cancelAll();
+
+    // Assert
+    EXPECT_EQ(running->cancels, 1);
+    EXPECT_EQ(queued->starts, 0);
+    EXPECT_EQ(queued->cancels, 0);
+    ASSERT_EQ(finished.size(), 1u);
+    EXPECT_EQ(finished.front().subPath, "b");
+    EXPECT_EQ(finished.front().state, DownloadState::Cancelled);
+}
+
+TEST(DownloadServiceTest, HasJobForHandleTellsTheNodeAndItsPartsApart)
+{
+    // Arrange: the archive's own download, and one entry of it being extracted
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::vector<DownloadDone> onDone;
+    expectCapturedDownloads(*mockClient, onDone, 1);
+    DownloadService service(mockClient);
+    service.enqueue(9, "archive.zip", "/tmp/archive.zip", 100);
+    service.enqueueRunner(
+        9, "docs/a.txt", "a.txt", "/tmp/a.txt", 10, std::make_shared<FakeRunner>());
+
+    // Assert
+    EXPECT_TRUE(service.hasJobForHandle(9));
+    EXPECT_TRUE(service.hasJobForHandle(9, "docs/a.txt"));
+    EXPECT_FALSE(service.hasJobForHandle(9, "docs/b.txt"));
+    EXPECT_FALSE(service.hasJobForHandle(8, "docs/a.txt"));
+}
+
+TEST(DownloadServiceTest, APlainDownloadIsNotBlockedByAnExtractionFromTheSameNode)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    DownloadService service(mockClient);
+    service.enqueueRunner(
+        9, "docs/a.txt", "a.txt", "/tmp/a.txt", 10, std::make_shared<FakeRunner>());
+
+    EXPECT_FALSE(service.hasJobForHandle(9));
+}
+
+namespace
+{
+
+// Runs onDestroyed from its destructor, so a test can see where the service let go of it.
+struct NotifyingRunner final : DownloadRunner
+{
+    std::function<void()> onDestroyed;
+    DownloadDone onDone;
+
+    ~NotifyingRunner() override
+    {
+        if (onDestroyed)
+            onDestroyed();
+    }
+
+    void start(ProgressFn, DownloadDone done) override
+    {
+        onDone = std::move(done);
+    }
+
+    void cancel() override {}
+};
+
+} // namespace
+
+TEST(DownloadServiceTest, ARunnerOnlyTheServiceHeldIsReleasedAfterCompletionOutsideTheLock)
+{
+    // Arrange: the service holds the only reference once enqueued
+    auto mockClient = std::make_shared<MockMegaClient>();
+    expectNoClientDownload(*mockClient);
+    DownloadService service(mockClient);
+    auto runner = std::make_shared<NotifyingRunner>();
+    NotifyingRunner* raw = runner.get();
+    bool destroyed = false;
+    std::size_t jobsSeenFromDestructor = 99;
+    runner->onDestroyed = [&] {
+        destroyed = true;
+        jobsSeenFromDestructor = service.jobs().size(); // takes the service's lock
+    };
+    bool finishedBeforeRelease = false;
+    service.setOnJobFinished([&](DownloadJob) {
+        finishedBeforeRelease = !destroyed;
+    });
+    service.enqueueRunner(1, "a", "a", "/tmp/a", 10, std::move(runner));
+
+    // Act: a well-behaved runner copies onDone before calling it
+    DownloadDone done = raw->onDone;
+    done(Result<DownloadOutcome>::ok(DownloadOutcome{"/tmp/a"}));
+
+    // Assert
+    EXPECT_TRUE(destroyed);
+    EXPECT_TRUE(finishedBeforeRelease);
+    EXPECT_EQ(jobsSeenFromDestructor, 0u);
+}
+
+TEST(DownloadServiceTest, EnqueueRunnerRefusesANullRunner)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    expectNoClientDownload(*mockClient);
+    DownloadService service(mockClient);
+
+    EXPECT_THROW(service.enqueueRunner(1, "a", "a", "/tmp/a", 10, nullptr), std::invalid_argument);
+    EXPECT_TRUE(service.jobs().empty());
+}

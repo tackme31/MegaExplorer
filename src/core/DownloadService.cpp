@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <stdexcept>
 
 namespace
 {
@@ -37,6 +38,38 @@ struct AdvancingGuard
         std::lock_guard<std::mutex> lock(mutex);
         flag = false;
     }
+};
+
+// The job id doubles as the client's transferId, so a cancel can name the transfer
+// before download() has returned.
+class ClientDownloadRunner final : public DownloadRunner
+{
+public:
+    ClientDownloadRunner(std::shared_ptr<IMegaClient> client,
+                         std::uint64_t handle,
+                         std::string destinationPath,
+                         std::uint64_t jobId)
+        : mClient(std::move(client)), mHandle(handle), mDestinationPath(std::move(destinationPath)),
+          mJobId(jobId)
+    {}
+
+    void start(std::function<void(std::uint64_t, std::uint64_t)> onProgress,
+               std::function<void(Result<DownloadOutcome>)> onDone) override
+    {
+        mClient->download(
+            mHandle, mDestinationPath, mJobId, std::move(onProgress), std::move(onDone));
+    }
+
+    void cancel() override
+    {
+        mClient->cancelDownload(mJobId);
+    }
+
+private:
+    std::shared_ptr<IMegaClient> mClient;
+    std::uint64_t mHandle;
+    std::string mDestinationPath;
+    std::uint64_t mJobId;
 };
 
 bool isAsciiLetter(char c)
@@ -131,28 +164,56 @@ std::uint64_t DownloadService::enqueue(std::uint64_t handle,
                                        const std::string& destinationPath,
                                        std::uint64_t expectedTotalBytes)
 {
+    DownloadJob job;
+    job.handle = handle;
+    job.name = name;
+    job.destinationPath = destinationPath;
+    job.totalBytes = expectedTotalBytes;
+    return enqueueEntry(std::move(job), nullptr);
+}
+
+std::uint64_t DownloadService::enqueueRunner(std::uint64_t handle,
+                                             const std::string& subPath,
+                                             const std::string& name,
+                                             const std::string& destinationPath,
+                                             std::uint64_t expectedTotalBytes,
+                                             std::shared_ptr<DownloadRunner> runner)
+{
+    // enqueueEntry() reads null as the plain download, which would fetch the whole node.
+    if (!runner)
+        throw std::invalid_argument("enqueueRunner needs a runner");
+    DownloadJob job;
+    job.handle = handle;
+    job.subPath = subPath;
+    job.name = name;
+    job.destinationPath = destinationPath;
+    job.totalBytes = expectedTotalBytes;
+    return enqueueEntry(std::move(job), std::move(runner));
+}
+
+std::uint64_t DownloadService::enqueueEntry(DownloadJob job, std::shared_ptr<DownloadRunner> runner)
+{
     std::uint64_t id;
     {
         std::lock_guard<std::mutex> lock(mMutex);
-        DownloadJob job;
         job.id = mNextId++;
-        job.handle = handle;
-        job.name = name;
-        job.destinationPath = destinationPath;
-        job.totalBytes = expectedTotalBytes;
         id = job.id;
-        mPending.push_back(std::move(job));
+        // Null is the plain download, built here because its runner needs the id.
+        if (!runner)
+            runner = std::make_shared<ClientDownloadRunner>(
+                mClient, job.handle, job.destinationPath, job.id);
+        mPending.push_back(Entry{std::move(job), std::move(runner)});
     }
     startNextIfIdle();
     return id;
 }
 
-DownloadJob* DownloadService::activeJob(std::uint64_t jobId)
+DownloadService::Entry* DownloadService::activeEntry(std::uint64_t jobId)
 {
-    for (DownloadJob& job : mActive)
+    for (Entry& entry : mActive)
     {
-        if (job.id == jobId)
-            return &job;
+        if (entry.job.id == jobId)
+            return &entry;
     }
     return nullptr;
 }
@@ -161,8 +222,8 @@ void DownloadService::dropActive(std::uint64_t jobId)
 {
     mActive.erase(std::remove_if(mActive.begin(),
                                  mActive.end(),
-                                 [jobId](const DownloadJob& job) {
-                                     return job.id == jobId;
+                                 [jobId](const Entry& entry) {
+                                     return entry.job.id == jobId;
                                  }),
                   mActive.end());
     mCancelRequested.erase(jobId);
@@ -173,7 +234,7 @@ std::optional<DownloadJob> DownloadService::currentJob() const
     std::lock_guard<std::mutex> lock(mMutex);
     if (mActive.empty())
         return std::nullopt;
-    return mActive.front();
+    return mActive.front().job;
 }
 
 std::vector<DownloadJob> DownloadService::jobs() const
@@ -181,38 +242,40 @@ std::vector<DownloadJob> DownloadService::jobs() const
     std::lock_guard<std::mutex> lock(mMutex);
     std::vector<DownloadJob> all;
     all.reserve(mPending.size() + mActive.size());
-    all.insert(all.end(), mActive.begin(), mActive.end());
-    all.insert(all.end(), mPending.begin(), mPending.end());
+    for (const Entry& entry : mActive)
+        all.push_back(entry.job);
+    for (const Entry& entry : mPending)
+        all.push_back(entry.job);
     return all;
 }
 
 void DownloadService::cancelAll()
 {
-    std::deque<DownloadJob> dropped;
-    std::vector<std::uint64_t> activeIds;
+    std::deque<Entry> dropped;
+    std::vector<std::shared_ptr<DownloadRunner>> activeRunners;
     std::function<void(DownloadJob)> onJobFinished;
     {
         std::lock_guard<std::mutex> lock(mMutex);
         dropped.swap(mPending);
-        for (const DownloadJob& job : mActive)
+        for (const Entry& entry : mActive)
         {
-            activeIds.push_back(job.id);
-            mCancelRequested.insert(job.id);
+            activeRunners.push_back(entry.runner);
+            mCancelRequested.insert(entry.job.id);
         }
         onJobFinished = mOnJobFinished;
     }
 
     // Order matters: the queue is already empty by the time the aborts can come back,
     // so no active job's onDone can promote anything behind it.
-    for (std::uint64_t id : activeIds)
-        mClient->cancelDownload(id);
+    for (const std::shared_ptr<DownloadRunner>& runner : activeRunners)
+        runner->cancel();
 
     if (!onJobFinished)
         return;
-    for (DownloadJob& job : dropped)
+    for (Entry& entry : dropped)
     {
-        job.state = DownloadState::Cancelled;
-        onJobFinished(job);
+        entry.job.state = DownloadState::Cancelled;
+        onJobFinished(entry.job);
     }
 }
 
@@ -220,22 +283,24 @@ void DownloadService::cancel(std::uint64_t jobId)
 {
     std::optional<DownloadJob> dropped;
     std::function<void(DownloadJob)> onJobFinished;
-    bool wasActive = false;
+    std::shared_ptr<DownloadRunner> activeRunner;
+    std::shared_ptr<DownloadRunner> released;
     {
         std::lock_guard<std::mutex> lock(mMutex);
         onJobFinished = mOnJobFinished;
-        if (activeJob(jobId))
+        if (Entry* entry = activeEntry(jobId))
         {
             mCancelRequested.insert(jobId);
-            wasActive = true;
+            activeRunner = entry->runner;
         }
         else
         {
             for (auto it = mPending.begin(); it != mPending.end(); ++it)
             {
-                if (it->id != jobId)
+                if (it->job.id != jobId)
                     continue;
-                dropped = std::move(*it);
+                dropped = std::move(it->job);
+                released = std::move(it->runner); // destroyed outside the lock
                 mPending.erase(it);
                 break;
             }
@@ -245,9 +310,9 @@ void DownloadService::cancel(std::uint64_t jobId)
     // Outside the lock, unlike the whole-direction cancel this replaced: the abort
     // names one transfer, so a job finishing in the meantime cannot let its successor
     // be promoted into it.
-    if (wasActive)
+    if (activeRunner)
     {
-        mClient->cancelDownload(jobId);
+        activeRunner->cancel();
         return;
     }
 
@@ -257,20 +322,14 @@ void DownloadService::cancel(std::uint64_t jobId)
     onJobFinished(*dropped);
 }
 
-bool DownloadService::hasJobForHandle(std::uint64_t handle) const
+bool DownloadService::hasJobForHandle(std::uint64_t handle, const std::string& subPath) const
 {
+    const auto matches = [&](const Entry& entry) {
+        return entry.job.handle == handle && entry.job.subPath == subPath;
+    };
     std::lock_guard<std::mutex> lock(mMutex);
-    for (const DownloadJob& job : mActive)
-    {
-        if (job.handle == handle)
-            return true;
-    }
-    for (const DownloadJob& job : mPending)
-    {
-        if (job.handle == handle)
-            return true;
-    }
-    return false;
+    return std::any_of(mActive.begin(), mActive.end(), matches) ||
+           std::any_of(mPending.begin(), mPending.end(), matches);
 }
 
 void DownloadService::setOnProgress(std::function<void(DownloadJob)> onProgress)
@@ -298,8 +357,7 @@ void DownloadService::startNextIfIdle()
     for (;;)
     {
         std::uint64_t id;
-        std::uint64_t handle;
-        std::string destinationPath;
+        std::shared_ptr<DownloadRunner> runner;
         {
             std::lock_guard<std::mutex> lock(mMutex);
             if (mActive.size() >= kMaxConcurrent || mPending.empty())
@@ -307,21 +365,17 @@ void DownloadService::startNextIfIdle()
                 advancing.clearHeld();
                 return;
             }
-            DownloadJob job = std::move(mPending.front());
+            Entry entry = std::move(mPending.front());
             mPending.pop_front();
-            job.state = DownloadState::Active;
-            id = job.id;
-            handle = job.handle;
-            destinationPath = job.destinationPath;
-            mActive.push_back(std::move(job));
+            entry.job.state = DownloadState::Active;
+            id = entry.job.id;
+            runner = entry.runner;
+            mActive.push_back(std::move(entry));
         }
 
         try
         {
-            mClient->download(
-                handle,
-                destinationPath,
-                id,
+            runner->start(
                 [this, id](std::uint64_t transferred, std::uint64_t total) {
                     std::function<void(DownloadJob)> onProgress;
                     DownloadJob snapshot;
@@ -330,9 +384,10 @@ void DownloadService::startNextIfIdle()
                         // Not ours: this job already finished (or was cancelled) and
                         // the SDK is still delivering. Writing here would land on
                         // whichever job was promoted in its place.
-                        DownloadJob* job = activeJob(id);
-                        if (!job)
+                        Entry* entry = activeEntry(id);
+                        if (!entry)
                             return;
+                        DownloadJob* job = &entry->job;
                         job->transferredBytes = transferred;
                         job->totalBytes = total;
                         snapshot = *job;
@@ -342,17 +397,21 @@ void DownloadService::startNextIfIdle()
                         onProgress(snapshot);
                 },
                 [this, id](Result<DownloadOutcome> result) {
+                    // Declared first so the runner, maybe the last reference, dies after
+                    // everything below and outside mMutex (its destructor may join a thread).
+                    std::shared_ptr<DownloadRunner> released;
                     std::function<void(DownloadJob)> onJobFinished;
                     DownloadJob snapshot;
                     {
                         std::lock_guard<std::mutex> lock(mMutex);
-                        DownloadJob* job = activeJob(id);
-                        if (!job)
+                        Entry* entry = activeEntry(id);
+                        if (!entry)
                             return; // same as onProgress above
+                        DownloadJob* job = &entry->job;
                         // kEIncomplete is the SDK's own marker for an aborted transfer
                         // (it sets STATE_CANCELLED on exactly that code), so it is the
                         // one failure that is not an error to report. A cancel this
-                        // service asked for reads the same way even when the SDK never
+                        // service asked for reads the same way even when the runner never
                         // saw it: the transfer can fail for its own reason before the
                         // abort reaches it, and reporting that turns the user's own stop
                         // into an error toast.
@@ -372,6 +431,7 @@ void DownloadService::startNextIfIdle()
                         }
                         snapshot = *job;
                         onJobFinished = mOnJobFinished;
+                        released = std::move(entry->runner);
                         dropActive(id);
                     }
                     if (onJobFinished)
@@ -388,9 +448,9 @@ void DownloadService::startNextIfIdle()
             DownloadJob snapshot;
             {
                 std::lock_guard<std::mutex> lock(mMutex);
-                DownloadJob* job = activeJob(id);
-                if (job)
+                if (Entry* entry = activeEntry(id))
                 {
+                    DownloadJob* job = &entry->job;
                     // Same cancel-wins rule as the completion above.
                     job->state = mCancelRequested.count(id) != 0 ? DownloadState::Cancelled
                                                                  : DownloadState::Failed;
@@ -408,13 +468,12 @@ void DownloadService::startNextIfIdle()
         bool cancelRaced = false;
         {
             std::lock_guard<std::mutex> lock(mMutex);
-            // A cancel arriving during the download() call above named a transfer the
-            // client had not created yet, so it did nothing. Re-assert it now that it
-            // exists, or the user's click silently does nothing and the transfer
-            // completes.
-            cancelRaced = activeJob(id) != nullptr && mCancelRequested.count(id) != 0;
+            // A cancel arriving during start() above may have found nothing to cancel
+            // yet. Re-assert it now that the transfer exists, or the user's click
+            // silently does nothing and the transfer completes.
+            cancelRaced = activeEntry(id) != nullptr && mCancelRequested.count(id) != 0;
         }
         if (cancelRaced)
-            mClient->cancelDownload(id);
+            runner->cancel();
     }
 }
