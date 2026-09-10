@@ -1124,12 +1124,27 @@ TestCase {
     function test_publicLink_showsTheStoredExpiry() {
         const f = makePublicLinkDialog(["a.txt"]);
         f.dialog.planLevel = 1;
-        f.mut.expiry = f.dialog.endOfDay(new Date(2031, 4, 17));
+        f.mut.expiry = f.dialog.startOfDay(new Date(2031, 4, 17));
         f.dialog.showForSelection();
         f.mut.linkResolved(1, "https://mega.nz/file/abc");
 
         compare(f.dialog.expiryEditable, true);
         compare(Qt.formatDate(new Date(f.dialog.expiry * 1000), "yyyy-MM-dd"), "2031-05-17");
+    }
+
+    // MEGA's web client stores local midnight of the date it shows, so the field
+    // has to produce exactly that for the same date -- otherwise merely closing
+    // this dialog on a link set from the web would re-issue it a day later.
+    function test_publicLink_matchesTheWebClientsMidnight() {
+        const f = makePublicLinkDialog(["a.txt"]);
+        f.dialog.planLevel = 1;
+        f.mut.expiry = new Date(2031, 4, 17).getTime() / 1000;
+        f.dialog.showForSelection();
+        f.mut.linkResolved(1, "https://mega.nz/file/abc");
+
+        compare(f.dialog.startOfDay(new Date(2031, 4, 17)), f.mut.expiry);
+        f.dialog.applyTypedDate();
+        compare(f.mut.lastSetExpiry, null);
     }
 
     // A refusal has to put the row back on the value MEGA still holds; the reply
@@ -1140,7 +1155,7 @@ TestCase {
         f.dialog.showForSelection();
         f.mut.linkResolved(1, "https://mega.nz/file/abc");
 
-        f.dialog.requestExpiry(f.dialog.endOfDay(new Date(2031, 4, 17)));
+        f.dialog.requestExpiry(f.dialog.startOfDay(new Date(2031, 4, 17)));
         compare(f.dialog.expiryBusy, true);
         compare(f.dialog.expiryEditable, false);
         f.mut.linkExpiryResolved(1, 0);

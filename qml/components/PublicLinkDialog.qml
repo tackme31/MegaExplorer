@@ -82,12 +82,11 @@ Dialog {
         expiryField.text = seconds > 0 ? Qt.formatDate(new Date(seconds * 1000), "yyyy-MM-dd") : "";
     }
 
-    // End of the chosen day in local time, which is what the date in the field
-    // means: a link set to expire "on the 5th" has to survive the whole 5th.
-    function endOfDay(day: date): real {
+    // Start of the chosen day in local time, which is what MEGA's own web client
+    // sends for that date -- 23:59:59 would put the two a day apart on one date.
+    function startOfDay(day: date): real {
         return Math.floor(
-            new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59).getTime()
-            / 1000);
+            new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime() / 1000);
     }
 
     // Deliberately not Date.fromLocaleDateString: that accepts sloppy input and
@@ -121,7 +120,7 @@ Dialog {
             root.expiryError = qsTr("Enter a date as YYYY-MM-DD.");
             return;
         }
-        const seconds = root.endOfDay(parsed);
+        const seconds = root.startOfDay(parsed);
         if (seconds * 1000 <= Date.now()) {
             root.expiryError = qsTr("Pick a date in the future.");
             return;
@@ -142,7 +141,7 @@ Dialog {
             return qsTr("Checking your plan…");
         if (!root.expiryAllowed)
             return qsTr("Expiry dates need a Pro plan.");
-        return qsTr("The link stops working at the end of the day you pick.");
+        return qsTr("The link stops working at the start of the day you pick.");
     }
 
     signal removeLinkRequested
@@ -227,7 +226,7 @@ Dialog {
                 // click (there is no save button), so a week out is the value
                 // offered -- the field is editable straight afterwards.
                 onToggled: root.requestExpiry(
-                               checked ? root.endOfDay(new Date(Date.now() + 7 * 86400 * 1000)) : 0)
+                               checked ? root.startOfDay(new Date(Date.now() + 7 * 86400 * 1000)) : 0)
             }
 
             Item {
