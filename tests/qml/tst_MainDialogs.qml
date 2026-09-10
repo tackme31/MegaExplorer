@@ -1105,7 +1105,7 @@ TestCase {
 
         compare(f.dialog.expiryAllowed, false);
         compare(f.dialog.expiryEditable, false);
-        compare(f.dialog.expiryCaption(), "Expiry dates need a Pro plan.");
+        compare(f.dialog.expiryHint(), "Expiry dates need a Pro plan.");
     }
 
     // -1 is "the account read has not landed", which must read differently from
@@ -1116,7 +1116,7 @@ TestCase {
         f.mut.linkResolved(1, "https://mega.nz/file/abc");
 
         compare(f.dialog.expiryEditable, false);
-        compare(f.dialog.expiryCaption(), "Checking your plan…");
+        compare(f.dialog.expiryHint(), "Checking your plan…");
     }
 
     // The stored expiry has to be on screen before anything is typed, which is
@@ -1130,6 +1130,9 @@ TestCase {
 
         compare(f.dialog.expiryEditable, true);
         compare(Qt.formatDate(new Date(f.dialog.expiry * 1000), "yyyy-MM-dd"), "2031-05-17");
+        // Nothing to explain once the row works, which is also what switches the
+        // tooltip's hover target off so it stops swallowing clicks.
+        compare(f.dialog.expiryHint(), "");
     }
 
     // MEGA's web client stores local midnight of the date it shows, so the field

@@ -134,14 +134,15 @@ Dialog {
         root.requestExpiry(seconds);
     }
 
-    function expiryCaption(): string {
-        if (root.expiryError !== "")
-            return root.expiryError;
+    // Why the row is unusable, for the tooltip rather than a caption line: it
+    // only ever has something to say while the control is off, so as a caption
+    // it would appear and vanish and shift everything under it.
+    function expiryHint(): string {
         if (root.planLevel < 0)
             return qsTr("Checking your plan…");
         if (!root.expiryAllowed)
             return qsTr("Expiry dates need a Pro plan.");
-        return qsTr("The link stops working at the start of the day you pick.");
+        return "";
     }
 
     signal removeLinkRequested
@@ -218,15 +219,35 @@ Dialog {
             Layout.fillWidth: true
             spacing: Theme.spacing.md
 
-            CheckBox {
-                id: expiryToggle
-                text: qsTr("Set an expiry date")
-                enabled: root.expiryEditable
-                // Turning it on has to name a day, and applying happens on the
-                // click (there is no save button), so a week out is the value
-                // offered -- the field is editable straight afterwards.
-                onToggled: root.requestExpiry(
-                               checked ? root.startOfDay(new Date(Date.now() + 7 * 86400 * 1000)) : 0)
+            // The switch is wrapped rather than carrying the MouseArea itself:
+            // `enabled` propagates down, so a hover target inside a disabled
+            // Switch is disabled too and the tooltip would never appear.
+            Item {
+                implicitWidth: expiryToggle.implicitWidth
+                implicitHeight: expiryToggle.implicitHeight
+
+                Switch {
+                    id: expiryToggle
+                    text: qsTr("Expiry date")
+                    enabled: root.expiryEditable
+                    // Turning it on has to name a day, and applying happens on
+                    // the click (there is no save button), so a week out is the
+                    // value offered -- the field is editable straight after.
+                    onToggled: root.requestExpiry(
+                                   checked ? root.startOfDay(new Date(Date.now() + 7 * 86400 * 1000)) : 0)
+                }
+
+                // Disabled items get no hover events, so the reason the row is
+                // off has to be heard by something outside it. Disabled while
+                // the switch works, which lets the clicks through to it.
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: !expiryToggle.enabled && root.expiryHint() !== ""
+                    hoverEnabled: true
+                    ToolTip.text: root.expiryHint()
+                    ToolTip.delay: 500
+                    ToolTip.visible: containsMouse
+                }
             }
 
             Item {
@@ -245,10 +266,11 @@ Dialog {
 
         Label {
             Layout.fillWidth: true
+            visible: text !== ""
             wrapMode: Text.Wrap
             font.pixelSize: Theme.font.caption
-            color: root.expiryError !== "" ? Theme.color.danger : Theme.color.textSecondary
-            text: root.expiryCaption()
+            color: Theme.color.danger
+            text: root.expiryError
         }
     }
 
