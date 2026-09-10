@@ -25,7 +25,8 @@ session lives in companion docs, linked from the relevant section below rather t
   Roadmap section that is now **history only**: the queue moved to `docs/ROADMAP.md`. A shipped
   phase's original plan sits at the top of its own log entry as a `> **Planned as.**` block, to
   keep plan and outcome from drifting. Entries here are for phases a **human**
-  cut — the loop never writes here. `README.md` is just a one-line title stub, not documentation.
+  cut — the loop never writes here. `README.md` is the user-facing page (install, features, build),
+  maintained by hand — not a source of developer facts.
 - `docs/DESIGN_IMPROVEMENT.md` — the UI-tidying pass: measured findings, the D*/S* decision tables,
   and the per-stage log for S0–S11. Visual work goes here, not in `docs/PROGRESS.md`;
   the four C++ changes it caused are cross-linked from both.
@@ -147,10 +148,15 @@ nothing compares the two trees, nothing copies between them, and it must not gro
   `scripts/gen_third_party_notices.py` by hand to regenerate `licenses/` and
   `THIRD-PARTY-NOTICES.txt` (the reasoning behind each dual-license choice is in the Phase 20b log).
 
-## Pre-release: refactoring existing code during planning is allowed
+## Pre-1.0: refactoring existing code during planning is allowed
 
-This project has not shipped yet, so there's no external API/data compatibility to preserve. When
-planning a new feature, if an existing design constraint makes the implementation notably more
+Releases are published (`v0.1.0` onwards, see "Branches" below), but the app is still before 1.0
+and exposes no API, so the code itself carries no compatibility burden. **Persisted user data
+does:** a released build has left a saved session, `QSettings` keys and the cache/log directories
+on its users' machines, so a change that renames, moves or reinterprets any of them must keep the
+old form readable or migrate it.
+
+When planning a new feature, if an existing design constraint makes the implementation notably more
 complex or risky, and reworking that existing code would avoid it, prefer proposing the rework
 instead of working around the constraint — as long as it doesn't change product-level behavior/scope
 in a significant way. If a plan includes such a rework, call it out explicitly and get the user's
