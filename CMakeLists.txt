@@ -263,6 +263,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/FolderPinMenu.qml
         qml/components/FolderTreePanel.qml
         qml/components/IconMenuItem.qml
+        qml/components/ArchiveViewer.qml
         qml/components/AudioViewer.qml
         qml/components/ImageViewer.qml
         qml/components/PdfViewer.qml
@@ -296,6 +297,10 @@ qt_add_qml_module(MegaExplorerQml
     SOURCES
         src/qml/AccountController.h
         src/qml/AccountController.cpp
+        src/qml/ArchiveBrowser.h
+        src/qml/ArchiveBrowser.cpp
+        src/qml/ArchiveTree.h
+        src/qml/ArchiveTree.cpp
         src/qml/AuthController.h
         src/qml/AuthController.cpp
         src/qml/LicenseModel.h

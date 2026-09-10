@@ -58,6 +58,7 @@ add_executable(MegaExplorerTests
     MockSessionStore.h
     MockPinnedFolderStore.h
     TestApp.h
+    TestZip.h
     WorkerDelivery.h
 )
 

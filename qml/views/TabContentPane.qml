@@ -86,16 +86,15 @@ ColumnLayout {
     // that name is one they can show -- this pane knows nothing about viewers. A file
     // it cannot show stays inert, which is what double-click has done since the
     // download it used to trigger misfired once too often.
-    signal fileActivated(var handle, string name)
+    signal fileActivated(var handle, string name, var sizeBytes)
 
     // Single entry point both child views' activateRequested funnels into.
-    // sizeBytes goes unused: nothing downstream needs it, downloading is
-    // context-menu only.
+    // sizeBytes is for the archive viewer, which reads a zip from its end.
     function activate(isFolder, handle, name, sizeBytes) {
         if (isFolder)
             pane.navController.openFolder(handle);
         else
-            pane.fileActivated(handle, name);
+            pane.fileActivated(handle, name, sizeBytes);
     }
 
     // Plain Item, not the StackLayout itself: a StackLayout treats every Item

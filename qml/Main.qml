@@ -367,6 +367,18 @@ ApplicationWindow {
     }
 
     Component {
+        id: archiveViewerComponent
+
+        ArchiveViewer {
+            id: archiveViewerWindow
+            controller: viewerController
+            transientParent: window
+            onVisibleChanged: if (!archiveViewerWindow.visible)
+                                  archiveViewerWindow.destroy()
+        }
+    }
+
+    Component {
         id: pdfViewerComponent
 
         PdfViewer {
@@ -388,9 +400,9 @@ ApplicationWindow {
                                                   entry.name) === "image");
     }
 
-    function openViewer(handle, name, listModel): void {
+    function openViewer(handle, name, sizeBytes, listModel): void {
         const kind = viewerController.viewerKind(name);
-        const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : kind === "pdf" ? pdfViewerComponent : kind === "audio" ? audioViewerComponent : null;
+        const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : kind === "pdf" ? pdfViewerComponent : kind === "audio" ? audioViewerComponent : kind === "archive" ? archiveViewerComponent : null;
         if (!component)
             return;
         const viewer = component.createObject(window);
@@ -399,6 +411,8 @@ ApplicationWindow {
         // Only the image viewer steps through neighbours; the rest open one file.
         if (kind === "image")
             viewer.open(handle, name, window.imageSequence(listModel));
+        else if (kind === "archive")
+            viewer.open(handle, name, sizeBytes);
         else
             viewer.open(handle, name);
         // A viewer that never became visible would never reach the onVisibleChanged
@@ -515,8 +529,8 @@ ApplicationWindow {
                         initialColumnWidthSize: window.columnWidthSize
                         initialPreviewVisible: window.previewVisible
 
-                        onFileActivated: (handle, name) => window.openViewer(
-                                             handle, name,
+                        onFileActivated: (handle, name, sizeBytes) => window.openViewer(
+                                             handle, name, sizeBytes,
                                              pane.navController.fileListModel)
 
                         onViewModeWriteBack: vm => window.viewMode = vm
