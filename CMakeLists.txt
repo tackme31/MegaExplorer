@@ -270,6 +270,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/InlineRenameField.qml
         qml/components/LicenseDialog.qml
         qml/components/ListingLoadingNotice.qml
+        qml/components/MeasuredMenu.qml
         qml/components/MissingPinDialog.qml
         qml/components/NameConflictDialog.qml
         qml/components/NewFolderDialog.qml

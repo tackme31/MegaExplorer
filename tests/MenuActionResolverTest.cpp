@@ -267,8 +267,8 @@ TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
     EXPECT_EQ(result[1], MenuAction::OpenLocalFile);
     EXPECT_EQ(result[2], MenuAction::OpenLocalLocation);
     EXPECT_EQ(result[3], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[4], MenuAction::CopyLink);
-    EXPECT_EQ(result[5], MenuAction::LinkSettings);
+    EXPECT_EQ(result[4], MenuAction::LinkSettings);
+    EXPECT_EQ(result[5], MenuAction::CopyLink);
     EXPECT_EQ(result[6], MenuAction::RemoveLink);
     EXPECT_EQ(result[7], MenuAction::Cut);
     EXPECT_EQ(result[8], MenuAction::Copy);
@@ -385,8 +385,8 @@ TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
     EXPECT_EQ(result[1], MenuAction::OpenInNewTab);
     EXPECT_EQ(result[2], MenuAction::TogglePin);
     EXPECT_EQ(result[3], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[4], MenuAction::CopyLink);
-    EXPECT_EQ(result[5], MenuAction::LinkSettings);
+    EXPECT_EQ(result[4], MenuAction::LinkSettings);
+    EXPECT_EQ(result[5], MenuAction::CopyLink);
     EXPECT_EQ(result[6], MenuAction::RemoveLink);
     EXPECT_EQ(result[7], MenuAction::Cut);
     EXPECT_EQ(result[8], MenuAction::Copy);
@@ -667,8 +667,8 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     EXPECT_EQ(result[1], MenuAction::OpenLocalFile);
     EXPECT_EQ(result[2], MenuAction::OpenLocalLocation);
     EXPECT_EQ(result[3], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[4], MenuAction::CopyLink);
-    EXPECT_EQ(result[5], MenuAction::LinkSettings);
+    EXPECT_EQ(result[4], MenuAction::LinkSettings);
+    EXPECT_EQ(result[5], MenuAction::CopyLink);
     EXPECT_EQ(result[6], MenuAction::RemoveLink);
     EXPECT_EQ(result[7], MenuAction::Copy);
     EXPECT_EQ(result[8], MenuAction::Rename);

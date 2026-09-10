@@ -407,6 +407,46 @@ TestCase {
         compare(ActionCatalog.isAvailable("nosuch", fullCtx()), true);
     }
 
+    // ---- rows / groups -----------------------------------------------------
+
+    // The group sits where its first member was and keeps the resolver's order
+    // inside it; the rows around it are untouched.
+    function test_rows_foldsTheLinkActionsIntoOneShareRow() {
+        compare(ActionCatalog.rows(["download", "linkSettings", "copyLink", "removeLink", "cut"]), [
+                    {
+                        "id": "download"
+                    },
+                    {
+                        "group": "share",
+                        "ids": ["linkSettings", "copyLink", "removeLink"]
+                    },
+                    {
+                        "id": "cut"
+                    }
+                ]);
+    }
+
+    // ActionMenu.qml's "None" row depends on this: the [""] it passes for an
+    // empty list has to come back as a plain row, not vanish.
+    function test_rows_unknownIdStaysARowOfItsOwn() {
+        compare(ActionCatalog.rows(["", "nosuch"]), [
+                    {
+                        "id": ""
+                    },
+                    {
+                        "id": "nosuch"
+                    }
+                ]);
+    }
+
+    function test_group_share() {
+        compare(ActionCatalog.groupLabel("share"), "Share");
+        const icon = ActionCatalog.groupIcon("share");
+        compare(icon, Theme.glyph.menu.share);
+        // Same vacuous-undefined guard as test_icon.
+        verify(icon !== undefined && icon !== "");
+    }
+
     // ---- the unknown-ID contract ------------------------------------------
 
     // Deliberately asymmetric, one return value per call site's needs: a menu

@@ -279,6 +279,9 @@ QtObject {
             readonly property string copyLink: glyphSet.link
             readonly property string linkSettings: copyLink
             readonly property string removeLink: copyLink
+            // The submenu row holding the three above (ActionCatalog's `groups`).
+            // Drawn at 16px and looked at; not yet checked against either font's cmap.
+            readonly property string share: "\uE72D"         // Share
             readonly property string cut: "\uE8C6"           // Cut
             readonly property string copy: "\uE8C8"          // Copy
             readonly property string paste: "\uE77F"         // Paste

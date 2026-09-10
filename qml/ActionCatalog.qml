@@ -136,6 +136,7 @@ QtObject {
                                             // item is offered whether or not one
                                             // already exists.
                                             "label": ctx => qsTr("Copy link"),
+                                            "group": "share",
                                             "trigger": ctx => ctx.mutations.copyLinkToClipboard(
                                                                   ctx.handle)
                                         },
@@ -148,6 +149,7 @@ QtObject {
                                         "linkSettings": {
                                             "icon": ctx => Theme.glyph.menu.linkSettings,
                                             "label": ctx => qsTr("Link settings"),
+                                            "group": "share",
                                             "trigger": ctx => ctx.requestLinkSettings()
                                         },
                                         // ctx: exported, requestRemoveLink(). Routed
@@ -159,6 +161,7 @@ QtObject {
                                         "removeLink": {
                                             "icon": ctx => Theme.glyph.menu.removeLink,
                                             "label": ctx => qsTr("Remove link"),
+                                            "group": "share",
                                             // Greyed rather than hidden, so the row
                                             // stays where the user learnt it was.
                                             // disableExport succeeds on an unshared
@@ -292,6 +295,51 @@ QtObject {
                                                           ctx.entries[0].modificationTime)
                                         }
                                     })
+
+    // Submenus, keyed by the `group` an entry names. Which members a group
+    // holds, and in what order, is still the resolver's call: a group is only
+    // how ActionMenu.qml presents the IDs it was handed.
+    readonly property var groups: ({
+                                       "share": {
+                                           "icon": Theme.glyph.menu.share,
+                                           "label": qsTr("Share")
+                                       }
+                                   })
+
+    // Folds an ordered ID list into the rows a menu shows: {id} for an action
+    // of its own, {group, ids} for a submenu. A group takes the position of its
+    // first member and keeps its members in the order they arrived.
+    function rows(actionIds) {
+        const result = [];
+        const groupRows = {};
+        for (const id of actionIds) {
+            const entry = root.entries[id];
+            const group = entry === undefined ? undefined : entry.group;
+            if (group === undefined) {
+                result.push({
+                                "id": id
+                            });
+                continue;
+            }
+            if (groupRows[group] === undefined) {
+                groupRows[group] = {
+                    "group": group,
+                    "ids": []
+                };
+                result.push(groupRows[group]);
+            }
+            groupRows[group].ids.push(id);
+        }
+        return result;
+    }
+
+    function groupLabel(group) {
+        return root.groups[group].label;
+    }
+
+    function groupIcon(group) {
+        return root.groups[group].icon;
+    }
 
     // undefined (not "") for an unrecognized ID, so ActionMenu.qml can tell
     // "no such action" apart from "an action deliberately labelled empty" and

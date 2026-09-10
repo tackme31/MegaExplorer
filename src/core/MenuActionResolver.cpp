@@ -113,16 +113,18 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::SingleOnly},
+        // The three link actions end up in one "Share" submenu (ActionCatalog's
+        // `groups`), which keeps this order.
+        {MenuAction::LinkSettings,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
+         ActionTarget::Any,
+         ActionArity::SingleOnly},
         // SingleOnly for a reason the other two SingleOnly actions don't have: the
         // clipboard holds one string, so a multi-selection could only leave the last
         // link there. Rubbish is left out -- a binned node's link is not something
         // to hand anyone.
         {MenuAction::CopyLink,
-         {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
-         ActionTarget::Any,
-         ActionArity::SingleOnly},
-        {MenuAction::LinkSettings,
          {MenuSite::FileSelection},
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
