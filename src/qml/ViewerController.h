@@ -7,8 +7,8 @@
 #include <QString>
 
 #include <memory>
-#include <vector>
 #include <QtQml/qqmlregistration.h>
+#include <vector>
 
 // Backs the in-app viewer: says which viewer a name belongs to, and turns a node into
 // a URL Qt Quick's Image or Qt Multimedia's MediaPlayer can load, or into the listing
@@ -52,6 +52,8 @@ private:
                               quint64 tailOffset,
                               Result<std::vector<char>> result);
     void onArchiveDirectoryFetched(const QPointer<ArchiveBrowser>& browser,
+                                   quint64 handle,
+                                   quint64 localHeaderShift,
                                    Result<std::vector<char>> result);
 
     std::shared_ptr<IMegaClient> mClient;

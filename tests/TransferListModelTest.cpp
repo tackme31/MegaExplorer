@@ -90,7 +90,8 @@ protected:
         uploadService = std::make_shared<UploadService>(client);
         scan = std::make_shared<UploadScanService>(client, std::make_shared<QtLocalFileSystem>());
         notifications = std::make_unique<NotificationController>();
-        downloads = std::make_unique<DownloadController>(downloadService, notifications.get());
+        downloads = std::make_unique<DownloadController>(
+            downloadService, client, std::make_shared<QtLocalFileSystem>(), notifications.get());
         uploads = std::make_unique<UploadController>(uploadService, scan, notifications.get());
         model = std::make_unique<TransferListModel>(downloads.get(), uploads.get());
 

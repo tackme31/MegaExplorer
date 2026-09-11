@@ -130,8 +130,8 @@ Tips:
 
 Windows-Explorer-like desktop client for MEGA cloud storage — thumbnail grid, search,
 double-click-to-open folders, double-click-to-play a video or audio file, view an image or
-PDF, or walk the folders inside a zip without downloading it (gaps in official MEGAsync). Not a
-sync client: only a one-shot background refresh when a folder is opened, no continuous watching.
+PDF, or walk the folders inside a zip and pull one file out of it without downloading the whole
+archive (gaps in official MEGAsync). Not a sync client: only a one-shot background refresh when a folder is opened, no continuous watching.
 
 Settings can point one **local folder** at the MEGA root, which the right-click "Open local
 location" uses to reveal an item in Explorer. It is a naming convention and nothing else —

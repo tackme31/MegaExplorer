@@ -50,4 +50,10 @@ public:
     // refused to be read -- which a caller must not confuse with an empty
     // directory: the upload skip plan drops what it cannot see.
     virtual std::optional<std::vector<LocalEntry>> listDirectory(const std::string& path) const = 0;
+
+    // Moves the file at from to "to", or, when that name is taken, to the first free
+    // "stem (N).ext" beside it -- the naming IMegaClient::download's collision rename
+    // uses. Never replaces anything. The path used, or nullopt with from removed.
+    virtual std::optional<std::string> moveToFreeName(const std::string& from,
+                                                      const std::string& to) = 0;
 };

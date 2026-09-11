@@ -110,18 +110,22 @@ void ViewerController::onArchiveTailFetched(const QPointer<ArchiveBrowser>& brow
     }
 
     const QPointer<ArchiveBrowser> target = browser;
-    mClient->readFileRange(handle,
-                           location->offset,
-                           location->size,
-                           [this, target](Result<std::vector<char>> directory) {
-                               invokeOnGuiThread(
-                                   this, [this, target, directory = std::move(directory)]() mutable {
-                                       onArchiveDirectoryFetched(target, std::move(directory));
-                                   });
-                           });
+    const quint64 shift = location->localHeaderShift;
+    mClient->readFileRange(
+        handle,
+        location->offset,
+        location->size,
+        [this, target, handle, shift](Result<std::vector<char>> directory) {
+            invokeOnGuiThread(
+                this, [this, target, handle, shift, directory = std::move(directory)]() mutable {
+                    onArchiveDirectoryFetched(target, handle, shift, std::move(directory));
+                });
+        });
 }
 
 void ViewerController::onArchiveDirectoryFetched(const QPointer<ArchiveBrowser>& browser,
+                                                 quint64 handle,
+                                                 quint64 localHeaderShift,
                                                  Result<std::vector<char>> result)
 {
     if (!browser)
@@ -142,5 +146,5 @@ void ViewerController::onArchiveDirectoryFetched(const QPointer<ArchiveBrowser>&
         browser->fail(ArchiveBrowser::Unreadable);
         return;
     }
-    browser->setTree(ArchiveTree(entries));
+    browser->setTree(ArchiveTree(entries), handle, localHeaderShift);
 }

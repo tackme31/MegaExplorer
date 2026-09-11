@@ -20,6 +20,9 @@ Window {
     id: root
 
     required property var controller
+    // DownloadController, which extracts a file row into Downloads. Null leaves the
+    // viewer browse-only.
+    property var downloads: null
 
     property var currentHandle: undefined
     property string currentName: ""
@@ -38,6 +41,14 @@ Window {
     readonly property bool failed: root.browser !== null && root.browser.state
                                    === ArchiveBrowser.Failed
     readonly property bool canGoUp: root.ready && root.browser.path.length > 0
+    readonly property var currentEntry: {
+        const entries = root.ready ? root.browser.entries : [];
+        const index = entryList.currentIndex;
+        return index >= 0 && index < entries.length ? entries[index] : null;
+    }
+    readonly property bool canExtract: root.downloads !== null && root.currentEntry !== null &&
+                                       !root.currentEntry.isDirectory
+                                       && root.currentEntry.extractable === true
     // The archive itself stands for the root, so the trail is never empty.
     readonly property var crumbs: root.ready ? [root.currentName].concat(root.browser.path) :
                                                [root.currentName]
@@ -71,11 +82,37 @@ Window {
         root.browser = null;
     }
 
+    // A folder opens; a file is extracted, as a double-click on a file in the main
+    // view downloads it.
     function openRow(index) {
         const entries = root.ready ? root.browser.entries : [];
-        if (index < 0 || index >= entries.length || !entries[index].isDirectory)
+        if (index < 0 || index >= entries.length)
             return;
-        root.browser.openFolder(entries[index].name);
+        if (entries[index].isDirectory)
+            root.browser.openFolder(entries[index].name);
+        else
+            root.extractRow(index);
+    }
+
+    function extractRow(index) {
+        const entries = root.ready ? root.browser.entries : [];
+        if (!root.downloads || index < 0 || index >= entries.length)
+            return;
+        const entry = entries[index];
+        if (entry.isDirectory || entry.extractable !== true)
+            return;
+        root.downloads.extractArchiveEntry(root.browser, entry.name);
+    }
+
+    function blockedText(reason) {
+        switch (reason) {
+        case "encrypted":
+            return qsTr("Encrypted — can't be extracted");
+        case "unsupportedMethod":
+            return qsTr("Compression method not supported — can't be extracted");
+        default:
+            return "";
+        }
     }
 
     function goUp() {
@@ -202,6 +239,41 @@ Window {
                         }
                     }
                 }
+
+                // The hover and the tooltip sit on this always-enabled wrapper: a disabled
+                // button receives no hover, and a blocked row is when the tooltip matters.
+                Item {
+                    implicitWidth: extractButton.implicitWidth
+                    implicitHeight: extractButton.implicitHeight
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: root.downloads !== null
+
+                    ToolButton {
+                        id: extractButton
+
+                        objectName: "extractButton"
+                        anchors.fill: parent
+                        focusPolicy: Qt.NoFocus
+                        implicitWidth: 32
+                        implicitHeight: 32
+                        enabled: root.canExtract
+                        text: Theme.glyph.transferDown
+                        font.family: Theme.font.iconFamily
+                        onClicked: root.extractRow(entryList.currentIndex)
+                    }
+
+                    HoverHandler {
+                        id: extractHover
+                    }
+                    ToolTip.visible: extractHover.hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: {
+                        const entry = root.currentEntry;
+                        if (entry !== null && !entry.isDirectory && entry.extractable !== true)
+                            return root.blockedText(entry.blockedReason);
+                        return qsTr("Extract to Downloads");
+                    }
+                }
             }
 
             Rectangle {
@@ -271,6 +343,17 @@ Window {
                             elide: Text.ElideMiddle
                             font.pixelSize: Theme.font.body
                             text: entryRow.modelData.name
+                        }
+
+                        Label {
+                            objectName: "blockedLabel"
+                            Layout.alignment: Qt.AlignVCenter
+                            visible: !entryRow.modelData.isDirectory
+                                     && entryRow.modelData.extractable === false
+                            color: Theme.color.textSecondary
+                            font.pixelSize: Theme.font.caption
+                            text: entryRow.modelData.blockedReason === "encrypted"
+                                  ? qsTr("Encrypted") : qsTr("Unsupported compression")
                         }
 
                         Label {

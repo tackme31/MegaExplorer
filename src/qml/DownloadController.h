@@ -1,4 +1,5 @@
 #pragma once
+#include "ArchiveBrowser.h"
 #include "core/DownloadService.h"
 
 #include <QObject>
@@ -7,6 +8,7 @@
 #include <memory>
 #include <optional>
 
+class ILocalFileSystem;
 class NotificationController;
 
 // QML-facing GUI glue wrapping DownloadService. App-global and deliberately
@@ -19,9 +21,12 @@ class DownloadController : public QObject
     Q_PROPERTY(qreal activeProgress READ activeProgress NOTIFY downloadActiveChanged)
 
 public:
-    explicit DownloadController(std::shared_ptr<DownloadService> service,
-                                NotificationController* notifications,
-                                QObject* parent = nullptr);
+    // client and fileSystem are for archive-entry extraction only.
+    DownloadController(std::shared_ptr<DownloadService> service,
+                       std::shared_ptr<IMegaClient> client,
+                       std::shared_ptr<ILocalFileSystem> fileSystem,
+                       NotificationController* notifications,
+                       QObject* parent = nullptr);
     ~DownloadController() override;
 
     bool downloadActive() const;
@@ -33,6 +38,14 @@ public:
     // src/core. sizeBytes seeds totalBytes so the progress UI has a denominator
     // before the first SDK update. No-ops if the handle is already queued or active.
     Q_INVOKABLE void downloadFile(quint64 handle, QString name, quint64 sizeBytes);
+
+    // Extracts the file row called name, in the folder browser shows, into the same
+    // Downloads folder as a download. Only the leaf name is used: the archive's own
+    // folders are never recreated on disk, which is what keeps "../" entries inside it
+    // (STUDY_ARCHIVE_EXTRACTION.md section 5.6) -- extracting a whole tree has to solve
+    // that afresh. No-ops for a folder, an entry that cannot be extracted, or one
+    // already queued.
+    Q_INVOKABLE void extractArchiveEntry(ArchiveBrowser* browser, const QString& name);
 
     // Stops the whole download queue, active transfer included. The toast is raised
     // from here, once, with the queue length as it stands now -- the alternative
@@ -63,6 +76,11 @@ signals:
     // destination gets a "(1)" suffix rather than blocking the download.
     void downloadFinished(bool success, QString fileName, QString localPath);
 
+    // downloadFinished's counterpart for an archive entry, which reports here instead.
+    // failure, on a failure only: "damaged" (the archive's bytes for it are bad, CRC
+    // mismatch included), "write" (the local file could not be written), or empty.
+    void extractionFinished(bool success, QString fileName, QString localPath, QString failure);
+
 private:
     void refreshActiveJob();
 
@@ -73,6 +91,8 @@ private:
     QString computeDestinationPath(const QString& fileName) const;
 
     std::shared_ptr<DownloadService> mService;
+    std::shared_ptr<IMegaClient> mClient;
+    std::shared_ptr<ILocalFileSystem> mFileSystem;
     NotificationController* mNotifications;
     std::optional<DownloadJob> mActiveJob;
 };

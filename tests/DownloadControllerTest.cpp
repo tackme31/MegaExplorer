@@ -1,7 +1,9 @@
 #include "qml/DownloadController.h"
 
 #include "core/DownloadService.h"
+#include "core/MegaErrorCodes.h"
 #include "MockMegaClient.h"
+#include "platform/QtLocalFileSystem.h"
 #include "qml/NotificationController.h"
 #include "TestApp.h"
 
@@ -92,7 +94,8 @@ protected:
 
         service = std::make_shared<DownloadService>(client);
         notifications = std::make_unique<NotificationController>();
-        controller = std::make_unique<DownloadController>(service, notifications.get());
+        controller = std::make_unique<DownloadController>(
+            service, client, std::make_shared<QtLocalFileSystem>(), notifications.get());
 
         QObject::connect(controller.get(),
                          &DownloadController::downloadFinished,
@@ -343,6 +346,142 @@ TEST_F(DownloadControllerTest, DestinationPathIsALeafInsideTheDownloadsDirectory
                   QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)));
     // The string crosses into the SDK's own LocalPath, which splits on '\\'.
     EXPECT_FALSE(path.contains('/'));
+}
+
+// --- extracting an archive entry --------------------------------------------
+
+ZipEntry zipFile(const std::string& rawName)
+{
+    ZipEntry entry;
+    entry.rawName = rawName;
+    entry.compressionMethod = 8;
+    entry.compressedSize = 10;
+    entry.uncompressedSize = 20;
+    return entry;
+}
+
+std::unique_ptr<ArchiveBrowser> archiveOf(const std::vector<ZipEntry>& entries)
+{
+    auto browser = std::make_unique<ArchiveBrowser>();
+    browser->setTree(ArchiveTree(entries), 7, 0);
+    return browser;
+}
+
+const DownloadJob* jobFor(const std::vector<DownloadJob>& jobs, const std::string& subPath)
+{
+    for (const DownloadJob& job : jobs)
+    {
+        if (job.subPath == subPath)
+            return &job;
+    }
+    return nullptr;
+}
+
+// The entry's own identity keeps it apart from a download of the archive itself.
+TEST_F(DownloadControllerTest, AnEntryIsQueuedBesideADownloadOfItsArchive)
+{
+    EXPECT_CALL(*client, readFileRange(7, _, _, _)); // the entry's local header; left pending
+    const auto browser = archiveOf({zipFile("docs/guide.txt")});
+    browser->openFolder(QStringLiteral("docs"));
+
+    controller->downloadFile(7, "bundle.zip", 100);
+    controller->extractArchiveEntry(browser.get(), QStringLiteral("guide.txt"));
+
+    const std::vector<DownloadJob> jobs = service->jobs();
+    ASSERT_EQ(jobs.size(), 2u);
+    const DownloadJob* job = jobFor(jobs, "docs/guide.txt");
+    ASSERT_NE(job, nullptr);
+    EXPECT_EQ(job->handle, 7u);
+    EXPECT_EQ(job->name, "guide.txt");
+    EXPECT_EQ(job->totalBytes, 10u); // the compressed bytes are what moves
+    const QString path = QString::fromStdString(job->destinationPath);
+    EXPECT_EQ(QFileInfo(path).fileName(), QStringLiteral("guide.txt"));
+    EXPECT_EQ(QDir::toNativeSeparators(QFileInfo(path).absolutePath()),
+              QDir::toNativeSeparators(
+                  QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)));
+}
+
+TEST_F(DownloadControllerTest, SecondRequestForAQueuedEntryIsIgnored)
+{
+    EXPECT_CALL(*client, readFileRange(7, _, _, _)).Times(1);
+    const auto browser = archiveOf({zipFile("a.txt")});
+
+    controller->extractArchiveEntry(browser.get(), QStringLiteral("a.txt"));
+    controller->extractArchiveEntry(browser.get(), QStringLiteral("a.txt"));
+
+    EXPECT_EQ(service->jobs().size(), 1u);
+}
+
+// Only the leaf reaches the disk: the archive's folders, and whatever "..\" its names
+// carry, are never turned into a path (STUDY_ARCHIVE_EXTRACTION.md section 5.6).
+TEST_F(DownloadControllerTest, AnEntryNameCannotLeaveTheDownloadsFolder)
+{
+    EXPECT_CALL(*client, readFileRange(7, _, _, _));
+    const auto browser = archiveOf({zipFile("..\\..\\evil.exe")});
+
+    controller->extractArchiveEntry(browser.get(), QStringLiteral("..\\..\\evil.exe"));
+
+    const std::vector<DownloadJob> jobs = service->jobs();
+    ASSERT_EQ(jobs.size(), 1u);
+    const QString path = QString::fromStdString(jobs.front().destinationPath);
+    EXPECT_EQ(QFileInfo(path).fileName(), QStringLiteral("evil.exe"));
+    EXPECT_EQ(QDir::toNativeSeparators(QFileInfo(path).absolutePath()),
+              QDir::toNativeSeparators(
+                  QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)));
+}
+
+TEST_F(DownloadControllerTest, FoldersAndEntriesThatCannotBeExtractedAreNotQueued)
+{
+    EXPECT_CALL(*client, readFileRange(_, _, _, _)).Times(0);
+    ZipEntry locked = zipFile("locked.txt");
+    locked.encrypted = true;
+    ZipEntry lzma = zipFile("lzma.bin");
+    lzma.compressionMethod = 14;
+    const auto browser = archiveOf({locked, lzma, zipFile("docs/guide.txt")});
+
+    controller->extractArchiveEntry(browser.get(), QStringLiteral("locked.txt"));
+    controller->extractArchiveEntry(browser.get(), QStringLiteral("lzma.bin"));
+    controller->extractArchiveEntry(browser.get(), QStringLiteral("docs"));
+    controller->extractArchiveEntry(browser.get(), QStringLiteral("missing.txt"));
+    controller->extractArchiveEntry(nullptr, QStringLiteral("locked.txt"));
+
+    EXPECT_TRUE(service->jobs().empty());
+}
+
+TEST_F(DownloadControllerTest, AFailedExtractionSaysWhyOnItsOwnSignal)
+{
+    // A local header past the end of the node is the archive's fault, not the link's.
+    EXPECT_CALL(*client, readFileRange(7, _, _, _))
+        .WillOnce([](std::uint64_t,
+                     std::uint64_t,
+                     std::uint64_t,
+                     std::function<void(Result<std::vector<char>>)> reply) {
+            reply(Result<std::vector<char>>::fail("out of range", MegaErrorCode::kEArgs));
+        });
+    int extractionCalls = 0;
+    bool extractionSuccess = true;
+    QString extractionName;
+    QString extractionFailure;
+    QObject::connect(controller.get(),
+                     &DownloadController::extractionFinished,
+                     controller.get(),
+                     [&](bool success, QString fileName, QString, QString failure) {
+                         ++extractionCalls;
+                         extractionSuccess = success;
+                         extractionName = fileName;
+                         extractionFailure = failure;
+                     });
+    const auto browser = archiveOf({zipFile("a.txt")});
+
+    controller->extractArchiveEntry(browser.get(), QStringLiteral("a.txt"));
+    flush();
+
+    ASSERT_EQ(extractionCalls, 1);
+    EXPECT_FALSE(extractionSuccess);
+    EXPECT_EQ(extractionName, QStringLiteral("a.txt"));
+    EXPECT_EQ(extractionFailure, QStringLiteral("damaged"));
+    EXPECT_EQ(finishedCalls, 0); // not reported as a download too
+    EXPECT_TRUE(service->jobs().empty());
 }
 
 // --- openFile --------------------------------------------------------------

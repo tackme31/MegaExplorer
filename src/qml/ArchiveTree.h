@@ -23,9 +23,13 @@ public:
     QVariantList flattened() const;
 
     // The rows directly inside the folder that path names, root when empty, in the
-    // same order. Each row: name, isDirectory, formattedSize. Nothing when path does
-    // not name a folder.
+    // same order. Each row: name, isDirectory, formattedSize, and for a file
+    // extractable plus blockedReason ("encrypted", "unsupportedMethod" or empty).
+    // Nothing when path does not name a folder.
     std::optional<QVariantList> folderRows(const QStringList& path) const;
+
+    // The entry behind the file row called name inside the folder path names.
+    std::optional<ZipEntry> fileEntry(const QStringList& path, const QString& name) const;
 
 private:
     struct Node
@@ -34,10 +38,13 @@ private:
         bool isDirectory = false;
         bool hasFile = false;
         quint64 size = 0;
+        std::size_t entryIndex = 0; // into mEntries; meaningful when hasFile
     };
 
-    void insertPath(const QString& path, bool isDirectory, quint64 size);
+    void insertPath(const QString& path, bool isDirectory, quint64 size, std::size_t entryIndex);
+    const Node* folderAt(const QStringList& path) const;
     static void flatten(const Node& node, int depth, QVariantList& rows);
 
     Node mRoot;
+    std::vector<ZipEntry> mEntries;
 };

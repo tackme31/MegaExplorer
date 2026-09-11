@@ -4,12 +4,21 @@
 
 ArchiveBrowser::ArchiveBrowser(QObject* parent) : QObject(parent) {}
 
-void ArchiveBrowser::setTree(ArchiveTree tree)
+void ArchiveBrowser::setTree(ArchiveTree tree, quint64 archiveHandle, quint64 localHeaderShift)
 {
     mTree = std::move(tree);
+    mArchiveHandle = archiveHandle;
+    mLocalHeaderShift = localHeaderShift;
     mState = Ready;
     mReason = NoReason;
     show({});
+}
+
+std::optional<ZipEntry> ArchiveBrowser::fileEntry(const QString& name) const
+{
+    if (!mTree)
+        return std::nullopt;
+    return mTree->fileEntry(mPath, name);
 }
 
 void ArchiveBrowser::fail(Reason reason)

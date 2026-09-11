@@ -36,6 +36,11 @@ public:
         return nullptr;
     }
 
+    std::optional<std::string> moveToFreeName(const std::string&, const std::string&) override
+    {
+        return std::nullopt;
+    }
+
     // Resolves a forward-slash spelling too, the way the real adapter turns a
     // dropped URL into a native path -- so a test can hand the same file in under
     // two names, as a QML drop can.
@@ -274,6 +279,11 @@ TEST(UploadScanServiceTest, StopsDescendingAtTheDepthLimit)
         std::unique_ptr<ILocalFileWriter> createFile(const std::string&) override
         {
             return nullptr;
+        }
+
+        std::optional<std::string> moveToFreeName(const std::string&, const std::string&) override
+        {
+            return std::nullopt;
         }
 
         mutable int levels = 0;

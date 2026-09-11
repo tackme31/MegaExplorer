@@ -1,5 +1,7 @@
 #include "ArchiveTree.h"
 
+#include "core/ZipExtract.h"
+
 #include <QByteArray>
 #include <QLocale>
 #include <QStringDecoder>
@@ -46,17 +48,22 @@ QVariantMap makeRow(const QString& name, bool isDirectory, quint64 size)
 
 } // namespace
 
-ArchiveTree::ArchiveTree(const std::vector<ZipEntry>& entries)
+ArchiveTree::ArchiveTree(const std::vector<ZipEntry>& entries) : mEntries(entries)
 {
-    for (const ZipEntry& entry : entries)
+    for (std::size_t i = 0; i < mEntries.size(); ++i)
     {
+        const ZipEntry& entry = mEntries[i];
         insertPath(decodeEntryName(entry.rawName, entry.nameIsUtf8),
                    entry.isDirectory,
-                   entry.uncompressedSize);
+                   entry.uncompressedSize,
+                   i);
     }
 }
 
-void ArchiveTree::insertPath(const QString& path, bool isDirectory, quint64 size)
+void ArchiveTree::insertPath(const QString& path,
+                             bool isDirectory,
+                             quint64 size,
+                             std::size_t entryIndex)
 {
     QStringList parts = path.split('/', Qt::SkipEmptyParts);
     const bool truncated = parts.size() > kMaxArchiveDepth;
@@ -81,6 +88,7 @@ void ArchiveTree::insertPath(const QString& path, bool isDirectory, quint64 size
     {
         node->hasFile = true;
         node->size = size;
+        node->entryIndex = entryIndex;
     }
 }
 
@@ -109,19 +117,27 @@ void ArchiveTree::flatten(const Node& node, int depth, QVariantList& rows)
     }
 }
 
-std::optional<QVariantList> ArchiveTree::folderRows(const QStringList& path) const
+const ArchiveTree::Node* ArchiveTree::folderAt(const QStringList& path) const
 {
     const Node* node = &mRoot;
     for (const QString& part : path)
     {
         const auto found = node->children.find(part);
         if (found == node->children.end())
-            return std::nullopt;
+            return nullptr;
         const Node& child = found->second;
         if (!child.isDirectory && child.hasFile)
-            return std::nullopt;
+            return nullptr;
         node = &child;
     }
+    return node;
+}
+
+std::optional<QVariantList> ArchiveTree::folderRows(const QStringList& path) const
+{
+    const Node* node = folderAt(path);
+    if (!node)
+        return std::nullopt;
 
     QVariantList rows;
     for (int pass = 0; pass < 2; ++pass)
@@ -129,9 +145,36 @@ std::optional<QVariantList> ArchiveTree::folderRows(const QStringList& path) con
         for (const auto& [name, child] : node->children)
         {
             const bool isDirectory = child.isDirectory || !child.hasFile;
-            if ((pass == 0) == isDirectory)
-                rows.append(makeRow(name, isDirectory, child.size));
+            if ((pass == 0) != isDirectory)
+                continue;
+            QVariantMap row = makeRow(name, isDirectory, child.size);
+            if (!isDirectory)
+            {
+                const ZipEntrySupport support = zipEntrySupport(mEntries[child.entryIndex]);
+                row.insert("extractable", support == ZipEntrySupport::Supported);
+                row.insert("blockedReason",
+                           support == ZipEntrySupport::Encrypted ? QStringLiteral("encrypted")
+                           : support == ZipEntrySupport::UnsupportedMethod
+                               ? QStringLiteral("unsupportedMethod")
+                               : QString());
+            }
+            rows.append(row);
         }
     }
     return rows;
+}
+
+std::optional<ZipEntry> ArchiveTree::fileEntry(const QStringList& path, const QString& name) const
+{
+    const Node* folder = folderAt(path);
+    if (!folder)
+        return std::nullopt;
+    const auto found = folder->children.find(name);
+    if (found == folder->children.end())
+        return std::nullopt;
+    const Node& child = found->second;
+    // A name both a file and a folder uses is shown, and so treated, as the folder.
+    if (child.isDirectory || !child.hasFile)
+        return std::nullopt;
+    return mEntries[child.entryIndex];
 }

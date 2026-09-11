@@ -116,6 +116,25 @@ Item {
         root.push(text, success ? qsTr("Open") : "", localPath);
     }
 
+    // failure is DownloadController::extractionFinished's.
+    function describeExtraction(success, fileName, failure) {
+        if (success)
+            return qsTr("%1 extracted").arg(fileName);
+        switch (failure) {
+        case "damaged":
+            return qsTr("Couldn't extract %1: its data in the archive is damaged").arg(fileName);
+        case "write":
+            return qsTr("Couldn't extract %1: the file couldn't be saved").arg(fileName);
+        default:
+            return qsTr("Couldn't extract %1").arg(fileName);
+        }
+    }
+
+    function showExtraction(success, fileName, localPath, failure) {
+        root.push(root.describeExtraction(success, fileName, failure), success ? qsTr("Open") : "",
+                  localPath);
+    }
+
     // Returns "" for a context with no case, which showOperation below reads as
     // "say nothing". Unlike describeError's default that is not a gap to warn
     // about: C++ only emits operationFinished for the contexts listed here.

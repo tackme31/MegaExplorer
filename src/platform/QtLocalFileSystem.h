@@ -9,4 +9,6 @@ public:
     std::unique_ptr<ILocalFileWriter> createFile(const std::string& path) override;
     std::optional<LocalEntry> entryFor(const std::string& path) const override;
     std::optional<std::vector<LocalEntry>> listDirectory(const std::string& path) const override;
+    std::optional<std::string> moveToFreeName(const std::string& from,
+                                              const std::string& to) override;
 };

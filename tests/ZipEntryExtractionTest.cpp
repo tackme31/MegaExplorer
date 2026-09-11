@@ -174,6 +174,24 @@ public:
         return std::make_unique<Writer>(*this, path);
     }
 
+    // Each (from, to) asked for. Like committed, read only after onDone.
+    std::vector<std::pair<std::string, std::string>> moves;
+    // The name a move lands on; empty means "to" itself was free.
+    std::string freeName;
+
+    std::optional<std::string> moveToFreeName(const std::string& from, const std::string& to) override
+    {
+        moves.emplace_back(from, to);
+        const auto staged = committed.find(from);
+        if (staged == committed.end())
+            return std::nullopt;
+        const std::string target = freeName.empty() ? to : freeName;
+        std::string bytes = std::move(staged->second);
+        committed.erase(staged);
+        committed[target] = std::move(bytes);
+        return target;
+    }
+
 private:
     class Writer : public ILocalFileWriter
     {
@@ -609,4 +627,160 @@ TEST(ZipEntryExtractionTest, AWriteFailureStopsTheTransfer)
     EXPECT_LE(f.chunksServed.load(), 3);
     EXPECT_TRUE(f.fs->committed.empty());
     EXPECT_EQ(f.fs->liveWriters.load(), 0);
+}
+
+namespace
+{
+
+// A runner's onDone, like the extraction's, arrives on the worker.
+class RunnerOutcome
+{
+public:
+    void set(Result<DownloadOutcome> result)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            mResult = std::move(result);
+        }
+        mReady.notify_all();
+    }
+    Result<DownloadOutcome> wait()
+    {
+        std::unique_lock<std::mutex> lock(mMutex);
+        const bool finished = mReady.wait_for(lock, std::chrono::seconds(10), [this] {
+            return mResult.has_value();
+        });
+        EXPECT_TRUE(finished);
+        return mResult.value_or(Result<DownloadOutcome>::fail("never finished", 0));
+    }
+
+private:
+    std::mutex mMutex;
+    std::condition_variable mReady;
+    std::optional<Result<DownloadOutcome>> mResult;
+};
+
+std::shared_ptr<ZipEntryDownloadRunner> makeRunner(Fixture& f)
+{
+    return std::make_shared<ZipEntryDownloadRunner>(
+        f.client, f.fs, kArchive, f.archive.entry, kStubSize, kDestination);
+}
+
+Result<DownloadOutcome> runRunner(DownloadRunner& runner)
+{
+    auto outcome = std::make_shared<RunnerOutcome>();
+    runner.start([](std::uint64_t, std::uint64_t) {},
+                 [outcome](Result<DownloadOutcome> result) {
+                     outcome->set(std::move(result));
+                 });
+    return outcome->wait();
+}
+
+} // namespace
+
+TEST(ZipEntryDownloadRunnerTest, NamesTheFileOnlyOnceTheEntryIsComplete)
+{
+    Fixture f;
+    f.serve();
+    const auto runner = makeRunner(f);
+
+    const Result<DownloadOutcome> result = runRunner(*runner);
+
+    ASSERT_TRUE(result.success) << result.errorMessage;
+    EXPECT_EQ(result.value().localPath, kDestination);
+    ASSERT_EQ(f.fs->committed.size(), 1u);
+    EXPECT_EQ(f.fs->committed[kDestination], f.archive.original);
+    // Written under a staging name beside the destination, then moved onto it.
+    ASSERT_EQ(f.fs->moves.size(), 1u);
+    EXPECT_NE(f.fs->moves[0].first, kDestination);
+    EXPECT_EQ(f.fs->moves[0].first.rfind(kDestination + ".", 0), 0u);
+    EXPECT_EQ(f.fs->moves[0].second, kDestination);
+}
+
+TEST(ZipEntryDownloadRunnerTest, ReportsTheNameTheFileWasGivenWhenTheDestinationWasTaken)
+{
+    Fixture f;
+    f.fs->freeName = "C:\\out\\sample (1).txt";
+    f.serve();
+    const auto runner = makeRunner(f);
+
+    const Result<DownloadOutcome> result = runRunner(*runner);
+
+    ASSERT_TRUE(result.success) << result.errorMessage;
+    EXPECT_EQ(result.value().localPath, "C:\\out\\sample (1).txt");
+    EXPECT_EQ(f.fs->committed["C:\\out\\sample (1).txt"], f.archive.original);
+}
+
+TEST(ZipEntryDownloadRunnerTest, TwoRunnersForOneDestinationNeverShareAStagingFile)
+{
+    Fixture f;
+    f.serve();
+    const auto first = makeRunner(f);
+    const auto second = makeRunner(f);
+
+    ASSERT_TRUE(runRunner(*first).success);
+    ASSERT_TRUE(runRunner(*second).success);
+
+    ASSERT_EQ(f.fs->moves.size(), 2u);
+    EXPECT_NE(f.fs->moves[0].first, f.fs->moves[1].first);
+}
+
+TEST(ZipEntryDownloadRunnerTest, PassesAFailureThroughWithoutNamingAnything)
+{
+    Fixture f;
+    f.archive.entry.crc ^= 1;
+    f.serve();
+    const auto runner = makeRunner(f);
+
+    const Result<DownloadOutcome> result = runRunner(*runner);
+
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.errorCode, kArchiveEntryInvalid);
+    EXPECT_TRUE(f.fs->moves.empty());
+    EXPECT_TRUE(f.fs->committed.empty());
+}
+
+TEST(ZipEntryDownloadRunnerTest, ACancelBeforeStartEndsIncomplete)
+{
+    Fixture f;
+    f.serve();
+    EXPECT_CALL(*f.client, readFileRangeStreamed(_, _, _, _, _)).Times(0);
+    const auto runner = makeRunner(f);
+
+    runner->cancel();
+    const Result<DownloadOutcome> result = runRunner(*runner);
+
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.errorCode, MegaErrorCode::kEIncomplete);
+    EXPECT_TRUE(f.fs->committed.empty());
+}
+
+TEST(ZipEntryDownloadRunnerTest, CompletesAsAJobOnTheDownloadQueue)
+{
+    Fixture f;
+    f.serve();
+    auto finished = std::make_shared<std::optional<DownloadJob>>();
+    auto mutex = std::make_shared<std::mutex>();
+    DownloadService service(f.client);
+    service.setOnJobFinished([finished, mutex](DownloadJob job) {
+        std::lock_guard<std::mutex> lock(*mutex);
+        *finished = std::move(job);
+    });
+
+    service.enqueueRunner(kArchive,
+                          f.archive.entry.rawName,
+                          "sample.txt",
+                          kDestination,
+                          f.archive.entry.compressedSize,
+                          makeRunner(f));
+
+    ASSERT_TRUE(eventually([&] {
+        std::lock_guard<std::mutex> lock(*mutex);
+        return finished->has_value();
+    }));
+    std::lock_guard<std::mutex> lock(*mutex);
+    EXPECT_EQ((*finished)->state, DownloadState::Completed);
+    EXPECT_EQ((*finished)->resolvedLocalPath, kDestination);
+    EXPECT_EQ((*finished)->subPath, f.archive.entry.rawName);
+    EXPECT_FALSE(service.hasJobForHandle(kArchive, f.archive.entry.rawName));
 }

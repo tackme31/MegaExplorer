@@ -6,7 +6,9 @@
 #include <QString>
 
 #include <filesystem>
+#include <string>
 #include <system_error>
+#include <windows.h>
 
 namespace
 {
@@ -72,6 +74,38 @@ std::optional<LocalEntry> QtLocalFileSystem::entryFor(const std::string& path) c
     if (!info.exists() && !info.isSymLink())
         return std::nullopt;
     return toEntry(info);
+}
+
+std::optional<std::string> QtLocalFileSystem::moveToFreeName(const std::string& from,
+                                                             const std::string& to)
+{
+    const std::wstring source = QString::fromStdString(from).toStdWString();
+    const QFileInfo target(QString::fromStdString(to));
+    const QString leaf = target.fileName();
+    // The SDK's FileNameGenerator splits at the last dot, so "a.tar.gz" becomes
+    // "a.tar (1).gz" and ".bashrc" becomes " (1).bashrc".
+    const qsizetype dot = leaf.lastIndexOf('.');
+    const QString stem = dot < 0 ? leaf : leaf.left(dot);
+    const QString extension = dot < 0 ? QString() : leaf.mid(dot);
+    const QDir dir = target.dir();
+
+    constexpr int kMaxSuffix = 10000;
+    for (int n = 0; n <= kMaxSuffix; ++n)
+    {
+        const QString candidate =
+            n == 0 ? target.filePath()
+                   : dir.filePath(stem + QStringLiteral(" (%1)").arg(n) + extension);
+        const QString native = QDir::toNativeSeparators(candidate);
+        // Without MOVEFILE_REPLACE_EXISTING a taken name fails in the same step that would
+        // claim it. Not QFile::rename: it checks first, then may fall back to a copy.
+        if (::MoveFileExW(source.c_str(), native.toStdWString().c_str(), 0))
+            return native.toStdString();
+        const QFileInfo taken(candidate);
+        if (!taken.exists() && !taken.isSymLink())
+            break; // failed for some other reason than the name
+    }
+    ::DeleteFileW(source.c_str());
+    return std::nullopt;
 }
 
 std::optional<std::vector<LocalEntry>>

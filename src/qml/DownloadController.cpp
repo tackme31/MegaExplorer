@@ -1,6 +1,9 @@
 #include "DownloadController.h"
 
 #include "app/Logging.h"
+#include "core/MegaErrorCodes.h"
+#include "core/ZipEntryExtraction.h"
+#include "core/ZipExtract.h"
 #include "GuiThread.h"
 #include "NotificationController.h"
 
@@ -12,9 +15,12 @@
 #include <QUrl>
 
 DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
+                                       std::shared_ptr<IMegaClient> client,
+                                       std::shared_ptr<ILocalFileSystem> fileSystem,
                                        NotificationController* notifications,
                                        QObject* parent)
-    : QObject(parent), mService(std::move(service)), mNotifications(notifications)
+    : QObject(parent), mService(std::move(service)), mClient(std::move(client)),
+      mFileSystem(std::move(fileSystem)), mNotifications(notifications)
 {
     mService->setOnProgress([this](DownloadJob job) {
         invokeOnGuiThread(this, [this, job = std::move(job)]() mutable {
@@ -51,9 +57,21 @@ DownloadController::DownloadController(std::shared_ptr<DownloadService> service,
                     << "download failed for" << displayName << ":"
                     << QString::fromStdString(job.errorMessage) << "code=" << job.errorCode;
             }
-            emit downloadFinished(job.state == DownloadState::Completed,
-                                  displayName,
-                                  QString::fromStdString(job.resolvedLocalPath));
+            const bool success = job.state == DownloadState::Completed;
+            const QString localPath = QString::fromStdString(job.resolvedLocalPath);
+            if (job.subPath.empty())
+            {
+                emit downloadFinished(success, displayName, localPath);
+            }
+            else
+            {
+                const QString failure =
+                    success                                    ? QString()
+                    : job.errorCode == kArchiveEntryInvalid    ? QStringLiteral("damaged")
+                    : job.errorCode == MegaErrorCode::kEFailed ? QStringLiteral("write")
+                                                               : QString();
+                emit extractionFinished(success, displayName, localPath, failure);
+            }
             refreshActiveJob(); // reflect whatever's now at the front (or nothing)
         });
     });
@@ -105,6 +123,31 @@ void DownloadController::downloadFile(quint64 handle, QString name, quint64 size
                       static_cast<std::uint64_t>(sizeBytes));
     publishQueue();
     refreshActiveJob(); // already on the GUI thread here (called from QML)
+}
+
+void DownloadController::extractArchiveEntry(ArchiveBrowser* browser, const QString& name)
+{
+    if (!browser || !mClient || !mFileSystem)
+        return;
+    const std::optional<ZipEntry> entry = browser->fileEntry(name);
+    if (!entry || zipEntrySupport(*entry) != ZipEntrySupport::Supported)
+        return;
+    const std::uint64_t handle = browser->archiveHandle();
+    if (mService->hasJobForHandle(handle, entry->rawName))
+        return;
+
+    const std::string destinationPath = computeDestinationPath(name).toStdString();
+    auto runner = std::make_shared<ZipEntryDownloadRunner>(
+        mClient, mFileSystem, handle, *entry, browser->localHeaderShift(), destinationPath);
+    // Progress counts the entry's compressed bytes, which is what actually moves.
+    mService->enqueueRunner(handle,
+                            entry->rawName,
+                            name.toStdString(),
+                            destinationPath,
+                            entry->compressedSize,
+                            std::move(runner));
+    publishQueue();
+    refreshActiveJob();
 }
 
 void DownloadController::cancelDownloads()

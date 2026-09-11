@@ -6,6 +6,7 @@
 #include "core/ZipExtract.h"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <limits>
@@ -350,4 +351,68 @@ void ZipEntryExtraction::start(Progress onProgress, std::function<void(Result<vo
 void ZipEntryExtraction::cancel()
 {
     mState->requestCancel();
+}
+
+namespace
+{
+
+// Unique per extraction, so two entries sharing a leaf name never share a staging file.
+std::string stagingPathFor(const std::string& destinationPath)
+{
+    static std::atomic<std::uint64_t> counter{0};
+    const auto stamp = static_cast<unsigned long long>(
+        std::chrono::system_clock::now().time_since_epoch().count());
+    return destinationPath + "." + std::to_string(stamp) + "-" + std::to_string(++counter) +
+           ".extracting";
+}
+
+} // namespace
+
+ZipEntryDownloadRunner::ZipEntryDownloadRunner(std::shared_ptr<IMegaClient> client,
+                                               std::shared_ptr<ILocalFileSystem> fileSystem,
+                                               std::uint64_t archiveHandle,
+                                               const ZipEntry& entry,
+                                               std::uint64_t localHeaderShift,
+                                               std::string destinationPath)
+    : mFileSystem(fileSystem), mDestinationPath(std::move(destinationPath)),
+      mStagingPath(stagingPathFor(mDestinationPath)),
+      mExtraction(std::make_unique<ZipEntryExtraction>(std::move(client),
+                                                       std::move(fileSystem),
+                                                       archiveHandle,
+                                                       entry,
+                                                       localHeaderShift,
+                                                       mStagingPath))
+{}
+
+void ZipEntryDownloadRunner::start(std::function<void(std::uint64_t, std::uint64_t)> onProgress,
+                                   std::function<void(Result<DownloadOutcome>)> onDone)
+{
+    // Copies rather than this: DownloadService may drop the last reference to the runner
+    // inside onDone, and a runner holding itself would leak when a transfer never ends.
+    mExtraction->start(std::move(onProgress),
+                       [fileSystem = mFileSystem,
+                        staging = mStagingPath,
+                        destination = mDestinationPath,
+                        onDone = std::move(onDone)](Result<void> extracted) {
+                           if (!extracted.success)
+                           {
+                               onDone(Result<DownloadOutcome>::fail(extracted.errorMessage,
+                                                                    extracted.errorCode));
+                               return;
+                           }
+                           std::optional<std::string> saved =
+                               fileSystem->moveToFreeName(staging, destination);
+                           if (!saved)
+                           {
+                               onDone(Result<DownloadOutcome>::fail(
+                                   "Could not name the destination file", MegaErrorCode::kEFailed));
+                               return;
+                           }
+                           onDone(Result<DownloadOutcome>::ok(DownloadOutcome{std::move(*saved)}));
+                       });
+}
+
+void ZipEntryDownloadRunner::cancel()
+{
+    mExtraction->cancel();
 }

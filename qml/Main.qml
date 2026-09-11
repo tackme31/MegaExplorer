@@ -372,6 +372,7 @@ ApplicationWindow {
         ArchiveViewer {
             id: archiveViewerWindow
             controller: viewerController
+            downloads: downloadController
             transientParent: window
             onVisibleChanged: if (!archiveViewerWindow.visible)
                                   archiveViewerWindow.destroy()
@@ -654,6 +655,9 @@ ApplicationWindow {
         target: downloadController
         function onDownloadFinished(success, fileName, localPath) {
             toastStack.showDownload(success, fileName, localPath);
+        }
+        function onExtractionFinished(success, fileName, localPath, failure) {
+            toastStack.showExtraction(success, fileName, localPath, failure);
         }
     }
 

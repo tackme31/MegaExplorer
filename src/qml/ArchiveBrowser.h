@@ -49,8 +49,21 @@ public:
 
     explicit ArchiveBrowser(QObject* parent = nullptr);
 
-    void setTree(ArchiveTree tree);
+    // localHeaderShift is the archive's ZipDirectoryLocation::localHeaderShift.
+    void setTree(ArchiveTree tree, quint64 archiveHandle, quint64 localHeaderShift);
     void fail(Reason reason);
+
+    // The entry behind the file row called name in the folder shown; nothing while
+    // not Ready or when name is a folder.
+    std::optional<ZipEntry> fileEntry(const QString& name) const;
+    quint64 archiveHandle() const
+    {
+        return mArchiveHandle;
+    }
+    quint64 localHeaderShift() const
+    {
+        return mLocalHeaderShift;
+    }
 
     // A name that is not a folder in the one shown does nothing.
     Q_INVOKABLE void openFolder(const QString& name);
@@ -83,6 +96,8 @@ private:
     void show(const QStringList& path);
 
     std::optional<ArchiveTree> mTree;
+    quint64 mArchiveHandle = 0;
+    quint64 mLocalHeaderShift = 0;
     State mState = Loading;
     Reason mReason = NoReason;
     QStringList mPath;

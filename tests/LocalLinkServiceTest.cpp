@@ -39,6 +39,11 @@ public:
         return nullptr;
     }
 
+    std::optional<std::string> moveToFreeName(const std::string&, const std::string&) override
+    {
+        return std::nullopt;
+    }
+
 private:
     std::set<std::string> mPaths;
 };

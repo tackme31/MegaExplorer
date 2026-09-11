@@ -4,6 +4,7 @@
 #include "TestZip.h"
 
 #include <QCoreApplication>
+#include <QMap>
 #include <QVariantMap>
 
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -256,4 +258,57 @@ TEST(ViewerControllerTest, AWindowClosedMidReadDropsTheRestOfTheListing)
     heldTail(Result<std::vector<char>>::ok(nestedZip()));
     drainEvents();
     // No directory read followed: the WillOnce above would have failed on a second call.
+}
+
+TEST(ViewerControllerTest, FileRowsSayWhetherTheyCanBeExtracted)
+{
+    ZipEntry plain;
+    plain.rawName = "plain.txt";
+    plain.compressionMethod = 8;
+    ZipEntry locked = plain;
+    locked.rawName = "locked.txt";
+    locked.encrypted = true;
+    ZipEntry lzma = plain;
+    lzma.rawName = "lzma.bin";
+    lzma.compressionMethod = 14;
+    ZipEntry folder;
+    folder.rawName = "folder/";
+    folder.isDirectory = true;
+    ArchiveBrowser browser;
+
+    browser.setTree(ArchiveTree({plain, locked, lzma, folder}), 7, 0);
+
+    QMap<QString, QVariantMap> rows;
+    for (const QVariant& row : browser.entries())
+        rows.insert(row.toMap().value("name").toString(), row.toMap());
+    EXPECT_TRUE(rows["plain.txt"].value("extractable").toBool());
+    EXPECT_TRUE(rows["plain.txt"].value("blockedReason").toString().isEmpty());
+    EXPECT_FALSE(rows["locked.txt"].value("extractable").toBool());
+    EXPECT_EQ(rows["locked.txt"].value("blockedReason").toString(), QStringLiteral("encrypted"));
+    EXPECT_FALSE(rows["lzma.bin"].value("extractable").toBool());
+    EXPECT_EQ(rows["lzma.bin"].value("blockedReason").toString(),
+              QStringLiteral("unsupportedMethod"));
+    EXPECT_FALSE(rows["folder"].contains("extractable"));
+}
+
+TEST(ViewerControllerTest, FileEntryIsTheEntryBehindARowOfTheFolderShown)
+{
+    Fixture f;
+    serveRanges(f, nestedZip());
+    ArchiveBrowser* browser = f.controller.openArchive(7, nestedZip().size(), &f.window);
+    drainEvents();
+
+    EXPECT_EQ(browser->archiveHandle(), 7u);
+    EXPECT_EQ(browser->localHeaderShift(), 0u);
+    const std::optional<ZipEntry> readme = browser->fileEntry(QStringLiteral("readme.txt"));
+    ASSERT_TRUE(readme.has_value());
+    EXPECT_EQ(readme->rawName, "readme.txt");
+    // Only the folder shown: a name from further down, or a folder, is not a file row.
+    EXPECT_FALSE(browser->fileEntry(QStringLiteral("guide.txt")).has_value());
+    EXPECT_FALSE(browser->fileEntry(QStringLiteral("docs")).has_value());
+
+    browser->openFolder(QStringLiteral("docs"));
+    const std::optional<ZipEntry> guide = browser->fileEntry(QStringLiteral("guide.txt"));
+    ASSERT_TRUE(guide.has_value());
+    EXPECT_EQ(guide->rawName, "docs/guide.txt");
 }

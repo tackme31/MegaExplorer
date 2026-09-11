@@ -1,4 +1,5 @@
 #pragma once
+#include "core/DownloadService.h"
 #include "core/Result.h"
 #include "core/ZipListing.h"
 
@@ -56,4 +57,29 @@ public:
 private:
     struct State;
     std::shared_ptr<State> mState;
+};
+
+// Puts one entry's extraction on DownloadService's queue. The entry is written under a
+// staging name beside destinationPath and only named once complete: destinationPath if
+// it is still free then, otherwise "stem (N).ext" -- the same end-of-transfer choice
+// the SDK makes for a plain download, so neither can replace the other's file.
+class ZipEntryDownloadRunner final : public DownloadRunner
+{
+public:
+    ZipEntryDownloadRunner(std::shared_ptr<IMegaClient> client,
+                           std::shared_ptr<ILocalFileSystem> fileSystem,
+                           std::uint64_t archiveHandle,
+                           const ZipEntry& entry,
+                           std::uint64_t localHeaderShift,
+                           std::string destinationPath);
+
+    void start(std::function<void(std::uint64_t, std::uint64_t)> onProgress,
+               std::function<void(Result<DownloadOutcome>)> onDone) override;
+    void cancel() override;
+
+private:
+    std::shared_ptr<ILocalFileSystem> mFileSystem;
+    std::string mDestinationPath;
+    std::string mStagingPath;
+    std::unique_ptr<ZipEntryExtraction> mExtraction;
 };

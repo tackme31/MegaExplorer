@@ -3,8 +3,9 @@ import QtTest
 import MegaExplorer
 
 // Covers the archive viewer window's own logic: refusing a name that belongs to
-// another viewer, turning a row activation into a folder change, the Up button and
-// the breadcrumb, and what it says while loading or after a failure.
+// another viewer, turning a row activation into a folder change or an extraction, the
+// Up and extract buttons and the breadcrumb, and what it says while loading or after a
+// failure.
 // ViewerControllerTest.cpp owns the listing itself (openArchive, ArchiveBrowser).
 TestCase {
     id: testCase
@@ -23,18 +24,23 @@ TestCase {
             property var entries: fake.rowsFor(fake.path)
             signal changed
 
-            function row(name, isDirectory) {
-                return {
+            function row(name, isDirectory, blockedReason) {
+                const entry = {
                     name: name,
                     isDirectory: isDirectory,
                     formattedSize: isDirectory ? "" : "1.4 kB"
                 };
+                if (!isDirectory) {
+                    entry.extractable = blockedReason === "";
+                    entry.blockedReason = blockedReason;
+                }
+                return entry;
             }
             function rowsFor(path) {
                 if (path.length === 0)
                     return [fake.row("assets", true), fake.row("docs", true), fake.row(
-                                "readme.txt", false)];
-                return [fake.row("guide.txt", false)];
+                                "readme.txt", false, "")];
+                return [fake.row("guide.txt", false, "encrypted")];
             }
             function openFolder(name) {
                 if (fake.path.length === 0 && (name === "assets" || name === "docs")) {
@@ -79,6 +85,20 @@ TestCase {
     }
 
     Component {
+        id: fakeDownloadsComponent
+        QtObject {
+            property int calls: 0
+            property var lastBrowser: null
+            property string lastName: ""
+            function extractArchiveEntry(browser, name) {
+                calls++;
+                lastBrowser = browser;
+                lastName = name;
+            }
+        }
+    }
+
+    Component {
         id: viewerComponent
         ArchiveViewer {}
     }
@@ -103,6 +123,19 @@ TestCase {
 
     function statusLabel(viewer) {
         return findChild(viewer.contentItem, "statusLabel");
+    }
+
+    function extractButton(viewer) {
+        return findChild(viewer.contentItem, "extractButton");
+    }
+
+    function makeExtractingViewer(downloads) {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+        viewer.downloads = downloads;
+        viewer.open(7, "bundle.zip", 4096);
+        tryCompare(entryList(viewer), "count", 3);
+        return viewer;
     }
 
     function test_opensOnlyWhatBelongsToTheArchiveViewer() {
@@ -211,5 +244,56 @@ TestCase {
         verify(!first.showing);
         compare(first.browser, null);
         verify(second.showing);
+    }
+
+    function test_activatingAFileRowExtractsIt() {
+        const downloads = createTemporaryObject(fakeDownloadsComponent, testCase);
+        const viewer = makeExtractingViewer(downloads);
+
+        viewer.openRow(2);
+
+        compare(downloads.calls, 1);
+        compare(downloads.lastName, "readme.txt");
+        verify(downloads.lastBrowser === viewer.browser);
+        compare(viewer.browser.path, []);
+    }
+
+    function test_theExtractButtonFollowsTheCurrentRow() {
+        const downloads = createTemporaryObject(fakeDownloadsComponent, testCase);
+        const viewer = makeExtractingViewer(downloads);
+        const button = extractButton(viewer);
+        verify(button.visible);
+
+        entryList(viewer).currentIndex = 0;
+        verify(!button.enabled);
+        entryList(viewer).currentIndex = 2;
+        verify(button.enabled);
+        button.clicked();
+        compare(downloads.calls, 1);
+        compare(downloads.lastName, "readme.txt");
+    }
+
+    // An encrypted entry keeps its row but cannot be extracted, from either entry point.
+    function test_aBlockedEntryIsListedButNotExtracted() {
+        const downloads = createTemporaryObject(fakeDownloadsComponent, testCase);
+        const viewer = makeExtractingViewer(downloads);
+        viewer.openRow(1);
+        tryCompare(entryList(viewer), "count", 1);
+        tryCompare(entryList(viewer), "currentIndex", 0);
+
+        verify(!extractButton(viewer).enabled);
+        verify(findChild(entryList(viewer), "blockedLabel").visible);
+        viewer.openRow(0);
+        compare(downloads.calls, 0);
+    }
+
+    function test_withoutDownloadsTheViewerOnlyBrowses() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+        viewer.open(7, "bundle.zip", 4096);
+
+        verify(!extractButton(viewer).visible);
+        viewer.openRow(2);
+        compare(viewer.browser.path, []);
     }
 }

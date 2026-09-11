@@ -171,7 +171,7 @@ TEST(ThreadedDeliveryTest, DownloadControllerEmitsOnTheGuiThreadWhenCompletionAr
 
     auto service = std::make_shared<DownloadService>(client);
     NotificationController notifications;
-    DownloadController controller(service, &notifications);
+    DownloadController controller(service, client, nullptr, &notifications);
 
     // Qt::DirectConnection, and not by accident: an auto-connected handler
     // whose context object lives on the GUI thread gets queued by Qt itself

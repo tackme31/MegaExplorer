@@ -201,3 +201,81 @@ TEST(QtLocalFileSystemTest, CreateFileFailsInAMissingDirectory)
 
     EXPECT_EQ(fs.createFile((root / "missing" / "out.bin").string()), nullptr);
 }
+
+namespace
+{
+
+std::string readAll(const std::filesystem::path& path)
+{
+    std::ifstream in(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+} // namespace
+
+TEST(QtLocalFileSystemTest, MoveToFreeNameTakesTheNameWhenItIsFree)
+{
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const std::filesystem::path root(dir.path().toStdWString());
+    writeFile(root / "staged", "new");
+    QtLocalFileSystem fs;
+
+    const std::optional<std::string> saved =
+        fs.moveToFreeName((root / "staged").string(), (root / "a.txt").string());
+
+    ASSERT_TRUE(saved.has_value());
+    EXPECT_EQ(std::filesystem::path(*saved).filename(), "a.txt");
+    EXPECT_EQ(readAll(root / "a.txt"), "new");
+    EXPECT_FALSE(std::filesystem::exists(root / "staged"));
+}
+
+// The SDK's own collision naming (FileNameGenerator::suffixWithN): " (N)" before the
+// last dot, counting up past every name already taken, a folder's included.
+TEST(QtLocalFileSystemTest, MoveToFreeNameSuffixesLikeTheSdkAndNeverReplaces)
+{
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const std::filesystem::path root(dir.path().toStdWString());
+    writeFile(root / "a.tar.gz", "old");
+    std::filesystem::create_directory(root / "a.tar (1).gz");
+    writeFile(root / "staged", "new");
+    QtLocalFileSystem fs;
+
+    const std::optional<std::string> saved =
+        fs.moveToFreeName((root / "staged").string(), (root / "a.tar.gz").string());
+
+    ASSERT_TRUE(saved.has_value());
+    EXPECT_EQ(std::filesystem::path(*saved).filename(), "a.tar (2).gz");
+    EXPECT_EQ(readAll(root / "a.tar (2).gz"), "new");
+    EXPECT_EQ(readAll(root / "a.tar.gz"), "old");
+    EXPECT_EQ(saved->find('/'), std::string::npos);
+}
+
+TEST(QtLocalFileSystemTest, MoveToFreeNameSuffixesANameWithoutAnExtensionAtTheEnd)
+{
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const std::filesystem::path root(dir.path().toStdWString());
+    writeFile(root / "README", "old");
+    writeFile(root / "staged", "new");
+    QtLocalFileSystem fs;
+
+    const std::optional<std::string> saved =
+        fs.moveToFreeName((root / "staged").string(), (root / "README").string());
+
+    ASSERT_TRUE(saved.has_value());
+    EXPECT_EQ(std::filesystem::path(*saved).filename(), "README (1)");
+}
+
+TEST(QtLocalFileSystemTest, MoveToFreeNameFailsAndLeavesNothingWhenTheSourceIsGone)
+{
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const std::filesystem::path root(dir.path().toStdWString());
+    QtLocalFileSystem fs;
+
+    EXPECT_FALSE(
+        fs.moveToFreeName((root / "missing").string(), (root / "a.txt").string()).has_value());
+    EXPECT_FALSE(std::filesystem::exists(root / "a.txt"));
+}
