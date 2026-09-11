@@ -267,7 +267,8 @@ TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
     modelSingle.setEntries(makeEntries(3));
     modelSingle.selectRow(0, 0);
     EXPECT_EQ(modelSingle.availableActions(),
-              (QStringList{"download",
+              (QStringList{"open",
+                           "download",
                            "openLocalFile",
                            "openLocalLocation",
                            "toggleFavourite",
@@ -762,7 +763,8 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
     model.setEntries(makeEntries(3));
     model.selectRow(0, Qt::NoModifier);
     ASSERT_EQ(model.availableActions(),
-              (QStringList{"download",
+              (QStringList{"open",
+                           "download",
                            "openLocalFile",
                            "openLocalLocation",
                            "toggleFavourite",
@@ -778,7 +780,8 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
     model.setViewKind(ViewKind::Favourites);
 
     EXPECT_EQ(model.availableActions(),
-              (QStringList{"download",
+              (QStringList{"open",
+                           "download",
                            "openLocalFile",
                            "openLocalLocation",
                            "toggleFavourite",

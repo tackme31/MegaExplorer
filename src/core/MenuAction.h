@@ -8,6 +8,9 @@
 
 enum class MenuAction
 {
+    // What double-clicking the file does, from the menu. Whether a viewer can show
+    // it is decided by the name, which the resolver cannot see, so QML greys it.
+    Open,
     NewFolder,
     Download,
     // Opens the item's counterpart inside the linked local folder with whatever

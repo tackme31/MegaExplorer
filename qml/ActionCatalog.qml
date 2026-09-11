@@ -40,6 +40,15 @@ QtObject {
     id: root
 
     readonly property var entries: ({
+                                        // ctx: openable, requestOpen(). Greyed
+                                        // rather than hidden for a file no viewer
+                                        // shows, so the top row doesn't come and go.
+                                        "open": {
+                                            "icon": ctx => Theme.glyph.menu.open,
+                                            "label": ctx => qsTr("Open"),
+                                            "enabled": ctx => ctx.openable === true,
+                                            "trigger": ctx => ctx.requestOpen()
+                                        },
                                         // ctx: requestNewFolder()
                                         "newFolder": {
                                             "icon": ctx => Theme.glyph.menu.newFolder,

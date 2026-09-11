@@ -20,6 +20,7 @@ ActionMenu {
     // Delegated to the owning view rather than handled in ActionCatalog.qml:
     // each view owns its own inline rename field and ConfirmRubbishDialog
     // instance, which a singleton can't reach.
+    signal openRequested(var handle, string name, var sizeBytes)
     signal renameRequested
     signal moveToRubbishRequested
     signal deletePermanentlyRequested
@@ -79,9 +80,14 @@ ActionMenu {
             // Sampled like pinned/favourited above, and it can only change while
             // the menu is closed -- the settings dialog is modal.
             "localFolderLinked": localFolderController.linked,
+            // The same by-name test double-click passes through (Main.qml's openViewer).
+            "openable": entries.length === 1 && !entries[0].isFolder
+                        && viewerController.viewerKind(primary.name) !== "",
             "entries": entries,
             "navController": root.navController,
             "mutations": root.mutController,
+            "requestOpen": () => root.openRequested(primary.handle, primary.name,
+                                                    primary.sizeBytes),
             "requestRename": () => root.renameRequested(),
             "requestMoveToRubbish": () => root.moveToRubbishRequested(),
             "requestDeletePermanently": () => root.deletePermanentlyRequested(),

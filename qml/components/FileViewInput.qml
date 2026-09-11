@@ -75,6 +75,9 @@ Item {
     // NewFolderDialog.
     signal newFolderRequested
 
+    // The file menu's Open, relayed by the host as the double-click it stands for.
+    signal openRequested(var handle, string name, var sizeBytes)
+
     // Shared by F2 and the context menu's renameRequested. Renaming is
     // inherently single-item, so this collapses the selection to the cursor row
     // first -- selectRow(row, Qt.NoModifier) already means "deselect everything
@@ -319,6 +322,7 @@ Item {
         id: contextMenu
         navController: root.navController
         mutController: root.mutController
+        onOpenRequested: (handle, name, sizeBytes) => root.openRequested(handle, name, sizeBytes)
         onRenameRequested: root.beginRename()
         onMoveToRubbishRequested: confirmRubbishDialog.confirm()
         onDeletePermanentlyRequested: confirmPermanentDeleteDialog.confirm()

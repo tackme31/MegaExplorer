@@ -252,6 +252,7 @@ QtObject {
         // the "check how it actually paints" one that E80A Tiles failed (see
         // viewList above) -- do both when the final set is settled on.
         readonly property QtObject menu: QtObject {
+            readonly property string open: "\uE890"         // View
             readonly property string newFolder: "\uE8F4"     // NewFolder
             readonly property string download: glyphSet.transferDown
             // Not yet checked against either icon font's cmap, nor drawn at 16px --

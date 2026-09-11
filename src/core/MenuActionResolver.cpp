@@ -70,6 +70,16 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
     // deferred move, hence its decision 1). Recents and the public-link listing are the
     // same shape of screen and withhold the same four.
     static const std::vector<MenuActionSpec> actions = {
+        // First, as in Explorer. Rubbish included: double-click opens a binned file too.
+        {MenuAction::Open,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive,
+          ViewKind::Favourites,
+          ViewKind::Recents,
+          ViewKind::SharedLinks,
+          ViewKind::Rubbish},
+         ActionTarget::FilesOnly,
+         ActionArity::SingleOnly},
         {MenuAction::NewFolder,
          {MenuSite::FolderBackground},
          {ViewKind::CloudDrive},
@@ -271,6 +281,8 @@ const char* menuActionId(MenuAction action)
 {
     switch (action)
     {
+        case MenuAction::Open:
+            return "open";
         case MenuAction::NewFolder:
             return "newFolder";
         case MenuAction::Download:

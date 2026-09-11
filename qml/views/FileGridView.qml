@@ -182,6 +182,8 @@ GridView {
         arrowColumns: Math.max(1, Math.floor(root.width / root.cellWidth))
         horizontalArrows: true
         onNewFolderRequested: root.newFolderRequested()
+        onOpenRequested: (handle, name, sizeBytes) => root.activateRequested(false, handle, name,
+                                                                             sizeBytes)
     }
 
     // See FileTableView.qml's copy for why both views listen and why the call is

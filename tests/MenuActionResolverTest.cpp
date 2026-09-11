@@ -262,19 +262,20 @@ TEST(MenuActionResolverTest, EmptySelectionYieldsNoActions)
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(1, 0));
-    ASSERT_EQ(result.size(), 12u);
-    EXPECT_EQ(result[0], MenuAction::Download);
-    EXPECT_EQ(result[1], MenuAction::OpenLocalFile);
-    EXPECT_EQ(result[2], MenuAction::OpenLocalLocation);
-    EXPECT_EQ(result[3], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[4], MenuAction::LinkSettings);
-    EXPECT_EQ(result[5], MenuAction::CopyLink);
-    EXPECT_EQ(result[6], MenuAction::RemoveLink);
-    EXPECT_EQ(result[7], MenuAction::Cut);
-    EXPECT_EQ(result[8], MenuAction::Copy);
-    EXPECT_EQ(result[9], MenuAction::Rename);
-    EXPECT_EQ(result[10], MenuAction::MoveToRubbish);
-    EXPECT_EQ(result[11], MenuAction::Properties);
+    ASSERT_EQ(result.size(), 13u);
+    EXPECT_EQ(result[0], MenuAction::Open);
+    EXPECT_EQ(result[1], MenuAction::Download);
+    EXPECT_EQ(result[2], MenuAction::OpenLocalFile);
+    EXPECT_EQ(result[3], MenuAction::OpenLocalLocation);
+    EXPECT_EQ(result[4], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[5], MenuAction::LinkSettings);
+    EXPECT_EQ(result[6], MenuAction::CopyLink);
+    EXPECT_EQ(result[7], MenuAction::RemoveLink);
+    EXPECT_EQ(result[8], MenuAction::Cut);
+    EXPECT_EQ(result[9], MenuAction::Copy);
+    EXPECT_EQ(result[10], MenuAction::Rename);
+    EXPECT_EQ(result[11], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[12], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForMultipleFiles)
@@ -308,6 +309,34 @@ TEST(MenuActionResolverTest, DefaultTableOffersNoDownloadForFoldersOnlySelection
 TEST(MenuActionResolverTest, DefaultTableOffersNothingForEmptySelection)
 {
     EXPECT_TRUE(resolveMenuActions(fileSelection(0, 0)).empty());
+}
+
+TEST(MenuActionResolverTest, OpenIdIsStable)
+{
+    EXPECT_STREQ(menuActionId(MenuAction::Open), "open");
+}
+
+TEST(MenuActionResolverTest, DefaultTableOffersOpenForASingleFileInEveryView)
+{
+    // Wherever double-click opens a file, the bin included; never a folder (its
+    // double-click navigates) and never a multi-selection (one viewer per file).
+    for (ViewKind kind : {ViewKind::CloudDrive,
+                          ViewKind::Favourites,
+                          ViewKind::Recents,
+                          ViewKind::SharedLinks,
+                          ViewKind::Rubbish})
+    {
+        const std::vector<MenuAction> single = resolveMenuActions(fileSelection(1, 0, kind));
+        ASSERT_FALSE(single.empty()) << static_cast<int>(kind);
+        EXPECT_EQ(single.front(), MenuAction::Open) << static_cast<int>(kind);
+        EXPECT_FALSE(contains(resolveMenuActions(fileSelection(0, 1, kind)), MenuAction::Open))
+            << static_cast<int>(kind);
+        EXPECT_FALSE(contains(resolveMenuActions(fileSelection(2, 0, kind)), MenuAction::Open))
+            << static_cast<int>(kind);
+    }
+    EXPECT_FALSE(
+        contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)), MenuAction::Open));
+    EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::Open));
 }
 
 TEST(MenuActionResolverTest, DownloadIdIsStable)
@@ -662,17 +691,18 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     // never move, and cut is a deferred move (its decision 1).
     const std::vector<MenuAction> result =
         resolveMenuActions(fileSelection(1, 0, ViewKind::Favourites));
-    ASSERT_EQ(result.size(), 10u);
-    EXPECT_EQ(result[0], MenuAction::Download);
-    EXPECT_EQ(result[1], MenuAction::OpenLocalFile);
-    EXPECT_EQ(result[2], MenuAction::OpenLocalLocation);
-    EXPECT_EQ(result[3], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[4], MenuAction::LinkSettings);
-    EXPECT_EQ(result[5], MenuAction::CopyLink);
-    EXPECT_EQ(result[6], MenuAction::RemoveLink);
-    EXPECT_EQ(result[7], MenuAction::Copy);
-    EXPECT_EQ(result[8], MenuAction::Rename);
-    EXPECT_EQ(result[9], MenuAction::Properties);
+    ASSERT_EQ(result.size(), 11u);
+    EXPECT_EQ(result[0], MenuAction::Open);
+    EXPECT_EQ(result[1], MenuAction::Download);
+    EXPECT_EQ(result[2], MenuAction::OpenLocalFile);
+    EXPECT_EQ(result[3], MenuAction::OpenLocalLocation);
+    EXPECT_EQ(result[4], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[5], MenuAction::LinkSettings);
+    EXPECT_EQ(result[6], MenuAction::CopyLink);
+    EXPECT_EQ(result[7], MenuAction::RemoveLink);
+    EXPECT_EQ(result[8], MenuAction::Copy);
+    EXPECT_EQ(result[9], MenuAction::Rename);
+    EXPECT_EQ(result[10], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableStillOffersOpenInNewTabAndTogglePinInFavourites)

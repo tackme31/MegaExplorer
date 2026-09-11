@@ -53,6 +53,11 @@ TestCase {
     function test_label_data() {
         return [
                     {
+                        tag: "open",
+                        id: "open",
+                        expected: "Open"
+                    },
+                    {
                         tag: "newFolder",
                         id: "newFolder",
                         expected: "New folder"
@@ -168,6 +173,11 @@ TestCase {
 
     function test_icon_data() {
         return [
+                    {
+                        tag: "open",
+                        id: "open",
+                        expected: Theme.glyph.menu.open
+                    },
                     {
                         tag: "newFolder",
                         id: "newFolder",
@@ -350,6 +360,16 @@ TestCase {
         compare(ActionCatalog.isEnabled("removeLink", ctx), true);
         ctx.exported = false;
         compare(ActionCatalog.isEnabled("removeLink", ctx), false);
+    }
+
+    // Greyed for a file no viewer shows, the one condition the resolver can't see.
+    function test_isEnabled_openFollowsOpenable() {
+        const ctx = fullCtx();
+        ctx.openable = true;
+        compare(ActionCatalog.isEnabled("open", ctx), true);
+        ctx.openable = false;
+        compare(ActionCatalog.isEnabled("open", ctx), false);
+        compare(ActionCatalog.isEnabled("open", {}), false);
     }
 
     function test_isEnabled_pasteFollowsCanPaste() {

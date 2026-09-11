@@ -526,6 +526,8 @@ ColumnLayout {
             arrowColumns: 1
             horizontalArrows: false
             onNewFolderRequested: root.newFolderRequested()
+            onOpenRequested: (handle, name, sizeBytes) => root.activateRequested(false, handle,
+                                                                                 name, sizeBytes)
         }
 
         // Scrolling a row the controller already selected into view -- e.g. a
