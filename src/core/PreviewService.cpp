@@ -39,7 +39,7 @@ void PreviewService::request(std::uint64_t handle,
         [this, handle, destinationPath, onDone] {
             mClient->getPreview(
                 handle, destinationPath, [this, onDone](Result<std::string> result) {
-                    finish([&onDone, &result] {
+                    finish(nullptr, [&onDone, &result] {
                         onDone(std::move(result));
                     });
                 });
@@ -57,7 +57,7 @@ void PreviewService::requestText(std::uint64_t handle,
         [this, handle, maxBytes, onDone] {
             mClient->readFileContent(
                 handle, maxBytes, [this, onDone](Result<std::vector<char>> result) {
-                    finish([&onDone, &result] {
+                    finish(nullptr, [&onDone, &result] {
                         onDone(std::move(result));
                     });
                 });
@@ -72,28 +72,72 @@ void PreviewService::requestRange(std::uint64_t handle,
                                   std::uint64_t length,
                                   std::function<void(Result<std::vector<char>>)> onDone)
 {
+    auto stop = std::make_shared<std::atomic<bool>>(false);
     enqueue(
-        [this, handle, offset, length, onDone] {
-            mClient->readFileRange(
-                handle, offset, length, [this, onDone](Result<std::vector<char>> result) {
-                    finish([&onDone, &result] {
-                        onDone(std::move(result));
+        [this, handle, offset, length, onDone, stop] {
+            auto buffer = std::make_shared<std::vector<char>>();
+            mClient->readFileRangeStreamed(
+                handle,
+                offset,
+                length,
+                [buffer, stop, length](const char* data, std::size_t size) {
+                    if (stop->load() || buffer->size() + size > length)
+                        return false;
+                    buffer->insert(buffer->end(), data, data + size);
+                    return true;
+                },
+                [this, onDone, buffer, stop](Result<void> result) {
+                    finish(stop, [&onDone, &buffer, &result] {
+                        onDone(result.success ? Result<std::vector<char>>::ok(std::move(*buffer))
+                                              : Result<std::vector<char>>::fail(
+                                                    std::move(result.errorMessage),
+                                                    result.errorCode));
                     });
                 });
         },
         [onDone] {
             onDone(Result<std::vector<char>>::fail(kSupersededMessage, kPreviewSuperseded));
-        });
+        },
+        stop);
 }
 
-void PreviewService::enqueue(std::function<void()> start, std::function<void()> reportSuperseded)
+void PreviewService::cancel()
+{
+    std::function<void()> reportPending;
+    std::function<void()> reportActive;
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        if (mPending)
+        {
+            reportPending = std::move(mPending->reportSuperseded);
+            mPending.reset();
+        }
+        if (mActive && mActiveStop)
+        {
+            mActiveStop->store(true);
+            mActiveStop.reset();
+            reportActive = std::move(mActiveReportSuperseded);
+            mActiveReportSuperseded = nullptr;
+            mActive = false;
+        }
+    }
+
+    if (reportActive)
+        reportActive();
+    if (reportPending)
+        reportPending();
+}
+
+void PreviewService::enqueue(std::function<void()> start,
+                             std::function<void()> reportSuperseded,
+                             std::shared_ptr<std::atomic<bool>> stop)
 {
     std::function<void()> superseded;
     {
         std::lock_guard<std::mutex> lock(mMutex);
         if (mPending)
             superseded = std::move(mPending->reportSuperseded);
-        mPending = Pending{std::move(start), std::move(reportSuperseded)};
+        mPending = Pending{std::move(start), std::move(reportSuperseded), std::move(stop)};
     }
 
     if (superseded)
@@ -126,6 +170,11 @@ void PreviewService::startNextIfIdle()
                 return;
             }
             start = std::move(mPending->start);
+            if (mPending->stop)
+            {
+                mActiveStop = std::move(mPending->stop);
+                mActiveReportSuperseded = std::move(mPending->reportSuperseded);
+            }
             mPending.reset();
             mActive = true;
         }
@@ -140,6 +189,8 @@ void PreviewService::startNextIfIdle()
         {
             std::lock_guard<std::mutex> lock(mMutex);
             mActive = false;
+            mActiveStop.reset();
+            mActiveReportSuperseded = nullptr;
             throw;
         }
 
@@ -155,13 +206,16 @@ void PreviewService::startNextIfIdle()
     }
 }
 
-void PreviewService::finish(const std::function<void()>& deliver)
+void PreviewService::finish(const std::shared_ptr<std::atomic<bool>>& stop,
+                            const std::function<void()>& deliver)
 {
     {
         std::lock_guard<std::mutex> lock(mMutex);
-        if (!mActive)
+        if (!mActive || (stop && stop->load()))
             return;
         mActive = false;
+        mActiveStop.reset();
+        mActiveReportSuperseded = nullptr;
     }
     deliver();
     startNextIfIdle(); // auto-advance; mMutex isn't held here

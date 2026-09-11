@@ -154,6 +154,121 @@ TEST(PreviewServiceTest, ChainedRequestsFromCallbacksDoNotRecurse)
     EXPECT_EQ(maxDepth, 1); // recursing would make this 50
 }
 
+namespace
+{
+using ChunkFn = std::function<bool(const char*, std::size_t)>;
+using StreamDoneFn = std::function<void(Result<void>)>;
+} // namespace
+
+TEST(PreviewServiceTest, RangeReadReassemblesThePiecesItIsHanded)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, readFileRangeStreamed(7, 100, 6, ::testing::_, ::testing::_))
+        .WillOnce(
+            [](std::uint64_t, std::uint64_t, std::uint64_t, ChunkFn onChunk, StreamDoneFn onDone) {
+                EXPECT_TRUE(onChunk("abc", 3));
+                EXPECT_TRUE(onChunk("def", 3));
+                onDone(Result<void>::ok());
+            });
+
+    PreviewService service(mockClient);
+    Result<std::vector<char>> received;
+    service.requestRange(7, 100, 6, [&](Result<std::vector<char>> result) {
+        received = std::move(result);
+    });
+
+    ASSERT_TRUE(received.success);
+    EXPECT_EQ(std::string(received.value().begin(), received.value().end()), "abcdef");
+}
+
+TEST(PreviewServiceTest, CancelStopsAnInFlightRangeReadAndFreesTheSlotAtOnce)
+{
+    // Arrange: a range read in flight, and an image waiting behind it
+    auto mockClient = std::make_shared<MockMegaClient>();
+    ChunkFn onChunk;
+    StreamDoneFn rangeDone;
+    EXPECT_CALL(*mockClient,
+                readFileRangeStreamed(7, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(
+            [&](std::uint64_t, std::uint64_t, std::uint64_t, ChunkFn chunk, StreamDoneFn done) {
+                onChunk = std::move(chunk);
+                rangeDone = std::move(done);
+            });
+    std::function<void(Result<std::string>)> imageDone;
+    EXPECT_CALL(*mockClient, getPreview(8, ::testing::_, ::testing::_))
+        .WillOnce(::testing::SaveArg<2>(&imageDone));
+
+    PreviewService service(mockClient);
+    int rangeReports = 0;
+    Result<std::vector<char>> rangeResult;
+    service.requestRange(7, 0, 1000, [&](Result<std::vector<char>> result) {
+        ++rangeReports;
+        rangeResult = std::move(result);
+    });
+    ASSERT_TRUE(static_cast<bool>(onChunk));
+    EXPECT_TRUE(onChunk("abc", 3));
+
+    // Act
+    service.cancel();
+
+    // Assert: finished as superseded without waiting for the transfer, which refuses
+    // its next piece
+    ASSERT_EQ(rangeReports, 1);
+    EXPECT_EQ(rangeResult.errorCode, kPreviewSuperseded);
+    EXPECT_FALSE(onChunk("def", 3));
+
+    // Act: the next request starts at once, though the old transfer has not ended
+    service.request(8, "/tmp/8.jpg", [](Result<std::string>) {});
+    ASSERT_TRUE(static_cast<bool>(imageDone));
+
+    // Act: the old transfer's own end arrives late
+    rangeDone(Result<void>::fail("Stopped by the receiver", -13));
+
+    // Assert: dropped -- not reported twice, and it did not free the image's slot
+    EXPECT_EQ(rangeReports, 1);
+    EXPECT_CALL(*mockClient, getPreview(9, ::testing::_, ::testing::_)).Times(0);
+    service.request(9, "/tmp/9.jpg", [](Result<std::string>) {});
+}
+
+TEST(PreviewServiceTest, CancelLeavesAStartedImageFetchHoldingTheSlot)
+{
+    // getPreview has no way to be stopped, so cancelling only drops what waits behind it.
+    auto mockClient = std::make_shared<MockMegaClient>();
+    std::function<void(Result<std::string>)> firstDone;
+    std::vector<std::uint64_t> requested;
+    EXPECT_CALL(*mockClient, getPreview(::testing::_, ::testing::_, ::testing::_))
+        .WillRepeatedly([&](std::uint64_t handle,
+                            const std::string&,
+                            std::function<void(Result<std::string>)> onDone) {
+            requested.push_back(handle);
+            if (requested.size() == 1)
+                firstDone = std::move(onDone);
+        });
+
+    PreviewService service(mockClient);
+    bool firstReported = false;
+    Result<std::string> waitingResult;
+    service.request(1, "/tmp/1.jpg", [&](Result<std::string>) {
+        firstReported = true;
+    });
+    service.request(2, "/tmp/2.jpg", [&](Result<std::string> result) {
+        waitingResult = std::move(result);
+    });
+
+    // Act
+    service.cancel();
+    service.request(3, "/tmp/3.jpg", [](Result<std::string>) {});
+
+    // Assert
+    EXPECT_FALSE(firstReported);
+    EXPECT_EQ(waitingResult.errorCode, kPreviewSuperseded);
+    EXPECT_THAT(requested, ::testing::ElementsAre(1));
+    ASSERT_TRUE(static_cast<bool>(firstDone));
+    firstDone(Result<std::string>::ok("/tmp/1.jpg"));
+    EXPECT_TRUE(firstReported);
+    EXPECT_THAT(requested, ::testing::ElementsAre(1, 3));
+}
+
 TEST(PreviewServiceTest, AThrowingClientCallLeavesTheServiceAbleToStartTheNextRequest)
 {
     // Regression guard for the re-entrancy flag's and the in-flight slot's lifetimes:

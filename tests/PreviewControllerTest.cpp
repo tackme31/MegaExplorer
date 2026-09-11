@@ -43,19 +43,28 @@ struct Fixture
     PreviewController controller{service, store};
 };
 
-// Both of the listing's range reads land here; each is answered from the same bytes.
+using ChunkFn = std::function<bool(const char*, std::size_t)>;
+using StreamDoneFn = std::function<void(Result<void>)>;
+
+// Both of the listing's range reads land here; each is answered from the same bytes,
+// in two pieces so the service's reassembly is exercised too.
 void serveRanges(Fixture& f, const std::vector<char>& file)
 {
-    EXPECT_CALL(*f.client, readFileRange(7, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(*f.client,
+                readFileRangeStreamed(7, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillRepeatedly([&file](std::uint64_t,
                                 std::uint64_t offset,
                                 std::uint64_t length,
-                                std::function<void(Result<std::vector<char>>)> onDone) {
-            const auto from = static_cast<std::ptrdiff_t>(offset);
-            const auto count =
-                static_cast<std::ptrdiff_t>(std::min<std::uint64_t>(length, file.size() - offset));
-            onDone(Result<std::vector<char>>::ok(
-                std::vector<char>(file.begin() + from, file.begin() + from + count)));
+                                ChunkFn onChunk,
+                                StreamDoneFn onDone) {
+            const std::size_t count =
+                static_cast<std::size_t>(std::min<std::uint64_t>(length, file.size() - offset));
+            const char* from = file.data() + offset;
+            const std::size_t half = count / 2;
+            if (half > 0)
+                (void)onChunk(from, half);
+            (void)onChunk(from + half, count - half);
+            onDone(Result<void>::ok());
         });
 }
 
@@ -276,8 +285,8 @@ TEST(PreviewControllerTest, ArchiveEntriesBecomeATreeWithFoldersFirst)
     // controller synthesises it from the path of the file inside it. The name is
     // UTF-8 with the flag set, which is what a modern writer produces.
     Fixture f;
-    const std::vector<char> file =
-        testzip::buildZip({{"docs/\xe3\x83\xa1\xe3\x83\xa2.txt", 1434, true}, {"readme.txt", 500, false}});
+    const std::vector<char> file = testzip::buildZip(
+        {{"docs/\xe3\x83\xa1\xe3\x83\xa2.txt", 1434, true}, {"readme.txt", 500, false}});
     serveRanges(f, file);
 
     f.controller.showSelection(7, QStringLiteral("bundle.zip"), file.size(), false);
@@ -323,11 +332,86 @@ TEST(PreviewControllerTest, AnArchiveWithNoEntriesSaysSoRatherThanFailing)
 TEST(PreviewControllerTest, AFileTooSmallToHoldAnEocdIsRefusedWithoutARequest)
 {
     Fixture f;
-    EXPECT_CALL(*f.client, readFileRange(::testing::_, ::testing::_, ::testing::_, ::testing::_))
+    EXPECT_CALL(
+        *f.client,
+        readFileRangeStreamed(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .Times(0);
 
     f.controller.showSelection(7, QStringLiteral("stub.zip"), 8, false);
 
     EXPECT_EQ(f.controller.state(), PreviewController::Unsupported);
     EXPECT_EQ(f.controller.reason(), PreviewController::ArchiveUnreadable);
+}
+
+namespace
+{
+// Serves the zip's tail at once and holds the directory read open, which is the
+// window the tests below move the selection in.
+struct HeldDirectoryRead
+{
+    ChunkFn onChunk;
+    StreamDoneFn onDone;
+};
+
+void serveTailAndHoldDirectory(Fixture& f, const std::vector<char>& file, HeldDirectoryRead& held)
+{
+    EXPECT_CALL(*f.client,
+                readFileRangeStreamed(7, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillRepeatedly([&file, &held](std::uint64_t,
+                                       std::uint64_t offset,
+                                       std::uint64_t length,
+                                       ChunkFn onChunk,
+                                       StreamDoneFn onDone) {
+            if (offset + length < file.size())
+            {
+                held = {std::move(onChunk), std::move(onDone)};
+                return;
+            }
+            (void)onChunk(file.data() + offset, static_cast<std::size_t>(length));
+            onDone(Result<void>::ok());
+        });
+}
+} // namespace
+
+TEST(PreviewControllerTest, MovingOffAZipStopsItsDirectoryReadAndStartsTheNextPreviewAtOnce)
+{
+    Fixture f;
+    const std::vector<char> file =
+        testzip::buildZip({{"a.txt", 100, false}, {"b.txt", 200, false}});
+    HeldDirectoryRead held;
+    serveTailAndHoldDirectory(f, file, held);
+    f.controller.showSelection(7, QStringLiteral("bundle.zip"), file.size(), false);
+    drainEvents();
+    ASSERT_TRUE(static_cast<bool>(held.onChunk)) << "the directory read never started";
+
+    // Act: the cursor moves to an image while the directory is still arriving
+    EXPECT_CALL(*f.client, getPreview(8, ::testing::_, ::testing::_)).Times(1);
+    f.controller.showSelection(8, QStringLiteral("photo.jpg"), 200000, false);
+
+    // Assert: the image started without waiting, and the old transfer refuses its next
+    // piece, which is what makes the SDK stop pulling it
+    const char piece[4] = {};
+    EXPECT_FALSE(held.onChunk(piece, sizeof(piece)));
+    held.onDone(Result<void>::fail("Stopped by the receiver", -13));
+    drainEvents();
+    EXPECT_EQ(f.controller.state(), PreviewController::Loading);
+}
+
+TEST(PreviewControllerTest, MovingOffAZipToAFolderStillStopsItsDirectoryRead)
+{
+    // No request follows a folder, so nothing supersedes the read -- it has to be
+    // stopped on the way out.
+    Fixture f;
+    const std::vector<char> file = testzip::buildZip({{"a.txt", 100, false}});
+    HeldDirectoryRead held;
+    serveTailAndHoldDirectory(f, file, held);
+    f.controller.showSelection(7, QStringLiteral("bundle.zip"), file.size(), false);
+    drainEvents();
+    ASSERT_TRUE(static_cast<bool>(held.onChunk));
+
+    f.controller.showSelection(9, QStringLiteral("Holiday photos"), 0, true);
+
+    const char piece[4] = {};
+    EXPECT_FALSE(held.onChunk(piece, sizeof(piece)));
+    EXPECT_EQ(f.controller.state(), PreviewController::Empty);
 }

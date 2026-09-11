@@ -2,6 +2,7 @@
 #include "IMegaClient.h"
 #include "Result.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -22,8 +23,9 @@ constexpr int kPreviewSuperseded = 3;
 // a new request evicts whatever was waiting and finishes it with kPreviewSuperseded.
 // Holding Down across a hundred rows therefore costs two SDK calls, not a hundred.
 // An evicted request never started, so it wrote no file and needs no cleanup; a
-// *started* one cannot be recalled (getPreview takes no MegaCancelToken), which is
-// why the generation check and the temp-file delete live in PreviewController.
+// *started* image or text fetch cannot be recalled (getPreview takes no
+// MegaCancelToken), which is why the generation check and the temp-file delete live
+// in PreviewController. A started range read can be: see cancel().
 //
 // Images and text share the one slot deliberately: arrowing from a JPEG to a text
 // file must supersede the JPEG, not race it. The two kinds return different payloads,
@@ -55,6 +57,12 @@ public:
                       std::uint64_t length,
                       std::function<void(Result<std::vector<char>>)> onDone);
 
+    // Finishes the waiting request with kPreviewSuperseded, and the in-flight one too
+    // when it is a range read. That one frees the slot at once, so the next request
+    // starts without waiting for it; its transfer stops at the next piece the SDK
+    // hands over, and whatever it reports after that is dropped.
+    void cancel();
+
 private:
     struct Pending
     {
@@ -62,21 +70,31 @@ private:
         std::function<void()> start;
         // Runs instead, with kPreviewSuperseded, if a newer request arrives first.
         std::function<void()> reportSuperseded;
+        // Set only for requests cancel() can stop once started; the transfer polls it.
+        std::shared_ptr<std::atomic<bool>> stop;
     };
 
-    void enqueue(std::function<void()> start, std::function<void()> reportSuperseded);
+    void enqueue(std::function<void()> start,
+                 std::function<void()> reportSuperseded,
+                 std::shared_ptr<std::atomic<bool>> stop = nullptr);
 
     // Starts the waiting request if nothing is in flight; loops only when one
     // finished inside this very call (mirrors ThumbnailService::startNextIfCapacity,
     // trampoline included).
     void startNextIfIdle();
 
-    void finish(const std::function<void()>& deliver);
+    // stop is the request's own flag: once cancel() has set it, the slot already
+    // belongs to someone else and the late result is dropped.
+    void finish(const std::shared_ptr<std::atomic<bool>>& stop,
+                const std::function<void()>& deliver);
 
     std::shared_ptr<IMegaClient> mClient;
     mutable std::mutex mMutex;
     bool mActive = false;
     std::optional<Pending> mPending;
+    // The in-flight request's stop flag and superseded report, while it is stoppable.
+    std::shared_ptr<std::atomic<bool>> mActiveStop;
+    std::function<void()> mActiveReportSuperseded;
 
     // Re-entrancy trampoline, as in ThumbnailService. The reachable case here is a
     // fast cursor move over rows whose handles are already gone.

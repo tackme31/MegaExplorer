@@ -37,6 +37,9 @@ void PreviewController::showSelection(quint64 handle,
     mShownHandle = handle;
 
     ++mGeneration;
+    // Moving to a folder or an unpreviewable file issues no request of its own, so
+    // the previous one has to be stopped here rather than by being superseded.
+    mService->cancel();
     mImageStore->clear();
 
     if (isFolder)
@@ -73,6 +76,7 @@ void PreviewController::clear()
 {
     mShownHandle.reset();
     ++mGeneration;
+    mService->cancel();
     mImageStore->clear();
     publish(Empty, NoKind, NoReason);
 }
