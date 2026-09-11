@@ -50,7 +50,8 @@ ColumnLayout {
     // can wire this file's double-click/download-open dispatch without this
     // file needing to know about that -- a plain `id` from a separately-
     // loaded QML file's object tree isn't reachable from here.
-    signal activateRequested(bool isFolder, var handle, string name, var sizeBytes)
+    // kind: "" lets the name pick the viewer, as double-click does; see FileContextMenu.
+    signal activateRequested(bool isFolder, var handle, string name, var sizeBytes, string kind)
     // Middle-click on a folder row below -- ignored for files, same
     // restriction as the "Open in new tab" context-menu action
     // (MenuActionResolver's FoldersOnly/SingleOnly spec).
@@ -526,8 +527,10 @@ ColumnLayout {
             arrowColumns: 1
             horizontalArrows: false
             onNewFolderRequested: root.newFolderRequested()
-            onOpenRequested: (handle, name, sizeBytes) => root.activateRequested(false, handle,
-                                                                                 name, sizeBytes)
+            onOpenRequested: (handle, name, sizeBytes, kind) => root.activateRequested(false,
+                                                                                       handle, name,
+                                                                                       sizeBytes,
+                                                                                       kind)
         }
 
         // Scrolling a row the controller already selected into view -- e.g. a
@@ -730,7 +733,7 @@ ColumnLayout {
             TapHandler {
                 acceptedButtons: Qt.LeftButton
                 onDoubleTapped: root.activateRequested(cell.isFolder, cell.handle, cell.name,
-                                                       cell.sizeBytes)
+                                                       cell.sizeBytes, "")
             }
 
             // Per cell rather than per row -- the delegate is a cell here, so

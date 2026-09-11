@@ -1,6 +1,7 @@
 #include "core/MenuActionResolver.h"
 
 #include <algorithm>
+#include <iterator>
 #include <gtest/gtest.h>
 
 namespace
@@ -262,20 +263,23 @@ TEST(MenuActionResolverTest, EmptySelectionYieldsNoActions)
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(1, 0));
-    ASSERT_EQ(result.size(), 13u);
+    ASSERT_EQ(result.size(), 16u);
     EXPECT_EQ(result[0], MenuAction::Open);
-    EXPECT_EQ(result[1], MenuAction::Download);
-    EXPECT_EQ(result[2], MenuAction::OpenLocalFile);
-    EXPECT_EQ(result[3], MenuAction::OpenLocalLocation);
-    EXPECT_EQ(result[4], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[5], MenuAction::LinkSettings);
-    EXPECT_EQ(result[6], MenuAction::CopyLink);
-    EXPECT_EQ(result[7], MenuAction::RemoveLink);
-    EXPECT_EQ(result[8], MenuAction::Cut);
-    EXPECT_EQ(result[9], MenuAction::Copy);
-    EXPECT_EQ(result[10], MenuAction::Rename);
-    EXPECT_EQ(result[11], MenuAction::MoveToRubbish);
-    EXPECT_EQ(result[12], MenuAction::Properties);
+    EXPECT_EQ(result[1], MenuAction::OpenAsVideo);
+    EXPECT_EQ(result[2], MenuAction::OpenAsAudio);
+    EXPECT_EQ(result[3], MenuAction::OpenAsArchive);
+    EXPECT_EQ(result[4], MenuAction::Download);
+    EXPECT_EQ(result[5], MenuAction::OpenLocalFile);
+    EXPECT_EQ(result[6], MenuAction::OpenLocalLocation);
+    EXPECT_EQ(result[7], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[8], MenuAction::LinkSettings);
+    EXPECT_EQ(result[9], MenuAction::CopyLink);
+    EXPECT_EQ(result[10], MenuAction::RemoveLink);
+    EXPECT_EQ(result[11], MenuAction::Cut);
+    EXPECT_EQ(result[12], MenuAction::Copy);
+    EXPECT_EQ(result[13], MenuAction::Rename);
+    EXPECT_EQ(result[14], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[15], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForMultipleFiles)
@@ -337,6 +341,43 @@ TEST(MenuActionResolverTest, DefaultTableOffersOpenForASingleFileInEveryView)
     EXPECT_FALSE(
         contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)), MenuAction::Open));
     EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::Open));
+}
+
+TEST(MenuActionResolverTest, OpenAsIdsAreStable)
+{
+    EXPECT_STREQ(menuActionId(MenuAction::OpenAsVideo), "openAsVideo");
+    EXPECT_STREQ(menuActionId(MenuAction::OpenAsAudio), "openAsAudio");
+    EXPECT_STREQ(menuActionId(MenuAction::OpenAsArchive), "openAsArchive");
+}
+
+TEST(MenuActionResolverTest, DefaultTableOffersOpenAsExactlyWhereItOffersOpen)
+{
+    const MenuAction openAs[] = {
+        MenuAction::OpenAsVideo, MenuAction::OpenAsAudio, MenuAction::OpenAsArchive};
+    for (ViewKind kind : {ViewKind::CloudDrive,
+                          ViewKind::Favourites,
+                          ViewKind::Recents,
+                          ViewKind::SharedLinks,
+                          ViewKind::Rubbish})
+    {
+        const std::vector<MenuAction> single = resolveMenuActions(fileSelection(1, 0, kind));
+        ASSERT_GE(single.size(), 4u) << static_cast<int>(kind);
+        // Straight after Open, so the submenu sits right under it.
+        for (std::size_t i = 0; i < std::size(openAs); ++i)
+            EXPECT_EQ(single[i + 1], openAs[i]) << static_cast<int>(kind);
+        for (MenuAction action : openAs)
+        {
+            EXPECT_FALSE(contains(resolveMenuActions(fileSelection(0, 1, kind)), action))
+                << static_cast<int>(kind);
+            EXPECT_FALSE(contains(resolveMenuActions(fileSelection(2, 0, kind)), action))
+                << static_cast<int>(kind);
+        }
+    }
+    for (MenuAction action : openAs)
+    {
+        EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)), action));
+        EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), action));
+    }
 }
 
 TEST(MenuActionResolverTest, DownloadIdIsStable)
@@ -691,18 +732,21 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     // never move, and cut is a deferred move (its decision 1).
     const std::vector<MenuAction> result =
         resolveMenuActions(fileSelection(1, 0, ViewKind::Favourites));
-    ASSERT_EQ(result.size(), 11u);
+    ASSERT_EQ(result.size(), 14u);
     EXPECT_EQ(result[0], MenuAction::Open);
-    EXPECT_EQ(result[1], MenuAction::Download);
-    EXPECT_EQ(result[2], MenuAction::OpenLocalFile);
-    EXPECT_EQ(result[3], MenuAction::OpenLocalLocation);
-    EXPECT_EQ(result[4], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[5], MenuAction::LinkSettings);
-    EXPECT_EQ(result[6], MenuAction::CopyLink);
-    EXPECT_EQ(result[7], MenuAction::RemoveLink);
-    EXPECT_EQ(result[8], MenuAction::Copy);
-    EXPECT_EQ(result[9], MenuAction::Rename);
-    EXPECT_EQ(result[10], MenuAction::Properties);
+    EXPECT_EQ(result[1], MenuAction::OpenAsVideo);
+    EXPECT_EQ(result[2], MenuAction::OpenAsAudio);
+    EXPECT_EQ(result[3], MenuAction::OpenAsArchive);
+    EXPECT_EQ(result[4], MenuAction::Download);
+    EXPECT_EQ(result[5], MenuAction::OpenLocalFile);
+    EXPECT_EQ(result[6], MenuAction::OpenLocalLocation);
+    EXPECT_EQ(result[7], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[8], MenuAction::LinkSettings);
+    EXPECT_EQ(result[9], MenuAction::CopyLink);
+    EXPECT_EQ(result[10], MenuAction::RemoveLink);
+    EXPECT_EQ(result[11], MenuAction::Copy);
+    EXPECT_EQ(result[12], MenuAction::Rename);
+    EXPECT_EQ(result[13], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableStillOffersOpenInNewTabAndTogglePinInFavourites)

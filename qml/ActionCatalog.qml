@@ -49,6 +49,26 @@ QtObject {
                                             "enabled": ctx => ctx.openable === true,
                                             "trigger": ctx => ctx.requestOpen()
                                         },
+                                        // ctx: requestOpenAs(kind). Never greyed:
+                                        // overriding the extension is the point.
+                                        "openAsVideo": {
+                                            "icon": ctx => Theme.glyph.menu.openAsVideo,
+                                            "label": ctx => qsTr("Video"),
+                                            "group": "openAs",
+                                            "trigger": ctx => ctx.requestOpenAs("video")
+                                        },
+                                        "openAsAudio": {
+                                            "icon": ctx => Theme.glyph.menu.openAsAudio,
+                                            "label": ctx => qsTr("Audio"),
+                                            "group": "openAs",
+                                            "trigger": ctx => ctx.requestOpenAs("audio")
+                                        },
+                                        "openAsArchive": {
+                                            "icon": ctx => Theme.glyph.menu.openAsArchive,
+                                            "label": ctx => qsTr("ZIP archive"),
+                                            "group": "openAs",
+                                            "trigger": ctx => ctx.requestOpenAs("archive")
+                                        },
                                         // ctx: requestNewFolder()
                                         "newFolder": {
                                             "icon": ctx => Theme.glyph.menu.newFolder,
@@ -309,6 +329,10 @@ QtObject {
     // holds, and in what order, is still the resolver's call: a group is only
     // how ActionMenu.qml presents the IDs it was handed.
     readonly property var groups: ({
+                                       "openAs": {
+                                           "icon": Theme.glyph.menu.openAs,
+                                           "label": qsTr("Open as")
+                                       },
                                        "share": {
                                            "icon": Theme.glyph.menu.share,
                                            "label": qsTr("Share")

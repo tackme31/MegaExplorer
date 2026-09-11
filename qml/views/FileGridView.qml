@@ -25,7 +25,8 @@ GridView {
     // is carried by a separate overlay item instead of a delegate.
     required property var dragProxy
 
-    signal activateRequested(bool isFolder, var handle, string name, var sizeBytes)
+    // kind: "" lets the name pick the viewer, as double-click does; see FileContextMenu.
+    signal activateRequested(bool isFolder, var handle, string name, var sizeBytes, string kind)
     // Middle-click on a folder delegate below -- ignored for files, same
     // restriction as the "Open in new tab" context-menu action
     // (MenuActionResolver's FoldersOnly/SingleOnly spec).
@@ -182,8 +183,9 @@ GridView {
         arrowColumns: Math.max(1, Math.floor(root.width / root.cellWidth))
         horizontalArrows: true
         onNewFolderRequested: root.newFolderRequested()
-        onOpenRequested: (handle, name, sizeBytes) => root.activateRequested(false, handle, name,
-                                                                             sizeBytes)
+        onOpenRequested: (handle, name, sizeBytes, kind) => root.activateRequested(false, handle,
+                                                                                   name, sizeBytes,
+                                                                                   kind)
     }
 
     // See FileTableView.qml's copy for why both views listen and why the call is
@@ -411,7 +413,7 @@ GridView {
             acceptedButtons: Qt.LeftButton
             onDoubleTapped: root.activateRequested(gridDelegateItem.isFolder,
                                                    gridDelegateItem.handle, gridDelegateItem.name,
-                                                   gridDelegateItem.sizeBytes)
+                                                   gridDelegateItem.sizeBytes, "")
         }
 
         // Starts a move drag. target: null because the tile must stay in the

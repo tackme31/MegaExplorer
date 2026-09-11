@@ -57,8 +57,9 @@ Window {
     title: root.currentName
     color: Theme.color.surface
 
-    function open(handle, name) {
-        if (!root.controller || root.controller.viewerKind(name) !== "audio")
+    // forced: Open as chose this viewer, so the extension is not asked.
+    function open(handle, name, forced) {
+        if (!root.controller || (forced !== true && root.controller.viewerKind(name) !== "audio"))
             return;
         root.currentHandle = handle;
         root.currentName = name;

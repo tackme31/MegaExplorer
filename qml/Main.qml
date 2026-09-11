@@ -401,8 +401,11 @@ ApplicationWindow {
                                                   entry.name) === "image");
     }
 
-    function openViewer(handle, name, sizeBytes, listModel): void {
-        const kind = viewerController.viewerKind(name);
+    // chosenKind is the viewer Open as picked, or "" to let the name decide as
+    // double-click does; a chosen viewer is told not to second-guess the extension.
+    function openViewer(handle, name, sizeBytes, listModel, chosenKind): void {
+        const forced = chosenKind !== "";
+        const kind = forced ? chosenKind : viewerController.viewerKind(name);
         const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : kind === "pdf" ? pdfViewerComponent : kind === "audio" ? audioViewerComponent : kind === "archive" ? archiveViewerComponent : null;
         if (!component)
             return;
@@ -413,9 +416,9 @@ ApplicationWindow {
         if (kind === "image")
             viewer.open(handle, name, window.imageSequence(listModel));
         else if (kind === "archive")
-            viewer.open(handle, name, sizeBytes);
+            viewer.open(handle, name, sizeBytes, forced);
         else
-            viewer.open(handle, name);
+            viewer.open(handle, name, forced);
         // A viewer that never became visible would never reach the onVisibleChanged
         // that destroys it.
         if (!viewer.showing)
@@ -530,9 +533,9 @@ ApplicationWindow {
                         initialColumnWidthSize: window.columnWidthSize
                         initialPreviewVisible: window.previewVisible
 
-                        onFileActivated: (handle, name, sizeBytes) => window.openViewer(
+                        onFileActivated: (handle, name, sizeBytes, kind) => window.openViewer(
                                              handle, name, sizeBytes,
-                                             pane.navController.fileListModel)
+                                             pane.navController.fileListModel, kind)
 
                         onViewModeWriteBack: vm => window.viewMode = vm
                         onPreviewVisibleWriteBack: v => window.previewVisible = v

@@ -60,8 +60,9 @@ Window {
     title: root.currentName
     color: Theme.color.surface
 
-    function open(handle, name, sizeBytes) {
-        if (!root.controller || root.controller.viewerKind(name) !== "archive")
+    // forced: Open as chose this viewer, so the extension is not asked.
+    function open(handle, name, sizeBytes, forced) {
+        if (!root.controller || (forced !== true && root.controller.viewerKind(name) !== "archive"))
             return;
         root.currentHandle = handle;
         root.currentName = name;

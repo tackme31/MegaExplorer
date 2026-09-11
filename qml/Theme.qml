@@ -253,6 +253,10 @@ QtObject {
         // viewList above) -- do both when the final set is settled on.
         readonly property QtObject menu: QtObject {
             readonly property string open: "\uE890"         // View
+            readonly property string openAs: "\uE7AC"        // OpenWith
+            readonly property string openAsVideo: "\uE714"   // Video
+            readonly property string openAsAudio: "\uE8D6"   // Audio
+            readonly property string openAsArchive: "\uF012" // ZipFolder
             readonly property string newFolder: "\uE8F4"     // NewFolder
             readonly property string download: glyphSet.transferDown
             // Not yet checked against either icon font's cmap, nor drawn at 16px --

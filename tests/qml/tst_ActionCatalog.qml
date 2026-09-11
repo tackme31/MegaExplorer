@@ -58,6 +58,21 @@ TestCase {
                         expected: "Open"
                     },
                     {
+                        tag: "openAsVideo",
+                        id: "openAsVideo",
+                        expected: "Video"
+                    },
+                    {
+                        tag: "openAsAudio",
+                        id: "openAsAudio",
+                        expected: "Audio"
+                    },
+                    {
+                        tag: "openAsArchive",
+                        id: "openAsArchive",
+                        expected: "ZIP archive"
+                    },
+                    {
                         tag: "newFolder",
                         id: "newFolder",
                         expected: "New folder"
@@ -177,6 +192,21 @@ TestCase {
                         tag: "open",
                         id: "open",
                         expected: Theme.glyph.menu.open
+                    },
+                    {
+                        tag: "openAsVideo",
+                        id: "openAsVideo",
+                        expected: Theme.glyph.menu.openAsVideo
+                    },
+                    {
+                        tag: "openAsAudio",
+                        id: "openAsAudio",
+                        expected: Theme.glyph.menu.openAsAudio
+                    },
+                    {
+                        tag: "openAsArchive",
+                        id: "openAsArchive",
+                        expected: Theme.glyph.menu.openAsArchive
                     },
                     {
                         tag: "newFolder",
@@ -334,6 +364,20 @@ TestCase {
                     {
                         tag: "refresh",
                         id: "refresh"
+                    },
+                    // Unlike open: overriding the extension is the point, so
+                    // a file no viewer claims is exactly where they apply.
+                    {
+                        tag: "openAsVideo",
+                        id: "openAsVideo"
+                    },
+                    {
+                        tag: "openAsAudio",
+                        id: "openAsAudio"
+                    },
+                    {
+                        tag: "openAsArchive",
+                        id: "openAsArchive"
                     }
                 ];
     }
@@ -459,6 +503,30 @@ TestCase {
                 ]);
     }
 
+    // Open as sits straight under Open, the order the resolver hands them over in.
+    function test_rows_foldsTheOpenAsActionsIntoOneRowUnderOpen() {
+        compare(ActionCatalog.rows(["open", "openAsVideo", "openAsAudio", "openAsArchive",
+                                    "download"]), [
+                    {
+                        "id": "open"
+                    },
+                    {
+                        "group": "openAs",
+                        "ids": ["openAsVideo", "openAsAudio", "openAsArchive"]
+                    },
+                    {
+                        "id": "download"
+                    }
+                ]);
+    }
+
+    function test_group_openAs() {
+        compare(ActionCatalog.groupLabel("openAs"), "Open as");
+        const icon = ActionCatalog.groupIcon("openAs");
+        compare(icon, Theme.glyph.menu.openAs);
+        verify(icon !== undefined && icon !== "");
+    }
+
     function test_group_share() {
         compare(ActionCatalog.groupLabel("share"), "Share");
         const icon = ActionCatalog.groupIcon("share");
@@ -530,6 +598,35 @@ TestCase {
         };
         ActionCatalog.trigger(data.id, ctx);
         compare(calls, 1);
+    }
+
+    // The kind handed back is what Main.qml's openViewer switches on.
+    function test_trigger_openAsPassesTheChosenViewer_data() {
+        return [
+                    {
+                        tag: "openAsVideo",
+                        id: "openAsVideo",
+                        kind: "video"
+                    },
+                    {
+                        tag: "openAsAudio",
+                        id: "openAsAudio",
+                        kind: "audio"
+                    },
+                    {
+                        tag: "openAsArchive",
+                        id: "openAsArchive",
+                        kind: "archive"
+                    }
+                ];
+    }
+
+    function test_trigger_openAsPassesTheChosenViewer(data) {
+        const kinds = [];
+        const ctx = fullCtx();
+        ctx.requestOpenAs = kind => kinds.push(kind);
+        ActionCatalog.trigger(data.id, ctx);
+        compare(kinds, [data.kind]);
     }
 
     function test_trigger_pasteCallsMutations() {

@@ -60,6 +60,17 @@ TestCase {
         compare(controller.urlCallCount, 0);
     }
 
+    // Open as: the extension is not asked, even when it names the video viewer's kind.
+    function test_forcedOpenShowsAFileTheNameDoesNotClaim() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+
+        viewer.open(7, "clip.mp4", true);
+        verify(viewer.showing);
+        compare(viewer.currentName, "clip.mp4");
+        compare(String(viewer.source), "http://127.0.0.1:1/7/f.mp3");
+    }
+
     function test_openShowsTheAudioAndAsksForItsUrl() {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
         const viewer = makeViewer(controller);

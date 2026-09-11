@@ -80,6 +80,35 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
           ViewKind::Rubbish},
          ActionTarget::FilesOnly,
          ActionArity::SingleOnly},
+        // Offered on exactly Open's terms, whatever the name: the point is a file whose
+        // extension is wrong or missing.
+        {MenuAction::OpenAsVideo,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive,
+          ViewKind::Favourites,
+          ViewKind::Recents,
+          ViewKind::SharedLinks,
+          ViewKind::Rubbish},
+         ActionTarget::FilesOnly,
+         ActionArity::SingleOnly},
+        {MenuAction::OpenAsAudio,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive,
+          ViewKind::Favourites,
+          ViewKind::Recents,
+          ViewKind::SharedLinks,
+          ViewKind::Rubbish},
+         ActionTarget::FilesOnly,
+         ActionArity::SingleOnly},
+        {MenuAction::OpenAsArchive,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive,
+          ViewKind::Favourites,
+          ViewKind::Recents,
+          ViewKind::SharedLinks,
+          ViewKind::Rubbish},
+         ActionTarget::FilesOnly,
+         ActionArity::SingleOnly},
         {MenuAction::NewFolder,
          {MenuSite::FolderBackground},
          {ViewKind::CloudDrive},
@@ -283,6 +312,12 @@ const char* menuActionId(MenuAction action)
     {
         case MenuAction::Open:
             return "open";
+        case MenuAction::OpenAsVideo:
+            return "openAsVideo";
+        case MenuAction::OpenAsAudio:
+            return "openAsAudio";
+        case MenuAction::OpenAsArchive:
+            return "openAsArchive";
         case MenuAction::NewFolder:
             return "newFolder";
         case MenuAction::Download:

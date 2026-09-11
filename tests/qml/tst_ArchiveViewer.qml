@@ -147,6 +147,18 @@ TestCase {
         compare(controller.openCount, 0);
     }
 
+    // Open as: the extension is not asked -- a .docx is a zip, for one.
+    function test_forcedOpenShowsAFileTheNameDoesNotClaim() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+
+        viewer.open(7, "report.docx", 4096, true);
+        verify(viewer.showing);
+        compare(viewer.title, "report.docx");
+        compare(controller.openCount, 1);
+        compare(controller.lastSize, 4096);
+    }
+
     function test_openShowsTheArchiveRootAndPassesItsSize() {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
         const viewer = makeViewer(controller);

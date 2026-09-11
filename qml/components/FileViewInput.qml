@@ -75,8 +75,8 @@ Item {
     // NewFolderDialog.
     signal newFolderRequested
 
-    // The file menu's Open, relayed by the host as the double-click it stands for.
-    signal openRequested(var handle, string name, var sizeBytes)
+    // The file menu's Open and Open as, relayed by the host as the double-click they stand for.
+    signal openRequested(var handle, string name, var sizeBytes, string kind)
 
     // Shared by F2 and the context menu's renameRequested. Renaming is
     // inherently single-item, so this collapses the selection to the cursor row
@@ -322,7 +322,8 @@ Item {
         id: contextMenu
         navController: root.navController
         mutController: root.mutController
-        onOpenRequested: (handle, name, sizeBytes) => root.openRequested(handle, name, sizeBytes)
+        onOpenRequested: (handle, name, sizeBytes, kind) => root.openRequested(handle, name,
+                                                                               sizeBytes, kind)
         onRenameRequested: root.beginRename()
         onMoveToRubbishRequested: confirmRubbishDialog.confirm()
         onDeletePermanentlyRequested: confirmPermanentDeleteDialog.confirm()

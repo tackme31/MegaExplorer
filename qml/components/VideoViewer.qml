@@ -54,8 +54,9 @@ Window {
     // Its own dark ground in both themes, the way video players generally are.
     color: "#1c1c1c"
 
-    function open(handle, name) {
-        if (!root.controller || root.controller.viewerKind(name) !== "video")
+    // forced: Open as chose this viewer, so the extension is not asked.
+    function open(handle, name, forced) {
+        if (!root.controller || (forced !== true && root.controller.viewerKind(name) !== "video"))
             return;
         root.currentHandle = handle;
         root.currentName = name;

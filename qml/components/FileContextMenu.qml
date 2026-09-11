@@ -20,7 +20,8 @@ ActionMenu {
     // Delegated to the owning view rather than handled in ActionCatalog.qml:
     // each view owns its own inline rename field and ConfirmRubbishDialog
     // instance, which a singleton can't reach.
-    signal openRequested(var handle, string name, var sizeBytes)
+    // kind is "" for Open (the name picks the viewer) or the viewer Open as picked.
+    signal openRequested(var handle, string name, var sizeBytes, string kind)
     signal renameRequested
     signal moveToRubbishRequested
     signal deletePermanentlyRequested
@@ -87,7 +88,9 @@ ActionMenu {
             "navController": root.navController,
             "mutations": root.mutController,
             "requestOpen": () => root.openRequested(primary.handle, primary.name,
-                                                    primary.sizeBytes),
+                                                    primary.sizeBytes, ""),
+            "requestOpenAs": kind => root.openRequested(primary.handle, primary.name,
+                                                        primary.sizeBytes, kind),
             "requestRename": () => root.renameRequested(),
             "requestMoveToRubbish": () => root.moveToRubbishRequested(),
             "requestDeletePermanently": () => root.deletePermanentlyRequested(),
