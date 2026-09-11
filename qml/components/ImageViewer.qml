@@ -283,9 +283,10 @@ Window {
         wrapMode: Text.Wrap
         color: "#ffffff"
         // The two failures kept apart: no URL means the local server would not start,
-        // an Image error means the bytes did not decode.
-        text: String(root.source) === "" ? "This file could not be opened." :
-                                           "This image could not be displayed."
+        // an Image error means the bytes did not decode -- which Open as makes a
+        // wrong-format guess as likely as a damaged file.
+        text: String(root.source) === "" ? qsTr("This file could not be opened.") : qsTr(
+                                               "This file could not be displayed as an image. It may be a different format, or damaged.")
         visible: root.failed
     }
 }

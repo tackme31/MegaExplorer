@@ -229,6 +229,19 @@ TestCase {
         verify(!upButton(viewer).enabled);
     }
 
+    // Open as ZIP on a file that is not one lands here, so the wording names both causes.
+    function test_anUnreadableFileSaysItMayBeAnotherFormat() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        controller.browserState = ArchiveBrowser.Failed;
+        controller.browserReason = ArchiveBrowser.Unreadable;
+        const viewer = makeViewer(controller);
+
+        viewer.open(7, "photo.jpg", 4096, true);
+        verify(viewer.failed);
+        compare(statusLabel(viewer).text,
+                "This file could not be read as a zip archive. It may be a different format, or damaged.");
+    }
+
     function test_loadingShowsNeitherRowsNorAFailure() {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
         controller.browserState = ArchiveBrowser.Loading;

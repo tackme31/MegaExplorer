@@ -124,8 +124,8 @@ Window {
                 color: "#ffffff"
                 // The two failures kept apart: no URL means the local server would not
                 // start, an item error means the bytes never became a document.
-                text: String(root.source) === "" ? "This file could not be opened." :
-                                                   "This PDF could not be displayed."
+                text: String(root.source) === "" ? qsTr("This file could not be opened.") : qsTr(
+                                                       "This file could not be displayed as a PDF. It may be a different format, or damaged.")
                 visible: root.failed
             }
         }

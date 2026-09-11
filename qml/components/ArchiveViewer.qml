@@ -390,9 +390,10 @@ Window {
                     case ArchiveBrowser.Empty:
                         return qsTr("This archive is empty");
                     case ArchiveBrowser.FetchFailed:
-                        return qsTr("This archive could not be loaded");
+                        return qsTr("This file could not be loaded.");
                     default:
-                        return qsTr("This archive could not be read");
+                        return qsTr(
+                                    "This file could not be read as a zip archive. It may be a different format, or damaged.");
                     }
                 }
             }

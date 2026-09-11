@@ -187,8 +187,8 @@ Window {
                     color: Theme.color.textSecondary
                     // The two failures kept apart: no URL means the local server would
                     // not start, a player error means the stream did not decode.
-                    text: String(root.source) === "" ? "This file could not be opened." :
-                                                       "This audio could not be played."
+                    text: String(root.source) === "" ? qsTr("This file could not be opened.") : qsTr(
+                                                           "This file could not be played as audio. It may be a different format, or damaged.")
                     visible: root.failed
                 }
             }
