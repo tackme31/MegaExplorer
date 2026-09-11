@@ -2,6 +2,7 @@
 
 #include "app/Logging.h"
 #include "ArchiveTree.h"
+#include "core/FormatSniff.h"
 #include "core/PreviewKind.h"
 #include "core/ZipListing.h"
 #include "GuiThread.h"
@@ -11,6 +12,45 @@
 #include <algorithm>
 #include <optional>
 #include <utility>
+
+namespace
+{
+
+// viewerKind()'s names back to the kind each came from.
+PreviewKind previewKindForViewer(const QString& kind)
+{
+    if (kind == QLatin1String("image"))
+        return PreviewKind::Image;
+    if (kind == QLatin1String("video"))
+        return PreviewKind::Video;
+    if (kind == QLatin1String("pdf"))
+        return PreviewKind::Pdf;
+    if (kind == QLatin1String("audio"))
+        return PreviewKind::Audio;
+    if (kind == QLatin1String("archive"))
+        return PreviewKind::Archive;
+    return PreviewKind::None;
+}
+
+QString sniffedFormatName(SniffedFormat format)
+{
+    switch (format)
+    {
+        case SniffedFormat::Image:
+            return QStringLiteral("image");
+        case SniffedFormat::Media:
+            return QStringLiteral("media");
+        case SniffedFormat::Pdf:
+            return QStringLiteral("pdf");
+        case SniffedFormat::Zip:
+            return QStringLiteral("archive");
+        case SniffedFormat::Unknown:
+            break;
+    }
+    return {};
+}
+
+} // namespace
 
 ViewerController::ViewerController(std::shared_ptr<IMegaClient> client, QObject* parent)
     : QObject(parent), mClient(std::move(client))
@@ -76,6 +116,35 @@ ArchiveBrowser* ViewerController::openArchive(quint64 handle, qulonglong sizeByt
                 });
         });
     return browser;
+}
+
+void ViewerController::checkFormat(quint64 handle,
+                                   const QString& name,
+                                   qulonglong sizeBytes,
+                                   const QString& kind)
+{
+    mClient->readFileRange(
+        handle,
+        0,
+        kFormatSniffBytes,
+        [this, handle, name, sizeBytes, kind](Result<std::vector<char>> head) {
+            invokeOnGuiThread(this, [this, handle, name, sizeBytes, kind, head = std::move(head)]() {
+                QString found;
+                if (!head.success)
+                {
+                    qCDebug(lcPreview) << "open-as format check failed:"
+                                       << QString::fromStdString(head.errorMessage)
+                                       << "code=" << head.errorCode;
+                }
+                else
+                {
+                    const SniffedFormat format = sniffFormat(head.value());
+                    if (sniffRulesOut(format, previewKindForViewer(kind)))
+                        found = sniffedFormatName(format);
+                }
+                emit formatChecked(handle, name, sizeBytes, kind, found);
+            });
+        });
 }
 
 void ViewerController::onArchiveTailFetched(const QPointer<ArchiveBrowser>& browser,

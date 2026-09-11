@@ -1,5 +1,6 @@
 #include "qml/ViewerController.h"
 
+#include "core/FormatSniff.h"
 #include "MockMegaClient.h"
 #include "TestZip.h"
 
@@ -311,4 +312,119 @@ TEST(ViewerControllerTest, FileEntryIsTheEntryBehindARowOfTheFolderShown)
     const std::optional<ZipEntry> guide = browser->fileEntry(QStringLiteral("guide.txt"));
     ASSERT_TRUE(guide.has_value());
     EXPECT_EQ(guide->rawName, "docs/guide.txt");
+}
+
+namespace
+{
+
+struct FormatVerdict
+{
+    int count = 0;
+    quint64 handle = 0;
+    QString name;
+    qulonglong sizeBytes = 0;
+    QString kind;
+    QString found;
+};
+
+// Runs one Open as check against a file whose first bytes are head, and records what
+// came back.
+FormatVerdict checkFormat(Fixture& f, const QString& kind, std::vector<char> head)
+{
+    EXPECT_CALL(*f.client, readFileRange(7, 0, kFormatSniffBytes, ::testing::_))
+        .WillOnce([head = std::move(head)](std::uint64_t,
+                                           std::uint64_t,
+                                           std::uint64_t,
+                                           std::function<void(Result<std::vector<char>>)> onDone) {
+            onDone(Result<std::vector<char>>::ok(head));
+        });
+    FormatVerdict verdict;
+    QObject::connect(&f.controller,
+                     &ViewerController::formatChecked,
+                     &f.window,
+                     [&verdict](quint64 handle,
+                                const QString& name,
+                                qulonglong sizeBytes,
+                                const QString& chosen,
+                                const QString& found) {
+                         ++verdict.count;
+                         verdict.handle = handle;
+                         verdict.name = name;
+                         verdict.sizeBytes = sizeBytes;
+                         verdict.kind = chosen;
+                         verdict.found = found;
+                     });
+    f.controller.checkFormat(7, QStringLiteral("clip.pdf"), 4096, kind);
+    drainEvents();
+    return verdict;
+}
+
+std::vector<char> jpegHead()
+{
+    return {'\xFF', '\xD8', '\xFF', '\xE0', '\0', '\x10', 'J', 'F', 'I', 'F', '\0'};
+}
+
+} // namespace
+
+// The request comes back whole, so QML can open the window from the answer alone.
+TEST(ViewerControllerTest, AFormatCheckHandsTheRequestBackWithWhatTheBytesProve)
+{
+    Fixture f;
+    const FormatVerdict verdict = checkFormat(f, QStringLiteral("pdf"), jpegHead());
+
+    EXPECT_EQ(verdict.count, 1);
+    EXPECT_EQ(verdict.handle, 7u);
+    EXPECT_EQ(verdict.name, QStringLiteral("clip.pdf"));
+    EXPECT_EQ(verdict.sizeBytes, 4096u);
+    EXPECT_EQ(verdict.kind, QStringLiteral("pdf"));
+    EXPECT_EQ(verdict.found, QStringLiteral("image"));
+}
+
+TEST(ViewerControllerTest, AFormatCheckPassesWhatTheChosenViewerCanShow)
+{
+    Fixture f;
+    EXPECT_EQ(checkFormat(f, QStringLiteral("image"), jpegHead()).found, QString());
+}
+
+// Nothing proven is not a refusal: the viewer's own decode judges it.
+TEST(ViewerControllerTest, AFormatCheckPassesBytesWithNoSignature)
+{
+    Fixture f;
+    const std::string text = "just some words";
+    EXPECT_EQ(checkFormat(f, QStringLiteral("pdf"), {text.begin(), text.end()}).found, QString());
+}
+
+TEST(ViewerControllerTest, AFormatCheckNamesAContainerAsMediaWhicheverViewerItRefuses)
+{
+    Fixture f;
+    const std::vector<char> matroska{'\x1A', '\x45', '\xDF', '\xA3', '\x01', '\0'};
+    EXPECT_EQ(checkFormat(f, QStringLiteral("archive"), matroska).found, QStringLiteral("media"));
+}
+
+TEST(ViewerControllerTest, AFailedFormatCheckLetsTheViewerDecide)
+{
+    Fixture f;
+    EXPECT_CALL(*f.client, readFileRange(7, 0, kFormatSniffBytes, ::testing::_))
+        .WillOnce([](std::uint64_t,
+                     std::uint64_t,
+                     std::uint64_t,
+                     std::function<void(Result<std::vector<char>>)> onDone) {
+            onDone(Result<std::vector<char>>::fail("network", -3));
+        });
+    int count = 0;
+    QString found = QStringLiteral("unset");
+    QObject::connect(
+        &f.controller,
+        &ViewerController::formatChecked,
+        &f.window,
+        [&](quint64, const QString&, qulonglong, const QString&, const QString& verdict) {
+            ++count;
+            found = verdict;
+        });
+
+    f.controller.checkFormat(7, QStringLiteral("clip.pdf"), 4096, QStringLiteral("pdf"));
+    drainEvents();
+
+    EXPECT_EQ(count, 1);
+    EXPECT_EQ(found, QString());
 }

@@ -402,8 +402,17 @@ ApplicationWindow {
     }
 
     // chosenKind is the viewer Open as picked, or "" to let the name decide as
-    // double-click does; a chosen viewer is told not to second-guess the extension.
+    // double-click does. A chosen viewer waits for the file's first bytes, and no
+    // window opens at all when they prove it is something else (STUDY_OPEN_AS §5).
     function openViewer(handle, name, sizeBytes, listModel, chosenKind): void {
+        if (chosenKind !== "")
+            viewerController.checkFormat(handle, name, sizeBytes, chosenKind);
+        else
+            window.showViewer(handle, name, sizeBytes, listModel, "");
+    }
+
+    // A chosen viewer is told not to second-guess the extension.
+    function showViewer(handle, name, sizeBytes, listModel, chosenKind): void {
         const forced = chosenKind !== "";
         const kind = forced ? chosenKind : viewerController.viewerKind(name);
         const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : kind === "pdf" ? pdfViewerComponent : kind === "audio" ? audioViewerComponent : kind === "archive" ? archiveViewerComponent : null;
@@ -412,9 +421,10 @@ ApplicationWindow {
         const viewer = component.createObject(window);
         if (!viewer)
             return;
-        // Only the image viewer steps through neighbours; the rest open one file.
+        // Only the image viewer steps through neighbours, and only those its name
+        // picked: an image opened as one has no place in that sequence.
         if (kind === "image")
-            viewer.open(handle, name, window.imageSequence(listModel));
+            viewer.open(handle, name, forced ? [] : window.imageSequence(listModel), forced);
         else if (kind === "archive")
             viewer.open(handle, name, sizeBytes, forced);
         else
@@ -661,6 +671,16 @@ ApplicationWindow {
         }
         function onExtractionFinished(success, fileName, localPath, failure) {
             toastStack.showExtraction(success, fileName, localPath, failure);
+        }
+    }
+
+    Connections {
+        target: viewerController
+        function onFormatChecked(handle, name, sizeBytes, kind, found) {
+            if (found === "")
+                window.showViewer(handle, name, sizeBytes, null, kind);
+            else
+                toastStack.showOpenAsRefused(name, kind, found);
         }
     }
 

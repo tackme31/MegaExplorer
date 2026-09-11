@@ -11,10 +11,12 @@ enum class MenuAction
     // What double-clicking the file does, from the menu. Whether a viewer can show
     // it is decided by the name, which the resolver cannot see, so QML greys it.
     Open,
-    // "Open as": that viewer, whatever the extension says. No image or PDF yet: both
-    // decode the whole file in memory, so they wait for a signature check (STUDY_OPEN_AS §3).
+    // "Open as": that viewer, whatever the extension says, unless the file's first
+    // bytes prove it is something else (FormatSniff.h).
+    OpenAsImage,
     OpenAsVideo,
     OpenAsAudio,
+    OpenAsPdf,
     OpenAsArchive,
     NewFolder,
     Download,

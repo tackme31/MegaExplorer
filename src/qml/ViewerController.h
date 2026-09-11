@@ -45,6 +45,24 @@ public:
     // latest-wins, so the pane selecting another file would discard this window's read.
     Q_INVOKABLE ArchiveBrowser* openArchive(quint64 handle, qulonglong sizeBytes, QObject* owner);
 
+    // Open as: reads the file's first bytes and answers with formatChecked, which
+    // hands the request back so QML keeps no table of pending ones. kind is a
+    // viewerKind() name.
+    Q_INVOKABLE void checkFormat(quint64 handle,
+                                 const QString& name,
+                                 qulonglong sizeBytes,
+                                 const QString& kind);
+
+signals:
+    // found is "" to open the viewer -- a failed read included, since its own decode
+    // judges then -- or what the bytes prove the file is instead: "image", "media",
+    // "pdf" or "archive".
+    void formatChecked(quint64 handle,
+                       const QString& name,
+                       qulonglong sizeBytes,
+                       const QString& kind,
+                       const QString& found);
+
 private:
     void onArchiveTailFetched(const QPointer<ArchiveBrowser>& browser,
                               quint64 handle,

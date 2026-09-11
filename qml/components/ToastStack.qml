@@ -135,6 +135,51 @@ Item {
                   localPath);
     }
 
+    // Open as refused before any window opened. kind is the viewer chosen and found
+    // what the file's first bytes proved it to be, both ViewerController's names.
+    function describeOpenAsRefused(fileName, kind, found) {
+        let chosen;
+        switch (kind) {
+        case "image":
+            chosen = qsTr("an image");
+            break;
+        case "video":
+            chosen = qsTr("a video");
+            break;
+        case "audio":
+            chosen = qsTr("audio");
+            break;
+        case "pdf":
+            chosen = qsTr("a PDF");
+            break;
+        default:
+            chosen = qsTr("a ZIP archive");
+            break;
+        }
+        let actual;
+        switch (found) {
+        case "image":
+            actual = qsTr("an image");
+            break;
+        case "media":
+            actual = qsTr("a video or audio file");
+            break;
+        case "pdf":
+            actual = qsTr("a PDF");
+            break;
+        default:
+            actual = qsTr("a ZIP archive");
+            break;
+        }
+        // The name goes in last: each arg() fills the lowest placeholder left, and a
+        // name holding "%2" would otherwise take the next one.
+        return qsTr("Can't open %3 as %1 — it looks like %2").arg(chosen).arg(actual).arg(fileName);
+    }
+
+    function showOpenAsRefused(fileName, kind, found) {
+        root.push(root.describeOpenAsRefused(fileName, kind, found), "", "");
+    }
+
     // Returns "" for a context with no case, which showOperation below reads as
     // "say nothing". Unlike describeError's default that is not a gap to warn
     // about: C++ only emits operationFinished for the contexts listed here.

@@ -69,9 +69,10 @@ Window {
     color: "#1c1c1c"
 
     // sequence is optional: without one the window shows this single image and the
-    // strip below stays hidden.
-    function open(handle, name, entries) {
-        if (!root.controller || root.controller.viewerKind(name) !== "image")
+    // strip below stays hidden. forced: Open as chose this viewer, so the extension
+    // is not asked.
+    function open(handle, name, entries, forced) {
+        if (!root.controller || (forced !== true && root.controller.viewerKind(name) !== "image"))
             return;
         root.sequence = entries ?? [];
         root.sequenceIndex = root.indexOfHandle(handle);

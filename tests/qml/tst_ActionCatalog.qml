@@ -58,6 +58,11 @@ TestCase {
                         expected: "Open"
                     },
                     {
+                        tag: "openAsImage",
+                        id: "openAsImage",
+                        expected: "Image"
+                    },
+                    {
                         tag: "openAsVideo",
                         id: "openAsVideo",
                         expected: "Video"
@@ -66,6 +71,11 @@ TestCase {
                         tag: "openAsAudio",
                         id: "openAsAudio",
                         expected: "Audio"
+                    },
+                    {
+                        tag: "openAsPdf",
+                        id: "openAsPdf",
+                        expected: "PDF"
                     },
                     {
                         tag: "openAsArchive",
@@ -194,6 +204,11 @@ TestCase {
                         expected: Theme.glyph.menu.open
                     },
                     {
+                        tag: "openAsImage",
+                        id: "openAsImage",
+                        expected: Theme.glyph.menu.openAsImage
+                    },
+                    {
                         tag: "openAsVideo",
                         id: "openAsVideo",
                         expected: Theme.glyph.menu.openAsVideo
@@ -202,6 +217,11 @@ TestCase {
                         tag: "openAsAudio",
                         id: "openAsAudio",
                         expected: Theme.glyph.menu.openAsAudio
+                    },
+                    {
+                        tag: "openAsPdf",
+                        id: "openAsPdf",
+                        expected: Theme.glyph.menu.openAsPdf
                     },
                     {
                         tag: "openAsArchive",
@@ -368,12 +388,20 @@ TestCase {
                     // Unlike open: overriding the extension is the point, so
                     // a file no viewer claims is exactly where they apply.
                     {
+                        tag: "openAsImage",
+                        id: "openAsImage"
+                    },
+                    {
                         tag: "openAsVideo",
                         id: "openAsVideo"
                     },
                     {
                         tag: "openAsAudio",
                         id: "openAsAudio"
+                    },
+                    {
+                        tag: "openAsPdf",
+                        id: "openAsPdf"
                     },
                     {
                         tag: "openAsArchive",
@@ -505,14 +533,15 @@ TestCase {
 
     // Open as sits straight under Open, the order the resolver hands them over in.
     function test_rows_foldsTheOpenAsActionsIntoOneRowUnderOpen() {
-        compare(ActionCatalog.rows(["open", "openAsVideo", "openAsAudio", "openAsArchive",
-                                    "download"]), [
+        compare(ActionCatalog.rows(["open", "openAsImage", "openAsVideo", "openAsAudio", "openAsPdf",
+                                    "openAsArchive", "download"]), [
                     {
                         "id": "open"
                     },
                     {
                         "group": "openAs",
-                        "ids": ["openAsVideo", "openAsAudio", "openAsArchive"]
+                        "ids": ["openAsImage", "openAsVideo", "openAsAudio", "openAsPdf",
+                            "openAsArchive"]
                     },
                     {
                         "id": "download"
@@ -604,6 +633,11 @@ TestCase {
     function test_trigger_openAsPassesTheChosenViewer_data() {
         return [
                     {
+                        tag: "openAsImage",
+                        id: "openAsImage",
+                        kind: "image"
+                    },
+                    {
                         tag: "openAsVideo",
                         id: "openAsVideo",
                         kind: "video"
@@ -612,6 +646,11 @@ TestCase {
                         tag: "openAsAudio",
                         id: "openAsAudio",
                         kind: "audio"
+                    },
+                    {
+                        tag: "openAsPdf",
+                        id: "openAsPdf",
+                        kind: "pdf"
                     },
                     {
                         tag: "openAsArchive",

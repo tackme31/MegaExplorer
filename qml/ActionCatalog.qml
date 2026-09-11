@@ -51,6 +51,12 @@ QtObject {
                                         },
                                         // ctx: requestOpenAs(kind). Never greyed:
                                         // overriding the extension is the point.
+                                        "openAsImage": {
+                                            "icon": ctx => Theme.glyph.menu.openAsImage,
+                                            "label": ctx => qsTr("Image"),
+                                            "group": "openAs",
+                                            "trigger": ctx => ctx.requestOpenAs("image")
+                                        },
                                         "openAsVideo": {
                                             "icon": ctx => Theme.glyph.menu.openAsVideo,
                                             "label": ctx => qsTr("Video"),
@@ -62,6 +68,12 @@ QtObject {
                                             "label": ctx => qsTr("Audio"),
                                             "group": "openAs",
                                             "trigger": ctx => ctx.requestOpenAs("audio")
+                                        },
+                                        "openAsPdf": {
+                                            "icon": ctx => Theme.glyph.menu.openAsPdf,
+                                            "label": ctx => qsTr("PDF"),
+                                            "group": "openAs",
+                                            "trigger": ctx => ctx.requestOpenAs("pdf")
                                         },
                                         "openAsArchive": {
                                             "icon": ctx => Theme.glyph.menu.openAsArchive,

@@ -20,6 +20,7 @@ add_executable(MegaExplorerTests
     QtLocalFileSystemTest.cpp
     ThumbnailServiceTest.cpp
     PreviewKindTest.cpp
+    FormatSniffTest.cpp
     PreviewServiceTest.cpp
     PreviewControllerTest.cpp
     ViewerControllerTest.cpp

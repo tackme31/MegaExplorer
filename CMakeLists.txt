@@ -127,6 +127,8 @@ add_library(MegaExplorerCore STATIC
     src/core/ThumbnailService.cpp
     src/core/PreviewKind.h
     src/core/PreviewKind.cpp
+    src/core/FormatSniff.h
+    src/core/FormatSniff.cpp
     src/core/PreviewService.h
     src/core/PreviewService.cpp
     src/core/ZipListing.h

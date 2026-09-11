@@ -390,7 +390,63 @@ TestCase {
         compare(toast.describeDownload(data.success, "a.txt"), data.expected);
     }
 
+    // ---- describeOpenAsRefused ----------------------------------------------
+
+    function test_describeOpenAsRefused_data() {
+        return [
+                    {
+                        tag: "mediaAsPdf",
+                        kind: "pdf",
+                        found: "media",
+                        expected: "Can't open a.pdf as a PDF — it looks like a video or audio file"
+                    },
+                    {
+                        tag: "imageAsAudio",
+                        kind: "audio",
+                        found: "image",
+                        expected: "Can't open a.pdf as audio — it looks like an image"
+                    },
+                    {
+                        tag: "pdfAsArchive",
+                        kind: "archive",
+                        found: "pdf",
+                        expected: "Can't open a.pdf as a ZIP archive — it looks like a PDF"
+                    },
+                    {
+                        tag: "archiveAsVideo",
+                        kind: "video",
+                        found: "archive",
+                        expected: "Can't open a.pdf as a video — it looks like a ZIP archive"
+                    },
+                    {
+                        tag: "archiveAsImage",
+                        kind: "image",
+                        found: "archive",
+                        expected: "Can't open a.pdf as an image — it looks like a ZIP archive"
+                    }
+                ];
+    }
+
+    function test_describeOpenAsRefused(data) {
+        const toast = makeToast();
+        compare(toast.describeOpenAsRefused("a.pdf", data.kind, data.found), data.expected);
+    }
+
+    // arg() fills the lowest placeholder left, so a name holding one must go in last.
+    function test_describeOpenAsRefused_keepsAPlaceholderInTheName() {
+        const toast = makeToast();
+        compare(toast.describeOpenAsRefused("100%2 done.pdf", "pdf", "image"),
+                "Can't open 100%2 done.pdf as a PDF — it looks like an image");
+    }
+
     // ---- show*: only that composing and pushing are still connected --------
+
+    function test_showOpenAsRefused_pushes() {
+        const toast = makeToast();
+        const before = toast.nextSeq;
+        toast.showOpenAsRefused("a.pdf", "pdf", "image");
+        compare(toast.nextSeq, before + 1);
+    }
 
     function test_showError_pushes() {
         const toast = makeToast();

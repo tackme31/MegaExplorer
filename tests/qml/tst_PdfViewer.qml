@@ -58,6 +58,17 @@ TestCase {
         compare(controller.urlCallCount, 0);
     }
 
+    // Open as: the extension is not asked, even when it names another viewer's kind.
+    function test_forcedOpenShowsAFileTheNameDoesNotClaim() {
+        const controller = createTemporaryObject(fakeControllerComponent, testCase);
+        const viewer = makeViewer(controller);
+
+        viewer.open(7, "photo.jpg", true);
+        verify(viewer.showing);
+        compare(viewer.currentName, "photo.jpg");
+        compare(String(viewer.source), "http://127.0.0.1:1/7/f.pdf");
+    }
+
     function test_openShowsTheDocumentAndAsksForItsUrl() {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
         const viewer = makeViewer(controller);

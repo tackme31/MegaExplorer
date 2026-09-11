@@ -82,6 +82,15 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          ActionArity::SingleOnly},
         // Offered on exactly Open's terms, whatever the name: the point is a file whose
         // extension is wrong or missing.
+        {MenuAction::OpenAsImage,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive,
+          ViewKind::Favourites,
+          ViewKind::Recents,
+          ViewKind::SharedLinks,
+          ViewKind::Rubbish},
+         ActionTarget::FilesOnly,
+         ActionArity::SingleOnly},
         {MenuAction::OpenAsVideo,
          {MenuSite::FileSelection},
          {ViewKind::CloudDrive,
@@ -92,6 +101,15 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          ActionTarget::FilesOnly,
          ActionArity::SingleOnly},
         {MenuAction::OpenAsAudio,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive,
+          ViewKind::Favourites,
+          ViewKind::Recents,
+          ViewKind::SharedLinks,
+          ViewKind::Rubbish},
+         ActionTarget::FilesOnly,
+         ActionArity::SingleOnly},
+        {MenuAction::OpenAsPdf,
          {MenuSite::FileSelection},
          {ViewKind::CloudDrive,
           ViewKind::Favourites,
@@ -312,10 +330,14 @@ const char* menuActionId(MenuAction action)
     {
         case MenuAction::Open:
             return "open";
+        case MenuAction::OpenAsImage:
+            return "openAsImage";
         case MenuAction::OpenAsVideo:
             return "openAsVideo";
         case MenuAction::OpenAsAudio:
             return "openAsAudio";
+        case MenuAction::OpenAsPdf:
+            return "openAsPdf";
         case MenuAction::OpenAsArchive:
             return "openAsArchive";
         case MenuAction::NewFolder:

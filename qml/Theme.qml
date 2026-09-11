@@ -254,8 +254,10 @@ QtObject {
         readonly property QtObject menu: QtObject {
             readonly property string open: "\uE890"         // View
             readonly property string openAs: "\uE7AC"        // OpenWith
+            readonly property string openAsImage: "\uE91B"   // Photo
             readonly property string openAsVideo: "\uE714"   // Video
             readonly property string openAsAudio: "\uE8D6"   // Audio
+            readonly property string openAsPdf: "\uEA90"     // PDF
             readonly property string openAsArchive: "\uF012" // ZipFolder
             readonly property string newFolder: "\uE8F4"     // NewFolder
             readonly property string download: glyphSet.transferDown
