@@ -75,7 +75,7 @@ by hand.
 ===============================================================================
 
 Project:    MegaExplorer
-Version:    0.2.0
+Version:    0.3.0
 Homepage:   https://github.com/tackme31/MegaExplorer
 License:    MIT
 
