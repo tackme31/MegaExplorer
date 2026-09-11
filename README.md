@@ -7,7 +7,7 @@ for your cloud files, not a sync client.
 
 - Browse your whole account with a folder tree, tabs and drag-and-drop
 - Thumbnails and previews without downloading, camera RAW included
-- Images, video, audio and PDFs opened in a viewer of their own
+- Images, video, audio, PDFs and zip archives opened in a viewer of their own
 - Search and filter across everything you have
 - Sharing, favourites, and a Rubbish bin you can restore from
 - Jump to the matching file in a paired local folder
@@ -45,6 +45,8 @@ files, and the contents of zip archives.
 
 Double-click a file to open it in a window of its own, streamed from MEGA rather than saved to
 disk. Images, video, audio and PDFs.
+
+A zip archive opens as a list of its contents, and you can download files from it one at a time.
 
 ### Search and filtering
 
