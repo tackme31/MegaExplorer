@@ -41,3 +41,6 @@
 
 <!-- ここから下に書く。ループが取り込んだら消える。 -->
 
+- テキストファイルをアプリ内ビューアで開けるようにする（まずはハイライトなしのプレーン表示）。対象は `PreviewKind::Text` の拡張子すべてで、`ViewerController::viewerKind` が今は Text に空文字を返しているのを "text" にし、既存のビューアと同じ 1 ファイル 1 ウィンドウの `TextViewer.qml` を足す。文字コード判定は `decodePreviewText` をそのまま使う。**ビューアでは 50 KB 上限を撤廃する**（プレビューペインの 50 KB は据え置き）。上限がなくなる分、読み込みは `readFileContent` ではなくキャンセルできる `readFileRangeStreamed` にして、窓を閉じたら止める。読み取り専用・選択とコピー可・等幅・折り返しの ON/OFF。設計は `docs/investigations/STUDY_TEXT_VIEWER_HIGHLIGHT.md` §2
+- 上のテキストビューアにシンタックスハイライトを付ける（上の項目の後に着手）。拡張子で言語を選び、`.md` はマークダウンとして **VS Code のエディタで開いたときのように見出しや強調に色が付く程度**（HTML にレンダリングはしない。見出しの文字を大きくしたり記号を隠したりもしない）、`.js` などは言語ごとに色付け。自前では書かず、MIT の軽量ライブラリ 2 本を取り込む: `.md` は qmarkdowntextedit の `MarkdownHighlighter`、コードは QSourceHighlite。ライト / ダーク両方で色を `Theme.qml` から与える。ハイライタは言語を直接指定もできる QML 要素 1 個にまとめ、後で KSyntaxHighlighting に差し替えたり「Open as...」から言語を選んだりできる形にしておく。第三者コードは警告設定を付けない別ターゲットにし、notices を再生成する。詳細・注意点は `docs/investigations/STUDY_TEXT_VIEWER_HIGHLIGHT.md` §3-1・§3-6
+
