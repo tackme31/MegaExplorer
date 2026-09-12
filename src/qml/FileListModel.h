@@ -73,6 +73,10 @@ public:
     // doesn't relayout when a thumbnail arrives. No-op if the row is gone.
     void setThumbnailPath(quint64 handle, QString path);
 
+    // The rows carrying a server-side thumbnail -- exactly the ones the grid asks
+    // ThumbnailController for, whether or not they have been scrolled into view yet.
+    std::vector<std::uint64_t> thumbnailHandles() const;
+
     // Same one-row/one-role update as setThumbnailPath above, and for the same
     // reason: setEntries() would reset the model, which relayouts the grid and
     // drops the scroll position -- too much for toggling one heart.

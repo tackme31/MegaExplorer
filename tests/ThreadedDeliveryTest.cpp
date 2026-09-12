@@ -81,6 +81,11 @@ public:
         return true;
     }
 
+    bool removeFile(const std::string&) override
+    {
+        return true;
+    }
+
     std::unique_ptr<ILocalFileWriter> createFile(const std::string&) override
     {
         return nullptr;

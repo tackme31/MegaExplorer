@@ -8,6 +8,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Fetches server-side thumbnails, adding an in-memory handle -> path cache and a
@@ -44,6 +45,11 @@ public:
     // within this call, on a cache hit.
     void request(std::uint64_t handle, std::function<void(Result<std::string>)> onDone);
 
+    // Drops these handles from the cache, in memory and on disk, so the next request()
+    // refetches them. A handle whose fetch is still running is left alone: the SDK is
+    // writing that very file, and what it brings back is fresh by definition.
+    void discard(const std::vector<std::uint64_t>& handles);
+
 private:
     struct Job
     {
@@ -53,6 +59,11 @@ private:
         // completion running inside that same call re-created under the same handle.
         bool started = false;
     };
+
+    // The directory holding the signed-in account's thumbnails. Asked for on every
+    // call rather than resolved once: signing out and into another account does not
+    // restart the process, and this directory is what keeps the two apart.
+    Result<std::string> accountDirectory() const;
 
     // One slot per turn; loops only when a request finished inside this very call
     // (mirrors DownloadService::startNextIfIdle, trampoline included).
@@ -69,6 +80,9 @@ private:
     // to be unique across accounts, so a cached path must not survive a switch.
     std::string mAccountDirectory;
     std::unordered_map<std::uint64_t, std::string> mCache; // handle -> local path
+    // Handles whose file discard() could not remove. Only these bypass the disk hit,
+    // which would otherwise keep serving the very file the refresh meant to replace.
+    std::unordered_set<std::uint64_t> mUndeletable;
     std::unordered_map<std::uint64_t, Job> mJobs;          // handle -> active or queued job
     std::deque<std::uint64_t> mQueue;                      // handles waiting for capacity
     std::size_t mActiveCount = 0;

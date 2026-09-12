@@ -9,6 +9,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -29,6 +30,9 @@ public:
     // Paths a previous run is pretending to have left behind, and their sizes.
     std::map<std::string, std::uint64_t> files;
     std::set<std::string> createdDirectories;
+    std::vector<std::string> removedPaths;
+    // Paths removeFile() refuses, standing in for a file locked by another process.
+    std::set<std::string> undeletable;
 
     std::optional<LocalEntry> entryFor(const std::string& path) const override
     {
@@ -44,6 +48,15 @@ public:
     bool createDirectory(const std::string& path) override
     {
         createdDirectories.insert(path);
+        return true;
+    }
+
+    bool removeFile(const std::string& path) override
+    {
+        removedPaths.push_back(path);
+        if (undeletable.count(path) != 0)
+            return false;
+        files.erase(path);
         return true;
     }
 
@@ -430,4 +443,99 @@ TEST(ThumbnailServiceTest, ASecondAccountDoesNotSeeTheFirstAccountsCachedPath)
     EXPECT_EQ(first.value(), cachePath(7));
     EXPECT_EQ(second.value(),
               std::string(kCacheRoot) + "\\" + std::to_string(account) + "\\" + "7.jpg");
+}
+
+TEST(ThumbnailServiceTest, DiscardRemovesTheFileAndMakesTheNextRequestFetchAgain)
+{
+    // Arrange
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+    EXPECT_CALL(*mockClient, getThumbnail(7, std::string(cachePath(7)), ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<2>(Result<std::string>::ok(cachePath(7))));
+
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+    service.request(7, [](Result<std::string>) {});
+    fileSystem->files[cachePath(7)] = 1024; // what the fetch above left behind
+
+    // Act
+    service.discard({7});
+    bool refetched = false;
+    service.request(7, [&](Result<std::string>) {
+        refetched = true;
+    });
+
+    // Assert
+    EXPECT_THAT(fileSystem->removedPaths, ::testing::ElementsAre(cachePath(7)));
+    EXPECT_TRUE(refetched);
+}
+
+TEST(ThumbnailServiceTest, DiscardLeavesAHandleWhoseFetchIsStillRunningAlone)
+{
+    // The SDK is writing that very file, so removing it would delete a fetch in
+    // progress -- and what it brings back is fresh anyway.
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+    std::function<void(Result<std::string>)> pending;
+    EXPECT_CALL(*mockClient, getThumbnail(7, ::testing::_, ::testing::_))
+        .Times(1)
+        .WillOnce(::testing::Invoke([&pending](std::uint64_t,
+                                               const std::string&,
+                                               std::function<void(Result<std::string>)> onDone) {
+            pending = std::move(onDone);
+        }));
+
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+    service.request(7, [](Result<std::string>) {});
+
+    // Act
+    service.discard({7});
+
+    // Assert
+    EXPECT_TRUE(fileSystem->removedPaths.empty());
+    pending(Result<std::string>::ok(cachePath(7)));
+}
+
+TEST(ThumbnailServiceTest, DiscardWithNobodySignedInRemovesNothing)
+{
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+    ON_CALL(*mockClient, currentUserHandle())
+        .WillByDefault(::testing::Return(Result<std::uint64_t>::fail("not logged in", -11)));
+
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+
+    // Act
+    service.discard({7});
+
+    // Assert
+    EXPECT_TRUE(fileSystem->removedPaths.empty());
+}
+
+TEST(ThumbnailServiceTest, AFileDiscardCouldNotDeleteIsNotServedAsADiskHit)
+{
+    // The disk hit never calls the SDK, so a file that survived the discard would be
+    // served as fresh forever -- and nothing would ever overwrite it either.
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+    fileSystem->files[cachePath(7)] = 1024;
+    fileSystem->undeletable.insert(cachePath(7));
+    EXPECT_CALL(*mockClient, getThumbnail(7, std::string(cachePath(7)), ::testing::_))
+        .Times(1)
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::string>::ok(cachePath(7))));
+
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+    service.request(7, [](Result<std::string>) {}); // served from disk, no SDK call
+
+    // Act
+    service.discard({7});
+    bool refetched = false;
+    service.request(7, [&](Result<std::string> result) {
+        refetched = result.success;
+    });
+
+    // Assert -- the Times(1) above is the real assertion: the file that outlived the
+    // discard was fetched over rather than served a second time.
+    EXPECT_THAT(fileSystem->removedPaths, ::testing::ElementsAre(cachePath(7)));
+    EXPECT_TRUE(refetched);
 }

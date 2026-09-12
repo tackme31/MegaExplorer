@@ -11,6 +11,11 @@ constexpr char kPathSeparator = '\\';
 constexpr char kPathSeparator = '/';
 #endif
 
+std::string filePathIn(const std::string& directory, std::uint64_t handle)
+{
+    return directory + kPathSeparator + std::to_string(handle) + ".jpg";
+}
+
 // Same struct, same reasons, as DownloadService.cpp's -- see there, including why the
 // ordinary exits clear the flag themselves instead of leaving it to the destructor.
 struct AdvancingGuard
@@ -48,17 +53,14 @@ ThumbnailService::ThumbnailService(std::shared_ptr<IMegaClient> client,
 void ThumbnailService::request(std::uint64_t handle,
                                std::function<void(Result<std::string>)> onDone)
 {
-    // Asked on every request, not resolved once: signing out and into another account
-    // does not restart the process, and the directory is what keeps the two apart.
-    const Result<std::uint64_t> user = mClient->currentUserHandle();
-    if (!user.success)
+    const Result<std::string> resolved = accountDirectory();
+    if (!resolved.success)
     {
-        onDone(Result<std::string>::fail(user.errorMessage, user.errorCode));
+        onDone(Result<std::string>::fail(resolved.errorMessage, resolved.errorCode));
         return;
     }
-    const std::string directory =
-        mCacheDirectory + kPathSeparator + std::to_string(user.value());
-    const std::string path = directory + kPathSeparator + std::to_string(handle) + ".jpg";
+    const std::string& directory = resolved.value();
+    const std::string path = filePathIn(directory, handle);
 
     bool cacheHit = false;
     std::string cachedPath;
@@ -112,7 +114,7 @@ void ThumbnailService::request(std::uint64_t handle,
             jobIt->second.callbacks.push_back(std::move(onDone));
             return;
         }
-        else if (diskHit)
+        else if (diskHit && mUndeletable.count(handle) == 0)
         {
             mCache[handle] = path;
             cacheHit = true;
@@ -133,6 +135,56 @@ void ThumbnailService::request(std::uint64_t handle,
         onDone(Result<std::string>::ok(cachedPath));
     else if (isNewJob)
         startNextIfCapacity();
+}
+
+Result<std::string> ThumbnailService::accountDirectory() const
+{
+    const Result<std::uint64_t> user = mClient->currentUserHandle();
+    if (!user.success)
+        return Result<std::string>::fail(user.errorMessage, user.errorCode);
+    return Result<std::string>::ok(mCacheDirectory + kPathSeparator +
+                                   std::to_string(user.value()));
+}
+
+void ThumbnailService::discard(const std::vector<std::uint64_t>& handles)
+{
+    const Result<std::string> resolved = accountDirectory();
+    if (!resolved.success)
+        return; // nobody is signed in, so there is no account whose files these are
+
+    std::vector<std::uint64_t> discarded;
+    std::vector<std::string> paths;
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        if (resolved.value() != mAccountDirectory)
+        {
+            mCache.clear(); // as in request(): every path in it names the previous account
+            mAccountDirectory = resolved.value();
+        }
+        for (std::uint64_t handle : handles)
+        {
+            if (mJobs.count(handle) != 0)
+                continue;
+            mCache.erase(handle);
+            discarded.push_back(handle);
+            paths.push_back(filePathIn(resolved.value(), handle));
+        }
+    }
+    // Disk calls, so the lock is dropped first -- the same reason request() does.
+    std::vector<std::uint64_t> undeletable;
+    for (std::size_t i = 0; i < paths.size(); ++i)
+    {
+        if (!mFileSystem->removeFile(paths[i]))
+            undeletable.push_back(discarded[i]);
+    }
+    if (undeletable.empty())
+        return;
+
+    // A file locked by something else survives, and request()'s disk hit would then
+    // serve it as fresh forever -- that path never calls the SDK, so nothing would
+    // overwrite it either. Remembered so the next request fetches over it instead.
+    std::lock_guard<std::mutex> lock(mMutex);
+    mUndeletable.insert(undeletable.begin(), undeletable.end());
 }
 
 void ThumbnailService::startNextIfCapacity()
@@ -217,7 +269,10 @@ void ThumbnailService::finishJob(std::uint64_t handle, Result<std::string> resul
         callbacks = std::move(jobIt->second.callbacks);
         mJobs.erase(jobIt);
         if (result.success)
+        {
             mCache[handle] = result.value();
+            mUndeletable.erase(handle); // the SDK has just written over whatever survived
+        }
         --mActiveCount;
     }
     for (auto& cb : callbacks)

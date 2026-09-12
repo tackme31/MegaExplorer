@@ -824,3 +824,14 @@ TEST(FileListModelTest, SetViewKindNotifiesOnlyOnAChange)
     model.setViewKind(ViewKind::Favourites);
     EXPECT_EQ(emitted, 1);
 }
+
+TEST(FileListModelTest, ThumbnailHandlesSkipsFoldersAndRowsWithoutOne)
+{
+    // {name, handle, sizeBytes, isFolder, modificationTime, hasThumbnail}
+    FileListModel model;
+    model.setEntries({FileEntry{"folder", 1, 0, true, 0, true},
+                      FileEntry{"plain.txt", 2, 0, false, 0, false},
+                      FileEntry{"photo.jpg", 3, 0, false, 0, true}});
+
+    EXPECT_EQ(model.thumbnailHandles(), (std::vector<std::uint64_t>{3}));
+}

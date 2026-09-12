@@ -842,6 +842,10 @@ void FolderNavigationController::refresh()
     if (!mHasLoadedOnce)
         return;
 
+    // Before the sync, not after the listing lands: the re-listing recreates the grid
+    // delegates, and each one asks for its thumbnail again as it is created.
+    emit serverRefreshRequested();
+
     mBusy->begin();
     mService->syncWithServer([this, self = shared_from_this()](Result<void> result) {
         invokeOnGuiThread(this, [this, result = std::move(result)]() {

@@ -303,6 +303,11 @@ signals:
     // starting point for new tabs, which a screen default must not rewrite.
     void sortOrderReset(int column, bool ascending);
 
+    // The user asked this tab's listing to be re-read from the server (toolbar, F5 or
+    // the context menu). Only the thumbnail side knows which rows carry a thumbnail,
+    // so the cache it keeps for them is dropped from there rather than here.
+    void serverRefreshRequested();
+
 private:
     void applyResult(Result<std::vector<FileEntry>> result, const QString& revealName = QString());
     // token is the value mSearchGeneration held when the query was issued; a result

@@ -218,6 +218,15 @@ int main(int argc, char* argv[])
             navigation, navigationService, fileOperationService, busy, &notifications, &clipboard);
         auto thumbnails = makeGuiOwned<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
+        // Wired here rather than by handing one controller to the other: the thumbnail
+        // side needs the model the navigation side owns, so the dependency only runs
+        // this way round.
+        QObject::connect(navigation.get(),
+                         &FolderNavigationController::serverRefreshRequested,
+                         thumbnails.get(),
+                         [thumbnails = thumbnails.get()] {
+                             thumbnails->discardVisibleThumbnails();
+                         });
         return TabContext{std::move(navigationService),
                           std::move(searchService),
                           std::move(navigation),

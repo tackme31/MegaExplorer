@@ -45,6 +45,10 @@ public:
     // itself and fails rather than creating the directory around it.
     virtual bool createDirectory(const std::string& path) = 0;
 
+    // True once nothing is at the path, so a path that was never there succeeds.
+    // Only the thumbnail cache removes files; transfers never do.
+    virtual bool removeFile(const std::string& path) = 0;
+
     // Nullopt when the path does not exist. Hidden files are ordinary entries:
     // the SDK's recursive upload sends them, so a scan that skipped them would
     // under-count the collisions the user is asked about.

@@ -179,6 +179,11 @@ public:
         return true;
     }
 
+    bool removeFile(const std::string&) override
+    {
+        return true;
+    }
+
     // Each (from, to) asked for. Like committed, read only after onDone.
     std::vector<std::pair<std::string, std::string>> moves;
     // The name a move lands on; empty means "to" itself was free.

@@ -44,6 +44,11 @@ public:
         return true;
     }
 
+    bool removeFile(const std::string&) override
+    {
+        return true;
+    }
+
     std::optional<std::string> moveToFreeName(const std::string&, const std::string&) override
     {
         return std::nullopt;

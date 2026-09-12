@@ -1,6 +1,7 @@
 #include "QtLocalFileSystem.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
 #include <QString>
@@ -71,6 +72,14 @@ bool QtLocalFileSystem::createDirectory(const std::string& path)
     // mkpath, not mkdir: it creates the missing parents and reports true for a
     // directory that is already there, which is what the port promises.
     return QDir().mkpath(QString::fromStdString(path));
+}
+
+bool QtLocalFileSystem::removeFile(const std::string& path)
+{
+    const QString native = QString::fromStdString(path);
+    // QFile::remove() also reports false for a path that was never there, which the
+    // port calls success -- hence the second check rather than trusting it alone.
+    return QFile::remove(native) || !QFile::exists(native);
 }
 
 std::optional<LocalEntry> QtLocalFileSystem::entryFor(const std::string& path) const

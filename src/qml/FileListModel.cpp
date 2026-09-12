@@ -140,6 +140,17 @@ void FileListModel::setThumbnailPath(quint64 handle, QString path)
     // as FolderNavigationController::applyResult for other late callbacks.
 }
 
+std::vector<std::uint64_t> FileListModel::thumbnailHandles() const
+{
+    std::vector<std::uint64_t> handles;
+    for (const FileEntry& entry : mEntries)
+    {
+        if (entry.hasThumbnail && !entry.isFolder)
+            handles.push_back(entry.handle);
+    }
+    return handles;
+}
+
 void FileListModel::setFavourite(quint64 handle, bool favourite)
 {
     for (std::size_t i = 0; i < mEntries.size(); ++i)
