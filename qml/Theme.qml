@@ -266,6 +266,10 @@ QtObject {
             // openInNewTab's glyph below: that action is FoldersOnly and this group
             // FilesOnly, so no menu can ever show both.
             readonly property string openWith: openInNewTab
+            // Every user-registered program shares one glyph: an entry carries a name
+            // and a command line, not an icon, and reading one out of the .exe means a
+            // shell call this app makes nowhere else. Neither check above run on it.
+            readonly property string openWithProgram: "\uECAA" // AppIconDefault
             readonly property string newFolder: "\uE8F4"     // NewFolder
             readonly property string download: glyphSet.transferDown
             // Not yet checked against either icon font's cmap, nor drawn at 16px --

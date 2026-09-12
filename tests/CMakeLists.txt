@@ -41,6 +41,8 @@ add_executable(MegaExplorerTests
     QSettingsPinnedFolderStoreTest.cpp
     FileListModelTest.cpp
     MenuActionResolverTest.cpp
+    OpenWithEntryTest.cpp
+    OpenWithControllerTest.cpp
     TabsControllerTest.cpp
     FolderTreeModelTest.cpp
     QuickAccessServiceTest.cpp

@@ -55,10 +55,11 @@ Item {
     // below can name the cap without a second copy of the number living here.
     property int maxFilesPerUpload: 0
 
-    // The streaming URL a browser is handed is served by this process, so quitting
-    // kills whatever it is showing -- a failure mode no in-app viewer had. Said once
-    // a run: it is a fact about the app, not about the file just handed over.
-    property bool browserHandoffNoticeShown: false
+    // The streaming URL an outside program is handed is served by this process, so
+    // quitting kills whatever it is showing -- a failure mode no in-app viewer had.
+    // Said once a run, and once for every program rather than per program: it is a
+    // fact about the app, not about the file or the program just handed to.
+    property bool externalHandoffNoticeShown: false
 
     ListModel {
         id: toastModel
@@ -190,10 +191,27 @@ Item {
             root.push(qsTr("Couldn't open this file in a browser"), "", "");
             return;
         }
-        if (root.browserHandoffNoticeShown)
+        root.showExternalHandoffNotice(qsTr(
+                                           "Opening in your browser — keep MegaExplorer running, or it stops"));
+    }
+
+    // name is the entry's display name, which is the only thing the user can
+    // recognize the program by -- the command line behind it is not shown here.
+    function showOpenWithHandoff(ok, name) {
+        if (!ok) {
+            root.push(qsTr("Couldn't open this file with %1").arg(name), "", "");
             return;
-        root.browserHandoffNoticeShown = true;
-        root.push(qsTr("Opening in your browser — keep MegaExplorer running, or it stops"), "", "");
+        }
+        root.showExternalHandoffNotice(qsTr(
+                                           "Opening in %1 — keep MegaExplorer running, or it stops").arg(
+                                           name));
+    }
+
+    function showExternalHandoffNotice(text) {
+        if (root.externalHandoffNoticeShown)
+            return;
+        root.externalHandoffNoticeShown = true;
+        root.push(text, "", "");
     }
 
     // Returns "" for a context with no case, which showOperation below reads as

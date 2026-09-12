@@ -692,6 +692,13 @@ ApplicationWindow {
     }
 
     Connections {
+        target: openWithController
+        function onProgramLaunched(ok, name) {
+            toastStack.showOpenWithHandoff(ok, name);
+        }
+    }
+
+    Connections {
         target: notificationController
         function onErrorOccurred(context, reason, rawMessage) {
             toastStack.showError(context, reason, rawMessage);

@@ -263,7 +263,7 @@ TEST(MenuActionResolverTest, EmptySelectionYieldsNoActions)
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(1, 0));
-    ASSERT_EQ(result.size(), 19u);
+    ASSERT_EQ(result.size(), 20u);
     EXPECT_EQ(result[0], MenuAction::Open);
     EXPECT_EQ(result[1], MenuAction::OpenAsImage);
     EXPECT_EQ(result[2], MenuAction::OpenAsVideo);
@@ -271,18 +271,19 @@ TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
     EXPECT_EQ(result[4], MenuAction::OpenAsPdf);
     EXPECT_EQ(result[5], MenuAction::OpenAsArchive);
     EXPECT_EQ(result[6], MenuAction::OpenWithBrowser);
-    EXPECT_EQ(result[7], MenuAction::Download);
-    EXPECT_EQ(result[8], MenuAction::OpenLocalFile);
-    EXPECT_EQ(result[9], MenuAction::OpenLocalLocation);
-    EXPECT_EQ(result[10], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[11], MenuAction::LinkSettings);
-    EXPECT_EQ(result[12], MenuAction::CopyLink);
-    EXPECT_EQ(result[13], MenuAction::RemoveLink);
-    EXPECT_EQ(result[14], MenuAction::Cut);
-    EXPECT_EQ(result[15], MenuAction::Copy);
-    EXPECT_EQ(result[16], MenuAction::Rename);
-    EXPECT_EQ(result[17], MenuAction::MoveToRubbish);
-    EXPECT_EQ(result[18], MenuAction::Properties);
+    EXPECT_EQ(result[7], MenuAction::OpenWithCustom);
+    EXPECT_EQ(result[8], MenuAction::Download);
+    EXPECT_EQ(result[9], MenuAction::OpenLocalFile);
+    EXPECT_EQ(result[10], MenuAction::OpenLocalLocation);
+    EXPECT_EQ(result[11], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[12], MenuAction::LinkSettings);
+    EXPECT_EQ(result[13], MenuAction::CopyLink);
+    EXPECT_EQ(result[14], MenuAction::RemoveLink);
+    EXPECT_EQ(result[15], MenuAction::Cut);
+    EXPECT_EQ(result[16], MenuAction::Copy);
+    EXPECT_EQ(result[17], MenuAction::Rename);
+    EXPECT_EQ(result[18], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[19], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForMultipleFiles)
@@ -416,6 +417,51 @@ TEST(MenuActionResolverTest, DefaultTableOffersOpenWithBrowserExactlyWhereItOffe
                           MenuAction::OpenWithBrowser));
     EXPECT_FALSE(
         contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::OpenWithBrowser));
+}
+
+TEST(MenuActionResolverTest, OpenWithCustomIdIsStable)
+{
+    // The prefix openWithCustomActionId() builds its IDs from, so QML and the
+    // resolver agree on the spelling.
+    EXPECT_STREQ(menuActionId(MenuAction::OpenWithCustom), "openWithCustom");
+}
+
+TEST(MenuActionResolverTest, DefaultTableOffersOpenWithCustomWhereverItOffersOpenWithBrowser)
+{
+    for (ViewKind kind : {ViewKind::CloudDrive,
+                          ViewKind::Favourites,
+                          ViewKind::Recents,
+                          ViewKind::SharedLinks,
+                          ViewKind::Rubbish})
+    {
+        const std::vector<MenuAction> single = resolveMenuActions(fileSelection(1, 0, kind));
+        ASSERT_GE(single.size(), 8u) << static_cast<int>(kind);
+        // Straight after the browser, so the user entries follow it in the submenu.
+        EXPECT_EQ(single[7], MenuAction::OpenWithCustom) << static_cast<int>(kind);
+        EXPECT_FALSE(
+            contains(resolveMenuActions(fileSelection(0, 1, kind)), MenuAction::OpenWithCustom))
+            << static_cast<int>(kind);
+        EXPECT_FALSE(
+            contains(resolveMenuActions(fileSelection(2, 0, kind)), MenuAction::OpenWithCustom))
+            << static_cast<int>(kind);
+    }
+    EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)),
+                          MenuAction::OpenWithCustom));
+    EXPECT_FALSE(
+        contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::OpenWithCustom));
+}
+
+TEST(MenuActionResolverTest, MenuActionAllowedAcceptsAnIndexedOpenWithCustomId)
+{
+    // The keyboard path only ever sees the expanded IDs, so without the suffix
+    // being stripped every one of them would answer no.
+    EXPECT_TRUE(menuActionAllowed("openWithCustom:0", fileSelection(1, 0)));
+    EXPECT_TRUE(menuActionAllowed("openWithCustom:12", fileSelection(1, 0)));
+    EXPECT_FALSE(menuActionAllowed("openWithCustom:0", fileSelection(0, 1)));
+    EXPECT_FALSE(menuActionAllowed("openWithCustom:0", fileSelection(2, 0)));
+    // Not an index, so it stays an unknown ID rather than becoming the base one.
+    EXPECT_FALSE(menuActionAllowed("openWithCustom:x", fileSelection(1, 0)));
+    EXPECT_FALSE(menuActionAllowed("openWithCustom:", fileSelection(1, 0)));
 }
 
 TEST(MenuActionResolverTest, DownloadIdIsStable)
@@ -770,7 +816,7 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     // never move, and cut is a deferred move (its decision 1).
     const std::vector<MenuAction> result =
         resolveMenuActions(fileSelection(1, 0, ViewKind::Favourites));
-    ASSERT_EQ(result.size(), 17u);
+    ASSERT_EQ(result.size(), 18u);
     EXPECT_EQ(result[0], MenuAction::Open);
     EXPECT_EQ(result[1], MenuAction::OpenAsImage);
     EXPECT_EQ(result[2], MenuAction::OpenAsVideo);
@@ -778,16 +824,17 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     EXPECT_EQ(result[4], MenuAction::OpenAsPdf);
     EXPECT_EQ(result[5], MenuAction::OpenAsArchive);
     EXPECT_EQ(result[6], MenuAction::OpenWithBrowser);
-    EXPECT_EQ(result[7], MenuAction::Download);
-    EXPECT_EQ(result[8], MenuAction::OpenLocalFile);
-    EXPECT_EQ(result[9], MenuAction::OpenLocalLocation);
-    EXPECT_EQ(result[10], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[11], MenuAction::LinkSettings);
-    EXPECT_EQ(result[12], MenuAction::CopyLink);
-    EXPECT_EQ(result[13], MenuAction::RemoveLink);
-    EXPECT_EQ(result[14], MenuAction::Copy);
-    EXPECT_EQ(result[15], MenuAction::Rename);
-    EXPECT_EQ(result[16], MenuAction::Properties);
+    EXPECT_EQ(result[7], MenuAction::OpenWithCustom);
+    EXPECT_EQ(result[8], MenuAction::Download);
+    EXPECT_EQ(result[9], MenuAction::OpenLocalFile);
+    EXPECT_EQ(result[10], MenuAction::OpenLocalLocation);
+    EXPECT_EQ(result[11], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[12], MenuAction::LinkSettings);
+    EXPECT_EQ(result[13], MenuAction::CopyLink);
+    EXPECT_EQ(result[14], MenuAction::RemoveLink);
+    EXPECT_EQ(result[15], MenuAction::Copy);
+    EXPECT_EQ(result[16], MenuAction::Rename);
+    EXPECT_EQ(result[17], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableStillOffersOpenInNewTabAndTogglePinInFavourites)

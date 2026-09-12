@@ -1,5 +1,7 @@
 #include "MenuActionResolver.h"
 
+#include "OpenWithEntry.h"
+
 #include <algorithm>
 
 namespace
@@ -128,6 +130,15 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          ActionTarget::FilesOnly,
          ActionArity::SingleOnly},
         {MenuAction::OpenWithBrowser,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive,
+          ViewKind::Favourites,
+          ViewKind::Recents,
+          ViewKind::SharedLinks,
+          ViewKind::Rubbish},
+         ActionTarget::FilesOnly,
+         ActionArity::SingleOnly},
+        {MenuAction::OpenWithCustom,
          {MenuSite::FileSelection},
          {ViewKind::CloudDrive,
           ViewKind::Favourites,
@@ -312,6 +323,12 @@ std::vector<MenuAction> resolveMenuActions(const MenuContext& ctx,
 
 bool menuActionAllowed(std::string_view actionId, const MenuContext& ctx)
 {
+    // A user-registered program's ID carries its index; applicability is the same
+    // for all of them, so the suffix is dropped before the table is consulted.
+    // Without this the keyboard path would answer no for every one of them.
+    if (openWithCustomIndex(actionId) >= 0)
+        actionId = menuActionId(MenuAction::OpenWithCustom);
+
     for (const MenuActionSpec& spec : defaultMenuActions())
     {
         // An action may have more than one row (Properties has one per site), so
@@ -351,6 +368,8 @@ const char* menuActionId(MenuAction action)
             return "openAsArchive";
         case MenuAction::OpenWithBrowser:
             return "openWithBrowser";
+        case MenuAction::OpenWithCustom:
+            return "openWithCustom";
         case MenuAction::NewFolder:
             return "newFolder";
         case MenuAction::Download:

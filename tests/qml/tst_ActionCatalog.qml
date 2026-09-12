@@ -13,6 +13,10 @@ import MegaExplorer
 // main.cpp is the only thing that ever sets those; reaching them from here
 // would mean C++ test doubles injected through QUICK_TEST_MAIN_WITH_SETUP.
 // That is a gap, not a decision -- see R4-5 in docs/REFACTOR_PLANS.md.
+//
+// The "openWithCustom:<n>" IDs fall in the same gap and further in: their label,
+// icon and enabled state all read openWithController, so only the paths that
+// never touch it (an ID list with no placeholder in it) can be exercised here.
 TestCase {
     id: testCase
     name: "ActionCatalog"
@@ -579,6 +583,14 @@ TestCase {
                         "id": "download"
                     }
                 ]);
+    }
+
+    // The placeholder is the only ID expand() rewrites; everything else has to
+    // come out in the order and the spelling the resolver handed over.
+    function test_expand_leavesAListWithNoPlaceholderAlone() {
+        const ids = ["open", "openAsPdf", "openWithBrowser", "download"];
+        compare(ActionCatalog.expand(ids), ids);
+        compare(ActionCatalog.expand([]), []);
     }
 
     function test_group_openWith() {

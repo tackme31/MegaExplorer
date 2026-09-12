@@ -109,6 +109,8 @@ add_library(MegaExplorerCore STATIC
     src/core/MenuAction.h
     src/core/MenuActionResolver.h
     src/core/MenuActionResolver.cpp
+    src/core/OpenWithEntry.h
+    src/core/OpenWithEntry.cpp
     src/core/FolderNavigationService.h
     src/core/FolderNavigationService.cpp
     src/core/FileOperationService.h
@@ -196,6 +198,8 @@ add_library(MegaExplorerQml STATIC
     src/qml/LocalFolderController.cpp
     src/qml/CacheController.h
     src/qml/CacheController.cpp
+    src/qml/OpenWithController.h
+    src/qml/OpenWithController.cpp
     src/qml/PropertiesController.h
     src/qml/PropertiesController.cpp
     src/qml/TransferListModel.h

@@ -22,6 +22,11 @@ enum class MenuAction
     // Never greyed, on OpenAs*'s terms: a browser that cannot play a format offers
     // to download it, which is still an answer.
     OpenWithBrowser,
+    // Placeholder for the whole user-registered program list, not one program: the
+    // resolver decides only whether the list may appear at all. QML expands it into
+    // one "openWithCustom:<n>" per entry, because the count lives in a setting
+    // src/core cannot see (OpenWithEntry.h).
+    OpenWithCustom,
     NewFolder,
     Download,
     // Opens the item's counterpart inside the linked local folder with whatever

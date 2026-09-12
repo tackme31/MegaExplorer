@@ -52,7 +52,11 @@ ActionMenu {
         // Filtered here rather than bound into ActionMenu.qml's Instantiator: the
         // model there would then re-evaluate on the context assignment above too,
         // rebuilding every MenuItem twice per open.
-        root.actionIds = root.navController.fileListModel.availableActions.filter(
+        // expand() first: the resolver hands over one placeholder for the whole
+        // list of user-registered "Open with" programs, and how many that is
+        // lives in a setting only QML can read (ActionCatalog.expand).
+        root.actionIds = ActionCatalog.expand(
+                    root.navController.fileListModel.availableActions).filter(
                     actionId => ActionCatalog.isAvailable(actionId, root.context));
     }
 

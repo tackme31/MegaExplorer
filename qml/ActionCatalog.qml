@@ -382,6 +382,59 @@ QtObject {
                                        }
                                    })
 
+    // The prefix C++ agrees on for a user-registered program (src/core/
+    // OpenWithEntry.h). The index after the colon is this file's only way to
+    // reach an entry, since the C++ vocabulary has one placeholder for the
+    // whole list.
+    readonly property string customOpenWithPrefix: "openWithCustom:"
+
+    // Synthesized rather than listed in `entries` above: how many there are is
+    // a setting, so the rows cannot be written out one per ID. Shape matches an
+    // `entries` member exactly, which is what lets every accessor below go
+    // through lookup() and stay unaware of the difference.
+    function customOpenWithEntry(index) {
+        return {
+            "icon": ctx => Theme.glyph.menu.openWithProgram,
+            "label": ctx => openWithController.nameAt(index),
+            "group": "openWith",
+            // Greyed, not hidden, for a file the program does not handle: the
+            // row is a fact about what is registered, so it should not come and
+            // go with the selection (STUDY_OPEN_WITH.md 3-3).
+            "enabled": ctx => openWithController.matchesAt(index, ctx.name),
+            "trigger": ctx => openWithController.launch(index, ctx.handle)
+        };
+    }
+
+    function lookup(actionId) {
+        const entry = root.entries[actionId];
+        if (entry !== undefined)
+            return entry;
+        if (typeof actionId !== "string" || !actionId.startsWith(root.customOpenWithPrefix))
+            return undefined;
+        const index = parseInt(actionId.slice(root.customOpenWithPrefix.length), 10);
+        if (isNaN(index) || index < 0 || index >= openWithController.count)
+            return undefined;
+        return root.customOpenWithEntry(index);
+    }
+
+    // Replaces the resolver's single "openWithCustom" placeholder with one ID
+    // per registered program, in registration order. Done here rather than in
+    // C++ because the count is a setting the resolver cannot see, and appending
+    // is enough to place them: rows() puts a group where its first member is,
+    // so they land under the built-in Browser either way.
+    function expand(actionIds) {
+        const result = [];
+        for (const id of actionIds) {
+            if (id !== "openWithCustom") {
+                result.push(id);
+                continue;
+            }
+            for (let i = 0; i < openWithController.count; ++i)
+                result.push(root.customOpenWithPrefix + i);
+        }
+        return result;
+    }
+
     // Folds an ordered ID list into the rows a menu shows: {id} for an action
     // of its own, {group, ids} for a submenu. A group takes the position of its
     // first member and keeps its members in the order they arrived.
@@ -389,7 +442,7 @@ QtObject {
         const result = [];
         const groupRows = {};
         for (const id of actionIds) {
-            const entry = root.entries[id];
+            const entry = root.lookup(id);
             const group = entry === undefined ? undefined : entry.group;
             if (group === undefined) {
                 result.push({
@@ -421,7 +474,7 @@ QtObject {
     // "no such action" apart from "an action deliberately labelled empty" and
     // disable the item instead of showing a blank enabled row.
     function label(actionId, ctx) {
-        const entry = root.entries[actionId];
+        const entry = root.lookup(actionId);
         return entry === undefined ? undefined : entry.label(ctx);
     }
 
@@ -431,7 +484,7 @@ QtObject {
     // starting at the left edge. The code points themselves live in
     // Theme.glyph.menu -- this file only decides which action gets which.
     function icon(actionId, ctx) {
-        const entry = root.entries[actionId];
+        const entry = root.lookup(actionId);
         return entry === undefined ? "" : entry.icon(ctx);
     }
 
@@ -444,7 +497,7 @@ QtObject {
     // ctx.canPaste) hands back undefined -- which QML then refuses to assign
     // to the bool `enabled`.
     function isEnabled(actionId, ctx) {
-        const entry = root.entries[actionId];
+        const entry = root.lookup(actionId);
         if (entry === undefined)
             return false;
         return entry.enabled === undefined ? true : entry.enabled(ctx) === true;
@@ -459,14 +512,14 @@ QtObject {
     // the list so ActionMenu.qml can render it as the disabled "None" row rather
     // than silently swallowing a catalog gap.
     function isAvailable(actionId, ctx) {
-        const entry = root.entries[actionId];
+        const entry = root.lookup(actionId);
         if (entry === undefined)
             return true;
         return entry.available === undefined ? true : entry.available(ctx) === true;
     }
 
     function trigger(actionId, ctx) {
-        const entry = root.entries[actionId];
+        const entry = root.lookup(actionId);
         if (entry !== undefined)
             entry.trigger(ctx);
     }
