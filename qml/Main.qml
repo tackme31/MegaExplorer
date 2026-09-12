@@ -459,7 +459,7 @@ ApplicationWindow {
             // grab strip wide enough to hit, with a 1px rule down its middle.
             handle: Rectangle {
                 id: splitHandle
-                implicitWidth: 6
+                implicitWidth: 3
                 // Reads as an extension of the panel rather than a neutral gap,
                 // so the rule below lands exactly on the surface boundary. A
                 // transparent handle puts the window surface on both sides of
