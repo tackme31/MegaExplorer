@@ -58,6 +58,7 @@ Dialog {
 
     // Exposed for tst_MainDialogs.qml.
     property alias programList: programList
+    property alias programEditor: programEditor
     property alias programNameField: programNameField
     property alias programExtensionsField: programExtensionsField
     property alias programCommandField: programCommandField
@@ -68,9 +69,7 @@ Dialog {
     // would make that stall per keystroke.
     property string checkedCommand: ""
 
-    // The editable copy of the list, rows included that setEntries will not keep yet
-    // (no name or no command): writing each keystroke straight to the controller and
-    // reading it back would delete the row being typed into.
+    // The editable copy of the list; setEntries is only ever handed it whole.
     ListModel {
         id: programModel
     }
@@ -85,7 +84,6 @@ Dialog {
                                     "commandLine": entries[i].commandLine
                                 });
         programList.currentIndex = programModel.count > 0 ? 0 : -1;
-        root.showSelectedProgram();
     }
 
     function savePrograms() {
@@ -103,35 +101,13 @@ Dialog {
         root.openWith.setEntries(entries);
     }
 
-    // Imperative both ways: the fields' textEdited writes back, and a binding from
-    // the model would be broken by the first keystroke.
-    function showSelectedProgram() {
-        const index = programList.currentIndex;
-        const row = index >= 0 ? programModel.get(index) : null;
-        programNameField.text = row ? row.name : "";
-        programExtensionsField.text = row ? row.extensions : "";
-        programCommandField.text = row ? row.commandLine : "";
-        commandCheckDelay.stop();
-        root.checkedCommand = programCommandField.text;
-    }
-
-    function editProgram(role: string, value: string) {
-        const index = programList.currentIndex;
-        if (index < 0 || programModel.get(index)[role] === value)
-            return;
-        programModel.setProperty(index, role, value);
-        root.savePrograms();
-    }
-
     function addProgram() {
-        programModel.append({
-                                "name": "",
-                                "extensions": "",
-                                "commandLine": ""
-                            });
-        programList.currentIndex = programModel.count - 1;
-        root.showSelectedProgram();
-        programNameField.forceActiveFocus();
+        programEditor.edit(-1);
+    }
+
+    function editProgram() {
+        if (programList.currentIndex >= 0)
+            programEditor.edit(programList.currentIndex);
     }
 
     function removeProgram() {
@@ -140,22 +116,34 @@ Dialog {
             return;
         programModel.remove(index);
         programList.currentIndex = Math.min(index, programModel.count - 1);
-        root.showSelectedProgram();
+        root.savePrograms();
+    }
+
+    // index -1 appends.
+    function commitProgram(index: int, name: string, extensions: string, commandLine: string) {
+        const row = {
+            "name": name,
+            "extensions": extensions,
+            "commandLine": commandLine
+        };
+        if (index < 0) {
+            programModel.append(row);
+            programList.currentIndex = programModel.count - 1;
+        } else {
+            programModel.set(index, row);
+        }
         root.savePrograms();
     }
 
     // Empty when there is nothing to warn about. Only the first problem is named,
     // since the line has room for one.
     readonly property string programProblem: {
-        if (programList.currentIndex < 0)
-            return "";
         if (root.checkedCommand.trim() === "")
             return qsTr("Enter the command line that starts the program.");
         if (root.openWith && !root.openWith.commandRunnable(root.checkedCommand))
             return qsTr("The program in this command line could not be found.");
-        // Exactly empty, not blank: that is the test setEntries drops a row by.
-        if (programNameField.text === "")
-            return qsTr("Give the program a name. It is not saved without one.");
+        if (programNameField.text.trim() === "")
+            return qsTr("Give the program a name.");
         return "";
     }
 
@@ -181,8 +169,8 @@ Dialog {
 
     // Fixed rather than content-sized: the pages hold two cards at most, and a
     // dialog that hugs them leaves the category list beside it a stub.
-    // Tall enough for the Open with page's list, buttons and form; the other pages
-    // take the slack in their trailing filler rather than each getting a height.
+    // The other pages take the slack in their trailing filler rather than each
+    // getting a height.
     width: Math.min(Overlay.overlay.width * 0.9, 680)
     height: Math.min(Overlay.overlay.height * 0.85, 480)
 
@@ -396,33 +384,6 @@ Dialog {
             ColumnLayout {
                 spacing: Theme.spacing.md
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.spacing.sm
-
-                    // Without this the URL-only limit reads as a broken entry the
-                    // first time a path-only program opens nothing (STUDY_OPEN_WITH.md 4-4).
-                    Label {
-                        Layout.fillWidth: true
-                        wrapMode: Text.Wrap
-                        font.pixelSize: Theme.font.caption
-                        color: Theme.color.textSecondary
-                        text: qsTr(
-                                  "Files are handed over as a streaming URL, so only programs that accept a URL as an argument can open them.")
-                    }
-
-                    Button {
-                        text: qsTr("Add")
-                        onClicked: root.addProgram()
-                    }
-
-                    Button {
-                        text: qsTr("Remove")
-                        enabled: programList.currentIndex >= 0
-                        onClicked: root.removeProgram()
-                    }
-                }
-
                 // One framed box with dividers between rows, not a card per row: the
                 // gap between cards would cost a visible row (STUDY_OPEN_WITH.md 3-3-4).
                 Rectangle {
@@ -445,7 +406,6 @@ Dialog {
                         currentIndex: -1
                         boundsBehavior: Flickable.StopAtBounds
                         ScrollBar.vertical: ScrollBar {}
-                        onCurrentIndexChanged: root.showSelectedProgram()
 
                         delegate: Rectangle {
                             id: programRow
@@ -468,6 +428,7 @@ Dialog {
 
                             TapHandler {
                                 onTapped: programList.currentIndex = programRow.index
+                                onDoubleTapped: root.editProgram()
                             }
 
                             ColumnLayout {
@@ -478,7 +439,7 @@ Dialog {
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.leftMargin: Theme.spacing.lg
                                 anchors.rightMargin: Theme.spacing.lg
-                                spacing: 0
+                                spacing: Theme.spacing.sm
 
                                 Label {
                                     Layout.fillWidth: true
@@ -530,75 +491,165 @@ Dialog {
                     }
                 }
 
-                // Live editor for the selected row: every edit is written through at
-                // once, like the rest of this dialog, which has no Apply.
-                GridLayout {
+                RowLayout {
                     Layout.fillWidth: true
-                    columns: 2
-                    columnSpacing: Theme.spacing.md
-                    rowSpacing: Theme.spacing.sm
-                    enabled: programList.currentIndex >= 0
-
-                    Label {
-                        text: qsTr("Name")
-                    }
-
-                    TextField {
-                        id: programNameField
-                        Layout.fillWidth: true
-                        onTextEdited: root.editProgram("name", text)
-                    }
-
-                    Label {
-                        text: qsTr("File types")
-                    }
-
-                    TextField {
-                        id: programExtensionsField
-                        Layout.fillWidth: true
-                        placeholderText: qsTr("e.g. mp4, mkv (empty for all files)")
-                        onTextEdited: root.editProgram("extensions", text)
-                    }
-
-                    Label {
-                        text: qsTr("Command line")
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spacing.sm
-
-                        TextField {
-                            id: programCommandField
-                            Layout.fillWidth: true
-                            font.family: Theme.font.monoFamily
-                            placeholderText: qsTr("\"C:\\Path\\program.exe\" %U")
-                            onTextEdited: {
-                                root.editProgram("commandLine", text);
-                                commandCheckDelay.restart();
-                            }
-                        }
-
-                        Button {
-                            text: qsTr("Browse…")
-                            onClicked: programChooser.open()
-                        }
-                    }
+                    spacing: Theme.spacing.sm
 
                     Item {
-                        Layout.preferredWidth: 1
+                        Layout.fillWidth: true
                     }
 
-                    // Kept in the layout while empty, so the list above does not
-                    // resize as the warning comes and goes.
-                    Label {
-                        id: programProblemLabel
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                        font.pixelSize: Theme.font.caption
-                        color: Theme.color.danger
-                        text: root.programProblem
+                    Button {
+                        text: qsTr("Add")
+                        onClicked: root.addProgram()
                     }
+
+                    Button {
+                        text: qsTr("Edit")
+                        enabled: programList.currentIndex >= 0
+                        onClicked: root.editProgram()
+                    }
+
+                    Button {
+                        text: qsTr("Remove")
+                        enabled: programList.currentIndex >= 0
+                        onClicked: root.removeProgram()
+                    }
+                }
+            }
+        }
+    }
+
+    // Add and Edit share this; nothing reaches the list until OK, so Cancel needs
+    // no undo and a half-filled row never exists in the model.
+    Dialog {
+        id: programEditor
+
+        // -1 while adding.
+        property int editIndex: -1
+        readonly property bool canSave: programNameField.text.trim() !== ""
+                                        && programCommandField.text.trim() !== ""
+
+        function edit(index: int) {
+            editIndex = index;
+            const row = index >= 0 ? programModel.get(index) : null;
+            programNameField.text = row ? row.name : "";
+            programExtensionsField.text = row ? row.extensions : "";
+            programCommandField.text = row ? row.commandLine : "";
+            commandCheckDelay.stop();
+            root.checkedCommand = programCommandField.text;
+            open();
+            programNameField.forceActiveFocus();
+        }
+
+        // An unfound program only warns: it may live on a drive that is not
+        // mounted right now.
+        function submit() {
+            if (!canSave)
+                return;
+            root.commitProgram(editIndex, programNameField.text, programExtensionsField.text,
+                               programCommandField.text);
+            close();
+        }
+
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        title: editIndex < 0 ? qsTr("Add program") : qsTr("Edit program")
+        width: Math.min(Overlay.overlay.width * 0.9, 560)
+
+        footer: DialogButtonBox {
+            Button {
+                text: qsTr("OK")
+                enabled: programEditor.canSave
+                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+                onClicked: programEditor.submit()
+            }
+            Button {
+                text: qsTr("Cancel")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                onClicked: programEditor.close()
+            }
+        }
+
+        ColumnLayout {
+            width: parent.width
+            spacing: Theme.spacing.md
+
+            // Without this the URL-only limit reads as a broken entry the
+            // first time a path-only program opens nothing (STUDY_OPEN_WITH.md 4-4).
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.font.caption
+                color: Theme.color.textSecondary
+                text: qsTr(
+                          "Files are handed over as a streaming URL, so only programs that accept a URL as an argument can open them. %U in the command line is replaced by that URL.")
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: Theme.spacing.md
+                rowSpacing: Theme.spacing.sm
+
+                Label {
+                    text: qsTr("Name")
+                }
+
+                TextField {
+                    id: programNameField
+                    Layout.fillWidth: true
+                    onAccepted: programEditor.submit()
+                }
+
+                Label {
+                    text: qsTr("File types")
+                }
+
+                TextField {
+                    id: programExtensionsField
+                    Layout.fillWidth: true
+                    placeholderText: qsTr("e.g. mp4, mkv (empty for all files)")
+                    onAccepted: programEditor.submit()
+                }
+
+                Label {
+                    text: qsTr("Command line")
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.sm
+
+                    TextField {
+                        id: programCommandField
+                        Layout.fillWidth: true
+                        font.family: Theme.font.monoFamily
+                        placeholderText: qsTr("\"C:\\Path\\program.exe\" %U")
+                        onTextEdited: commandCheckDelay.restart()
+                        onAccepted: programEditor.submit()
+                    }
+
+                    Button {
+                        text: qsTr("Browse…")
+                        onClicked: programChooser.open()
+                    }
+                }
+
+                Item {
+                    Layout.preferredWidth: 1
+                }
+
+                // Kept in the layout while empty, so the dialog does not change
+                // height as the warning comes and goes.
+                Label {
+                    id: programProblemLabel
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                    font.pixelSize: Theme.font.caption
+                    color: Theme.color.danger
+                    text: root.programProblem
                 }
             }
         }
@@ -622,7 +673,6 @@ Dialog {
             const command = root.openWith.commandWithProgram(programCommandField.text,
                                                              programChooser.selectedFile);
             programCommandField.text = command;
-            root.editProgram("commandLine", command);
             commandCheckDelay.stop();
             root.checkedCommand = command;
         }

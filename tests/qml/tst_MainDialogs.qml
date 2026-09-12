@@ -1706,35 +1706,133 @@ TestCase {
 
         compare(s.dialog.programList.count, 2);
         compare(s.dialog.programList.currentIndex, 0);
-        compare(s.dialog.programNameField.text, "Viewer");
-        compare(s.dialog.programExtensionsField.text, "jpg, png");
-        compare(s.dialog.programCommandField.text, "\"C:\\v.exe\" %U");
         // Opening is not editing: an echo here would rewrite the setting on every open.
         compare(s.stub.written.length, 0);
 
+        s.dialog.editProgram();
+        compare(s.dialog.programEditor.editIndex, 0);
+        compare(s.dialog.programNameField.text, "Viewer");
+        compare(s.dialog.programExtensionsField.text, "jpg, png");
+        compare(s.dialog.programCommandField.text, "\"C:\\v.exe\" %U");
+        s.dialog.programEditor.close();
+
         s.dialog.programList.currentIndex = 1;
+        s.dialog.editProgram();
         compare(s.dialog.programNameField.text, "Player");
     }
 
-    // The half-typed row has to stay in the list while the controller drops it, or
-    // the row being typed into would vanish at the first keystroke.
-    function test_settings_addingAProgramEditsANewRowAndWritesThrough() {
+    function test_settings_addingAProgramAppendsOnOk() {
         const s = makeSettingsWithPrograms([]);
-        compare(s.dialog.programList.count, 0);
 
         s.dialog.addProgram();
+        compare(s.dialog.programEditor.editIndex, -1);
+        compare(s.dialog.programNameField.text, "");
+        compare(s.dialog.programEditor.canSave, false);
+
+        s.dialog.programNameField.text = "Player";
+        s.dialog.programCommandField.text = "mpv %U";
+        // Nothing is written while the editor is still open.
+        compare(s.dialog.programList.count, 0);
+        compare(s.stub.written.length, 0);
+
+        s.dialog.programEditor.submit();
+
         compare(s.dialog.programList.count, 1);
         compare(s.dialog.programList.currentIndex, 0);
-
-        s.dialog.editProgram("name", "Player");
-        s.dialog.editProgram("commandLine", "mpv %U");
-
-        compare(s.dialog.programList.count, 1);
         const last = s.stub.written[s.stub.written.length - 1];
         compare(last.length, 1);
         compare(last[0].name, "Player");
         compare(last[0].commandLine, "mpv %U");
         compare(last[0].extensions, "");
+    }
+
+    function test_settings_cancellingTheEditorWritesNothing() {
+        const s = makeSettingsWithPrograms([
+                                               {
+                                                   "name": "A",
+                                                   "extensions": "",
+                                                   "commandLine": "a %U"
+                                               }
+                                           ]);
+
+        s.dialog.addProgram();
+        s.dialog.programNameField.text = "B";
+        s.dialog.programCommandField.text = "b %U";
+        s.dialog.programEditor.close();
+
+        s.dialog.editProgram();
+        s.dialog.programNameField.text = "Renamed";
+        s.dialog.programEditor.close();
+
+        compare(s.dialog.programList.count, 1);
+        compare(s.stub.written.length, 0);
+    }
+
+    function test_settings_editingAProgramReplacesItsRow() {
+        const s = makeSettingsWithPrograms([
+                                               {
+                                                   "name": "A",
+                                                   "extensions": "",
+                                                   "commandLine": "a %U"
+                                               },
+                                               {
+                                                   "name": "B",
+                                                   "extensions": "",
+                                                   "commandLine": "b %U"
+                                               }
+                                           ]);
+
+        s.dialog.programList.currentIndex = 1;
+        s.dialog.editProgram();
+        s.dialog.programExtensionsField.text = "mp4";
+        s.dialog.programEditor.submit();
+
+        compare(s.dialog.programList.count, 2);
+        const last = s.stub.written[s.stub.written.length - 1];
+        compare(last.length, 2);
+        compare(last[0].name, "A");
+        compare(last[1].name, "B");
+        compare(last[1].extensions, "mp4");
+    }
+
+    function test_settings_okNeedsANameAndACommand_data() {
+        return [
+                    {
+                        tag: "both",
+                        name: "Player",
+                        command: "mpv %U",
+                        canSave: true
+                    },
+                    {
+                        tag: "blankName",
+                        name: "  ",
+                        command: "mpv %U",
+                        canSave: false
+                    },
+                    {
+                        tag: "noCommand",
+                        name: "Player",
+                        command: "",
+                        canSave: false
+                    },
+                    {
+                        tag: "notFoundStillSaves",
+                        name: "Player",
+                        command: "missing.exe %U",
+                        canSave: true
+                    }
+                ];
+    }
+
+    function test_settings_okNeedsANameAndACommand(data) {
+        const s = makeSettingsWithPrograms([]);
+        s.dialog.addProgram();
+        s.dialog.programNameField.text = data.name;
+        s.dialog.programCommandField.text = data.command;
+
+        compare(s.dialog.programEditor.canSave, data.canSave);
+        s.dialog.programEditor.submit();
+        compare(s.dialog.programList.count, data.canSave ? 1 : 0);
     }
 
     function test_settings_removingAProgramWritesTheRest() {
@@ -1754,7 +1852,7 @@ TestCase {
         s.dialog.removeProgram();
 
         compare(s.dialog.programList.count, 1);
-        compare(s.dialog.programNameField.text, "B");
+        compare(s.dialog.programList.currentIndex, 0);
         const last = s.stub.written[s.stub.written.length - 1];
         compare(last.length, 1);
         compare(last[0].name, "B");
@@ -1784,7 +1882,7 @@ TestCase {
                         tag: "noName",
                         name: "",
                         command: "mpv %U",
-                        shown: "Give the program a name. It is not saved without one."
+                        shown: "Give the program a name."
                     }
                 ];
     }
@@ -1798,6 +1896,7 @@ TestCase {
                                                }
                                            ]);
 
+        s.dialog.editProgram();
         compare(s.dialog.programProblemLabel.text, data.shown);
     }
 
@@ -1810,6 +1909,7 @@ TestCase {
                                                    "commandLine": "mpv %U"
                                                }
                                            ]);
+        s.dialog.editProgram();
         compare(s.dialog.programProblemLabel.text, "");
 
         s.dialog.programCommandField.text = "missing.exe %U";
