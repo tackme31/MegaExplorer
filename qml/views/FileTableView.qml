@@ -182,9 +182,8 @@ ColumnLayout {
     property real columnWidthSize: -1
 
     // Relays this tab's own sort-order/column-width changes back out (see
-    // this file's top comment). Also fires once during Component.onCompleted
-    // below when the initial* values differ from the literal defaults above
-    // -- a harmless, idempotent echo of the value this tab just read.
+    // this file's top comment). Also fires mid-restore in Component.onCompleted
+    // with a partly assigned set of values -- see the snapshot there.
     onSortColumnChanged: if (!root.applyingViewSortOrder)
                              root.sortOrderChanged(root.sortColumn, root.sortAscending)
     onSortAscendingChanged: if (!root.applyingViewSortOrder)
@@ -311,11 +310,19 @@ ColumnLayout {
     // initial fetch (once loadRoot() has actually happened -- see
     // FolderNavigationController::mHasLoadedOnce) uses the restored order.
     Component.onCompleted: {
-        root.sortColumn = root.initialSortColumn;
-        root.sortAscending = root.initialSortAscending;
-        root.columnWidthName = root.initialColumnWidthName;
-        root.columnWidthModified = root.initialColumnWidthModified;
-        root.columnWidthSize = root.initialColumnWidthSize;
+        // Snapshot first: initial* are live bindings to the window-wide value,
+        // and each assignment below writes back into it through on*Changed, so
+        // reading them one by one would pick up the half-restored state.
+        const sortColumn = root.initialSortColumn;
+        const sortAscending = root.initialSortAscending;
+        const widthName = root.initialColumnWidthName;
+        const widthModified = root.initialColumnWidthModified;
+        const widthSize = root.initialColumnWidthSize;
+        root.sortColumn = sortColumn;
+        root.sortAscending = sortAscending;
+        root.columnWidthName = widthName;
+        root.columnWidthModified = widthModified;
+        root.columnWidthSize = widthSize;
         root.navController.setSortOrder(root.sortColumn, root.sortAscending);
         root.restoreColumnWidths();
         root.completed = true;
