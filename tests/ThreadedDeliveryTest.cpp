@@ -66,6 +66,37 @@ private:
     std::atomic<bool>* mDestroyed;
 };
 
+// A cache that never has anything and accepts every directory, so every request
+// goes on to the SDK -- this file is about which thread the answer arrives on.
+class MissingThumbnailCache : public ILocalFileSystem
+{
+public:
+    std::optional<LocalEntry> entryFor(const std::string&) const override
+    {
+        return std::nullopt;
+    }
+
+    bool createDirectory(const std::string&) override
+    {
+        return true;
+    }
+
+    std::unique_ptr<ILocalFileWriter> createFile(const std::string&) override
+    {
+        return nullptr;
+    }
+
+    std::optional<std::vector<LocalEntry>> listDirectory(const std::string&) const override
+    {
+        return std::nullopt;
+    }
+
+    std::optional<std::string> moveToFreeName(const std::string&, const std::string&) override
+    {
+        return std::nullopt;
+    }
+};
+
 FileEntry thumbnailEntry(std::uint64_t handle)
 {
     FileEntry entry;
@@ -261,8 +292,10 @@ TEST(ThreadedDeliveryTest, ThumbnailControllerTouchesTheModelOnTheGuiThreadOnly)
     // The highest-consequence hop in src/qml: setThumbnailPath emits
     // dataChanged, and mutating a QAbstractItemModel from a worker corrupts the
     // view's own bookkeeping rather than merely racing a value.
-    auto client = std::make_shared<MockMegaClient>();
+    auto client = std::make_shared<::testing::NiceMock<MockMegaClient>>();
     ThumbnailDoneCallback onDone;
+    ON_CALL(*client, currentUserHandle())
+        .WillByDefault(::testing::Return(Result<std::uint64_t>::ok(111)));
     EXPECT_CALL(*client, getThumbnail(_, _, _))
         .Times(AnyNumber())
         .WillRepeatedly(
@@ -270,7 +303,8 @@ TEST(ThreadedDeliveryTest, ThumbnailControllerTouchesTheModelOnTheGuiThreadOnly)
                 onDone = std::move(done);
             }));
 
-    auto service = std::make_shared<ThumbnailService>(client);
+    auto service = std::make_shared<ThumbnailService>(
+        client, std::make_shared<MissingThumbnailCache>(), "C:\\cache");
     auto model = std::make_shared<FileListModel>();
     model->setEntries({thumbnailEntry(5)});
     NotificationController notifications;

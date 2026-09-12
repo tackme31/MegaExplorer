@@ -66,6 +66,13 @@ std::unique_ptr<ILocalFileWriter> QtLocalFileSystem::createFile(const std::strin
     return writer;
 }
 
+bool QtLocalFileSystem::createDirectory(const std::string& path)
+{
+    // mkpath, not mkdir: it creates the missing parents and reports true for a
+    // directory that is already there, which is what the port promises.
+    return QDir().mkpath(QString::fromStdString(path));
+}
+
 std::optional<LocalEntry> QtLocalFileSystem::entryFor(const std::string& path) const
 {
     const QFileInfo info(QString::fromStdString(path));

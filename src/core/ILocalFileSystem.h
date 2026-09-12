@@ -40,6 +40,11 @@ public:
     // One thread at a time may use the writer, not necessarily the creating one.
     virtual std::unique_ptr<ILocalFileWriter> createFile(const std::string& path) = 0;
 
+    // Creates path and any missing parent, and succeeds when it is already there.
+    // Needed for destinations nothing here writes: the SDK opens the thumbnail file
+    // itself and fails rather than creating the directory around it.
+    virtual bool createDirectory(const std::string& path) = 0;
+
     // Nullopt when the path does not exist. Hidden files are ordinary entries:
     // the SDK's recursive upload sends them, so a scan that skipped them would
     // under-count the collisions the user is asked about.

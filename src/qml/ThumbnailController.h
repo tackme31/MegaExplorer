@@ -28,14 +28,12 @@ public:
                                  NotificationController* notifications,
                                  QObject* parent = nullptr);
 
-    // Fetches into a per-handle path under the session cache, then writes the result
-    // back into the row. Callers must only invoke this for rows with hasThumbnail &&
-    // !isFolder -- this method does not re-check (see the .cpp for why).
+    // Fetches into the service's on-disk cache, then writes the result back into the
+    // row. Callers must only invoke this for rows with hasThumbnail && !isFolder --
+    // this method does not re-check (see the .cpp for why).
     Q_INVOKABLE void requestThumbnail(quint64 handle);
 
 private:
-    QString computeDestinationPath(quint64 handle) const;
-
     std::shared_ptr<ThumbnailService> mService;
     std::shared_ptr<FileListModel> mModel;
     NotificationController* mNotifications;

@@ -36,6 +36,11 @@ public:
         return nullptr;
     }
 
+    bool createDirectory(const std::string&) override
+    {
+        return true;
+    }
+
     std::optional<std::string> moveToFreeName(const std::string&, const std::string&) override
     {
         return std::nullopt;
@@ -279,6 +284,11 @@ TEST(UploadScanServiceTest, StopsDescendingAtTheDepthLimit)
         std::unique_ptr<ILocalFileWriter> createFile(const std::string&) override
         {
             return nullptr;
+        }
+
+        bool createDirectory(const std::string&) override
+        {
+            return true;
         }
 
         std::optional<std::string> moveToFreeName(const std::string&, const std::string&) override

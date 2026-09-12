@@ -3,6 +3,14 @@
 namespace
 {
 
+// The path crosses into the SDK's LocalPath, which splits on '\' on Windows -- a '/'
+// in the middle would be read as part of a name instead of as a directory boundary.
+#ifdef _WIN32
+constexpr char kPathSeparator = '\\';
+#else
+constexpr char kPathSeparator = '/';
+#endif
+
 // Same struct, same reasons, as DownloadService.cpp's -- see there, including why the
 // ordinary exits clear the flag themselves instead of leaving it to the destructor.
 struct AdvancingGuard
@@ -29,19 +37,38 @@ struct AdvancingGuard
 
 } // namespace
 
-ThumbnailService::ThumbnailService(std::shared_ptr<IMegaClient> client, std::size_t maxConcurrent)
-    : mClient(std::move(client)), mMaxConcurrent(maxConcurrent)
+ThumbnailService::ThumbnailService(std::shared_ptr<IMegaClient> client,
+                                  std::shared_ptr<ILocalFileSystem> fileSystem,
+                                  std::string cacheDirectory,
+                                  std::size_t maxConcurrent)
+    : mClient(std::move(client)), mFileSystem(std::move(fileSystem)),
+      mCacheDirectory(std::move(cacheDirectory)), mMaxConcurrent(maxConcurrent)
 {}
 
 void ThumbnailService::request(std::uint64_t handle,
-                               const std::string& destinationPath,
                                std::function<void(Result<std::string>)> onDone)
 {
+    // Asked on every request, not resolved once: signing out and into another account
+    // does not restart the process, and the directory is what keeps the two apart.
+    const Result<std::uint64_t> user = mClient->currentUserHandle();
+    if (!user.success)
+    {
+        onDone(Result<std::string>::fail(user.errorMessage, user.errorCode));
+        return;
+    }
+    const std::string directory =
+        mCacheDirectory + kPathSeparator + std::to_string(user.value());
+    const std::string path = directory + kPathSeparator + std::to_string(handle) + ".jpg";
+
     bool cacheHit = false;
     std::string cachedPath;
-    bool isNewJob = false;
     {
         std::lock_guard<std::mutex> lock(mMutex);
+        if (directory != mAccountDirectory)
+        {
+            mCache.clear(); // every path in it names the account just signed out of
+            mAccountDirectory = directory;
+        }
         auto cacheIt = mCache.find(handle);
         auto jobIt = mJobs.find(handle);
         if (cacheIt != mCache.end())
@@ -52,11 +79,49 @@ void ThumbnailService::request(std::uint64_t handle,
         else if (jobIt != mJobs.end())
         {
             jobIt->second.callbacks.push_back(std::move(onDone));
+            return;
+        }
+    }
+    if (cacheHit)
+    {
+        onDone(Result<std::string>::ok(cachedPath));
+        return;
+    }
+
+    // Disk calls, so no lock is held for them. An empty file is a fetch that died
+    // part-way: treating it as a hit would pin a broken image forever, since nothing
+    // ever revisits a handle the cache already answers.
+    const std::optional<LocalEntry> onDisk = mFileSystem->entryFor(path);
+    const bool diskHit = onDisk.has_value() && !onDisk->isDirectory && onDisk->sizeBytes > 0;
+    if (!diskHit)
+        mFileSystem->createDirectory(directory);
+
+    bool isNewJob = false;
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        // Looked up again because the lock was dropped for the two calls above.
+        auto cacheIt = mCache.find(handle);
+        auto jobIt = mJobs.find(handle);
+        if (cacheIt != mCache.end())
+        {
+            cacheHit = true;
+            cachedPath = cacheIt->second;
+        }
+        else if (jobIt != mJobs.end())
+        {
+            jobIt->second.callbacks.push_back(std::move(onDone));
+            return;
+        }
+        else if (diskHit)
+        {
+            mCache[handle] = path;
+            cacheHit = true;
+            cachedPath = path;
         }
         else
         {
             Job job;
-            job.destinationPath = destinationPath;
+            job.destinationPath = path;
             job.callbacks.push_back(std::move(onDone));
             mJobs.emplace(handle, std::move(job));
             mQueue.push_back(handle);

@@ -64,7 +64,9 @@ protected:
             navigationService, searchService, busy, &notifications);
         auto mutations = makeGuiOwned<FileMutationController>(
             navigation, navigationService, fileOperationService, busy, &notifications, &clipboard);
-        auto thumbnailService = std::make_shared<ThumbnailService>(client);
+        // No test here asks for a thumbnail, so the cache root is never resolved.
+        auto thumbnailService =
+            std::make_shared<ThumbnailService>(client, std::make_shared<QtLocalFileSystem>(), "");
         auto thumbnails = makeGuiOwned<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
         return TabContext{std::move(navigationService),

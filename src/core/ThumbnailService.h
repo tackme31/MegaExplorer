@@ -1,4 +1,5 @@
 #pragma once
+#include "ILocalFileSystem.h"
 #include "IMegaClient.h"
 
 #include <cstdint>
@@ -19,19 +20,29 @@
 // handle attaches its callback to the existing entry. Failures are not cached, so a
 // later request retries.
 //
+// The cache outlives the process: the file a previous run left at the handle's path
+// is served as a hit, so a handle is fetched once and never again. That is sound
+// without any invalidation because MEGA gives changed content a new handle
+// (STUDY_THUMBNAIL_CACHE.md 3-3).
+//
 // Same cross-thread caveat as DownloadService: mMutex guards every member, and
 // getThumbnail() is called with no lock held, since its onDone can run before it
 // returns.
 class ThumbnailService
 {
 public:
-    explicit ThumbnailService(std::shared_ptr<IMegaClient> client, std::size_t maxConcurrent = 4);
+    // cacheDirectory is the root of the on-disk cache; the per-account directory
+    // under it is created on demand. Injected as a string because src/core links no
+    // Qt and cannot ask QStandardPaths itself.
+    ThumbnailService(std::shared_ptr<IMegaClient> client,
+                     std::shared_ptr<ILocalFileSystem> fileSystem,
+                     std::string cacheDirectory,
+                     std::size_t maxConcurrent = 4);
 
-    // destinationPath is exact and caller-resolved. onDone may run synchronously,
-    // from within this call, on a cache hit.
-    void request(std::uint64_t handle,
-                 const std::string& destinationPath,
-                 std::function<void(Result<std::string>)> onDone);
+    // The destination is resolved here, not by the caller: it names the signed-in
+    // account, which only this class can ask for. onDone may run synchronously, from
+    // within this call, on a cache hit.
+    void request(std::uint64_t handle, std::function<void(Result<std::string>)> onDone);
 
 private:
     struct Job
@@ -50,8 +61,13 @@ private:
     void finishJob(std::uint64_t handle, Result<std::string> result);
 
     std::shared_ptr<IMegaClient> mClient;
+    std::shared_ptr<ILocalFileSystem> mFileSystem;
+    std::string mCacheDirectory;
     std::size_t mMaxConcurrent;
     mutable std::mutex mMutex;
+    // The account the entries below were resolved under. Handles are not documented
+    // to be unique across accounts, so a cached path must not survive a switch.
+    std::string mAccountDirectory;
     std::unordered_map<std::uint64_t, std::string> mCache; // handle -> local path
     std::unordered_map<std::uint64_t, Job> mJobs;          // handle -> active or queued job
     std::deque<std::uint64_t> mQueue;                      // handles waiting for capacity

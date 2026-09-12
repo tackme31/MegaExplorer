@@ -138,7 +138,17 @@ int main(int argc, char* argv[])
     auto localLinkService = std::make_shared<LocalLinkService>(client, localFileSystem);
     // Shared across every tab: handle-keyed cache, no per-tab state. What is
     // inherently per-tab lives in tabFactory below instead.
-    auto thumbnailService = std::make_shared<ThumbnailService>(client);
+    //
+    // CacheLocation, not TempLocation where these used to go: Storage Sense and Disk
+    // Cleanup empty %TEMP% on their own schedule, which would break "fetched once"
+    // at random and invisibly. The old directory is left where it is -- nothing
+    // breaks if it is never read again.
+    auto thumbnailService = std::make_shared<ThumbnailService>(
+        client,
+        localFileSystem,
+        QDir::toNativeSeparators(QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
+                                 "/thumbnails")
+            .toStdString());
     // Shared too, but for the opposite reason: one preview shows at a time for the
     // whole window, so there is nothing per-tab to keep.
     auto previewService = std::make_shared<PreviewService>(client);
