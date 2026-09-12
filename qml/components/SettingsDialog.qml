@@ -45,8 +45,8 @@ Dialog {
     // Reading the size enumerates a directory, so it is asked for on open rather
     // than held: a signal, because a second onAboutToShow declared at the
     // instantiation site would replace this file's own.
-    signal cacheSizeRequested()
-    signal cacheClearRequested()
+    signal cacheSizeRequested
+    signal cacheClearRequested
 
     // Exposed for tst_MainDialogs.qml: the three-way wording below is this file's
     // only decision about the cache.
@@ -72,6 +72,45 @@ Dialog {
     standardButtons: Dialog.Close
     Component.onCompleted: StandardButtonLabels.pin(footer)
 
+    // Fixed rather than content-sized: the pages hold two cards at most, and a
+    // dialog that hugs them leaves the category list beside it a stub.
+    width: Math.min(Overlay.overlay.width * 0.9, 680)
+    height: Math.min(Overlay.overlay.height * 0.85, 360)
+
+    // One setting per card, the way Windows 11's Settings app draws one. The
+    // box is what separates a setting's name from its control -- stacked in a
+    // plain column the two read as consecutive rows of one list. The name stays
+    // above the control rather than opposite it: the dialog is not wide enough
+    // for a name column plus a path field and its two buttons.
+    component SettingCard: Rectangle {
+        default property alias content: cardContent.data
+        property alias name: cardName.text
+
+        Layout.fillWidth: true
+        implicitHeight: cardContent.implicitHeight + Theme.spacing.lg * 2
+        color: Theme.color.surfaceAlt
+        border.color: Theme.color.stroke
+        border.width: Theme.border.thin
+        radius: Theme.radius.md
+
+        ColumnLayout {
+            id: cardContent
+
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: Theme.spacing.lg
+            anchors.rightMargin: Theme.spacing.lg
+            spacing: Theme.spacing.sm
+
+            Label {
+                id: cardName
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+            }
+        }
+    }
+
     // Read once per open rather than bound: ComboBox assigns currentIndex
     // imperatively when the user picks a row, which would break a binding here
     // for the rest of the session.
@@ -80,75 +119,133 @@ Dialog {
         root.cacheSizeRequested();
     }
 
-    GridLayout {
-        columns: 2
-        columnSpacing: Theme.spacing.lg
-        rowSpacing: Theme.spacing.md
+    RowLayout {
+        anchors.fill: parent
+        spacing: Theme.spacing.md
 
-        Label {
-            text: qsTr("Theme")
-        }
+        // Same master/detail split as LicenseDialog: categories on the left,
+        // the selected one's settings on the right. StackLayout (not a Loader)
+        // keeps every page's controls alive even when hidden, so tests can
+        // reach e.g. cacheSizeLabel without switching to File management first.
+        ListView {
+            id: categoryList
 
-        ComboBox {
-            id: themeSelector
-            Layout.minimumWidth: 200
-            model: [qsTr("Use system setting"), qsTr("Light"), qsTr("Dark")]
-            // activated, not currentIndexChanged: only a user pick may write the
-            // preference, or the assignment in onAboutToShow above would echo
-            // back as one.
-            onActivated: index => root.colorSchemeSelected(root.schemeOrder[index])
-        }
+            Layout.preferredWidth: 150
+            Layout.fillHeight: true
+            clip: true
+            model: [qsTr("General"), qsTr("File management")]
+            currentIndex: 0
+            ScrollBar.vertical: ScrollBar {}
 
-        Label {
-            text: qsTr("Local folder")
-        }
+            delegate: ItemDelegate {
+                id: categoryRow
 
-        RowLayout {
-            spacing: Theme.spacing.sm
+                required property int index
+                required property string modelData
 
-            TextField {
-                id: localFolderField
-                Layout.minimumWidth: 200
-                Layout.fillWidth: true
-                // Display only: the path is picked with the folder chooser, so
-                // typing one would be a second, unvalidated way in.
-                readOnly: true
-                text: root.localRootFolder
-                placeholderText: qsTr("Not linked")
-            }
-
-            Button {
-                text: qsTr("Choose…")
-                onClicked: folderChooser.open()
-            }
-
-            Button {
-                text: qsTr("Clear")
-                enabled: root.localRootFolder !== ""
-                onClicked: root.localRootFolderSelected("")
+                width: categoryList.width
+                text: modelData
+                highlighted: ListView.isCurrentItem
+                onClicked: categoryList.currentIndex = categoryRow.index
             }
         }
 
-        Label {
-            text: qsTr("Thumbnail cache")
+        Rectangle {
+            Layout.preferredWidth: Theme.border.thin
+            Layout.fillHeight: true
+            color: Theme.color.stroke
         }
 
-        RowLayout {
-            spacing: Theme.spacing.sm
+        StackLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.leftMargin: Theme.spacing.sm
+            currentIndex: categoryList.currentIndex
 
-            // No cap and no automatic eviction: the size is shown so the user can
-            // decide instead (STUDY_THUMBNAIL_CACHE.md 2-4).
-            Label {
-                id: cacheSizeLabel
-                Layout.fillWidth: true
-                text: root.cacheBusy ? qsTr("Calculating…") : (root.cacheSizeText
-                                                               || qsTr("Unavailable"))
+            ColumnLayout {
+                spacing: Theme.spacing.md
+
+                SettingCard {
+                    name: qsTr("Theme")
+
+                    ComboBox {
+                        id: themeSelector
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: 260
+                        model: [qsTr("Use system setting"), qsTr("Light"), qsTr("Dark")]
+                        // activated, not currentIndexChanged: only a user pick may
+                        // write the preference, or the assignment in onAboutToShow
+                        // above would echo back as one.
+                        onActivated: index => root.colorSchemeSelected(root.schemeOrder[index])
+                    }
+                }
+
+                Item {
+                    Layout.fillHeight: true
+                }
             }
 
-            Button {
-                text: qsTr("Clear")
-                enabled: !root.cacheBusy
-                onClicked: root.cacheClearRequested()
+            ColumnLayout {
+                spacing: Theme.spacing.md
+
+                SettingCard {
+                    name: qsTr("Local folder")
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.spacing.sm
+
+                        TextField {
+                            id: localFolderField
+                            Layout.fillWidth: true
+                            // Display only: the path is picked with the folder
+                            // chooser, so typing one would be a second,
+                            // unvalidated way in.
+                            readOnly: true
+                            text: root.localRootFolder
+                            placeholderText: qsTr("Not linked")
+                        }
+
+                        Button {
+                            text: qsTr("Choose…")
+                            onClicked: folderChooser.open()
+                        }
+
+                        Button {
+                            text: qsTr("Clear")
+                            enabled: root.localRootFolder !== ""
+                            onClicked: root.localRootFolderSelected("")
+                        }
+                    }
+                }
+
+                SettingCard {
+                    name: qsTr("Thumbnail cache")
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.spacing.sm
+
+                        // No cap and no automatic eviction: the size is shown so
+                        // the user can decide instead (STUDY_THUMBNAIL_CACHE.md 2-4).
+                        Label {
+                            id: cacheSizeLabel
+                            Layout.fillWidth: true
+                            text: root.cacheBusy ? qsTr("Calculating…") : (root.cacheSizeText
+                                                                           || qsTr("Unavailable"))
+                        }
+
+                        Button {
+                            text: qsTr("Clear")
+                            enabled: !root.cacheBusy
+                            onClicked: root.cacheClearRequested()
+                        }
+                    }
+                }
+
+                Item {
+                    Layout.fillHeight: true
+                }
             }
         }
     }
@@ -159,7 +256,7 @@ Dialog {
     FolderDialog {
         id: folderChooser
         title: qsTr("Choose the local folder for your MEGA root")
-        onAccepted: root.localRootFolderSelected(
-                        localFolderController.pathFromUrl(folderChooser.selectedFolder))
+        onAccepted: root.localRootFolderSelected(localFolderController.pathFromUrl(
+                                                     folderChooser.selectedFolder))
     }
 }
