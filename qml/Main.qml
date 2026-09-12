@@ -284,6 +284,7 @@ ApplicationWindow {
         cacheBusy: cacheController.busy
         onCacheSizeRequested: cacheController.refresh()
         onCacheClearRequested: cacheController.clear()
+        openWith: openWithController
     }
 
     MissingPinDialog {

@@ -1,8 +1,12 @@
 #include "qml/OpenWithController.h"
 
+#include <QCoreApplication>
+#include <QDir>
 #include <QObject>
+#include <QProcess>
 #include <QSettings>
 #include <QString>
+#include <QUrl>
 #include <QVariantMap>
 
 #include <filesystem>
@@ -166,4 +170,66 @@ TEST(OpenWithControllerTest, StoredJunkLeavesTheListEmpty)
 
     OpenWithController controller(nullptr, path);
     EXPECT_EQ(controller.count(), 0);
+}
+
+TEST(OpenWithControllerTest, CommandRunnableResolvesTheProgramToken)
+{
+    OpenWithController controller(nullptr, tempSettingsPath("runnable"));
+    const QString self = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+
+    EXPECT_TRUE(controller.commandRunnable(QLatin1Char('"') + self + QStringLiteral("\" %U")));
+    EXPECT_FALSE(controller.commandRunnable(QStringLiteral("\"C:\\nonexistent\\v.exe\" %U")));
+    EXPECT_FALSE(controller.commandRunnable(QStringLiteral("megaexplorer-no-such-program %U")));
+    EXPECT_FALSE(controller.commandRunnable(QStringLiteral("   ")));
+}
+
+TEST(OpenWithControllerTest, CommandRunnableAcceptsAPathWrittenWithoutExe)
+{
+    OpenWithController controller(nullptr, tempSettingsPath("noexe"));
+    QString self = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+    ASSERT_TRUE(self.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive));
+    self.chop(4);
+
+    EXPECT_TRUE(controller.commandRunnable(QLatin1Char('"') + self + QLatin1Char('"')));
+}
+
+TEST(OpenWithControllerTest, CommandWithProgramTakesTheChoosersUrl)
+{
+    OpenWithController controller(nullptr, tempSettingsPath("withprogram"));
+    const QUrl picked = QUrl::fromLocalFile(QStringLiteral("C:/Apps/Viewer/v.exe"));
+
+    const QString quoted = QStringLiteral("\"C:\\Apps\\Viewer\\v.exe\"");
+
+    EXPECT_EQ(controller.commandWithProgram(QString(), picked), quoted + QStringLiteral(" %U"));
+    EXPECT_EQ(controller.commandWithProgram(QStringLiteral("   "), picked),
+              quoted + QStringLiteral(" %U"));
+    EXPECT_EQ(controller.commandWithProgram(QStringLiteral("old.exe  --source   %U"), picked),
+              quoted + QStringLiteral("  --source   %U"));
+    EXPECT_EQ(controller.commandWithProgram(QStringLiteral("\"C:\\Old Dir\\a.exe\" %U"), picked),
+              quoted + QStringLiteral(" %U"));
+}
+
+// The token has to end where splitCommand() ends it, or the arguments after a
+// separator it recognises would be swallowed into the replaced program.
+TEST(OpenWithControllerTest, CommandWithProgramEndsTheTokenWhereSplitCommandDoes)
+{
+    OpenWithController controller(nullptr, tempSettingsPath("tokenend"));
+    const QUrl picked = QUrl::fromLocalFile(QStringLiteral("C:/v.exe"));
+    const QString quoted = QStringLiteral("\"C:\\v.exe\"");
+
+    // Quoting part-way through a token does not end it.
+    EXPECT_EQ(
+        controller.commandWithProgram(QStringLiteral("C:\\\"Program Files\"\\x.exe %U"), picked),
+        quoted + QStringLiteral(" %U"));
+    // A full-width space (U+3000) separates, as QChar::isSpace() says.
+    const QString fullWidth =
+        QStringLiteral("vlc.exe") + QChar(0x3000) + QStringLiteral("--fullscreen %U");
+    EXPECT_EQ(controller.commandWithProgram(fullWidth, picked),
+              quoted + QChar(0x3000) + QStringLiteral("--fullscreen %U"));
+    // Three quotes are a literal quote and leave quoting off.
+    EXPECT_EQ(controller.commandWithProgram(QStringLiteral("a\"\"\"b c"), picked),
+              quoted + QStringLiteral(" c"));
+    for (const QString& command : {fullWidth, QStringLiteral("a\"\"\"b c")})
+        EXPECT_EQ(QProcess::splitCommand(controller.commandWithProgram(command, picked)).size(),
+                  QProcess::splitCommand(command).size());
 }

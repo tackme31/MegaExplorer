@@ -3,11 +3,14 @@
 #include "app/Logging.h"
 #include "ViewerController.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QStringList>
 #include <QVariantMap>
 
@@ -30,6 +33,42 @@ const char* const kSettingsKey = "openWith/programs";
 // deliberately absent: a name on MEGA can be chosen by whoever shared the folder,
 // so it would be an injection surface (STUDY_OPEN_WITH.md 3-3-2).
 const QString kUrlPlaceholder = QStringLiteral("%U");
+
+// Where the first token of command ends, or -1 when it has none. Mirrors
+// QProcess::splitCommand() -- QChar::isSpace() separators, and three quotes in a
+// row as a literal quote -- so the program swapped out is the one launch() runs.
+qsizetype firstTokenEnd(const QString& command)
+{
+    int quoteCount = 0;
+    bool inQuote = false;
+    bool tokenStarted = false;
+    for (qsizetype i = 0; i < command.size(); ++i)
+    {
+        const QChar c = command.at(i);
+        if (c == u'"')
+        {
+            if (++quoteCount == 3)
+            {
+                quoteCount = 0;
+                tokenStarted = true;
+            }
+            continue;
+        }
+        if (quoteCount == 1)
+            inQuote = !inQuote;
+        quoteCount = 0;
+        if (!inQuote && c.isSpace())
+        {
+            if (tokenStarted)
+                return i;
+        }
+        else
+        {
+            tokenStarted = true;
+        }
+    }
+    return tokenStarted ? command.size() : -1;
+}
 
 // unique_ptr because QSettings is neither copyable nor movable.
 std::unique_ptr<QSettings> openSettings(const QString& iniFilePath)
@@ -169,6 +208,33 @@ void OpenWithController::launch(int index, quint64 handle)
     if (!ok)
         qCWarning(lcApp) << "failed to start Open with program" << name;
     emit programLaunched(ok, name);
+}
+
+bool OpenWithController::commandRunnable(const QString& commandLine) const
+{
+    const QStringList arguments = QProcess::splitCommand(commandLine);
+    if (arguments.isEmpty())
+        return false;
+
+    // launch() leaves the search to CreateProcess, which only ever appends ".exe";
+    // findExecutable would also accept a "code.cmd" that CreateProcess never finds.
+    const QString& program = arguments.first();
+    const QString withSuffix = QFileInfo(program).suffix().isEmpty()
+                                   ? program + QStringLiteral(".exe")
+                                   : program;
+    if (program.contains(u'/') || program.contains(u'\\'))
+        return QFileInfo(program).isFile() || QFileInfo(withSuffix).isFile();
+    return !QStandardPaths::findExecutable(withSuffix).isEmpty();
+}
+
+QString OpenWithController::commandWithProgram(const QString& commandLine, const QUrl& program) const
+{
+    const QString quoted =
+        QLatin1Char('"') + QDir::toNativeSeparators(program.toLocalFile()) + QLatin1Char('"');
+    const qsizetype end = firstTokenEnd(commandLine);
+    if (end < 0)
+        return quoted + QStringLiteral(" ") + kUrlPlaceholder;
+    return quoted + commandLine.mid(end);
 }
 
 void OpenWithController::load()

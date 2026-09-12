@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QUrl>
 #include <QVariantList>
 
 #include <QtQml/qqmlregistration.h>
@@ -60,6 +61,16 @@ public:
     // programLaunched rather than a return value, so the toast is driven the same
     // way ViewerController::openInBrowser drives it.
     Q_INVOKABLE void launch(int index, quint64 handle);
+
+    // Whether the command's program can be found, for the settings screen's inline
+    // warning: false for a command with no token at all. Only a warning -- an entry
+    // whose program is missing is still saved, since the drive may just be offline.
+    Q_INVOKABLE bool commandRunnable(const QString& commandLine) const;
+
+    // commandLine with its program -- the first token as splitCommand() reads it --
+    // swapped for the quoted path of the FileDialog's selectedFile, the rest kept as
+    // written. A command with no token becomes `"path" %U`.
+    Q_INVOKABLE QString commandWithProgram(const QString& commandLine, const QUrl& program) const;
 
 signals:
     void entriesChanged();

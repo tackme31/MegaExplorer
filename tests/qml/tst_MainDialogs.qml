@@ -1651,6 +1651,174 @@ TestCase {
         compare(dialog.themeSelector.currentIndex, 0);
     }
 
+    // Mirrors OpenWithController's surface the settings page uses. setEntries keeps
+    // what it was handed, unfiltered, so a test can see exactly what was written.
+    Component {
+        id: openWithStubComponent
+
+        QtObject {
+            property var stored: []
+            property var written: []
+            function entries() {
+                return stored;
+            }
+            function setEntries(list) {
+                written.push(list);
+            }
+            function commandRunnable(command) {
+                return command.trim() !== "" && command.indexOf("missing") < 0;
+            }
+            function commandWithProgram(command, url) {
+                return "\"C:\\picked.exe\" %U";
+            }
+        }
+    }
+
+    function makeSettingsWithPrograms(stored) {
+        const stub = createTemporaryObject(openWithStubComponent, testCase, {
+                                               "stored": stored
+                                           });
+        verify(stub !== null);
+        const dialog = makeDialog(settingsComponent, {
+                                      "openWith": stub
+                                  });
+        dialog.open();
+        tryCompare(dialog, "opened", true);
+        return {
+            "dialog": dialog,
+            "stub": stub
+        };
+    }
+
+    function test_settings_programsOpenOnTheSavedList() {
+        const s = makeSettingsWithPrograms([
+                                               {
+                                                   "name": "Viewer",
+                                                   "extensions": "jpg, png",
+                                                   "commandLine": "\"C:\\v.exe\" %U"
+                                               },
+                                               {
+                                                   "name": "Player",
+                                                   "extensions": "",
+                                                   "commandLine": "mpv %U"
+                                               }
+                                           ]);
+
+        compare(s.dialog.programList.count, 2);
+        compare(s.dialog.programList.currentIndex, 0);
+        compare(s.dialog.programNameField.text, "Viewer");
+        compare(s.dialog.programExtensionsField.text, "jpg, png");
+        compare(s.dialog.programCommandField.text, "\"C:\\v.exe\" %U");
+        // Opening is not editing: an echo here would rewrite the setting on every open.
+        compare(s.stub.written.length, 0);
+
+        s.dialog.programList.currentIndex = 1;
+        compare(s.dialog.programNameField.text, "Player");
+    }
+
+    // The half-typed row has to stay in the list while the controller drops it, or
+    // the row being typed into would vanish at the first keystroke.
+    function test_settings_addingAProgramEditsANewRowAndWritesThrough() {
+        const s = makeSettingsWithPrograms([]);
+        compare(s.dialog.programList.count, 0);
+
+        s.dialog.addProgram();
+        compare(s.dialog.programList.count, 1);
+        compare(s.dialog.programList.currentIndex, 0);
+
+        s.dialog.editProgram("name", "Player");
+        s.dialog.editProgram("commandLine", "mpv %U");
+
+        compare(s.dialog.programList.count, 1);
+        const last = s.stub.written[s.stub.written.length - 1];
+        compare(last.length, 1);
+        compare(last[0].name, "Player");
+        compare(last[0].commandLine, "mpv %U");
+        compare(last[0].extensions, "");
+    }
+
+    function test_settings_removingAProgramWritesTheRest() {
+        const s = makeSettingsWithPrograms([
+                                               {
+                                                   "name": "A",
+                                                   "extensions": "",
+                                                   "commandLine": "a %U"
+                                               },
+                                               {
+                                                   "name": "B",
+                                                   "extensions": "",
+                                                   "commandLine": "b %U"
+                                               }
+                                           ]);
+
+        s.dialog.removeProgram();
+
+        compare(s.dialog.programList.count, 1);
+        compare(s.dialog.programNameField.text, "B");
+        const last = s.stub.written[s.stub.written.length - 1];
+        compare(last.length, 1);
+        compare(last[0].name, "B");
+    }
+
+    function test_settings_programWarningWording_data() {
+        return [
+                    {
+                        tag: "fine",
+                        name: "Player",
+                        command: "mpv %U",
+                        shown: ""
+                    },
+                    {
+                        tag: "noCommand",
+                        name: "Player",
+                        command: "",
+                        shown: "Enter the command line that starts the program."
+                    },
+                    {
+                        tag: "notFound",
+                        name: "Player",
+                        command: "missing.exe %U",
+                        shown: "The program in this command line could not be found."
+                    },
+                    {
+                        tag: "noName",
+                        name: "",
+                        command: "mpv %U",
+                        shown: "Give the program a name. It is not saved without one."
+                    }
+                ];
+    }
+
+    function test_settings_programWarningWording(data) {
+        const s = makeSettingsWithPrograms([
+                                               {
+                                                   "name": data.name,
+                                                   "extensions": "",
+                                                   "commandLine": data.command
+                                               }
+                                           ]);
+
+        compare(s.dialog.programProblemLabel.text, data.shown);
+    }
+
+    // The check trails typing by a debounce, so a warning must still arrive after it.
+    function test_settings_programWarningFollowsTyping() {
+        const s = makeSettingsWithPrograms([
+                                               {
+                                                   "name": "Player",
+                                                   "extensions": "",
+                                                   "commandLine": "mpv %U"
+                                               }
+                                           ]);
+        compare(s.dialog.programProblemLabel.text, "");
+
+        s.dialog.programCommandField.text = "missing.exe %U";
+        s.dialog.programCommandField.textEdited();
+
+        tryCompare(s.dialog.programProblemLabel, "text",
+                   "The program in this command line could not be found.");
+    }
+
     // ---- StandardButtonLabels ------------------------------------------
 
     // Dialog.standardButtons words its buttons from Qt's own catalogue, which

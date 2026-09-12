@@ -83,6 +83,10 @@ QtObject {
         readonly property int body: 14 // FluentWinUI3's own default size
         readonly property int caption: 12
         readonly property string iconFamily: "Segoe Fluent Icons"
+        // Chosen here rather than left to font fallback: a missing family falls back
+        // to the proportional UI font, not to another monospace one.
+        readonly property string monoFamily: Qt.fontFamilies().indexOf("Cascadia Mono") >= 0
+                                             ? "Cascadia Mono" : "Consolas"
     }
 
     readonly property QtObject iconSize: QtObject {

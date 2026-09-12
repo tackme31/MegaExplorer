@@ -52,6 +52,113 @@ Dialog {
     // only decision about the cache.
     property alias cacheSizeLabel: cacheSizeLabel
 
+    // OpenWithController, or a stand-in with its entries/setEntries/commandRunnable/
+    // commandWithProgram surface in tests. Passed in, like everything above.
+    property var openWith: null
+
+    // Exposed for tst_MainDialogs.qml.
+    property alias programList: programList
+    property alias programNameField: programNameField
+    property alias programExtensionsField: programExtensionsField
+    property alias programCommandField: programCommandField
+    property alias programProblemLabel: programProblemLabel
+
+    // The command the inline warning was last computed for. Trails the field by a
+    // debounce: the check stats every PATH directory, and a network drive on PATH
+    // would make that stall per keystroke.
+    property string checkedCommand: ""
+
+    // The editable copy of the list, rows included that setEntries will not keep yet
+    // (no name or no command): writing each keystroke straight to the controller and
+    // reading it back would delete the row being typed into.
+    ListModel {
+        id: programModel
+    }
+
+    function loadPrograms() {
+        programModel.clear();
+        const entries = root.openWith ? root.openWith.entries() : [];
+        for (let i = 0; i < entries.length; ++i)
+            programModel.append({
+                                    "name": entries[i].name,
+                                    "extensions": entries[i].extensions,
+                                    "commandLine": entries[i].commandLine
+                                });
+        programList.currentIndex = programModel.count > 0 ? 0 : -1;
+        root.showSelectedProgram();
+    }
+
+    function savePrograms() {
+        if (!root.openWith)
+            return;
+        let entries = [];
+        for (let i = 0; i < programModel.count; ++i) {
+            const row = programModel.get(i);
+            entries.push({
+                             "name": row.name,
+                             "extensions": row.extensions,
+                             "commandLine": row.commandLine
+                         });
+        }
+        root.openWith.setEntries(entries);
+    }
+
+    // Imperative both ways: the fields' textEdited writes back, and a binding from
+    // the model would be broken by the first keystroke.
+    function showSelectedProgram() {
+        const index = programList.currentIndex;
+        const row = index >= 0 ? programModel.get(index) : null;
+        programNameField.text = row ? row.name : "";
+        programExtensionsField.text = row ? row.extensions : "";
+        programCommandField.text = row ? row.commandLine : "";
+        commandCheckDelay.stop();
+        root.checkedCommand = programCommandField.text;
+    }
+
+    function editProgram(role: string, value: string) {
+        const index = programList.currentIndex;
+        if (index < 0 || programModel.get(index)[role] === value)
+            return;
+        programModel.setProperty(index, role, value);
+        root.savePrograms();
+    }
+
+    function addProgram() {
+        programModel.append({
+                                "name": "",
+                                "extensions": "",
+                                "commandLine": ""
+                            });
+        programList.currentIndex = programModel.count - 1;
+        root.showSelectedProgram();
+        programNameField.forceActiveFocus();
+    }
+
+    function removeProgram() {
+        const index = programList.currentIndex;
+        if (index < 0)
+            return;
+        programModel.remove(index);
+        programList.currentIndex = Math.min(index, programModel.count - 1);
+        root.showSelectedProgram();
+        root.savePrograms();
+    }
+
+    // Empty when there is nothing to warn about. Only the first problem is named,
+    // since the line has room for one.
+    readonly property string programProblem: {
+        if (programList.currentIndex < 0)
+            return "";
+        if (root.checkedCommand.trim() === "")
+            return qsTr("Enter the command line that starts the program.");
+        if (root.openWith && !root.openWith.commandRunnable(root.checkedCommand))
+            return qsTr("The program in this command line could not be found.");
+        // Exactly empty, not blank: that is the test setEntries drops a row by.
+        if (programNameField.text === "")
+            return qsTr("Give the program a name. It is not saved without one.");
+        return "";
+    }
+
     // The ComboBox's own order. Index and scheme are kept apart because the
     // scheme values are not contiguous with the row order in general.
     readonly property var schemeOrder: [Qt.Unknown, Qt.Light, Qt.Dark]
@@ -74,8 +181,10 @@ Dialog {
 
     // Fixed rather than content-sized: the pages hold two cards at most, and a
     // dialog that hugs them leaves the category list beside it a stub.
+    // Tall enough for the Open with page's list, buttons and form; the other pages
+    // take the slack in their trailing filler rather than each getting a height.
     width: Math.min(Overlay.overlay.width * 0.9, 680)
-    height: Math.min(Overlay.overlay.height * 0.85, 360)
+    height: Math.min(Overlay.overlay.height * 0.85, 480)
 
     // One setting per card, the way Windows 11's Settings app draws one. The
     // box is what separates a setting's name from its control -- stacked in a
@@ -117,6 +226,7 @@ Dialog {
     onAboutToShow: {
         themeSelector.currentIndex = root.indexOfScheme(root.colorScheme);
         root.cacheSizeRequested();
+        root.loadPrograms();
     }
 
     RowLayout {
@@ -133,7 +243,7 @@ Dialog {
             Layout.preferredWidth: 150
             Layout.fillHeight: true
             clip: true
-            model: [qsTr("General"), qsTr("File management")]
+            model: [qsTr("General"), qsTr("File management"), qsTr("Open with")]
             currentIndex: 0
             ScrollBar.vertical: ScrollBar {}
 
@@ -282,6 +392,239 @@ Dialog {
                     Layout.fillHeight: true
                 }
             }
+
+            ColumnLayout {
+                spacing: Theme.spacing.md
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.sm
+
+                    // Without this the URL-only limit reads as a broken entry the
+                    // first time a path-only program opens nothing (STUDY_OPEN_WITH.md 4-4).
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        font.pixelSize: Theme.font.caption
+                        color: Theme.color.textSecondary
+                        text: qsTr(
+                                  "Files are handed over as a streaming URL, so only programs that accept a URL as an argument can open them.")
+                    }
+
+                    Button {
+                        text: qsTr("Add")
+                        onClicked: root.addProgram()
+                    }
+
+                    Button {
+                        text: qsTr("Remove")
+                        enabled: programList.currentIndex >= 0
+                        onClicked: root.removeProgram()
+                    }
+                }
+
+                // One framed box with dividers between rows, not a card per row: the
+                // gap between cards would cost a visible row (STUDY_OPEN_WITH.md 3-3-4).
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 96
+                    color: Theme.color.surfaceAlt
+                    border.color: Theme.color.stroke
+                    border.width: Theme.border.thin
+                    radius: Theme.radius.md
+                    clip: true
+
+                    ListView {
+                        id: programList
+
+                        anchors.fill: parent
+                        anchors.margins: Theme.border.thin
+                        clip: true
+                        model: programModel
+                        currentIndex: -1
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar {}
+                        onCurrentIndexChanged: root.showSelectedProgram()
+
+                        delegate: Rectangle {
+                            id: programRow
+
+                            required property int index
+                            required property string name
+                            required property string extensions
+                            required property string commandLine
+
+                            width: ListView.view.width
+                            implicitHeight: programText.implicitHeight + Theme.spacing.sm * 2
+                            color: ListView.isCurrentItem ? Theme.color.selection :
+                                                            programHover.hovered
+                                                            ? Theme.color.subtleHover :
+                                                              "transparent"
+
+                            HoverHandler {
+                                id: programHover
+                            }
+
+                            TapHandler {
+                                onTapped: programList.currentIndex = programRow.index
+                            }
+
+                            ColumnLayout {
+                                id: programText
+
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.leftMargin: Theme.spacing.lg
+                                anchors.rightMargin: Theme.spacing.lg
+                                spacing: 0
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                    font.pixelSize: Theme.font.body
+                                    font.bold: true
+                                    color: Theme.color.text
+                                    text: programRow.name.trim() !== "" ? programRow.name : qsTr(
+                                                                              "Untitled")
+                                }
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                    font.pixelSize: Theme.font.caption
+                                    color: Theme.color.textSecondary
+                                    text: programRow.extensions.trim() !== ""
+                                          ? programRow.extensions : qsTr("All files")
+                                }
+
+                                // Monospace on this line only: on the extensions too it
+                                // would flatten the step down from the bold name.
+                                Label {
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideMiddle
+                                    font.pixelSize: Theme.font.caption
+                                    font.family: Theme.font.monoFamily
+                                    color: Theme.color.textSecondary
+                                    text: programRow.commandLine
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: Theme.border.thin
+                                color: Theme.color.stroke
+                                visible: programRow.index < programModel.count - 1
+                            }
+                        }
+                    }
+
+                    Label {
+                        anchors.centerIn: parent
+                        visible: programModel.count === 0
+                        color: Theme.color.textSecondary
+                        text: qsTr("No programs yet")
+                    }
+                }
+
+                // Live editor for the selected row: every edit is written through at
+                // once, like the rest of this dialog, which has no Apply.
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: Theme.spacing.md
+                    rowSpacing: Theme.spacing.sm
+                    enabled: programList.currentIndex >= 0
+
+                    Label {
+                        text: qsTr("Name")
+                    }
+
+                    TextField {
+                        id: programNameField
+                        Layout.fillWidth: true
+                        onTextEdited: root.editProgram("name", text)
+                    }
+
+                    Label {
+                        text: qsTr("File types")
+                    }
+
+                    TextField {
+                        id: programExtensionsField
+                        Layout.fillWidth: true
+                        placeholderText: qsTr("e.g. mp4, mkv (empty for all files)")
+                        onTextEdited: root.editProgram("extensions", text)
+                    }
+
+                    Label {
+                        text: qsTr("Command line")
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.spacing.sm
+
+                        TextField {
+                            id: programCommandField
+                            Layout.fillWidth: true
+                            font.family: Theme.font.monoFamily
+                            placeholderText: qsTr("\"C:\\Path\\program.exe\" %U")
+                            onTextEdited: {
+                                root.editProgram("commandLine", text);
+                                commandCheckDelay.restart();
+                            }
+                        }
+
+                        Button {
+                            text: qsTr("Browse…")
+                            onClicked: programChooser.open()
+                        }
+                    }
+
+                    Item {
+                        Layout.preferredWidth: 1
+                    }
+
+                    // Kept in the layout while empty, so the list above does not
+                    // resize as the warning comes and goes.
+                    Label {
+                        id: programProblemLabel
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        font.pixelSize: Theme.font.caption
+                        color: Theme.color.danger
+                        text: root.programProblem
+                    }
+                }
+            }
+        }
+    }
+
+    Timer {
+        id: commandCheckDelay
+        interval: 300
+        onTriggered: root.checkedCommand = programCommandField.text
+    }
+
+    // The URL placeholder is kept, and on an empty command added: the chooser is
+    // how most people will fill this in, and a bare path would work but hide %U.
+    FileDialog {
+        id: programChooser
+        title: qsTr("Choose a program")
+        nameFilters: [qsTr("Programs (*.exe)"), qsTr("All files (*)")]
+        onAccepted: {
+            if (!root.openWith)
+                return;
+            const command = root.openWith.commandWithProgram(programCommandField.text,
+                                                             programChooser.selectedFile);
+            programCommandField.text = command;
+            root.editProgram("commandLine", command);
+            commandCheckDelay.stop();
+            root.checkedCommand = command;
         }
     }
 
