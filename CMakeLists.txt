@@ -391,7 +391,11 @@ target_include_directories(MegaExplorer PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src)
 # business seeing our definitions. main.cpp forwards this to
 # QCoreApplication::setApplicationVersion, which is where QML reads it from.
 target_compile_definitions(MegaExplorer PRIVATE
-    MEGAEXPLORER_VERSION="${PROJECT_VERSION}")
+    MEGAEXPLORER_VERSION="${PROJECT_VERSION}"
+    # Keeps a Debug build's MEGA login, settings and log apart from the released
+    # build's regardless of how it was launched -- an env var alone only reaches
+    # processes started from a shell that sets it. MEGAEXPLORER_PROFILE still wins.
+    $<$<CONFIG:Debug>:MEGAEXPLORER_DEFAULT_PROFILE="dev">)
 
 # MegaExplorerQmlplugin is the static QML plugin qt_add_qml_module generates
 # alongside the (static) backing library. Linking it is not optional despite the
@@ -442,6 +446,11 @@ target_link_libraries(megatool
     PRIVATE crypt32
     PRIVATE MegaExplorerWarnings
 )
+
+# whoami answers about the app's stored session, so megatool has to resolve the
+# same profile the app built in the same configuration does.
+target_compile_definitions(megatool PRIVATE
+    $<$<CONFIG:Debug>:MEGAEXPLORER_DEFAULT_PROFILE="dev">)
 
 # After MegaExplorerQml, which tests/CMakeLists.txt links: CMake would resolve
 # the name either way, but the dependency is easier to follow in source order.
