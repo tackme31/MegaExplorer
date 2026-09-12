@@ -36,6 +36,22 @@ Dialog {
     // Exposed for tst_MainDialogs.qml, like themeSelector above.
     property alias localFolderField: localFolderField
 
+    // The thumbnail cache's size as already-formatted text, empty when there is no
+    // answer to show. Measured and emptied by Main.qml's controller, so this file
+    // stays free of root-context lookups like the properties above.
+    property string cacheSizeText: ""
+    property bool cacheBusy: false
+
+    // Reading the size enumerates a directory, so it is asked for on open rather
+    // than held: a signal, because a second onAboutToShow declared at the
+    // instantiation site would replace this file's own.
+    signal cacheSizeRequested()
+    signal cacheClearRequested()
+
+    // Exposed for tst_MainDialogs.qml: the three-way wording below is this file's
+    // only decision about the cache.
+    property alias cacheSizeLabel: cacheSizeLabel
+
     // The ComboBox's own order. Index and scheme are kept apart because the
     // scheme values are not contiguous with the row order in general.
     readonly property var schemeOrder: [Qt.Unknown, Qt.Light, Qt.Dark]
@@ -59,7 +75,10 @@ Dialog {
     // Read once per open rather than bound: ComboBox assigns currentIndex
     // imperatively when the user picks a row, which would break a binding here
     // for the rest of the session.
-    onAboutToShow: themeSelector.currentIndex = root.indexOfScheme(root.colorScheme)
+    onAboutToShow: {
+        themeSelector.currentIndex = root.indexOfScheme(root.colorScheme);
+        root.cacheSizeRequested();
+    }
 
     GridLayout {
         columns: 2
@@ -107,6 +126,29 @@ Dialog {
                 text: qsTr("Clear")
                 enabled: root.localRootFolder !== ""
                 onClicked: root.localRootFolderSelected("")
+            }
+        }
+
+        Label {
+            text: qsTr("Thumbnail cache")
+        }
+
+        RowLayout {
+            spacing: Theme.spacing.sm
+
+            // No cap and no automatic eviction: the size is shown so the user can
+            // decide instead (STUDY_THUMBNAIL_CACHE.md 2-4).
+            Label {
+                id: cacheSizeLabel
+                Layout.fillWidth: true
+                text: root.cacheBusy ? qsTr("Calculating…") : (root.cacheSizeText
+                                                               || qsTr("Unavailable"))
+            }
+
+            Button {
+                text: qsTr("Clear")
+                enabled: !root.cacheBusy
+                onClicked: root.cacheClearRequested()
             }
         }
     }

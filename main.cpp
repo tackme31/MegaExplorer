@@ -21,6 +21,7 @@
 #include "qml/AccountController.h"
 #include "qml/AuthController.h"
 #include "qml/BusyState.h"
+#include "qml/CacheController.h"
 #include "qml/ClipboardController.h"
 #include "qml/DownloadController.h"
 #include "qml/FileMutationController.h"
@@ -174,6 +175,7 @@ int main(int argc, char* argv[])
     PreviewController previewController(previewService, previewImageStore);
     ViewerController viewerController(client);
     LocalFolderController localFolderController(localLinkService, &notifications);
+    CacheController cacheController(thumbnailService);
     PropertiesController propertiesController(nodeDetailsService);
     TransferListModel transferListModel(&downloadController, &uploadController);
 
@@ -248,6 +250,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("previewController", &previewController);
     engine.rootContext()->setContextProperty("viewerController", &viewerController);
     engine.rootContext()->setContextProperty("localFolderController", &localFolderController);
+    engine.rootContext()->setContextProperty("cacheController", &cacheController);
     engine.rootContext()->setContextProperty("propertiesController", &propertiesController);
     engine.rootContext()->setContextProperty("transferListModel", &transferListModel);
     // The engine takes ownership of the provider, which is why the bytes it serves

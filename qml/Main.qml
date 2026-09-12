@@ -280,6 +280,10 @@ ApplicationWindow {
         }
         localRootFolder: window.localRootFolder
         onLocalRootFolderSelected: path => window.localRootFolder = path
+        cacheSizeText: cacheController.sizeText
+        cacheBusy: cacheController.busy
+        onCacheSizeRequested: cacheController.refresh()
+        onCacheClearRequested: cacheController.clear()
     }
 
     MissingPinDialog {

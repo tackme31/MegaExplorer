@@ -1,5 +1,7 @@
 #include "ThumbnailService.h"
 
+#include "MegaErrorCodes.h"
+
 namespace
 {
 
@@ -11,9 +13,44 @@ constexpr char kPathSeparator = '\\';
 constexpr char kPathSeparator = '/';
 #endif
 
+std::string fileNameFor(std::uint64_t handle)
+{
+    return std::to_string(handle) + ".jpg";
+}
+
 std::string filePathIn(const std::string& directory, std::uint64_t handle)
 {
-    return directory + kPathSeparator + std::to_string(handle) + ".jpg";
+    return directory + kPathSeparator + fileNameFor(handle);
+}
+
+// fileNameFor() read back. Nullopt for anything else in the directory, which is then
+// nobody's fetch and can go.
+std::optional<std::uint64_t> handleOfFileName(const std::string& name)
+{
+    const std::size_t dot = name.find('.');
+    if (dot == 0 || dot == std::string::npos || name.compare(dot, std::string::npos, ".jpg") != 0)
+        return std::nullopt;
+    std::uint64_t handle = 0;
+    for (std::size_t i = 0; i < dot; ++i)
+    {
+        if (name[i] < '0' || name[i] > '9')
+            return std::nullopt;
+        handle = handle * 10 + static_cast<std::uint64_t>(name[i] - '0');
+    }
+    return handle;
+}
+
+// Nullopt only when the directory is there and refused to be read. A directory that
+// was never created is an empty cache: nothing has been fetched under this account.
+std::optional<std::vector<LocalEntry>> listCache(const ILocalFileSystem& fileSystem,
+                                                 const std::string& directory)
+{
+    std::optional<std::vector<LocalEntry>> entries = fileSystem.listDirectory(directory);
+    if (entries)
+        return entries;
+    if (!fileSystem.entryFor(directory).has_value())
+        return std::vector<LocalEntry>{};
+    return std::nullopt;
 }
 
 // Same struct, same reasons, as DownloadService.cpp's -- see there, including why the
@@ -185,6 +222,68 @@ void ThumbnailService::discard(const std::vector<std::uint64_t>& handles)
     // overwrite it either. Remembered so the next request fetches over it instead.
     std::lock_guard<std::mutex> lock(mMutex);
     mUndeletable.insert(undeletable.begin(), undeletable.end());
+}
+
+Result<std::uint64_t> ThumbnailService::cachedBytes() const
+{
+    const Result<std::string> resolved = accountDirectory();
+    if (!resolved.success)
+        return Result<std::uint64_t>::fail(resolved.errorMessage, resolved.errorCode);
+
+    const std::optional<std::vector<LocalEntry>> entries = listCache(*mFileSystem, resolved.value());
+    if (!entries)
+        return Result<std::uint64_t>::fail("Could not read the thumbnail cache",
+                                           MegaErrorCode::kEAccess);
+
+    std::uint64_t total = 0;
+    for (const LocalEntry& entry : *entries)
+    {
+        if (!entry.isDirectory)
+            total += entry.sizeBytes;
+    }
+    return Result<std::uint64_t>::ok(total);
+}
+
+Result<void> ThumbnailService::clearCache()
+{
+    const Result<std::string> resolved = accountDirectory();
+    if (!resolved.success)
+        return Result<void>::fail(resolved.errorMessage, resolved.errorCode);
+
+    const std::optional<std::vector<LocalEntry>> entries = listCache(*mFileSystem, resolved.value());
+    if (!entries)
+        return Result<void>::fail("Could not read the thumbnail cache", MegaErrorCode::kEAccess);
+
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        mCache.clear();
+        // mUndeletable is left alone: an entry only forces one refetch, which is what
+        // emptying the cache asks for anyway, and finishJob() drops it then. Clearing
+        // it would un-guard a stale file that refuses to go below.
+    }
+
+    bool removedAll = true;
+    for (const LocalEntry& entry : *entries)
+    {
+        if (entry.isDirectory)
+            continue;
+        // mJobs is re-read per file rather than snapshotted once: the listing above was
+        // taken with no lock, so a fetch that started since would not be in a snapshot
+        // and its half-written file would be deleted out from under the SDK.
+        const std::optional<std::uint64_t> handle = handleOfFileName(entry.name);
+        if (handle)
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            if (mJobs.count(*handle) != 0)
+                continue;
+        }
+        if (!mFileSystem->removeFile(entry.path))
+            removedAll = false;
+    }
+    if (!removedAll)
+        return Result<void>::fail("Some thumbnails could not be deleted",
+                                  MegaErrorCode::kEAccess);
+    return Result<void>::ok();
 }
 
 void ThumbnailService::startNextIfCapacity()

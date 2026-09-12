@@ -1600,6 +1600,57 @@ TestCase {
         compare(picked[0], Qt.Dark);
     }
 
+    // The cache row words three states from two pushed-in properties, and a
+    // screenshot can only ever catch one of them.
+    function test_settings_cacheSizeWording_data() {
+        return [
+                    {
+                        tag: "measuring",
+                        busy: true,
+                        sizeText: "12.3 MB",
+                        shown: "Calculating…"
+                    },
+                    {
+                        tag: "measured",
+                        busy: false,
+                        sizeText: "12.3 MB",
+                        shown: "12.3 MB"
+                    },
+                    // A failed read leaves no size, which must not render as blank.
+                    {
+                        tag: "failed",
+                        busy: false,
+                        sizeText: "",
+                        shown: "Unavailable"
+                    }
+                ];
+    }
+
+    function test_settings_cacheSizeWording(data) {
+        const dialog = makeDialog(settingsComponent, {
+                                      "cacheBusy": data.busy,
+                                      "cacheSizeText": data.sizeText
+                                  });
+
+        compare(dialog.cacheSizeLabel.text, data.shown);
+    }
+
+    // Reading the size enumerates a directory, so it is asked for per open rather
+    // than held -- a handler that never fires would leave a stale number on screen.
+    function test_settings_openingAsksForTheCacheSize() {
+        const dialog = makeDialog(settingsComponent, {});
+        let asked = 0;
+        dialog.cacheSizeRequested.connect(() => ++asked);
+
+        dialog.open();
+
+        tryCompare(dialog, "opened", true);
+        compare(asked, 1);
+        // The theme row still gets its own onAboutToShow work: both live in one
+        // handler, so losing either is a silent failure.
+        compare(dialog.themeSelector.currentIndex, 0);
+    }
+
     // ---- StandardButtonLabels ------------------------------------------
 
     // Dialog.standardButtons words its buttons from Qt's own catalogue, which

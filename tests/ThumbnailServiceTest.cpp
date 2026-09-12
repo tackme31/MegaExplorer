@@ -15,6 +15,7 @@ namespace
 {
 
 constexpr const char* kCacheRoot = "C:\\cache\\thumbnails";
+constexpr const char* kSep = "\\";
 constexpr std::uint64_t kAccount = 111;
 
 // What the service is expected to resolve for a handle: <root>\<account>\<handle>.jpg
@@ -22,6 +23,18 @@ std::string cachePath(std::uint64_t handle)
 {
     return std::string(kCacheRoot) + "\\" + std::to_string(kAccount) + "\\" +
            std::to_string(handle) + ".jpg";
+}
+
+std::string leafOf(const std::string& path)
+{
+    const std::size_t slash = path.find_last_of('\\');
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+// The account directory the service resolves for kAccount.
+std::string accountDirectory()
+{
+    return std::string(kCacheRoot) + "\\" + std::to_string(kAccount);
 }
 
 class FakeLocalFileSystem : public ILocalFileSystem
@@ -36,11 +49,20 @@ public:
 
     std::optional<LocalEntry> entryFor(const std::string& path) const override
     {
+        if (createdDirectories.count(path) != 0)
+        {
+            LocalEntry entry;
+            entry.path = path;
+            entry.name = leafOf(path);
+            entry.isDirectory = true;
+            return entry;
+        }
         auto it = files.find(path);
         if (it == files.end())
             return std::nullopt;
         LocalEntry entry;
         entry.path = path;
+        entry.name = leafOf(path);
         entry.sizeBytes = it->second;
         return entry;
     }
@@ -65,9 +87,26 @@ public:
         return nullptr;
     }
 
-    std::optional<std::vector<LocalEntry>> listDirectory(const std::string&) const override
+    // Only the directory's own files, which is all the cache ever holds. Nullopt for
+    // a directory nothing created, so the service can tell "never fetched" apart from
+    // "refused to be read".
+    std::optional<std::vector<LocalEntry>> listDirectory(const std::string& path) const override
     {
-        return std::nullopt;
+        if (createdDirectories.count(path) == 0)
+            return std::nullopt;
+        std::vector<LocalEntry> entries;
+        for (const auto& file : files)
+        {
+            const std::size_t slash = file.first.find_last_of('\\');
+            if (slash == std::string::npos || file.first.substr(0, slash) != path)
+                continue;
+            LocalEntry entry;
+            entry.path = file.first;
+            entry.name = file.first.substr(slash + 1);
+            entry.sizeBytes = file.second;
+            entries.push_back(entry);
+        }
+        return entries;
     }
 
     std::optional<std::string> moveToFreeName(const std::string&, const std::string&) override
@@ -538,4 +577,120 @@ TEST(ThumbnailServiceTest, AFileDiscardCouldNotDeleteIsNotServedAsADiskHit)
     // discard was fetched over rather than served a second time.
     EXPECT_THAT(fileSystem->removedPaths, ::testing::ElementsAre(cachePath(7)));
     EXPECT_TRUE(refetched);
+}
+
+TEST(ThumbnailServiceTest, CachedBytesSumsTheSignedInAccountsFiles)
+{
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+    fileSystem->createdDirectories.insert(accountDirectory());
+    fileSystem->files[cachePath(7)] = 1024;
+    fileSystem->files[cachePath(8)] = 2048;
+    // Another account's directory, which this one must not be charged for.
+    const std::string otherAccount = std::string(kCacheRoot) + kSep + "999";
+    fileSystem->createdDirectories.insert(otherAccount);
+    fileSystem->files[otherAccount + kSep + "7.jpg"] = 4096;
+
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+
+    const Result<std::uint64_t> size = service.cachedBytes();
+
+    ASSERT_TRUE(size.success);
+    EXPECT_EQ(size.value(), 3072u);
+}
+
+TEST(ThumbnailServiceTest, CachedBytesIsZeroBeforeAnythingHasBeenFetched)
+{
+    // The account directory is created on demand, so "not there" is an empty cache
+    // rather than a listing that failed.
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+
+    const Result<std::uint64_t> size = service.cachedBytes();
+
+    ASSERT_TRUE(size.success);
+    EXPECT_EQ(size.value(), 0u);
+}
+
+TEST(ThumbnailServiceTest, CachedBytesFailsWithNobodySignedIn)
+{
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+    ON_CALL(*mockClient, currentUserHandle())
+        .WillByDefault(::testing::Return(Result<std::uint64_t>::fail("not logged in", -11)));
+
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+
+    EXPECT_FALSE(service.cachedBytes().success);
+}
+
+TEST(ThumbnailServiceTest, ClearCacheRemovesEveryFileAndTheNextRequestFetchesAgain)
+{
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+    EXPECT_CALL(*mockClient, getThumbnail(7, std::string(cachePath(7)), ::testing::_))
+        .Times(2)
+        .WillRepeatedly(::testing::InvokeArgument<2>(Result<std::string>::ok(cachePath(7))));
+
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+    service.request(7, [](Result<std::string>) {});
+    fileSystem->files[cachePath(7)] = 1024; // what the fetch above left behind
+    fileSystem->files[cachePath(8)] = 2048; // and what an earlier run left
+
+    const Result<void> cleared = service.clearCache();
+    bool refetched = false;
+    service.request(7, [&](Result<std::string>) {
+        refetched = true;
+    });
+
+    EXPECT_TRUE(cleared.success);
+    EXPECT_THAT(fileSystem->removedPaths,
+                ::testing::UnorderedElementsAre(cachePath(7), cachePath(8)));
+    EXPECT_TRUE(refetched);
+}
+
+TEST(ThumbnailServiceTest, ClearCacheLeavesAHandleWhoseFetchIsStillRunningAlone)
+{
+    // Same reason as discard(): the SDK is writing that very file.
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+    std::function<void(Result<std::string>)> pending;
+    EXPECT_CALL(*mockClient, getThumbnail(7, ::testing::_, ::testing::_))
+        .Times(1)
+        .WillOnce(::testing::Invoke([&pending](std::uint64_t,
+                                               const std::string&,
+                                               std::function<void(Result<std::string>)> onDone) {
+            pending = std::move(onDone);
+        }));
+
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+    service.request(7, [](Result<std::string>) {});
+    fileSystem->files[cachePath(7)] = 1024; // the bytes the pending fetch is writing
+    fileSystem->files[cachePath(8)] = 2048;
+
+    EXPECT_TRUE(service.clearCache().success);
+
+    EXPECT_THAT(fileSystem->removedPaths, ::testing::ElementsAre(cachePath(8)));
+    pending(Result<std::string>::ok(cachePath(7)));
+}
+
+TEST(ThumbnailServiceTest, ClearCacheReportsAFileThatRefusedToGo)
+{
+    // Silence would read as "emptied" while the bytes are still on disk, and the
+    // dialog would then show 0 for a directory that is not empty.
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+    fileSystem->createdDirectories.insert(accountDirectory());
+    fileSystem->files[cachePath(7)] = 1024;
+    fileSystem->files[cachePath(8)] = 2048;
+    fileSystem->undeletable.insert(cachePath(7));
+
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+
+    EXPECT_FALSE(service.clearCache().success);
+    const Result<std::uint64_t> size = service.cachedBytes();
+    ASSERT_TRUE(size.success);
+    EXPECT_EQ(size.value(), 1024u);
 }

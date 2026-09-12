@@ -50,6 +50,17 @@ public:
     // writing that very file, and what it brings back is fresh by definition.
     void discard(const std::vector<std::uint64_t>& handles);
 
+    // Bytes the signed-in account's thumbnails occupy on disk, 0 when nothing has
+    // been fetched under it yet. Enumerates the directory, so the cost grows with the
+    // file count and a GUI caller must keep it off its own thread
+    // (STUDY_THUMBNAIL_CACHE.md 6-3).
+    Result<std::uint64_t> cachedBytes() const;
+
+    // Empties the signed-in account's cache, in memory and on disk. Same enumeration
+    // cost as cachedBytes(). A handle whose fetch is running keeps its file, as in
+    // discard(). Failure means at least one file refused to go.
+    Result<void> clearCache();
+
 private:
     struct Job
     {
