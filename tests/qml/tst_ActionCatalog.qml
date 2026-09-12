@@ -95,12 +95,12 @@ TestCase {
                     {
                         tag: "openLocalFile",
                         id: "openLocalFile",
-                        expected: "Open local file"
+                        expected: "Open file"
                     },
                     {
                         tag: "openLocalLocation",
                         id: "openLocalLocation",
-                        expected: "Open local location"
+                        expected: "Show in Explorer"
                     },
                     {
                         tag: "openInNewTab",
@@ -554,6 +554,28 @@ TestCase {
         const icon = ActionCatalog.groupIcon("openAs");
         compare(icon, Theme.glyph.menu.openAs);
         verify(icon !== undefined && icon !== "");
+    }
+
+    function test_group_localPath() {
+        compare(ActionCatalog.groupLabel("localPath"), "Local path");
+        const icon = ActionCatalog.groupIcon("localPath");
+        compare(icon, Theme.glyph.menu.openLocalLocation);
+        verify(icon !== undefined && icon !== "");
+    }
+
+    function test_rows_foldsTheLocalPathGroup() {
+        compare(ActionCatalog.rows(["download", "openLocalFile", "openLocalLocation", "cut"]), [
+                    {
+                        "id": "download"
+                    },
+                    {
+                        "group": "localPath",
+                        "ids": ["openLocalFile", "openLocalLocation"]
+                    },
+                    {
+                        "id": "cut"
+                    }
+                ]);
     }
 
     function test_group_share() {

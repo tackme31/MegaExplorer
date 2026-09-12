@@ -103,24 +103,29 @@ QtObject {
                                         // ctx: handle, localFolderLinked
                                         "openLocalFile": {
                                             "icon": ctx => Theme.glyph.menu.openLocalFile,
-                                            "label": ctx => qsTr("Open local file"),
+                                            "label": ctx => qsTr("Open file"),
                                             // Hidden without a linked folder, for
                                             // the same reason as openLocalLocation
                                             // below.
                                             "available": ctx => ctx.localFolderLinked === true,
+                                            "group": "localPath",
                                             "trigger": ctx => localFolderController.openFile(
                                                           ctx.handle)
                                         },
                                         // ctx: handle, localFolderLinked
                                         "openLocalLocation": {
                                             "icon": ctx => Theme.glyph.menu.openLocalLocation,
-                                            "label": ctx => qsTr("Open local location"),
+                                            // "Show", not "Open": explorer.exe is
+                                            // asked to select the item, not to open
+                                            // it (LocalFolderController.cpp).
+                                            "label": ctx => qsTr("Show in Explorer"),
                                             // Hidden rather than greyed, unlike
                                             // paste below: greying advertises a
                                             // feature to everyone who never linked
                                             // a folder, and the C++ resolver has no
                                             // axis for an app-wide setting.
                                             "available": ctx => ctx.localFolderLinked === true,
+                                            "group": "localPath",
                                             "trigger": ctx => localFolderController.openLocation(
                                                           ctx.handle)
                                         },
@@ -344,6 +349,15 @@ QtObject {
                                        "openAs": {
                                            "icon": Theme.glyph.menu.openAs,
                                            "label": qsTr("Open as")
+                                       },
+                                       // Named after what its members act on -- the
+                                       // counterpart under the linked local folder --
+                                       // rather than after opening, which is what
+                                       // keeps it apart from the MEGA node every
+                                       // other action here names.
+                                       "localPath": {
+                                           "icon": Theme.glyph.menu.openLocalLocation,
+                                           "label": qsTr("Local path")
                                        },
                                        "share": {
                                            "icon": Theme.glyph.menu.share,
