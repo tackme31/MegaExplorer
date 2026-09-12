@@ -455,6 +455,10 @@ ColumnLayout {
         // Explorer-style list. NoButton disables drag/flick while leaving
         // wheel scrolling untouched (Flickable.acceptedButtons, since 6.9).
         acceptedButtons: Qt.NoButton
+        WheelScroller {
+            flickable: tableView
+            lineHeight: Theme.rowHeight.normal
+        }
         // Defensive: TableView's built-in key navigation needs a
         // selectionModel to do anything, which this view doesn't set, so
         // this is currently a no-op -- but explicit in case that changes.

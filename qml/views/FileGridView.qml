@@ -73,6 +73,11 @@ GridView {
     // starts instead. NoButton disables drag/flick while leaving wheel
     // scrolling untouched (Flickable.acceptedButtons, since 6.9).
     acceptedButtons: Qt.NoButton
+    // One notch at the default three lines moves one row of tiles.
+    WheelScroller {
+        flickable: root
+        lineHeight: root.cellHeight / 3
+    }
     // GridView has its own built-in arrow-key handling (currentIndex
     // movement + auto-scroll) that would otherwise fight with the selection
     // model driven by Keys.onPressed below.

@@ -306,6 +306,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/ToastStack.qml
         qml/components/TransferFlyout.qml
         qml/components/ViewScrollBar.qml
+        qml/components/WheelScroller.qml
         qml/views/FileGridView.qml
         qml/views/FileTableView.qml
         qml/views/LoginView.qml
