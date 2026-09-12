@@ -204,17 +204,52 @@ Dialog {
                             readOnly: true
                             text: root.localRootFolder
                             placeholderText: qsTr("Not linked")
+                            // Reserved whether or not the button is showing, so
+                            // a long path does not reflow when it comes and goes.
+                            rightPadding: clearLocalFolder.implicitWidth + Theme.spacing.md * 2
+
+                            // Hand-built rather than Qt 6.10's SearchField, which
+                            // draws this button itself: that control has neither
+                            // placeholderText nor readOnly, so it cannot stand in
+                            // for a display-only field.
+                            ToolButton {
+                                id: clearLocalFolder
+
+                                anchors.right: parent.right
+                                anchors.rightMargin: Theme.spacing.md
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.localRootFolder !== ""
+                                // Same squeeze as TabStrip's tab-close button:
+                                // Fluent's icon-only ToolButton is 38x32, and the
+                                // padding alone cannot get under the background's
+                                // implicit 32, so the background is replaced too.
+                                topPadding: Theme.spacing.xs
+                                bottomPadding: Theme.spacing.xs
+                                leftPadding: Theme.spacing.xs
+                                rightPadding: Theme.spacing.xs
+                                implicitWidth: 20
+                                implicitHeight: 20
+                                background: Rectangle {
+                                    radius: Theme.radius.sm
+                                    color: clearLocalFolder.pressed ? Theme.color.subtlePressed :
+                                                                      clearLocalFolder.hovered
+                                                                      ? Theme.color.subtleHover :
+                                                                        "transparent"
+                                }
+                                font.family: Theme.font.iconFamily
+                                font.pixelSize: 10
+                                text: Theme.glyph.close
+                                ToolTip.delay: 500
+                                ToolTip.visible: clearLocalFolder.hovered
+                                ToolTip.text: qsTr("Clear")
+                                focusPolicy: Qt.NoFocus
+                                onClicked: root.localRootFolderSelected("")
+                            }
                         }
 
                         Button {
                             text: qsTr("Choose…")
                             onClicked: folderChooser.open()
-                        }
-
-                        Button {
-                            text: qsTr("Clear")
-                            enabled: root.localRootFolder !== ""
-                            onClicked: root.localRootFolderSelected("")
                         }
                     }
                 }
