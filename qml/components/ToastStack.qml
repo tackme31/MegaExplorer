@@ -55,6 +55,11 @@ Item {
     // below can name the cap without a second copy of the number living here.
     property int maxFilesPerUpload: 0
 
+    // The streaming URL a browser is handed is served by this process, so quitting
+    // kills whatever it is showing -- a failure mode no in-app viewer had. Said once
+    // a run: it is a fact about the app, not about the file just handed over.
+    property bool browserHandoffNoticeShown: false
+
     ListModel {
         id: toastModel
     }
@@ -178,6 +183,17 @@ Item {
 
     function showOpenAsRefused(fileName, kind, found) {
         root.push(root.describeOpenAsRefused(fileName, kind, found), "", "");
+    }
+
+    function showBrowserHandoff(ok) {
+        if (!ok) {
+            root.push(qsTr("Couldn't open this file in a browser"), "", "");
+            return;
+        }
+        if (root.browserHandoffNoticeShown)
+            return;
+        root.browserHandoffNoticeShown = true;
+        root.push(qsTr("Opening in your browser — keep MegaExplorer running, or it stops"), "", "");
     }
 
     // Returns "" for a context with no case, which showOperation below reads as

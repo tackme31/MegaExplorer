@@ -7,7 +7,10 @@
 #include "core/ZipListing.h"
 #include "GuiThread.h"
 
+#include <QFileInfo>
 #include <QJSEngine>
+#include <QProcess>
+#include <QStandardPaths>
 
 #include <algorithm>
 #include <optional>
@@ -15,6 +18,25 @@
 
 namespace
 {
+
+// Edge is not on PATH under a default install, so findExecutable() misses it; the
+// install locations are tried first and it is only the fallback. On 64-bit Windows
+// Edge sits under the x86 tree, which is why that one is looked at first
+// (docs/investigations/STUDY_OPEN_WITH.md section 2-2).
+QString findEdge()
+{
+    for (const char* variable : {"ProgramFiles(x86)", "ProgramFiles"})
+    {
+        const QString programFiles = qEnvironmentVariable(variable);
+        if (programFiles.isEmpty())
+            continue;
+        const QString path =
+            programFiles + QStringLiteral("/Microsoft/Edge/Application/msedge.exe");
+        if (QFileInfo::exists(path))
+            return path;
+    }
+    return QStandardPaths::findExecutable(QStringLiteral("msedge"));
+}
 
 // viewerKind()'s names back to the kind each came from.
 PreviewKind previewKindForViewer(const QString& kind)
@@ -84,6 +106,26 @@ QString ViewerController::sourceUrl(quint64 handle)
     if (!url.success)
         return {};
     return QString::fromStdString(url.value());
+}
+
+void ViewerController::openInBrowser(quint64 handle)
+{
+    const QString url = sourceUrl(handle);
+    if (url.isEmpty())
+    {
+        // Neither warning here carries the URL: it is a capability (see the header),
+        // and a log line is the one place it would otherwise be written down.
+        qCWarning(lcApp) << "no streaming URL for node" << handle << "-- nothing to open";
+        emit browserOpened(false);
+        return;
+    }
+    // Deliberately no QDesktopServices::openUrl() fallback to the default browser: its
+    // Windows backend qWarning()s the whole URL when ShellExecute refuses it.
+    const QString edge = findEdge();
+    const bool ok = !edge.isEmpty() && QProcess::startDetached(edge, {url});
+    if (!ok)
+        qCWarning(lcApp) << "no browser started for node" << handle;
+    emit browserOpened(ok);
 }
 
 ArchiveBrowser* ViewerController::openArchive(quint64 handle, qulonglong sizeBytes, QObject* owner)

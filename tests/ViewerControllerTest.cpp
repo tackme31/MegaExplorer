@@ -104,6 +104,29 @@ TEST(ViewerControllerTest, SourceUrlIsEmptyWhenTheServerWillNotStart)
     EXPECT_TRUE(f.controller.sourceUrl(42u).isEmpty());
 }
 
+// Only the refusal is tested: the success path launches a real browser, which no
+// unit test can ask for. What matters here is that it reports rather than going
+// quiet -- the toast is the user's only sign that nothing opened.
+TEST(ViewerControllerTest, OpenInBrowserReportsFailureWhenThereIsNoUrl)
+{
+    Fixture f;
+    EXPECT_CALL(*f.client, streamingUrl(42u))
+        .WillOnce(testing::Return(Result<std::string>::fail("server not started", -1)));
+    // Deliberately not QSignalSpy: that lives in Qt6::Test, which this target
+    // doesn't link (FolderTreeModelTest.cpp makes the same substitution).
+    int reports = 0;
+    bool ok = true;
+    QObject::connect(&f.controller, &ViewerController::browserOpened, &f.controller, [&](bool o) {
+        ++reports;
+        ok = o;
+    });
+
+    f.controller.openInBrowser(42u);
+
+    EXPECT_EQ(reports, 1);
+    EXPECT_FALSE(ok);
+}
+
 TEST(ViewerControllerTest, AnArchiveOpensAtItsRootWithFoldersFirst)
 {
     Fixture f;

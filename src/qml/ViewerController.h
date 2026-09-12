@@ -37,6 +37,11 @@ public:
     // start. Never log the result: the URL is a capability (IMegaClient.h).
     Q_INVOKABLE QString sourceUrl(quint64 handle);
 
+    // Hands sourceUrl()'s answer to Edge, the one browser Windows ships. The URL is
+    // built and spent here rather than returned to QML: it is a capability, so the
+    // fewer places hold it the better.
+    Q_INVOKABLE void openInBrowser(quint64 handle);
+
     // A browser that starts Loading and fills itself from two range reads of the zip.
     // owner is the window showing it and becomes its parent, so closing that window
     // is what frees it; reads still in flight then land on nothing.
@@ -54,6 +59,10 @@ public:
                                  const QString& kind);
 
 signals:
+    // openInBrowser() finished. ok is false when Edge could not be found or started,
+    // or when the streaming server would not. Carries no URL, for the reason above.
+    void browserOpened(bool ok);
+
     // found is "" to open the viewer -- a failed read included, since its own decode
     // judges then -- or what the bytes prove the file is instead: "image", "media",
     // "pdf" or "archive".

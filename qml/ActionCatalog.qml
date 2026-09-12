@@ -81,6 +81,16 @@ QtObject {
                                             "group": "openAs",
                                             "trigger": ctx => ctx.requestOpenAs("archive")
                                         },
+                                        // ctx: handle. Never greyed, like the Open as
+                                        // entries above: a browser that cannot play
+                                        // the file offers to download it instead.
+                                        "openWithBrowser": {
+                                            "icon": ctx => Theme.glyph.menu.openWithBrowser,
+                                            "label": ctx => qsTr("Browser"),
+                                            "group": "openWith",
+                                            "trigger": ctx => viewerController.openInBrowser(
+                                                          ctx.handle)
+                                        },
                                         // ctx: requestNewFolder()
                                         "newFolder": {
                                             "icon": ctx => Theme.glyph.menu.newFolder,
@@ -349,6 +359,13 @@ QtObject {
                                        "openAs": {
                                            "icon": Theme.glyph.menu.openAs,
                                            "label": qsTr("Open as")
+                                       },
+                                       // "with", not "as": its members hand the node
+                                       // to another program, where Open as stays in
+                                       // this app and only overrides the extension.
+                                       "openWith": {
+                                           "icon": Theme.glyph.menu.openWith,
+                                           "label": qsTr("Open with")
                                        },
                                        // Named after what its members act on -- the
                                        // counterpart under the linked local folder --

@@ -259,6 +259,13 @@ QtObject {
             readonly property string openAsAudio: "\uE8D6"   // Audio
             readonly property string openAsPdf: "\uEA90"     // PDF
             readonly property string openAsArchive: "\uF012" // ZipFolder
+            // Drawn at 16px and looked at; the cmap half of the check below was not
+            // re-run. Globe because neither font has a browser-shaped glyph.
+            readonly property string openWithBrowser: "\uE774" // Globe
+            // The submenu row holding it (ActionCatalog's `groups`). Reuses
+            // openInNewTab's glyph below: that action is FoldersOnly and this group
+            // FilesOnly, so no menu can ever show both.
+            readonly property string openWith: openInNewTab
             readonly property string newFolder: "\uE8F4"     // NewFolder
             readonly property string download: glyphSet.transferDown
             // Not yet checked against either icon font's cmap, nor drawn at 16px --

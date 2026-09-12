@@ -686,6 +686,9 @@ ApplicationWindow {
             else
                 toastStack.showOpenAsRefused(name, kind, found);
         }
+        function onBrowserOpened(ok) {
+            toastStack.showBrowserHandoff(ok);
+        }
     }
 
     Connections {

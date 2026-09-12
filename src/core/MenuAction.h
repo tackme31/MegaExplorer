@@ -18,6 +18,10 @@ enum class MenuAction
     OpenAsAudio,
     OpenAsPdf,
     OpenAsArchive,
+    // Hands the node's streaming URL to a browser rather than an in-app viewer.
+    // Never greyed, on OpenAs*'s terms: a browser that cannot play a format offers
+    // to download it, which is still an answer.
+    OpenWithBrowser,
     NewFolder,
     Download,
     // Opens the item's counterpart inside the linked local folder with whatever

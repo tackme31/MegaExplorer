@@ -127,6 +127,15 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
           ViewKind::Rubbish},
          ActionTarget::FilesOnly,
          ActionArity::SingleOnly},
+        {MenuAction::OpenWithBrowser,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive,
+          ViewKind::Favourites,
+          ViewKind::Recents,
+          ViewKind::SharedLinks,
+          ViewKind::Rubbish},
+         ActionTarget::FilesOnly,
+         ActionArity::SingleOnly},
         {MenuAction::NewFolder,
          {MenuSite::FolderBackground},
          {ViewKind::CloudDrive},
@@ -340,6 +349,8 @@ const char* menuActionId(MenuAction action)
             return "openAsPdf";
         case MenuAction::OpenAsArchive:
             return "openAsArchive";
+        case MenuAction::OpenWithBrowser:
+            return "openWithBrowser";
         case MenuAction::NewFolder:
             return "newFolder";
         case MenuAction::Download:
