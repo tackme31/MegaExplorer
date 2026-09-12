@@ -365,8 +365,7 @@ ColumnLayout {
 
             // The unlabelled marker column sorts nothing, so it must not look
             // like a button either.
-            readonly property bool clickable: root.sortable
-                                              && headerCell.column !== root.linkColumn
+            readonly property bool clickable: root.sortable && headerCell.column !== root.linkColumn
 
             // FluentWinUI3 ships no HorizontalHeaderView delegate of its own
             // (unlike Basic), so this Rectangle's background is the only one
@@ -375,8 +374,8 @@ ColumnLayout {
             // Windows) foreground, producing invisible white-on-white text.
             // transparent lets the real themed background show through,
             // same as the row delegate below.
-            color: headerHover.hovered
-                   && headerCell.clickable ? Theme.color.subtleHover : "transparent"
+            color: headerHover.hovered && headerCell.clickable ? Theme.color.subtleHover :
+                                                                 "transparent"
 
             // A header cell sorts on click, and nothing else here said so.
             HoverHandler {
@@ -538,9 +537,8 @@ ColumnLayout {
             arrowColumns: 1
             horizontalArrows: false
             onNewFolderRequested: root.newFolderRequested()
-            onOpenRequested: (handle, name, sizeBytes, kind) => root.activateRequested(false,
-                                                                                       handle, name,
-                                                                                       sizeBytes,
+            onOpenRequested: (handle, name, sizeBytes, kind) => root.activateRequested(false, handle,
+                                                                                       name, sizeBytes,
                                                                                        kind)
         }
 
