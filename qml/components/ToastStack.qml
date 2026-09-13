@@ -186,15 +186,6 @@ Item {
         root.push(root.describeOpenAsRefused(fileName, kind, found), "", "");
     }
 
-    function showBrowserHandoff(ok) {
-        if (!ok) {
-            root.push(qsTr("Couldn't open this file in a browser"), "", "");
-            return;
-        }
-        root.showExternalHandoffNotice(qsTr(
-                                           "Opening in your browser — keep MegaExplorer running, or it stops"));
-    }
-
     // name is the entry's display name, which is the only thing the user can
     // recognize the program by -- the command line behind it is not shown here.
     function showOpenWithHandoff(ok, name) {

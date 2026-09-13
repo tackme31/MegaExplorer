@@ -63,7 +63,7 @@ TEST(OpenWithEntryTest, CustomIndexRejectsAnythingButDigits)
     EXPECT_EQ(openWithCustomIndex("openWithCustom:x"), -1);
     EXPECT_EQ(openWithCustomIndex("openWithCustom:1x"), -1);
     EXPECT_EQ(openWithCustomIndex("openWithCustom:-1"), -1);
-    EXPECT_EQ(openWithCustomIndex("openWithBrowser"), -1);
+    EXPECT_EQ(openWithCustomIndex("openAsPdf"), -1);
     EXPECT_EQ(openWithCustomIndex(""), -1);
     // Far past any plausible list, so a hand-typed ID cannot make the parse
     // overflow rather than be rejected.

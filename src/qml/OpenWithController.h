@@ -19,8 +19,8 @@ class ViewerController;
 // installed, not what is stored -- so its QSettings key sits outside the
 // per-account tree QSettingsPinnedFolderStore writes into.
 //
-// The URL is fetched and spent inside launch(), never returned to QML, for the
-// reason ViewerController::openInBrowser gives: it is a capability.
+// The URL is fetched and spent inside launch(), never returned to QML: it is a
+// capability, so the fewer places hold it the better.
 class OpenWithController : public QObject
 {
     Q_OBJECT
@@ -58,8 +58,7 @@ public:
     Q_INVOKABLE bool matchesAt(int index, const QString& fileName) const;
 
     // Starts the entry's program on the node's streaming URL. Answers with
-    // programLaunched rather than a return value, so the toast is driven the same
-    // way ViewerController::openInBrowser drives it.
+    // programLaunched rather than a return value, which is what drives the toast.
     Q_INVOKABLE void launch(int index, quint64 handle);
 
     // Whether the command's program can be found, for the settings screen's inline

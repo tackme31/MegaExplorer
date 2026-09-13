@@ -449,7 +449,7 @@ TestCase {
     }
 
     // The "keep MegaExplorer running" notice is one per run across every
-    // hand-off, browser and registered program alike -- it is a fact about this
+    // hand-off, whichever registered program took it -- it is a fact about this
     // process serving the URL, so a second one would only nag. A failure is not
     // that notice and always speaks.
     function test_showOpenWithHandoff_saysTheNoticeOnceAndEveryFailure() {
@@ -459,8 +459,6 @@ TestCase {
         toast.showOpenWithHandoff(true, "Viewer");
         compare(toast.nextSeq, seq + 1);
         toast.showOpenWithHandoff(true, "Player");
-        compare(toast.nextSeq, seq + 1);
-        toast.showBrowserHandoff(true);
         compare(toast.nextSeq, seq + 1);
 
         toast.showOpenWithHandoff(false, "Viewer");

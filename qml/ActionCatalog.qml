@@ -81,16 +81,6 @@ QtObject {
                                             "group": "openAs",
                                             "trigger": ctx => ctx.requestOpenAs("archive")
                                         },
-                                        // ctx: handle. Never greyed, like the Open as
-                                        // entries above: a browser that cannot play
-                                        // the file offers to download it instead.
-                                        "openWithBrowser": {
-                                            "icon": ctx => Theme.glyph.menu.openWithBrowser,
-                                            "label": ctx => qsTr("Browser"),
-                                            "group": "openWith",
-                                            "trigger": ctx => viewerController.openInBrowser(
-                                                          ctx.handle)
-                                        },
                                         // ctx: requestNewFolder()
                                         "newFolder": {
                                             "icon": ctx => Theme.glyph.menu.newFolder,
@@ -419,9 +409,9 @@ QtObject {
 
     // Replaces the resolver's single "openWithCustom" placeholder with one ID
     // per registered program, in registration order. Done here rather than in
-    // C++ because the count is a setting the resolver cannot see, and appending
-    // is enough to place them: rows() puts a group where its first member is,
-    // so they land under the built-in Browser either way.
+    // C++ because the count is a setting the resolver cannot see. An empty list
+    // expands to nothing, and rows() makes no group without a member, so the
+    // Open with submenu disappears with the last registered program.
     function expand(actionIds) {
         const result = [];
         for (const id of actionIds) {

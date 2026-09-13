@@ -18,10 +18,6 @@ enum class MenuAction
     OpenAsAudio,
     OpenAsPdf,
     OpenAsArchive,
-    // Hands the node's streaming URL to a browser rather than an in-app viewer.
-    // Never greyed, on OpenAs*'s terms: a browser that cannot play a format offers
-    // to download it, which is still an answer.
-    OpenWithBrowser,
     // Placeholder for the whole user-registered program list, not one program: the
     // resolver decides only whether the list may appear at all. QML expands it into
     // one "openWithCustom:<n>" per entry, because the count lives in a setting

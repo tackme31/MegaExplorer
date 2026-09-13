@@ -7,9 +7,9 @@ import MegaExplorer
 // nothing is instantiated and no C++ instance is involved.
 //
 // Not covered: the trigger lambdas of download / openInNewTab / togglePin /
-// cut / copy / properties / openWithBrowser. Those seven name the
+// cut / copy / properties. Those six name the
 // downloadController / tabsController / quickAccessModel / clipboardController /
-// propertiesController / viewerController context properties directly, and
+// propertiesController context properties directly, and
 // main.cpp is the only thing that ever sets those; reaching them from here
 // would mean C++ test doubles injected through QUICK_TEST_MAIN_WITH_SETUP.
 // That is a gap, not a decision -- see R4-5 in docs/REFACTOR_PLANS.md.
@@ -85,11 +85,6 @@ TestCase {
                         tag: "openAsArchive",
                         id: "openAsArchive",
                         expected: "ZIP archive"
-                    },
-                    {
-                        tag: "openWithBrowser",
-                        id: "openWithBrowser",
-                        expected: "Browser"
                     },
                     {
                         tag: "newFolder",
@@ -236,11 +231,6 @@ TestCase {
                         tag: "openAsArchive",
                         id: "openAsArchive",
                         expected: Theme.glyph.menu.openAsArchive
-                    },
-                    {
-                        tag: "openWithBrowser",
-                        id: "openWithBrowser",
-                        expected: Theme.glyph.menu.openWithBrowser
                     },
                     {
                         tag: "newFolder",
@@ -420,10 +410,6 @@ TestCase {
                     {
                         tag: "openAsArchive",
                         id: "openAsArchive"
-                    },
-                    {
-                        tag: "openWithBrowser",
-                        id: "openWithBrowser"
                     }
                 ];
     }
@@ -567,28 +553,10 @@ TestCase {
                 ]);
     }
 
-    // Its own submenu, not a sixth member of Open as: the two groups differ in
-    // what they hand the file to, which is the distinction the labels carry.
-    function test_rows_foldsOpenWithIntoItsOwnRowAfterOpenAs() {
-        compare(ActionCatalog.rows(["openAsPdf", "openWithBrowser", "download"]), [
-                    {
-                        "group": "openAs",
-                        "ids": ["openAsPdf"]
-                    },
-                    {
-                        "group": "openWith",
-                        "ids": ["openWithBrowser"]
-                    },
-                    {
-                        "id": "download"
-                    }
-                ]);
-    }
-
     // The placeholder is the only ID expand() rewrites; everything else has to
     // come out in the order and the spelling the resolver handed over.
     function test_expand_leavesAListWithNoPlaceholderAlone() {
-        const ids = ["open", "openAsPdf", "openWithBrowser", "download"];
+        const ids = ["open", "openAsPdf", "download"];
         compare(ActionCatalog.expand(ids), ids);
         compare(ActionCatalog.expand([]), []);
     }
