@@ -57,6 +57,7 @@ Dialog {
     property var openWith: null
 
     // Exposed for tst_MainDialogs.qml.
+    property alias categoryList: categoryList
     property alias programList: programList
     property alias programEditor: programEditor
     property alias programNameField: programNameField
@@ -426,7 +427,10 @@ Dialog {
                                 id: programHover
                             }
 
+                            // Exclusive grab: the default passive one lets the click reach
+                            // the file view's TapHandler behind this modal dialog too.
                             TapHandler {
+                                gesturePolicy: TapHandler.ReleaseWithinBounds
                                 onTapped: programList.currentIndex = programRow.index
                                 onDoubleTapped: root.editProgram()
                             }
@@ -556,7 +560,7 @@ Dialog {
         anchors.centerIn: Overlay.overlay
         modal: true
         title: editIndex < 0 ? qsTr("Add program") : qsTr("Edit program")
-        width: Math.min(Overlay.overlay.width * 0.9, 560)
+        width: parent ? Math.min(parent.width * 0.9, 560) : 560
 
         footer: DialogButtonBox {
             Button {

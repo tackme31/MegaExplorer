@@ -109,7 +109,10 @@ Dialog {
                 cursorShape: Qt.PointingHandCursor
             }
 
+            // Exclusive grab: the default passive one lets the click reach
+            // the file view's TapHandler behind this modal dialog too.
             TapHandler {
+                gesturePolicy: TapHandler.ReleaseWithinBounds
                 onTapped: nameListDialog.open()
             }
         }
