@@ -19,6 +19,7 @@ add_executable(MegaExplorerQmlTests
     tst_ActionCatalog.qml
     tst_DragProxy.qml
     tst_EmptyListingNotice.qml
+    tst_FlyoutBackground.qml
     tst_NodeDropArea.qml
     tst_FileViewDropArea.qml
     tst_FileViewInput.qml

@@ -463,6 +463,10 @@ RowLayout {
         // states: a menu must not retarget itself while it is up.
         property int targetIndex: -1
 
+        background: FlyoutBackground {
+            shadowWithinBounds: true
+        }
+
         function popupFor(index: int) {
             tabMenu.targetIndex = index;
             tabMenu.popup();

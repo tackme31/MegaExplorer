@@ -24,6 +24,10 @@ Menu {
     // over it would never re-evaluate. Re-run on every open below.
     property real measuredContentWidth: 0
 
+    background: FlyoutBackground {
+        shadowWithinBounds: true
+    }
+
     implicitWidth: Math.max(root.implicitBackgroundWidth + root.leftInset + root.rightInset,
                             root.measuredContentWidth + root.leftPadding + root.rightPadding)
 

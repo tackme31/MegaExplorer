@@ -277,6 +277,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/FileViewInput.qml
         qml/components/FolderBackgroundMenu.qml
         qml/components/FolderPinMenu.qml
+        qml/components/FlyoutBackground.qml
         qml/components/FolderTreePanel.qml
         qml/components/IconMenuItem.qml
         qml/components/ArchiveViewer.qml

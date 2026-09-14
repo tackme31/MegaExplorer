@@ -271,6 +271,7 @@ Dialog {
                         id: themeSelector
                         Layout.fillWidth: true
                         Layout.maximumWidth: 260
+                        popup.background: FlyoutBackground {}
                         model: [qsTr("Use system setting"), qsTr("Light"), qsTr("Dark")]
                         // activated, not currentIndexChanged: only a user pick may
                         // write the preference, or the assignment in onAboutToShow

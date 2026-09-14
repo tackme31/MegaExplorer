@@ -147,6 +147,7 @@ Popup {
 
             Layout.fillWidth: true
             Layout.minimumWidth: 200
+            popup.background: FlyoutBackground {}
             // The recents listing is files-only by definition, so IMegaClient::listRecent
             // ignores this facet -- greyed out rather than left offering a choice with no
             // effect, the same bargain the category picker below makes.
@@ -174,6 +175,7 @@ Popup {
 
             Layout.fillWidth: true
             Layout.minimumWidth: 200
+            popup.background: FlyoutBackground {}
             // Greyed out rather than hidden, so "folders" visibly costs the category
             // instead of the row disappearing under the user's cursor. Not while the
             // type itself is disabled: that value is then ignored C++-side and cannot be
@@ -195,6 +197,7 @@ Popup {
 
             Layout.fillWidth: true
             Layout.minimumWidth: 200
+            popup.background: FlyoutBackground {}
             // Rolling windows, not calendar days -- the labels say so because that is
             // literally what MegaSearchFilter is given (see core/SearchFilter.h).
             model: [qsTr("Any time"), qsTr("Past 24 hours"), qsTr("Past 7 days"), qsTr(

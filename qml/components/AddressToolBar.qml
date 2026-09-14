@@ -274,6 +274,10 @@ ToolBar {
                 x: moreButton.width - width
                 y: moreButton.height
 
+                background: FlyoutBackground {
+                    shadowWithinBounds: true
+                }
+
                 // Insurance, not decoration: since Qt 6.8 a Menu may resolve to
                 // Popup.Native, and the docs are explicit that the delegate is
                 // then not used for rendering -- which would silently drop the

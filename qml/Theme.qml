@@ -341,6 +341,9 @@ QtObject {
         readonly property color surface: root.isLight ? "#ffffff" : "#202020"
         readonly property color surfaceAlt: root.isLight ? "#f3f3f3" : "#272727"
         readonly property color stroke: root.isLight ? "#e5e5e5" : "#303030"
+        // Mean of the noise inside FluentWinUI3's popup-background.png, so the flat
+        // fill FlyoutBackground paints over it keeps the sprite's rim and brightness.
+        readonly property color flyoutFill: root.isLight ? "#fafafa" : "#363636"
 
         // Fill of a FluentWinUI3 input field. The style paints no colour for it
         // -- the background is a 9-patch sprite (light|dark/images/
