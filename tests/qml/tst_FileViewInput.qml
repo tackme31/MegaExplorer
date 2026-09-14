@@ -936,6 +936,15 @@ TestCase {
         compare(f.probe.revealCount, 0);
     }
 
+    function test_typeAhead_firstLetterMissDoesNotWaitForTheTimeout() {
+        const f = makeTypeAheadFixture(testCase.typeAheadNames, 0);
+        f.input.typeAhead("z", 10000);
+        compare(f.input.typeAheadText, "");
+        f.input.typeAhead("f", 10100);
+        compare(f.input.typeAheadText, "f");
+        compare(f.model.cursor, 2);
+    }
+
     function test_handleKey_typeAheadKeys_data() {
         return [
                     {

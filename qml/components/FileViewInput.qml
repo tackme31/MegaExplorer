@@ -191,8 +191,12 @@ Item {
         const repeat = previous.toLowerCase().split("").every(c => c === lower);
         const row = repeat ? model.findPrefixRow(ch, cursor + 1) :
                              model.findPrefixRow(root.typeAheadText, Math.max(cursor, 0));
-        if (row < 0)
+        if (row < 0) {
+            // A miss on the first letter must not hold the next key hostage to the timeout.
+            if (previous === "")
+                root.typeAheadText = "";
             return;
+        }
         model.selectRow(row, Qt.NoModifier);
         root.revealRow(row);
     }
