@@ -461,6 +461,24 @@ int FileListModel::rowForName(const QString& name) const
     return -1;
 }
 
+int FileListModel::findPrefixRow(const QString& prefix, int fromRow) const
+{
+    const int count = static_cast<int>(mEntries.size());
+    if (prefix.isEmpty() || count == 0)
+        return -1;
+
+    const int start = (fromRow < 0 || fromRow >= count) ? 0 : fromRow;
+    for (int offset = 0; offset < count; ++offset)
+    {
+        const int row = (start + offset) % count;
+        const QString name =
+            QString::fromStdString(mEntries[static_cast<std::size_t>(row)].name);
+        if (name.startsWith(prefix, Qt::CaseInsensitive))
+            return row;
+    }
+    return -1;
+}
+
 void FileListModel::notifySelectionChanged()
 {
     emit selectionChanged();

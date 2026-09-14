@@ -71,6 +71,11 @@ Item {
     // stationary pointer.
     property int hoverRow: -1
 
+    // Type-ahead state: what has been typed so far, and when the last key landed.
+    property string typeAheadText: ""
+    property real typeAheadAt: 0
+    readonly property int typeAheadTimeoutMs: 1000
+
     // Raised by the empty-space menu, relayed by the host to the tab's single
     // NewFolderDialog.
     signal newFolderRequested
@@ -152,12 +157,52 @@ Item {
         return undefined;
     }
 
+    // One printable character with no Ctrl/Meta/Alt. Control keys (Enter, Backspace,
+    // Delete, Escape) carry a text below U+0020 or U+007F, so they fall through.
+    // Ctrl+Alt together is let through: Windows reports AltGr that way, and it types
+    // ordinary characters on many non-US layouts.
+    function isTypeAheadKey(event) {
+        const altGr = Qt.ControlModifier | Qt.AltModifier;
+        const mods = event.modifiers & (altGr | Qt.MetaModifier);
+        if (mods !== 0 && mods !== altGr)
+            return false;
+        const text = event.text;
+        if (typeof text !== "string" || text.length !== 1)
+            return false;
+        const code = text.charCodeAt(0);
+        return code >= 0x20 && code !== 0x7f;
+    }
+
+    // A repeat of the same letter cycles through the rows starting with it, from
+    // the row *after* the cursor; any other continuation extends the prefix and
+    // searches from the cursor itself, so "f" landing on "font" stays there on "o".
+    // nowMs is a parameter so a test can step the clock.
+    function typeAhead(ch, nowMs) {
+        if (nowMs - root.typeAheadAt > root.typeAheadTimeoutMs)
+            root.typeAheadText = "";
+        root.typeAheadAt = nowMs;
+
+        const previous = root.typeAheadText;
+        root.typeAheadText = previous + ch;
+
+        const model = root.navController.fileListModel;
+        const cursor = model.cursorRow();
+        const lower = ch.toLowerCase();
+        const repeat = previous.toLowerCase().split("").every(c => c === lower);
+        const row = repeat ? model.findPrefixRow(ch, cursor + 1) :
+                             model.findPrefixRow(root.typeAheadText, Math.max(cursor, 0));
+        if (row < 0)
+            return;
+        model.selectRow(row, Qt.NoModifier);
+        root.revealRow(row);
+    }
+
     // A body rather than an inline Keys.onPressed handler because the attached
     // property only fires on the item that holds activeFocus, which is the view
     // and never this child -- so the host keeps the one-line attachment and
     // hands the event here.
     function handleKey(event) {
-        if (event.modifiers & Qt.AltModifier)
+        if ((event.modifiers & Qt.AltModifier) && !root.isTypeAheadKey(event))
             return; // reserved for a future Alt+Left "back" shortcut
 
         // While the rename field has focus this is still on its key-propagation
@@ -209,6 +254,12 @@ Item {
         if (event.matches(StandardKey.Paste)) {
             if (root.navController.canPerform("paste"))
                 root.mutController.paste();
+            event.accepted = true;
+            return;
+        }
+
+        if (root.isTypeAheadKey(event)) {
+            root.typeAhead(event.text, Date.now());
             event.accepted = true;
             return;
         }

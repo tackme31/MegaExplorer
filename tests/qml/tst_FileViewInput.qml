@@ -75,6 +75,22 @@ TestCase {
                                           "row": row,
                                           "modifiers": modifiers
                                       });
+            if (p.names !== undefined)
+                model.cursor = row;
+        };
+        // Same contract as FileListModel::findPrefixRow. Defined here, not patched
+        // on afterwards: the component holds a converted copy of nav taken at
+        // creation, so a function added later is not seen through it.
+        const names = p.names === undefined ? [] : p.names;
+        model.findPrefixRow = function (prefix, fromRow) {
+            const n = names.length;
+            const start = fromRow < 0 || fromRow >= n ? 0 : fromRow;
+            for (let i = 0; i < n; ++i) {
+                const row = (start + i) % n;
+                if (names[row].toLowerCase().startsWith(prefix.toLowerCase()))
+                    return row;
+            }
+            return -1;
         };
         model.moveCursor = function (delta, modifiers) {
             model.moveCursorCalls.push({
@@ -862,5 +878,118 @@ TestCase {
         // hovered is false with no window, so the re-resolve lands on "nothing
         // under the pointer" -- which is still proof the handler ran.
         compare(f.input.hoverRow, -1);
+    }
+
+    // ---- type-ahead --------------------------------------------------------
+
+    // Passing names makes selectRow move the cursor, so a sequence of keys walks
+    // the rows the way the real model does.
+    function makeTypeAheadFixture(names, cursor) {
+        return makeFixture({
+                               "cursor": cursor,
+                               "names": names
+                           });
+    }
+
+    readonly property var typeAheadNames: ["docs", "data", "font", "folder", "dist"]
+
+    function test_typeAhead_firstLetterSkipsTheCursorRow() {
+        const f = makeTypeAheadFixture(testCase.typeAheadNames, 0);
+        f.input.typeAhead("d", 10000);
+        compare(f.model.cursor, 1);
+        compare(f.probe.lastReveal, 1);
+        compare(f.model.selectRowCalls[0].modifiers, Qt.NoModifier);
+    }
+
+    function test_typeAhead_repeatedLetterCyclesAndWraps() {
+        const f = makeTypeAheadFixture(testCase.typeAheadNames, 0);
+        f.input.typeAhead("d", 10000);
+        f.input.typeAhead("d", 10500);
+        compare(f.model.cursor, 4);
+        f.input.typeAhead("d", 11000);
+        compare(f.model.cursor, 0);
+    }
+
+    function test_typeAhead_differentLetterExtendsThePrefix() {
+        const f = makeTypeAheadFixture(testCase.typeAheadNames, 0);
+        f.input.typeAhead("f", 10000);
+        compare(f.model.cursor, 2);
+        f.input.typeAhead("o", 10400);
+        compare(f.model.cursor, 2);
+        f.input.typeAhead("l", 10800);
+        compare(f.model.cursor, 3);
+        compare(f.input.typeAheadText, "fol");
+    }
+
+    function test_typeAhead_pauseStartsOver() {
+        const f = makeTypeAheadFixture(testCase.typeAheadNames, 0);
+        f.input.typeAhead("f", 10000);
+        f.input.typeAhead("d", 11001);
+        compare(f.input.typeAheadText, "d");
+        compare(f.model.cursor, 4);
+    }
+
+    function test_typeAhead_noMatchLeavesTheSelection() {
+        const f = makeTypeAheadFixture(testCase.typeAheadNames, 1);
+        f.input.typeAhead("z", 10000);
+        compare(f.model.selectRowCalls.length, 0);
+        compare(f.probe.revealCount, 0);
+    }
+
+    function test_handleKey_typeAheadKeys_data() {
+        return [
+                    {
+                        "tag": "letter",
+                        "text": "f",
+                        "modifiers": Qt.NoModifier,
+                        "typed": true
+                    },
+                    {
+                        "tag": "shifted letter",
+                        "text": "F",
+                        "modifiers": Qt.ShiftModifier,
+                        "typed": true
+                    },
+                    {
+                        "tag": "ctrl letter",
+                        "text": "f",
+                        "modifiers": Qt.ControlModifier,
+                        "typed": false
+                    },
+                    {
+                        "tag": "alt letter",
+                        "text": "f",
+                        "modifiers": Qt.AltModifier,
+                        "typed": false
+                    },
+                    {
+                        // Windows reports AltGr as Ctrl+Alt.
+                        "tag": "altgr character",
+                        "text": "f",
+                        "modifiers": Qt.ControlModifier | Qt.AltModifier,
+                        "typed": true
+                    },
+                    {
+                        "tag": "backspace",
+                        "text": "\b",
+                        "modifiers": Qt.NoModifier,
+                        "typed": false
+                    },
+                    {
+                        "tag": "no text",
+                        "text": "",
+                        "modifiers": Qt.NoModifier,
+                        "typed": false
+                    }
+                ];
+    }
+
+    function test_handleKey_typeAheadKeys(data) {
+        const f = makeTypeAheadFixture(testCase.typeAheadNames, 0);
+        const ev = testCase.makeKey(Qt.Key_F, data.modifiers);
+        ev.text = data.text;
+        f.input.handleKey(ev);
+        compare(f.model.selectRowCalls.length, data.typed ? 1 : 0);
+        compare(ev.accepted, data.typed ? true : "untouched");
     }
 }

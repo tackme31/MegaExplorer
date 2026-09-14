@@ -840,3 +840,29 @@ TEST(FileListModelTest, ThumbnailHandlesSkipsFoldersAndRowsWithoutOne)
 
     EXPECT_EQ(model.thumbnailHandles(), (std::vector<std::uint64_t>{3}));
 }
+
+TEST(FileListModelTest, FindPrefixRowSearchesFromRowAndWraps)
+{
+    FileListModel model;
+    model.setEntries(std::vector<FileEntry>{makeEntry("docs", 0), makeEntry("Apple", 1),
+                                            makeEntry("data", 2), makeEntry("font", 3)});
+
+    EXPECT_EQ(model.findPrefixRow(QStringLiteral("d"), 0), 0);
+    EXPECT_EQ(model.findPrefixRow(QStringLiteral("d"), 1), 2);
+    // Past the last "d" row the search comes back round to the top.
+    EXPECT_EQ(model.findPrefixRow(QStringLiteral("d"), 3), 0);
+    EXPECT_EQ(model.findPrefixRow(QStringLiteral("d"), 4), 0);
+    EXPECT_EQ(model.findPrefixRow(QStringLiteral("D"), -1), 0);
+    EXPECT_EQ(model.findPrefixRow(QStringLiteral("a"), 0), 1);
+    EXPECT_EQ(model.findPrefixRow(QStringLiteral("fo"), 3), 3);
+}
+
+TEST(FileListModelTest, FindPrefixRowReturnsMinusOneWithoutAMatch)
+{
+    FileListModel model;
+    EXPECT_EQ(model.findPrefixRow(QStringLiteral("a"), 0), -1);
+
+    model.setEntries(std::vector<FileEntry>{makeEntry("docs", 0)});
+    EXPECT_EQ(model.findPrefixRow(QStringLiteral("x"), 0), -1);
+    EXPECT_EQ(model.findPrefixRow(QString(), 0), -1);
+}

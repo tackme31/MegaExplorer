@@ -113,6 +113,10 @@ public:
     // so a handle is the right key everywhere else.
     int rowForName(const QString& name) const;
 
+    // Type-ahead: the first row at or after fromRow whose name starts with prefix,
+    // case-insensitively, wrapping past the end back to row 0. -1 when none match.
+    Q_INVOKABLE int findPrefixRow(const QString& prefix, int fromRow) const;
+
     QVariantList selectedHandlesVariant() const;
 
     const std::unordered_set<quint64>& selectedHandleSet() const
