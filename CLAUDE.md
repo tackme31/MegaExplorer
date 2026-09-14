@@ -186,7 +186,7 @@ Development now runs mostly as an unattended loop: `/evolve-loop 2h` registers a
 `docs/ROADMAP.md`, implements it, verifies it, reviews it, and lands it as a single commit on a
 fresh `evolve/NNN` branch, then merges that into `develop` and pushes. Implementation only ever
 happens on the branch — `develop` is touched by nothing but that merge, and `master` by nothing at
-all (see "Branches" below). Started 2026-08-11; the reasoning behind each decision is in the skill,
+all (see "Branches" below). The reasoning behind each decision is in the skill,
 not here. **Not `/loop 2h /evolve`** — its last step
 runs a cycle immediately, at a time unrelated to the schedule it just registered, so the first cron
 fire can land seconds after that cycle ends. `/evolve` by hand still means "one cycle, now";
@@ -230,8 +230,7 @@ trunk the loop branches from. Append to `docs/REQUESTS.md` and **commit it**: an
 aborts the next cycle at its clean-tree check (safe, but the slot is wasted). Nothing else needs a
 branch besides the `evolve/NNN` the loop creates.
 
-**The loop merges its own work into `develop` and pushes it** (skill step 6-2, since 2026-08-12;
-the trunk was `master` until the first release, 2026-08-26). `develop` is therefore not a trunk
+**The loop merges its own work into `develop` and pushes it** (skill step 6-2). `develop` is therefore not a trunk
 holding only reviewed work — it is **the build you pick up and try**. Nothing reads the diff with
 eyes before it lands; the machine guarantee stops at the unit tests and the launch-and-screenshot check, and the rest of the verification is you using the app and
 filing what you notice. So the human loop is: run the build, spot something wrong or surprising,
@@ -252,17 +251,8 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
 **Supporting pieces**, all of which exist for the loop but are useful by hand too:
 
 - `scripts/loop_verify.sh` — the single verification entry point (see "Compiler warnings" below).
-- `scripts/usage_gate.sh` — the subscription-quota gate every cycle starts with: exit 1 means skip
-  this fire and wait for the next one, since a cycle begun near the limit dies mid-way and strands a
-  branch. It reads the 5h/7d percentages out of `claude -p "/usage"`, which resolves locally at zero
-  tokens — the only surface that reports them at all (hooks, OTel and the org-scoped Admin Usage API
-  do not). **Unreadable output also exits 1**: unattended, a wrong skip costs one cycle, a wrong
-  start costs the window. Thresholds default to 5h 50% / 7d 85% (`EVOLVE_USAGE_MAX_{5H,7D}`), set
-  from 40 measured fires: one cycle eats ~30% of the 5h window and a heavy one 45–52%, so the
-  original 70% left too little room. 50% skips under 1 fire in 10; below 40% it is a fifth of them.
-  A cycle you want to run anyway is `/evolve force` — it still runs the gate for the numbers but
-  starts regardless, and it is deliberately a one-shot: raising `EVOLVE_USAGE_MAX_5H` instead would
-  keep applying to every unattended fire after it.
+- `scripts/usage_gate.sh` — the subscription-quota gate every cycle starts with; exit 1 means skip
+  this fire. `/evolve force` runs one cycle regardless. Thresholds and why: `scripts/CLAUDE.md`.
 - `megatool` — a CLI over `IMegaClient` for setting up fixtures and for `whoami`. It logs in from
   `MEGAEXPLORER_TEST_ACCOUNT` / `MEGAEXPLORER_TEST_PASSWORD`, **independently of the app's saved
   session**, so it always sees the test account. Details: `docs/MEGATOOL.md`.
@@ -275,32 +265,11 @@ number from the existing `evolve/NNN` names, and don't hand-edit `ROADMAP.md`.
   a Claude Code session starts — the loop, `run.ps1`, `ui_shot.py`, `megatool`. So the released
   build's own login, settings and log are somewhere else entirely and never get signed out from
   under the user. The test account has to be signed in **once per profile**.
-- `scripts/drive_gate.cmd` — `ui_shot.py drive` hijacks the real mouse and keyboard, so permission
-  is taken **once per thing being verified**: the cycle runs in a subagent, which has no
-  `AskUserQuestion`, so it ends its turn with a `DRIVE-PERMISSION-REQUEST` block carrying a ready-made
-  `ntfy-send.sh` line, and the loop session pushes that and asks on its behalf in the same turn, then
-  resumes it with the answer. **The subagent never pushes** — firing from there rang the phone a whole
-  turn before the question reached the app, so the phone said "answer me" and the app had nothing to
-  answer yet (changed 2026-08-22). That one
-  answer covers every `drive` call made against the same binary — two states of the same screen, a `drag` and the shot
-  after it — and a rebuild ends it: re-checking after a review fix asks again, as does another feature. A
-  refusal means the point is handed to the human as "needs checking on a real run" instead. An
-  **expiring** flag file under `%LOCALAPPDATA%\MegaExplorerLoop\`, written by the desktop shortcuts
-  (`drive ON 6h/8h/12h`, `drive OFF`), skips the asking: it means **"nobody is here to answer"**,
-  not "permission". Without it an unattended cycle that wants `drive` stops until someone answers —
-  accepted deliberately, because the stalled cycle leaves a dirty tree and the next cron fire then
-  aborts on its clean-tree check instead of redoing the work. Cover the windows where nobody can
-  answer with the shortcut, and don't lock the workstation while the flag is set: `SendInput` goes
-  to the secure desktop and never reaches the app.
-- `scripts/ntfy-send.sh` — how the loop reaches a phone. Claude Code's built-in push reports success
-  and mostly doesn't deliver, so it isn't used. The **loop session** is the only caller, and both of
-  its calls sit next to what they announce: the drive push immediately before `AskUserQuestion`, the
-  completion push in the same turn as the report it relays. The subagent writes the text; the session
-  holding the human sends it. A `Notification` hook used to push waiting permission
-  prompts too, but the case it was built for — the `drive` request going unannounced — is now covered
-  by `AskUserQuestion` plus the direct push above, so it was removed (2026-08-21) rather than kept
-  for the prompts nobody had asked it to cover. A permission dialog opening unattended therefore
-  stalls that cycle silently; the cost is the same one the drive gate already accepts.
+- `scripts/drive_gate.cmd` — `ui_shot.py drive` hijacks the real mouse and keyboard: **never run it
+  without the user's permission** (asked once per thing being verified) or an unexpired `drive ON`
+  flag. How the ask and the flag work: `scripts/CLAUDE.md`.
+- `scripts/ntfy-send.sh` — how the loop reaches a phone; only the **loop session** calls it, never
+  the cycle subagent. Details: `scripts/CLAUDE.md`.
 
 Secrets: `MEGAEXPLORER_TEST_ACCOUNT` and `NTFY_TOPIC` live in the gitignored
 `.claude/settings.local.json` `env` block; `MEGAEXPLORER_TEST_PASSWORD` is a Windows user
@@ -335,25 +304,8 @@ C:/Qt/Tools/CMake_64/bin/cmake.exe --build --preset msvc-debug
 ```
 
 `scripts/run.ps1` does close-app → (re)configure → build → launch in one step, with the DLL
-directories put on `PATH` for you: `scripts/run.ps1 [-Config Debug|Release] [-Preset <build preset>]
-[-Target MegaExplorer] [-Theme light|dark|system] [-Reconfigure] [-NoBuild|-NoRun]`. It reads the
+directories put on `PATH` for you (options: its `param()` block). It reads the
 configuration out of `CMakePresets.json`, so an added preset needs no edit to the script.
-
-Manual equivalent of the configure, which also documents each variable (same full path):
-
-```
-cmake -S . -B build/msvc-debug -G "Visual Studio 17 2022" -A x64 ^
-    -DCMAKE_PREFIX_PATH=C:/Qt/6.11.1/msvc2022_64 -DCMAKE_BUILD_TYPE=Debug ^
-    -DVCPKG_ROOT=third_party/vcpkg ^
-    -DCMAKE_TOOLCHAIN_FILE=third_party/vcpkg/scripts/buildsystems/vcpkg.cmake ^
-    -DVCPKG_MANIFEST_DIR=third_party/sdk ^
-    -DVCPKG_TARGET_TRIPLET=x64-windows-mega ^
-    -DVCPKG_OVERLAY_PORTS=third_party/sdk/cmake/vcpkg_overlay_ports ^
-    -DVCPKG_OVERLAY_TRIPLETS=third_party/sdk/cmake/vcpkg_overlay_triplets ^
-    -DVCPKG_MANIFEST_FEATURES="use-openssl;use-freeimage;use-ffmpeg;use-pdfium;use-libuv;sdk-tests" ^
-    -DUSE_LIBUV=ON
-cmake --build build/msvc-debug --config Debug --target MegaExplorer
-```
 
 Build only `MegaExplorer`, not the full solution — the SDK's `gfxworker` tool currently fails to
 link, unrelated to our code (`docs/BUILD.md`). Test targets: `MegaExplorerTests` (GoogleTest) and
