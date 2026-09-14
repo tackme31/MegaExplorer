@@ -38,8 +38,8 @@ TestCase {
             }
             function rowsFor(path) {
                 if (path.length === 0)
-                    return [fake.row("assets", true), fake.row("docs", true), fake.row(
-                                "readme.txt", false, "")];
+                    return [fake.row("assets", true), fake.row("docs", true), fake.row("readme.txt",
+                                                                                       false, "")];
                 return [fake.row("guide.txt", false, "encrypted")];
             }
             function openFolder(name) {

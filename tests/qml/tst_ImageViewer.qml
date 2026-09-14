@@ -121,16 +121,20 @@ TestCase {
     function test_stepsThroughTheSequenceItWasOpenedWith() {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
         const viewer = makeViewer(controller);
-        const sequence = [{
-                              "handle": 7,
-                              "name": "a.jpg"
-                          }, {
-                              "handle": 8,
-                              "name": "b.jpg"
-                          }, {
-                              "handle": 9,
-                              "name": "c.jpg"
-                          }];
+        const sequence = [
+                  {
+                      "handle": 7,
+                      "name": "a.jpg"
+                  },
+                  {
+                      "handle": 8,
+                      "name": "b.jpg"
+                  },
+                  {
+                      "handle": 9,
+                      "name": "c.jpg"
+                  }
+              ];
 
         viewer.open(8, "b.jpg", sequence);
         compare(viewer.sequenceIndex, 1);
@@ -151,13 +155,16 @@ TestCase {
     function test_stepStopsAtBothEndsOfTheSequence() {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
         const viewer = makeViewer(controller);
-        const sequence = [{
-                              "handle": 7,
-                              "name": "a.jpg"
-                          }, {
-                              "handle": 8,
-                              "name": "b.jpg"
-                          }];
+        const sequence = [
+                  {
+                      "handle": 7,
+                      "name": "a.jpg"
+                  },
+                  {
+                      "handle": 8,
+                      "name": "b.jpg"
+                  }
+              ];
 
         viewer.open(7, "a.jpg", sequence);
         verify(!viewer.canGoPrevious);
@@ -193,10 +200,12 @@ TestCase {
         const controller = createTemporaryObject(fakeControllerComponent, testCase);
         const viewer = makeViewer(controller);
 
-        viewer.open(1, "a.jpg", [{
-                                     "handle": 1,
-                                     "name": "a.jpg"
-                                 }]);
+        viewer.open(1, "a.jpg", [
+                        {
+                            "handle": 1,
+                            "name": "a.jpg"
+                        }
+                    ]);
         viewer.actualSize = true;
         viewer.close();
         tryVerify(() => !viewer.showing);

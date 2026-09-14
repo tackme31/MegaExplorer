@@ -122,7 +122,11 @@ void FolderTreeModel::ensureLoaded(const QModelIndex& index, bool notifyOnFailur
         isRoot,
         [this, handle, isRoot, token, notifyOnFailure](Result<std::vector<FileEntry>> result) {
             invokeOnGuiThread(this,
-                              [this, handle, isRoot, token, notifyOnFailure,
+                              [this,
+                               handle,
+                               isRoot,
+                               token,
+                               notifyOnFailure,
                                result = std::move(result)]() mutable {
                                   // Re-resolved rather than captured: a sign-out, a
                                   // sign-in's reload() or a refreshFolder() above this
@@ -273,7 +277,7 @@ FolderTreeModel::TreeNode* FolderTreeModel::findNode(std::uint64_t handle, bool 
         pending.pop_back();
         if (node != mInvisibleRoot.get() && node->handle == handle && node->isRoot == isRoot)
             return node;
-        for (const std::unique_ptr<TreeNode>& child: node->children)
+        for (const std::unique_ptr<TreeNode>& child : node->children)
             pending.push_back(child.get());
     }
     return nullptr;

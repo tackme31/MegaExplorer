@@ -56,8 +56,9 @@ ActionMenu {
         // list of user-registered "Open with" programs, and how many that is
         // lives in a setting only QML can read (ActionCatalog.expand).
         root.actionIds = ActionCatalog.expand(
-                    root.navController.fileListModel.availableActions).filter(
-                    actionId => ActionCatalog.isAvailable(actionId, root.context));
+                    root.navController.fileListModel.availableActions).filter(actionId
+                                                                              => ActionCatalog.isAvailable(
+                                                                                     actionId, root.context));
     }
 
     function buildContext() {
@@ -86,13 +87,13 @@ ActionMenu {
             // the menu is closed -- the settings dialog is modal.
             "localFolderLinked": localFolderController.linked,
             // The same by-name test double-click passes through (Main.qml's openViewer).
-            "openable": entries.length === 1 && !entries[0].isFolder
-                        && viewerController.viewerKind(primary.name) !== "",
+            "openable": entries.length === 1 && !entries[0].isFolder && viewerController.viewerKind(
+                primary.name) !== "",
             "entries": entries,
             "navController": root.navController,
             "mutations": root.mutController,
-            "requestOpen": () => root.openRequested(primary.handle, primary.name,
-                                                    primary.sizeBytes, ""),
+            "requestOpen": () => root.openRequested(primary.handle, primary.name, primary.sizeBytes,
+                                                    ""),
             "requestOpenAs": kind => root.openRequested(primary.handle, primary.name,
                                                         primary.sizeBytes, kind),
             "requestRename": () => root.renameRequested(),

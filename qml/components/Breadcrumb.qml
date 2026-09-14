@@ -117,8 +117,9 @@ Item {
                 // toast rather than a navigation. Default-deny, like
                 // NodeDropArea's targetKind, so a future multi-segment special
                 // view can't inherit clickability.
-                readonly property bool navigable: delegateRoot.modelData.kind === ViewKind.CloudDrive
-                                                  && delegateRoot.index < repeater.count - 1
+                readonly property bool navigable: delegateRoot.modelData.kind
+                                                  === ViewKind.CloudDrive && delegateRoot.index
+                                                  < repeater.count - 1
 
                 Item {
                     id: segment

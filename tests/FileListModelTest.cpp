@@ -602,8 +602,10 @@ TEST(FileListModelTest, SelectedEntryCarriesSizeBytesUnlikeEntryAt)
 TEST(FileListModelTest, FileEntriesListsEveryNonFolderRowInOrder)
 {
     FileListModel model;
-    model.setEntries({makeFolderEntry("pictures", 1), makeEntry("b.jpg", 2),
-                      makeFolderEntry("clips", 3), makeEntry("a.jpg", 4)});
+    model.setEntries({makeFolderEntry("pictures", 1),
+                      makeEntry("b.jpg", 2),
+                      makeFolderEntry("clips", 3),
+                      makeEntry("a.jpg", 4)});
 
     const QVariantList entries = model.fileEntries();
     ASSERT_EQ(entries.size(), 2);

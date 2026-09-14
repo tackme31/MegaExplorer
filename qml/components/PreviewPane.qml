@@ -223,12 +223,13 @@ Rectangle {
         function onChanged() {
             if (root.controller.kind === PreviewController.Text)
                 root.showText(root.controller.text);
-            // A new listing inherits the previous one's scroll position otherwise,
-            // so opening a second zip after scrolling through the first starts it
-            // part-way down. The text view resets its own flickable for the same
-            // reason, three steps up.
-            else if (root.controller.kind === PreviewController.Archive)
-                archiveList.positionViewAtBeginning();
+            else
+                // A new listing inherits the previous one's scroll position otherwise,
+                // so opening a second zip after scrolling through the first starts it
+                // part-way down. The text view resets its own flickable for the same
+                // reason, three steps up.
+                if (root.controller.kind === PreviewController.Archive)
+                    archiveList.positionViewAtBeginning();
         }
     }
 

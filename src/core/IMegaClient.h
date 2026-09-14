@@ -270,12 +270,12 @@ public:
     // file order with no gaps, one call at a time on the SDK's thread
     // (STUDY_ARCHIVE_EXTRACTION.md section 2). Returning false aborts the transfer,
     // which is how a caller cancels; onDone then fails, whichever chunk it was.
-    virtual void readFileRangeStreamed(
-        std::uint64_t handle,
-        std::uint64_t offset,
-        std::uint64_t length,
-        std::function<bool(const char* data, std::size_t size)> onChunk,
-        std::function<void(Result<void>)> onDone) = 0;
+    virtual void
+    readFileRangeStreamed(std::uint64_t handle,
+                          std::uint64_t offset,
+                          std::uint64_t length,
+                          std::function<bool(const char* data, std::size_t size)> onChunk,
+                          std::function<void(Result<void>)> onDone) = 0;
 
     // http://127.0.0.1:<port>/<handle>/<name>, served by the SDK's own local HTTP
     // server, for the case readFileRange cannot cover: handing a whole node to

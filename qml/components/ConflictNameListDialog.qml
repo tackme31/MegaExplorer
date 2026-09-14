@@ -47,17 +47,15 @@ Dialog {
     readonly property Item overlayItem: Overlay.overlay
     readonly property real maxWidth: root.overlayItem ? root.overlayItem.width - 48 : 0
     readonly property real textWidthCap: root.maxWidth - root.leftPadding - root.rightPadding
-    readonly property real maxListHeight: Math.max(Theme.rowHeight.compact * 3,
-                                                   (root.overlayItem
-                                                        ? root.overlayItem.height - 160
-                                                        : 0)
-                                                   - (messageLabel.visible
-                                                          ? messageLabel.height + content.spacing
-                                                          : 0))
+    readonly property real maxListHeight: Math.max(Theme.rowHeight.compact * 3, (root.overlayItem
+                                                                                 ? root.overlayItem.height
+                                                                                   - 160 : 0) - (
+                                                       messageLabel.visible ? messageLabel.height
+                                                                              + content.spacing :
+                                                                              0))
     width: Math.min(implicitWidth, maxWidth)
-    height: root.overlayItem
-        ? Math.min(implicitHeight, root.overlayItem.height - 48)
-        : implicitHeight
+    height: root.overlayItem ? Math.min(implicitHeight, root.overlayItem.height - 48) :
+                               implicitHeight
 
     // One content child, because a Popup with two has no implicit size to take.
     Column {

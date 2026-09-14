@@ -498,11 +498,8 @@ void FolderNavigationController::search(QString query)
     applySearchCriteria(wasActive);
 }
 
-void FolderNavigationController::setSearchFilter(int nodeType,
-                                                 int category,
-                                                 int createdWithin,
-                                                 bool favouritesOnly,
-                                                 bool thisFolderOnly)
+void FolderNavigationController::setSearchFilter(
+    int nodeType, int category, int createdWithin, bool favouritesOnly, bool thisFolderOnly)
 {
     const bool wasActive = searchActive();
     const SearchFilter previous = mSearchFilter;
@@ -548,12 +545,12 @@ void FolderNavigationController::applySearchCriteria(bool wasActive)
 void FolderNavigationController::runVisibleSearch()
 {
     const std::uint64_t token = ++mSearchGeneration;
-    auto onSearched = [this, token, self = shared_from_this()](
-                          Result<std::vector<FileEntry>> result) {
-        invokeOnGuiThread(this, [this, token, result = std::move(result)]() mutable {
-            applySearchResult(std::move(result), token);
-        });
-    };
+    auto onSearched =
+        [this, token, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(this, [this, token, result = std::move(result)]() mutable {
+                applySearchResult(std::move(result), token);
+            });
+        };
 
     if (viewKind() == ViewKindEnum::Favourites)
         mService->listFavourites(

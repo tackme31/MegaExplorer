@@ -24,9 +24,8 @@ ActionMenu {
     // The ternary is not redundant: a tab's controllers are destroyed before the
     // views holding this menu are, so the binding re-evaluates once against a null
     // navController on the way out.
-    actionIds: root.navController
-        ? MenuActions.forSite(MenuActions.FolderBackground, root.navController.viewKind)
-        : []
+    actionIds: root.navController ? MenuActions.forSite(MenuActions.FolderBackground,
+                                                        root.navController.viewKind) : []
 
     onAboutToShow: {
         // The folder on screen, shaped like a listing row so the catalog entries

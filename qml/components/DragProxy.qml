@@ -74,8 +74,8 @@ Item {
     // screen's own policy, not a fact a later special view would inherit.
     readonly property bool refusedGesture: (root.sourceKind === ViewKind.Favourites
                                             || root.sourceKind === ViewKind.Recents
-                                            || root.sourceKind === ViewKind.SharedLinks)
-                                           && !root.copyMode
+                                            || root.sourceKind === ViewKind.SharedLinks) &&
+                                           !root.copyMode
 
     function sampleCopyMode() {
         const mods = KeyboardState.modifiers();

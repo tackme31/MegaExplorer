@@ -228,12 +228,14 @@ TestCase {
         list.contentY = 300;
         compare(list.contentY, 300);
 
-        controller.archiveEntries = [{
-                name: "only.txt",
-                depth: 0,
-                isDirectory: false,
-                formattedSize: "1 bytes"
-            }];
+        controller.archiveEntries = [
+                    {
+                        name: "only.txt",
+                        depth: 0,
+                        isDirectory: false,
+                        formattedSize: "1 bytes"
+                    }
+                ];
         controller.changed();
 
         tryCompare(list, "count", 1);

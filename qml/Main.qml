@@ -402,43 +402,68 @@ ApplicationWindow {
     function imageSequence(listModel) {
         if (!listModel)
             return [];
-        return listModel.fileEntries().filter(entry => viewerController.viewerKind(
-                                                  entry.name) === "image");
+        return listModel.fileEntries().filter(entry => viewerController.viewerKind(entry.name)
+                                                       === "image");
     }
 
     // chosenKind is the viewer Open as picked, or "" to let the name decide as
     // double-click does. A chosen viewer waits for the file's first bytes, and no
     // window opens at all when they prove it is something else (STUDY_OPEN_AS §5).
     function openViewer(handle, name, sizeBytes, listModel, chosenKind): void {
-        if (chosenKind !== "")
-            viewerController.checkFormat(handle, name, sizeBytes, chosenKind);
-        else
-            window.showViewer(handle, name, sizeBytes, listModel, "");
-    }
+    if (chosenKind !== "")
+    viewerController.checkFormat(handle, name, sizeBytes, chosenKind);
+    else
+    window.showViewer(handle, name, sizeBytes, listModel, "");
+}
 
     // A chosen viewer is told not to second-guess the extension.
     function showViewer(handle, name, sizeBytes, listModel, chosenKind): void {
-        const forced = chosenKind !== "";
-        const kind = forced ? chosenKind : viewerController.viewerKind(name);
-        const component = kind === "image" ? imageViewerComponent : kind === "video" ? videoViewerComponent : kind === "pdf" ? pdfViewerComponent : kind === "audio" ? audioViewerComponent : kind === "archive" ? archiveViewerComponent : null;
-        if (!component)
-            return;
-        const viewer = component.createObject(window);
-        if (!viewer)
-            return;
-        // Only the image viewer steps through neighbours, and only those its name
-        // picked: an image opened as one has no place in that sequence.
-        if (kind === "image")
-            viewer.open(handle, name, forced ? [] : window.imageSequence(listModel), forced);
-        else if (kind === "archive")
-            viewer.open(handle, name, sizeBytes, forced);
-        else
-            viewer.open(handle, name, forced);
-        // A viewer that never became visible would never reach the onVisibleChanged
-        // that destroys it.
-        if (!viewer.showing)
-            viewer.destroy();
-    }
+                                                                             const forced
+                                                                             = chosenKind !== "";
+                                                                             const kind = forced
+                                                                             ? chosenKind :
+                                                                               viewerController.viewerKind(
+                                                                                   name);
+                                                                             const component = kind
+                                                                             === "image"
+                                                                             ? imageViewerComponent :
+                                                                               kind === "video"
+                                                                               ? videoViewerComponent :
+                                                                                 kind === "pdf"
+                                                                                 ? pdfViewerComponent :
+                                                                                   kind === "audio"
+                                                                                   ? audioViewerComponent :
+                                                                                     kind === "archive"
+                                                                                     ? archiveViewerComponent :
+                                                                                       null;
+                                                                             if (!component)
+                                                                             return;
+                                                                             const viewer
+                                                                             = component.createObject(
+                                                                                 window);
+                                                                             if (!viewer)
+                                                                             return;
+                                                                             // Only the image viewer steps through neighbours, and only those its name
+                                                                             // picked: an image opened as one has no place in that sequence.
+                                                                             if (kind === "image")
+                                                                             viewer.open(handle,
+                                                                                         name, forced
+                                                                                         ? [] : window.imageSequence(
+                                                                                               listModel),
+                                                                                         forced);
+                                                                             else if (kind
+                                                                                      === "archive")
+                                                                             viewer.open(handle,
+                                                                                         name, sizeBytes,
+                                                                                         forced);
+                                                                             else
+                                                                             viewer.open(handle,
+                                                                                         name, forced);
+                                                                             // A viewer that never became visible would never reach the onVisibleChanged
+                                                                             // that destroys it.
+                                                                             if (!viewer.showing)
+                                                                             viewer.destroy();
+                                                                         }
 
     Component {
         id: loginComponent
@@ -548,9 +573,10 @@ ApplicationWindow {
                         initialColumnWidthSize: window.columnWidthSize
                         initialPreviewVisible: window.previewVisible
 
-                        onFileActivated: (handle, name, sizeBytes, kind) => window.openViewer(
-                                             handle, name, sizeBytes,
-                                             pane.navController.fileListModel, kind)
+                        onFileActivated: (handle, name, sizeBytes, kind) => window.openViewer(handle,
+                                                                                              name, sizeBytes,
+                                                                                              pane.navController.fileListModel,
+                                                                                              kind)
 
                         onViewModeWriteBack: vm => window.viewMode = vm
                         onPreviewVisibleWriteBack: v => window.previewVisible = v

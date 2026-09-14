@@ -48,10 +48,8 @@ public:
     // Open as: reads the file's first bytes and answers with formatChecked, which
     // hands the request back so QML keeps no table of pending ones. kind is a
     // viewerKind() name.
-    Q_INVOKABLE void checkFormat(quint64 handle,
-                                 const QString& name,
-                                 qulonglong sizeBytes,
-                                 const QString& kind);
+    Q_INVOKABLE void
+    checkFormat(quint64 handle, const QString& name, qulonglong sizeBytes, const QString& kind);
 
 signals:
     // found is "" to open the viewer -- a failed read included, since its own decode

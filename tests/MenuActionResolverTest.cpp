@@ -1,8 +1,8 @@
 #include "core/MenuActionResolver.h"
 
 #include <algorithm>
-#include <iterator>
 #include <gtest/gtest.h>
+#include <iterator>
 
 namespace
 {
@@ -383,7 +383,8 @@ TEST(MenuActionResolverTest, DefaultTableOffersOpenAsExactlyWhereItOffersOpen)
     }
     for (MenuAction action : openAs)
     {
-        EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)), action));
+        EXPECT_FALSE(
+            contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)), action));
         EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), action));
     }
 }
@@ -416,8 +417,8 @@ TEST(MenuActionResolverTest, DefaultTableOffersOpenWithCustomExactlyWhereItOffer
     }
     EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderBackground)),
                           MenuAction::OpenWithCustom));
-    EXPECT_FALSE(
-        contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)), MenuAction::OpenWithCustom));
+    EXPECT_FALSE(contains(resolveMenuActions(folderTarget(MenuSite::FolderRow)),
+                          MenuAction::OpenWithCustom));
 }
 
 TEST(MenuActionResolverTest, MenuActionAllowedAcceptsAnIndexedOpenWithCustomId)
@@ -917,8 +918,8 @@ TEST(MenuActionResolverTest, MenuActionAllowedConsidersEverySpecForAnId)
     // answer the background's question from the selection's row and say no.
     EXPECT_TRUE(menuActionAllowed("properties", fileSelection(1, 0)));
     EXPECT_TRUE(menuActionAllowed("properties", folderTarget(MenuSite::FolderBackground)));
-    EXPECT_FALSE(menuActionAllowed(
-        "properties", folderTarget(MenuSite::FolderBackground, ViewKind::Favourites)));
+    EXPECT_FALSE(menuActionAllowed("properties",
+                                   folderTarget(MenuSite::FolderBackground, ViewKind::Favourites)));
 }
 
 TEST(MenuActionResolverTest, MenuActionAllowedRejectsAnUnknownId)

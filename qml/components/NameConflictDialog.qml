@@ -212,38 +212,36 @@ Dialog {
     // An upload collides file by file, so nothing on this list is a folder.
     function listEntries() {
         return root.conflictNames.map(n => ({
-                                                "name": n,
-                                                "isFolder": false
-                                            }));
+            "name": n,
+            "isFolder": false
+        }));
     }
 
-    function detailText() {
+        function detailText() {
         const lines = [];
         // Everything Replace does lives in its tooltip, except the one wording
         // that announces unrecoverable loss: a warning nobody sees unless they
         // hover is not a warning.
         if (!root.fileVersioningEnabled)
-            lines.push(root.replaceLine());
+        lines.push(root.replaceLine());
         if (root.unaffectedCount > 0)
-            lines.push(root.unaffectedSize === "" ? qsTr(
-                                                        "The other %1 file(s) are uploaded either way.").arg(
-                                                        root.unaffectedCount) : qsTr(
-                                                        "The other %1 file(s) are uploaded either way (%2).").arg(
-                                                        root.unaffectedCount).arg(
-                                                        root.unaffectedSize));
+        lines.push(root.unaffectedSize === "" ? qsTr(
+        "The other %1 file(s) are uploaded either way.").arg(root.unaffectedCount) : qsTr(
+        "The other %1 file(s) are uploaded either way (%2).").arg(root.unaffectedCount).arg(
+        root.unaffectedSize));
         return lines.join("\n\n");
     }
 
-    function replaceLine() {
+        function replaceLine() {
         return root.fileVersioningEnabled ? qsTr(
-                                                "\"Replace\" keeps the existing files as earlier versions.") :
-                                            qsTr("\"Replace\" deletes the existing files outright: file versioning is off for this account, so they cannot be recovered.");
+        "\"Replace\" keeps the existing files as earlier versions.") : qsTr(
+        "\"Replace\" deletes the existing files outright: file versioning is off for this account, so they cannot be recovered.");
     }
 
-    // Reassigned rather than push()ed, as in ConfirmUploadDialog.qml.
-    function showNextRequest() {
+        // Reassigned rather than push()ed, as in ConfirmUploadDialog.qml.
+        function showNextRequest() {
         if (root.pendingRequests.length === 0)
-            return;
+        return;
         const next = root.pendingRequests[0];
         root.pendingRequests = root.pendingRequests.slice(1);
         root.filePaths = next.filePaths;
@@ -256,30 +254,23 @@ Dialog {
         root.open();
     }
 
-    Connections {
+        Connections {
         target: root.uploads
         function onNameConflictRequiresConfirmation(filePaths, conflictNames, unaffectedCount,
-                                                    conflictingSize, unaffectedSize,
-                                                    destinationHandle, destinationIsRoot) {
-            root.pendingRequests = root.pendingRequests.concat([
-                                                                   {
-                                                                       "filePaths": filePaths,
-                                                                       "conflictNames":
-                                                                       conflictNames,
-                                                                       "unaffectedCount":
-                                                                       unaffectedCount,
-                                                                       "conflictingSize":
-                                                                       conflictingSize,
-                                                                       "unaffectedSize":
-                                                                       unaffectedSize,
-                                                                       "destinationHandle":
-                                                                       destinationHandle,
-                                                                       "destinationIsRoot":
-                                                                       destinationIsRoot
-                                                                   }
-                                                               ]);
-            if (!root.visible)
-                root.showNextRequest();
-        }
+        conflictingSize, unaffectedSize, destinationHandle, destinationIsRoot) {
+        root.pendingRequests = root.pendingRequests.concat([
+        {
+        "filePaths": filePaths,
+        "conflictNames": conflictNames,
+        "unaffectedCount": unaffectedCount,
+        "conflictingSize": conflictingSize,
+        "unaffectedSize": unaffectedSize,
+        "destinationHandle": destinationHandle,
+        "destinationIsRoot": destinationIsRoot
     }
-}
+        ]);
+        if (!root.visible)
+        root.showNextRequest();
+    }
+    }
+    }

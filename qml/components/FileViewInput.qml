@@ -283,10 +283,10 @@ Item {
     HoverHandler {
         id: viewHover
         parent: root.view
-        onPointChanged: root.resolveHover(viewHover.hovered,
-                                          root.viewPos(viewHover, viewHover.point.position))
-        onHoveredChanged: root.resolveHover(viewHover.hovered,
-                                            root.viewPos(viewHover, viewHover.point.position))
+        onPointChanged: root.resolveHover(viewHover.hovered, root.viewPos(viewHover,
+                                                                          viewHover.point.position))
+        onHoveredChanged: root.resolveHover(viewHover.hovered, root.viewPos(viewHover,
+                                                                            viewHover.point.position))
     }
 
     // Scrolling slides a different row under a stationary pointer, which the
@@ -294,8 +294,7 @@ Item {
     Connections {
         target: root.view
         function onContentYChanged() {
-            root.resolveHover(viewHover.hovered,
-                              root.viewPos(viewHover, viewHover.point.position));
+            root.resolveHover(viewHover.hovered, root.viewPos(viewHover, viewHover.point.position));
         }
     }
 

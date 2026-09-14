@@ -340,11 +340,8 @@ TEST_F(FolderNavigationControllerTest, ScopingToTheOpenFolderReachesTheSearchQue
             onDone(Result<std::vector<FileEntry>>::ok({entry("a.txt", 1)}));
         }));
 
-    controller->setSearchFilter(SearchNodeTypeEnum::Any,
-                                SearchCategoryEnum::Any,
-                                SearchTimeWindowEnum::Any,
-                                false,
-                                true);
+    controller->setSearchFilter(
+        SearchNodeTypeEnum::Any, SearchCategoryEnum::Any, SearchTimeWindowEnum::Any, false, true);
     flush();
 
     EXPECT_TRUE(controller->searchActive());
@@ -361,8 +358,11 @@ TEST_F(FolderNavigationControllerTest, ClearingTheFilterRestoresTheCachedListing
     EXPECT_CALL(*client, search(_, _, std::string(""), _, _, _))
         .WillRepeatedly(InvokeArgument<5>(
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
-    controller->setSearchFilter(
-        SearchNodeTypeEnum::Any, SearchCategoryEnum::Photo, SearchTimeWindowEnum::Any, false, false);
+    controller->setSearchFilter(SearchNodeTypeEnum::Any,
+                                SearchCategoryEnum::Photo,
+                                SearchTimeWindowEnum::Any,
+                                false,
+                                false);
     flush();
     ASSERT_TRUE(controller->searchActive());
 
@@ -1384,8 +1384,8 @@ TEST_F(FolderNavigationControllerTest, RefreshingASearchedRecentsScreenStillRepl
                                            const SearchFilter&,
                                            std::function<void(Result<std::vector<FileEntry>>)> f) {
             ++searches;
-            f(Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{
-                entry(searches == 1 ? "before.txt" : "after.txt", 2)}));
+            f(Result<std::vector<FileEntry>>::ok(
+                std::vector<FileEntry>{entry(searches == 1 ? "before.txt" : "after.txt", 2)}));
         }));
 
     controller->openRecents();
@@ -1506,15 +1506,15 @@ TEST_F(FolderNavigationControllerTest, SearchEmptiesTheListingAndReportsItPendin
     // now, so everything below happens while the query is still out.
     std::function<void(Result<std::vector<FileEntry>>)> answer;
     EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
-        .WillRepeatedly(Invoke([&answer](std::uint64_t,
-                                         bool,
-                                         const std::string&,
-                                         const SearchFilter&,
-                                         SortOrder,
-                                         std::function<void(Result<std::vector<FileEntry>>)>
-                                             onDone) {
-            answer = std::move(onDone);
-        }));
+        .WillRepeatedly(
+            Invoke([&answer](std::uint64_t,
+                             bool,
+                             const std::string&,
+                             const SearchFilter&,
+                             SortOrder,
+                             std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                answer = std::move(onDone);
+            }));
 
     controller->search(QStringLiteral("q"));
     flush();
@@ -1543,15 +1543,15 @@ TEST_F(FolderNavigationControllerTest, ASearchAnsweringAfterItWasClearedDoesNotR
 
     std::function<void(Result<std::vector<FileEntry>>)> answer;
     EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
-        .WillRepeatedly(Invoke([&answer](std::uint64_t,
-                                         bool,
-                                         const std::string&,
-                                         const SearchFilter&,
-                                         SortOrder,
-                                         std::function<void(Result<std::vector<FileEntry>>)>
-                                             onDone) {
-            answer = std::move(onDone);
-        }));
+        .WillRepeatedly(
+            Invoke([&answer](std::uint64_t,
+                             bool,
+                             const std::string&,
+                             const SearchFilter&,
+                             SortOrder,
+                             std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                answer = std::move(onDone);
+            }));
 
     controller->search(QStringLiteral("q"));
     flush();
@@ -1584,15 +1584,15 @@ TEST_F(FolderNavigationControllerTest, ASupersededQueryNeitherPaintsNorEndsTheLo
     // pool makes ordered but not instantaneous.
     std::vector<std::function<void(Result<std::vector<FileEntry>>)>> answers;
     EXPECT_CALL(*client, search(_, _, _, _, _, _))
-        .WillRepeatedly(Invoke([&answers](std::uint64_t,
-                                          bool,
-                                          const std::string&,
-                                          const SearchFilter&,
-                                          SortOrder,
-                                          std::function<void(Result<std::vector<FileEntry>>)>
-                                              onDone) {
-            answers.push_back(std::move(onDone));
-        }));
+        .WillRepeatedly(
+            Invoke([&answers](std::uint64_t,
+                              bool,
+                              const std::string&,
+                              const SearchFilter&,
+                              SortOrder,
+                              std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+                answers.push_back(std::move(onDone));
+            }));
 
     controller->search(QStringLiteral("a"));
     flush();

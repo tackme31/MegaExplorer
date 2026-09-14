@@ -353,8 +353,9 @@ Window {
                                      && entryRow.modelData.extractable === false
                             color: Theme.color.textSecondary
                             font.pixelSize: Theme.font.caption
-                            text: entryRow.modelData.blockedReason === "encrypted"
-                                  ? qsTr("Encrypted") : qsTr("Unsupported compression")
+                            text: entryRow.modelData.blockedReason === "encrypted" ? qsTr(
+                                                                                         "Encrypted") :
+                                                                                     qsTr("Unsupported compression")
                         }
 
                         Label {

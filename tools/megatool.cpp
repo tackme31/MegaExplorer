@@ -459,9 +459,9 @@ int cmdStream(IMegaClient& client,
         // Inclusive on both ends, per RFC 9110; length 0 means "no Range header",
         // i.e. the whole node.
         request.setRawHeader("Range",
-                             QByteArray("bytes=")
-                                 + QByteArray::number(static_cast<qulonglong>(offset)) + '-'
-                                 + QByteArray::number(static_cast<qulonglong>(offset + length - 1)));
+                             QByteArray("bytes=") +
+                                 QByteArray::number(static_cast<qulonglong>(offset)) + '-' +
+                                 QByteArray::number(static_cast<qulonglong>(offset + length - 1)));
     }
 
     QNetworkAccessManager nam;
@@ -497,10 +497,8 @@ double megabytesPerSecond(std::uint64_t bytes, double milliseconds)
     return milliseconds > 0 ? static_cast<double>(bytes) / 1e6 / (milliseconds / 1000) : 0;
 }
 
-Result<std::vector<char>> readRange(IMegaClient& client,
-                                    std::uint64_t handle,
-                                    std::uint64_t offset,
-                                    std::uint64_t length)
+Result<std::vector<char>>
+readRange(IMegaClient& client, std::uint64_t handle, std::uint64_t offset, std::uint64_t length)
 {
     return await<Result<std::vector<char>>>([&](auto done) {
         client.readFileRange(handle, offset, length, std::move(done));
@@ -560,7 +558,8 @@ int cmdUnzip(const std::shared_ptr<IMegaClient>& client,
 
     const std::uint64_t tailLength = (std::min)(size, kZipTailScanBytes);
     Clock::time_point started = Clock::now();
-    const Result<std::vector<char>> tail = readRange(*client, handle, size - tailLength, tailLength);
+    const Result<std::vector<char>> tail =
+        readRange(*client, handle, size - tailLength, tailLength);
     const double tailMs = millisecondsSince(started);
     if (!tail.success)
         return fail("read the archive's tail: " + tail.errorMessage);
@@ -665,7 +664,8 @@ int cmdUnzip(const std::shared_ptr<IMegaClient>& client,
     const auto scratchPath = [&scratch](const char* leaf) {
         return QDir::toNativeSeparators(scratch.filePath(QString::fromLatin1(leaf))).toStdString();
     };
-    const double downloadMs = downloadMillisecondsAlongside(*client, handle, scratchPath("alone.zip"), [] {});
+    const double downloadMs =
+        downloadMillisecondsAlongside(*client, handle, scratchPath("alone.zip"), [] {});
     if (downloadMs < 0)
         return fail("download the whole archive");
     std::printf("get    : whole archive, %llu bytes by ordinary download, in %.0f ms, %.2f MB/s\n",

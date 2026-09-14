@@ -74,12 +74,16 @@ Dialog {
 
         function onUploadRequiresConfirmation(filePaths, fileCount, destinationHandle,
                                               destinationIsRoot) {
-            root.pendingRequests = root.pendingRequests.concat([{
-                                                                   "filePaths": filePaths,
-                                                                   "fileCount": fileCount,
-                                                                   "destinationHandle": destinationHandle,
-                                                                   "destinationIsRoot": destinationIsRoot
-                                                               }]);
+            root.pendingRequests = root.pendingRequests.concat([
+                                                                   {
+                                                                       "filePaths": filePaths,
+                                                                       "fileCount": fileCount,
+                                                                       "destinationHandle":
+                                                                       destinationHandle,
+                                                                       "destinationIsRoot":
+                                                                       destinationIsRoot
+                                                                   }
+                                                               ]);
             if (!root.visible)
                 root.showNextRequest();
         }

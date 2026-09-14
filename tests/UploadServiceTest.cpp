@@ -808,13 +808,13 @@ TEST(UploadServiceTest, AThrowingClientCallLeavesTheQueueAbleToStartTheNextJob)
         *mockClient,
         upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Throw(std::runtime_error("boom")))
-        .WillRepeatedly(::testing::Invoke(
-            [&onDone](const std::string&,
-                      std::uint64_t,
-                      bool,
-                      std::uint64_t,
-                      std::function<void(std::uint64_t, std::uint64_t)>,
-                      UploadDone done) {
+        .WillRepeatedly(
+            ::testing::Invoke([&onDone](const std::string&,
+                                        std::uint64_t,
+                                        bool,
+                                        std::uint64_t,
+                                        std::function<void(std::uint64_t, std::uint64_t)>,
+                                        UploadDone done) {
                 onDone.push_back(std::move(done));
             }));
 
@@ -839,13 +839,13 @@ TEST(UploadServiceTest, AThrowingStartGivesItsSlotBackAndReportsTheJob)
         *mockClient,
         upload(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
         .WillOnce(::testing::Throw(std::runtime_error("boom")))
-        .WillRepeatedly(::testing::Invoke(
-            [&onDone](const std::string&,
-                      std::uint64_t,
-                      bool,
-                      std::uint64_t,
-                      std::function<void(std::uint64_t, std::uint64_t)>,
-                      UploadDone done) {
+        .WillRepeatedly(
+            ::testing::Invoke([&onDone](const std::string&,
+                                        std::uint64_t,
+                                        bool,
+                                        std::uint64_t,
+                                        std::function<void(std::uint64_t, std::uint64_t)>,
+                                        UploadDone done) {
                 onDone.push_back(std::move(done));
             }));
 

@@ -71,8 +71,9 @@ Dialog {
     // With the switch on, the plain link must not leave through the Copy button:
     // the user has said they want it protected, and the field may not show the
     // protected form yet.
-    readonly property bool copyable: !root.loading && root.link !== ""
-                                     && (!root.passwordWanted || root.passwordLink !== "")
+    readonly property bool copyable: !root.loading && root.link !== "" && (!root.passwordWanted
+                                                                           || root.passwordLink
+                                                                           !== "")
 
     // The action is offered on a single node only (MenuActionResolver's
     // SingleOnly), so only the first entry is ever the target.
@@ -106,8 +107,8 @@ Dialog {
     // Start of the chosen day in local time, which is what MEGA's own web client
     // sends for that date -- 23:59:59 would put the two a day apart on one date.
     function startOfDay(day: date): real {
-        return Math.floor(
-            new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime() / 1000);
+        return Math.floor(new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime()
+                          / 1000);
     }
 
     // Deliberately not Date.fromLocaleDateString: that accepts sloppy input and
@@ -121,8 +122,8 @@ Dialog {
         const month = parseInt(parts[2], 10) - 1;
         const day = parseInt(parts[3], 10);
         const parsed = new Date(year, month, day);
-        if (parsed.getFullYear() !== year || parsed.getMonth() !== month
-                || parsed.getDate() !== day)
+        if (parsed.getFullYear() !== year || parsed.getMonth() !== month || parsed.getDate()
+                !== day)
             return null;
         return parsed;
     }
@@ -188,8 +189,8 @@ Dialog {
     function createPasswordLink(password: string) {
         // A second Enter after success would mint another `#P!` string (fresh salt)
         // for the same password -- the same reason Create greys out.
-        if (password === "" || !root.passwordEditable || !root.passwordWanted
-                || root.passwordLink !== "")
+        if (password === "" || !root.passwordEditable || !root.passwordWanted || root.passwordLink
+                !== "")
             return;
         root.passwordError = "";
         root.passwordBusy = true;
@@ -247,7 +248,8 @@ Dialog {
     // string, not a lock on the first (STUDY_PUBLIC_LINK_SETTINGS section 1.3).
     function linkCaption(): string {
         if (root.passwordLink !== "")
-            return qsTr("Opening this link needs the password. The link without a password still works for anyone who already has it.");
+            return qsTr(
+                        "Opening this link needs the password. The link without a password still works for anyone who already has it.");
         return qsTr("Anyone with this link can open the item without signing in.");
     }
 
@@ -307,8 +309,9 @@ Dialog {
                     // Turning it on has to name a day, and applying happens on
                     // the click (there is no save button), so a week out is the
                     // value offered -- the field is editable straight after.
-                    onToggled: root.requestExpiry(
-                                   checked ? root.startOfDay(new Date(Date.now() + 7 * 86400 * 1000)) : 0)
+                    onToggled: root.requestExpiry(checked ? root.startOfDay(new Date(Date.now() + 7
+                                                                                     * 86400 * 1000)) :
+                                                            0)
                 }
 
                 // Disabled items get no hover events, so the reason the row is
@@ -404,8 +407,8 @@ Dialog {
             Button {
                 visible: passwordToggle.checked
                 text: qsTr("Create")
-                enabled: root.passwordEditable && passwordField.text !== ""
-                         && root.passwordLink === ""
+                enabled: root.passwordEditable && passwordField.text !== "" && root.passwordLink
+                         === ""
                 onClicked: root.createPasswordLink(passwordField.text)
             }
         }

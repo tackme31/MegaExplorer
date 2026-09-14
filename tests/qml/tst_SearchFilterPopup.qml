@@ -56,7 +56,8 @@ TestCase {
                 nav.searchFilterThisFolderOnly = false;
             }
 
-            function setSearchFilter(nodeType, category, createdWithin, favouritesOnly, thisFolderOnly) {
+            function setSearchFilter(nodeType, category, createdWithin, favouritesOnly,
+                                     thisFolderOnly) {
                 calls += 1;
                 lastType = nodeType;
                 lastCategory = category;

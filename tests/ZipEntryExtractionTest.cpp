@@ -189,7 +189,8 @@ public:
     // The name a move lands on; empty means "to" itself was free.
     std::string freeName;
 
-    std::optional<std::string> moveToFreeName(const std::string& from, const std::string& to) override
+    std::optional<std::string> moveToFreeName(const std::string& from,
+                                              const std::string& to) override
     {
         moves.emplace_back(from, to);
         const auto staged = committed.find(from);

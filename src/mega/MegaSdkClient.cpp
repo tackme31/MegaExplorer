@@ -8,8 +8,8 @@
 
 #include <QMetaObject>
 #include <QObject>
-#include <QThreadPool>
 #include <Qt>
+#include <QThreadPool>
 
 #include <algorithm>
 #include <chrono>
@@ -241,17 +241,15 @@ void sortEntriesByKey(std::vector<FileEntry>& entries, SortOrder order)
 {
     if (order.key == SortKey::Name)
         return;
-    std::stable_sort(entries.begin(),
-                     entries.end(),
-                     [order](const FileEntry& a, const FileEntry& b) {
-                         if (a.isFolder != b.isFolder)
-                             return a.isFolder;
-                         const FileEntry& lhs = order.ascending ? a : b;
-                         const FileEntry& rhs = order.ascending ? b : a;
-                         return order.key == SortKey::Size
-                                    ? lhs.sizeBytes < rhs.sizeBytes
-                                    : lhs.modificationTime < rhs.modificationTime;
-                     });
+    std::stable_sort(
+        entries.begin(), entries.end(), [order](const FileEntry& a, const FileEntry& b) {
+            if (a.isFolder != b.isFolder)
+                return a.isFolder;
+            const FileEntry& lhs = order.ascending ? a : b;
+            const FileEntry& rhs = order.ascending ? b : a;
+            return order.key == SortKey::Size ? lhs.sizeBytes < rhs.sizeBytes
+                                              : lhs.modificationTime < rhs.modificationTime;
+        });
 }
 
 std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
@@ -275,8 +273,7 @@ MegaSdkClient::MegaSdkClient(std::string basePath, std::string userAgent)
     : mLogger(std::make_unique<MegaSdkLogger>()),
       mApi(std::make_unique<mega::MegaApi>(nullptr, basePath.c_str(), userAgent.c_str())),
       mListingCancelToken(mega::MegaCancelToken::createInstance()),
-      mCallbackTarget(std::make_unique<QObject>()),
-      mListingPool(std::make_unique<QThreadPool>())
+      mCallbackTarget(std::make_unique<QObject>()), mListingPool(std::make_unique<QThreadPool>())
 {
     mListingPool->setMaxThreadCount(1);
     // Static: addLoggerObject/removeLoggerObject register process-wide, not
@@ -535,9 +532,7 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
             // MegaApi::search walks the subtree, getChildren stops at the location handle.
             std::unique_ptr<mega::MegaNodeList> results(
                 searchFilter.thisFolderOnly
-                    ? mApi->getChildren(filter.get(),
-                                        toMegaOrder(order),
-                                        mListingCancelToken.get())
+                    ? mApi->getChildren(filter.get(), toMegaOrder(order), mListingCancelToken.get())
                     : mApi->search(filter.get(), toMegaOrder(order), mListingCancelToken.get()));
             return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
         },
@@ -549,9 +544,9 @@ void MegaSdkClient::runOffThread(std::function<Result<std::vector<FileEntry>>()>
 {
     mListingPool->start([this, work = std::move(work), onDone = std::move(onDone)]() mutable {
         Result<std::vector<FileEntry>> result =
-            mShuttingDown ? Result<std::vector<FileEntry>>::fail(kShutDownMessage,
-                                                                 kClientShutDownCode)
-                          : work();
+            mShuttingDown
+                ? Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode)
+                : work();
         // Re-checked after work(): a walk cut short by mListingCancelToken hands back a
         // truncated node list through the ordinary return, with no error channel of its
         // own, so without this a cancelled listing is indistinguishable from a complete
@@ -694,8 +689,8 @@ void MegaSdkClient::listPublicLinks(SortOrder order,
             // ORDER_DEFAULT_ASC even when the caller asked for size or time:
             // getPublicLinks rejects those two orders, and fetching in the default one
             // leaves sortEntriesByKey's ties in the SDK's natural-name order.
-            const int sdkOrder = order.key == SortKey::Name ? toMegaOrder(order)
-                                                            : mega::MegaApi::ORDER_DEFAULT_ASC;
+            const int sdkOrder =
+                order.key == SortKey::Name ? toMegaOrder(order) : mega::MegaApi::ORDER_DEFAULT_ASC;
             std::unique_ptr<mega::MegaNodeList> results(mApi->getPublicLinks(sdkOrder));
             std::vector<FileEntry> entries;
             entries.reserve(results ? static_cast<std::size_t>(results->size()) : 0);
@@ -916,9 +911,8 @@ void MegaSdkClient::readFileContent(std::uint64_t handle,
 // The range actually readable from a file node, or nullopt when offset is at or past
 // its end. getSize() is negative for anything that isn't a file, so the signed
 // compare has to happen before the width cast. Non-const: getSize() is not const.
-static std::optional<std::uint64_t> readableRangeLength(mega::MegaNode& node,
-                                                        std::uint64_t offset,
-                                                        std::uint64_t length)
+static std::optional<std::uint64_t>
+readableRangeLength(mega::MegaNode& node, std::uint64_t offset, std::uint64_t length)
 {
     const std::int64_t size = node.getSize();
     if (size <= 0 || offset >= static_cast<std::uint64_t>(size))

@@ -163,7 +163,8 @@ TEST(QtLocalFileSystemTest, CreatedFileAppearsAtItsPathOnlyOnCommit)
 {
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
-    const std::filesystem::path target = std::filesystem::path(dir.path().toStdWString()) / "out.bin";
+    const std::filesystem::path target =
+        std::filesystem::path(dir.path().toStdWString()) / "out.bin";
     QtLocalFileSystem fs;
 
     std::unique_ptr<ILocalFileWriter> writer = fs.createFile(target.string());
@@ -173,7 +174,8 @@ TEST(QtLocalFileSystemTest, CreatedFileAppearsAtItsPathOnlyOnCommit)
     ASSERT_TRUE(writer->commit());
 
     std::ifstream in(target, std::ios::binary);
-    const std::string contents((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const std::string contents((std::istreambuf_iterator<char>(in)),
+                               std::istreambuf_iterator<char>());
     EXPECT_EQ(contents, "hello");
 }
 

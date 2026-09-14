@@ -97,25 +97,25 @@ Rectangle {
 
     // The More menu's entry point.
     function show(): void {
-        root.shown = true;
-        root.autoOpened = false;
-    }
+    root.shown = true;
+    root.autoOpened = false;
+}
 
     function hide(): void {
-        root.shown = false;
-        root.autoOpened = false;
-        // Collapsed on the way out, so a later run auto-opens as the small bar
-        // rather than putting a full panel up unbidden.
-        root.expanded = false;
-    }
+                         root.shown = false;
+                         root.autoOpened = false;
+                         // Collapsed on the way out, so a later run auto-opens as the small bar
+                         // rather than putting a full panel up unbidden.
+                         root.expanded = false;
+                     }
 
     // Expanding is a deliberate interaction, so it takes the bar off the idle
     // auto-hide for the same reason opening it from the More menu does.
     function toggleExpanded(): void {
-        root.expanded = !root.expanded;
-        if (root.expanded)
-            root.autoOpened = false;
-    }
+    root.expanded = !root.expanded;
+    if (root.expanded)
+    root.autoOpened = false;
+}
 
     onRunActiveChanged: {
         if (!root.runActive || root.shown)
@@ -139,7 +139,8 @@ Rectangle {
     // is not in that budget, so a short window would still drive `y` negative and
     // push the panel off the top edge. Everything but the list carries a
     // Layout.minimumHeight, so the list is what gives way and scrolls.
-    height: parent ? Math.min(implicitHeight, parent.height - Theme.toast.margin * 2) : implicitHeight
+    height: parent ? Math.min(implicitHeight, parent.height - Theme.toast.margin * 2) :
+                     implicitHeight
 
     opacity: root.shown ? 1 : 0
     // `shown` on its own, not just a non-zero opacity: the fade's first tick can
@@ -302,7 +303,8 @@ Rectangle {
                         // properties: the state role would collide with Item's own
                         // `state`, and a half-qualified delegate reads worse than a
                         // fully qualified one.
-                        text: model.direction === TransferDirection.Upload ? Theme.glyph.transferUp : Theme.glyph.transferDown
+                        text: model.direction === TransferDirection.Upload ? Theme.glyph.transferUp :
+                                                                             Theme.glyph.transferDown
                     }
 
                     ColumnLayout {
@@ -315,9 +317,11 @@ Rectangle {
                             // Only a finished download has a file to open: an
                             // upload's local copy is not this app's to hand out,
                             // and an unfinished download has not been written yet.
-                            readonly property bool openable: model.direction === TransferDirection.Download
-                                                             && model.state === TransferState.Completed
-                                                             && !!model.localPath
+                            readonly property bool openable: model.direction
+                                                             === TransferDirection.Download
+                                                             && model.state
+                                                             === TransferState.Completed && !
+                                                             !model.localPath
 
                             Layout.fillWidth: true
                             elide: Text.ElideMiddle
@@ -356,7 +360,8 @@ Rectangle {
 
                     Label {
                         Layout.alignment: Qt.AlignVCenter
-                        color: model.state === TransferState.Failed ? Theme.color.danger : Theme.color.textSecondary
+                        color: model.state === TransferState.Failed ? Theme.color.danger :
+                                                                      Theme.color.textSecondary
                         font.pixelSize: Theme.font.caption
                         text: root.stateText(model.state, model.progress)
                     }
@@ -368,7 +373,8 @@ Rectangle {
                         Layout.alignment: Qt.AlignVCenter
                         // Only a row that can still be stopped. A settled row's job
                         // is gone from the service, so the click would be swallowed.
-                        visible: model.state === TransferState.Queued || model.state === TransferState.Active
+                        visible: model.state === TransferState.Queued || model.state
+                                 === TransferState.Active
                         text: Theme.glyph.close
                         ToolTip.text: qsTr("Cancel")
                         onClicked: root.cancelRequested(model.direction, model.jobId)

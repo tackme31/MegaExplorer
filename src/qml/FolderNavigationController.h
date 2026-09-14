@@ -189,11 +189,8 @@ public:
     // SearchNodeType/SearchCategory/SearchTimeWindow values. Out-of-range values fall
     // back to "any". Re-runs the current query, and a filter with no query is itself a
     // search -- clearing both is what restores the cached folder listing.
-    Q_INVOKABLE void setSearchFilter(int nodeType,
-                                     int category,
-                                     int createdWithin,
-                                     bool favouritesOnly,
-                                     bool thisFolderOnly);
+    Q_INVOKABLE void setSearchFilter(
+        int nodeType, int category, int createdWithin, bool favouritesOnly, bool thisFolderOnly);
 
     // column: 0=Name, 1=ModificationTime, 2=Size. Also called at startup with the
     // persisted value, before login/loadRoot() have run (see mHasLoadedOnce).

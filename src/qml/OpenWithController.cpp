@@ -219,15 +219,15 @@ bool OpenWithController::commandRunnable(const QString& commandLine) const
     // launch() leaves the search to CreateProcess, which only ever appends ".exe";
     // findExecutable would also accept a "code.cmd" that CreateProcess never finds.
     const QString& program = arguments.first();
-    const QString withSuffix = QFileInfo(program).suffix().isEmpty()
-                                   ? program + QStringLiteral(".exe")
-                                   : program;
+    const QString withSuffix =
+        QFileInfo(program).suffix().isEmpty() ? program + QStringLiteral(".exe") : program;
     if (program.contains(u'/') || program.contains(u'\\'))
         return QFileInfo(program).isFile() || QFileInfo(withSuffix).isFile();
     return !QStandardPaths::findExecutable(withSuffix).isEmpty();
 }
 
-QString OpenWithController::commandWithProgram(const QString& commandLine, const QUrl& program) const
+QString OpenWithController::commandWithProgram(const QString& commandLine,
+                                               const QUrl& program) const
 {
     const QString quoted =
         QLatin1Char('"') + QDir::toNativeSeparators(program.toLocalFile()) + QLatin1Char('"');

@@ -16,7 +16,6 @@
 #include <QVariantMap>
 
 #include <cstdint>
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -1089,7 +1088,9 @@ TEST_F(FileMutationControllerTest, SetLinkExpiryMarksTheRowSharedAndEchoesTheReq
     QObject::connect(mutations.get(),
                      &FileMutationController::linkExpiryResolved,
                      mutations.get(),
-                     [&resolved](quint64, qint64 expiry) { resolved = expiry; });
+                     [&resolved](quint64, qint64 expiry) {
+                         resolved = expiry;
+                     });
 
     EXPECT_CALL(*client, setLinkExpiry(1u, std::int64_t{1893456000}, _))
         .WillOnce(InvokeArgument<2>(Result<std::string>::ok("https://mega.nz/file/x")));
@@ -1116,11 +1117,13 @@ TEST_F(FileMutationControllerTest, SetLinkExpiryRefusedRevertsToTheStoredValue)
     QObject::connect(mutations.get(),
                      &FileMutationController::linkExpiryResolved,
                      mutations.get(),
-                     [&resolved](quint64, qint64 expiry) { resolved = expiry; });
+                     [&resolved](quint64, qint64 expiry) {
+                         resolved = expiry;
+                     });
 
     EXPECT_CALL(*client, setLinkExpiry(1u, std::int64_t{1893456000}, _))
-        .WillOnce(InvokeArgument<2>(
-            Result<std::string>::fail("pro only", MegaErrorCode::kEAccess)));
+        .WillOnce(
+            InvokeArgument<2>(Result<std::string>::fail("pro only", MegaErrorCode::kEAccess)));
     EXPECT_CALL(*client, getLinkExpiry(1u)).WillOnce(Return(Result<std::int64_t>::ok(0)));
 
     mutations->setLinkExpiry(1, 1893456000);

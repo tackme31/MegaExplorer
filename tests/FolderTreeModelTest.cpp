@@ -2,8 +2,8 @@
 
 #include "core/FolderTreeService.h"
 #include "core/MegaErrorCodes.h"
-#include "qml/NotificationController.h"
 #include "MockMegaClient.h"
+#include "qml/NotificationController.h"
 #include "TestApp.h"
 
 #include <gmock/gmock.h>

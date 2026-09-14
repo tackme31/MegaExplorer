@@ -94,8 +94,8 @@ private:
     // Handles whose file discard() could not remove. Only these bypass the disk hit,
     // which would otherwise keep serving the very file the refresh meant to replace.
     std::unordered_set<std::uint64_t> mUndeletable;
-    std::unordered_map<std::uint64_t, Job> mJobs;          // handle -> active or queued job
-    std::deque<std::uint64_t> mQueue;                      // handles waiting for capacity
+    std::unordered_map<std::uint64_t, Job> mJobs; // handle -> active or queued job
+    std::deque<std::uint64_t> mQueue;             // handles waiting for capacity
     std::size_t mActiveCount = 0;
 
     // Re-entrancy trampoline for startNextIfCapacity(), as in DownloadService. The

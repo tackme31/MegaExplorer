@@ -136,7 +136,9 @@ ColumnLayout {
                                                                      => fileTableView.forceActiveFocus(
                                                                             ))
                 onActivateRequested: (isFolder, handle, name, sizeBytes, kind) => pane.activate(
-                                         isFolder, handle, name, sizeBytes, kind)
+                                                                                      isFolder, handle,
+                                                                                      name, sizeBytes,
+                                                                                      kind)
                 onOpenInNewTabRequested: handle => tabsController.addTabAt(handle, false)
                 onNewFolderRequested: newFolderDialog.prompt()
                 onSortOrderChanged: (column, ascending) => pane.sortOrderWriteBack(column,
@@ -157,7 +159,9 @@ ColumnLayout {
                                                                      => fileGridView.forceActiveFocus(
                                                                             ))
                 onActivateRequested: (isFolder, handle, name, sizeBytes, kind) => pane.activate(
-                                         isFolder, handle, name, sizeBytes, kind)
+                                                                                      isFolder, handle,
+                                                                                      name, sizeBytes,
+                                                                                      kind)
                 onOpenInNewTabRequested: handle => tabsController.addTabAt(handle, false)
                 onNewFolderRequested: newFolderDialog.prompt()
             }

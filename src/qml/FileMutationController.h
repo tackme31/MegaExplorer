@@ -98,7 +98,8 @@ public:
     // Turns the plain link the dialog already holds into a password-protected one;
     // the answer comes back on passwordLinkResolved. The handle only rides along so
     // the dialog can drop a reply meant for a node it no longer shows.
-    Q_INVOKABLE void requestPasswordLink(quint64 handle, const QString& link, const QString& password);
+    Q_INVOKABLE void
+    requestPasswordLink(quint64 handle, const QString& link, const QString& password);
 
     // A link already in hand, straight onto the clipboard with copyLinkToClipboard's
     // toast. Exists for the password-protected form, which only the dialog holds.

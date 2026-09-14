@@ -389,27 +389,26 @@ void ZipEntryDownloadRunner::start(std::function<void(std::uint64_t, std::uint64
 {
     // Copies rather than this: DownloadService may drop the last reference to the runner
     // inside onDone, and a runner holding itself would leak when a transfer never ends.
-    mExtraction->start(std::move(onProgress),
-                       [fileSystem = mFileSystem,
-                        staging = mStagingPath,
-                        destination = mDestinationPath,
-                        onDone = std::move(onDone)](Result<void> extracted) {
-                           if (!extracted.success)
-                           {
-                               onDone(Result<DownloadOutcome>::fail(extracted.errorMessage,
-                                                                    extracted.errorCode));
-                               return;
-                           }
-                           std::optional<std::string> saved =
-                               fileSystem->moveToFreeName(staging, destination);
-                           if (!saved)
-                           {
-                               onDone(Result<DownloadOutcome>::fail(
-                                   "Could not name the destination file", MegaErrorCode::kEFailed));
-                               return;
-                           }
-                           onDone(Result<DownloadOutcome>::ok(DownloadOutcome{std::move(*saved)}));
-                       });
+    mExtraction->start(
+        std::move(onProgress),
+        [fileSystem = mFileSystem,
+         staging = mStagingPath,
+         destination = mDestinationPath,
+         onDone = std::move(onDone)](Result<void> extracted) {
+            if (!extracted.success)
+            {
+                onDone(Result<DownloadOutcome>::fail(extracted.errorMessage, extracted.errorCode));
+                return;
+            }
+            std::optional<std::string> saved = fileSystem->moveToFreeName(staging, destination);
+            if (!saved)
+            {
+                onDone(Result<DownloadOutcome>::fail("Could not name the destination file",
+                                                     MegaErrorCode::kEFailed));
+                return;
+            }
+            onDone(Result<DownloadOutcome>::ok(DownloadOutcome{std::move(*saved)}));
+        });
 }
 
 void ZipEntryDownloadRunner::cancel()

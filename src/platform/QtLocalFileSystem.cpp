@@ -18,9 +18,7 @@ namespace
 class QtLocalFileWriter final : public ILocalFileWriter
 {
 public:
-    explicit QtLocalFileWriter(const QString& path)
-        : mFile(path)
-    {}
+    explicit QtLocalFileWriter(const QString& path) : mFile(path) {}
 
     bool open()
     {

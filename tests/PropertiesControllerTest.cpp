@@ -66,7 +66,8 @@ TEST(PropertiesControllerTest, MarksARootSoTheDialogCanDropItsLocation)
 {
     Fixture f;
     EXPECT_CALL(*f.client, getPath(::testing::_, ::testing::_, ::testing::_))
-        .WillRepeatedly(::testing::InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(pathOf({}))));
+        .WillRepeatedly(
+            ::testing::InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(pathOf({}))));
     EXPECT_CALL(*f.client, getFolderInfo(::testing::_, ::testing::_, ::testing::_))
         .WillRepeatedly(::testing::InvokeArgument<2>(Result<FolderInfo>::ok(FolderInfo{0, 0, 0})));
 

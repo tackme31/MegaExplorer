@@ -211,8 +211,8 @@ TreeView {
                 return false;
             if (treeDelegate.isRoot)
                 return root.navController.atRoot;
-            return !root.navController.atRoot
-                    && treeDelegate.handle === root.navController.currentHandle;
+            return !root.navController.atRoot && treeDelegate.handle
+                    === root.navController.currentHandle;
         }
 
         // Basic's own indicator with the arrow PNG swapped for an icon-font

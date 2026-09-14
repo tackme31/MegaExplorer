@@ -180,8 +180,8 @@ ColumnLayout {
         // assigned rather than bound for the same reason every other site does it --
         // a menu must not change target while it is open.
         onAboutToShow: rubbishRowMenu.context = {
-            "requestEmptyRubbish": () => confirmEmptyRubbishDialog.open()
-        }
+                           "requestEmptyRubbish": () => confirmEmptyRubbishDialog.open()
+                       }
     }
 
     // Reaches the current tab's controller rather than one of its own: emptying the

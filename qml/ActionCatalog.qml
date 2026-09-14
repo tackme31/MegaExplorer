@@ -110,7 +110,7 @@ QtObject {
                                             "available": ctx => ctx.localFolderLinked === true,
                                             "group": "localPath",
                                             "trigger": ctx => localFolderController.openFile(
-                                                          ctx.handle)
+                                                                  ctx.handle)
                                         },
                                         // ctx: handle, localFolderLinked
                                         "openLocalLocation": {
@@ -127,7 +127,7 @@ QtObject {
                                             "available": ctx => ctx.localFolderLinked === true,
                                             "group": "localPath",
                                             "trigger": ctx => localFolderController.openLocation(
-                                                          ctx.handle)
+                                                                  ctx.handle)
                                         },
                                         // ctx: handle, isRoot
                                         "openInNewTab": {
@@ -311,11 +311,11 @@ QtObject {
                                             "icon": ctx => Theme.glyph.menu.refresh,
                                             "label": ctx => qsTr("Refresh"),
                                             "available": ctx => ctx.treeRow === true
-                                                        || ctx.navController !== undefined,
+                                                                || ctx.navController !== undefined,
                                             "trigger": ctx => ctx.treeRow === true
-                                                       ? folderTreeModel.refreshFolder(ctx.handle,
-                                                                                       ctx.isRoot)
-                                                       : ctx.navController.refresh()
+                                                              ? folderTreeModel.refreshFolder(
+                                                                    ctx.handle, ctx.isRoot) :
+                                                                ctx.navController.refresh()
                                         },
                                         // ctx: isRoot, entries. Straight to the
                                         // app-wide controller rather than a
@@ -333,12 +333,11 @@ QtObject {
                                             "icon": ctx => Theme.glyph.menu.properties,
                                             "label": ctx => qsTr("Properties"),
                                             "trigger": ctx => propertiesController.show(
-                                                          ctx.entries[0].handle,
-                                                          ctx.isRoot === true,
-                                                          ctx.entries[0].name,
-                                                          ctx.entries[0].isFolder,
-                                                          ctx.entries[0].sizeBytes,
-                                                          ctx.entries[0].modificationTime)
+                                                                  ctx.entries[0].handle, ctx.isRoot
+                                                                  === true, ctx.entries[0].name,
+                                                                  ctx.entries[0].isFolder,
+                                                                  ctx.entries[0].sizeBytes,
+                                                                  ctx.entries[0].modificationTime)
                                         }
                                     })
 

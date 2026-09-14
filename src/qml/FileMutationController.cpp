@@ -327,9 +327,9 @@ void FileMutationController::requestPasswordLink(quint64 handle,
                 mBusy->end();
                 if (!result.success)
                 {
-                    qCWarning(lcFileOps)
-                        << "requestPasswordLink failed:" << QString::fromStdString(result.errorMessage)
-                        << "code=" << result.errorCode;
+                    qCWarning(lcFileOps) << "requestPasswordLink failed:"
+                                         << QString::fromStdString(result.errorMessage)
+                                         << "code=" << result.errorCode;
                     mNotifications->notifyError(QStringLiteral("passwordLink"),
                                                 result.errorCode,
                                                 QString::fromStdString(result.errorMessage));

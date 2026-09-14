@@ -80,9 +80,9 @@ struct AdvancingGuard
 } // namespace
 
 ThumbnailService::ThumbnailService(std::shared_ptr<IMegaClient> client,
-                                  std::shared_ptr<ILocalFileSystem> fileSystem,
-                                  std::string cacheDirectory,
-                                  std::size_t maxConcurrent)
+                                   std::shared_ptr<ILocalFileSystem> fileSystem,
+                                   std::string cacheDirectory,
+                                   std::size_t maxConcurrent)
     : mClient(std::move(client)), mFileSystem(std::move(fileSystem)),
       mCacheDirectory(std::move(cacheDirectory)), mMaxConcurrent(maxConcurrent)
 {}
@@ -179,8 +179,7 @@ Result<std::string> ThumbnailService::accountDirectory() const
     const Result<std::uint64_t> user = mClient->currentUserHandle();
     if (!user.success)
         return Result<std::string>::fail(user.errorMessage, user.errorCode);
-    return Result<std::string>::ok(mCacheDirectory + kPathSeparator +
-                                   std::to_string(user.value()));
+    return Result<std::string>::ok(mCacheDirectory + kPathSeparator + std::to_string(user.value()));
 }
 
 void ThumbnailService::discard(const std::vector<std::uint64_t>& handles)
@@ -230,7 +229,8 @@ Result<std::uint64_t> ThumbnailService::cachedBytes() const
     if (!resolved.success)
         return Result<std::uint64_t>::fail(resolved.errorMessage, resolved.errorCode);
 
-    const std::optional<std::vector<LocalEntry>> entries = listCache(*mFileSystem, resolved.value());
+    const std::optional<std::vector<LocalEntry>> entries =
+        listCache(*mFileSystem, resolved.value());
     if (!entries)
         return Result<std::uint64_t>::fail("Could not read the thumbnail cache",
                                            MegaErrorCode::kEAccess);
@@ -250,7 +250,8 @@ Result<void> ThumbnailService::clearCache()
     if (!resolved.success)
         return Result<void>::fail(resolved.errorMessage, resolved.errorCode);
 
-    const std::optional<std::vector<LocalEntry>> entries = listCache(*mFileSystem, resolved.value());
+    const std::optional<std::vector<LocalEntry>> entries =
+        listCache(*mFileSystem, resolved.value());
     if (!entries)
         return Result<void>::fail("Could not read the thumbnail cache", MegaErrorCode::kEAccess);
 
@@ -281,8 +282,7 @@ Result<void> ThumbnailService::clearCache()
             removedAll = false;
     }
     if (!removedAll)
-        return Result<void>::fail("Some thumbnails could not be deleted",
-                                  MegaErrorCode::kEAccess);
+        return Result<void>::fail("Some thumbnails could not be deleted", MegaErrorCode::kEAccess);
     return Result<void>::ok();
 }
 

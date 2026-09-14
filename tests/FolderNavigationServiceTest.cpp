@@ -1478,8 +1478,8 @@ TEST(FolderNavigationServiceTest, SearchingRecentsStillAnswersWhenTheScreenWasNe
     // Act
     service.listRecent(SortOrder{}, "typed", SearchFilter{}, onDoneInto(searched));
     ASSERT_TRUE(searchPending);
-    searchPending(Result<std::vector<FileEntry>>::ok(
-        std::vector<FileEntry>{{"hit.txt", 10, 50, false, 0}}));
+    searchPending(
+        Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{{"hit.txt", 10, 50, false, 0}}));
 
     // Assert
     ASSERT_TRUE(searched.doneCalled);

@@ -38,8 +38,8 @@ Window {
     property int sequenceIndex: -1
 
     readonly property bool canGoPrevious: root.sequenceIndex > 0
-    readonly property bool canGoNext: root.sequenceIndex >= 0
-                                      && root.sequenceIndex < root.sequence.length - 1
+    readonly property bool canGoNext: root.sequenceIndex >= 0 && root.sequenceIndex
+                                      < root.sequence.length - 1
 
     // Fit-to-window is the default: the image is scaled to the window in both
     // directions, enlarging a small original as well as shrinking a large one.

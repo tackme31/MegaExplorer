@@ -3,8 +3,8 @@
 #include "app/Logging.h"
 #include "GuiThread.h"
 
-#include <QDebug>
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDir>
 #include <QLocale>
 #include <QStandardPaths>

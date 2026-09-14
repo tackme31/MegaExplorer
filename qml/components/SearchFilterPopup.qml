@@ -45,7 +45,8 @@ Popup {
     readonly property int appliedTime: root.navController?.searchFilterCreatedWithin
                                        ?? SearchTimeWindow.Any
     readonly property bool appliedFavourite: root.navController?.searchFilterFavouritesOnly ?? false
-    readonly property bool appliedThisFolder: root.navController?.searchFilterThisFolderOnly ?? false
+    readonly property bool appliedThisFolder: root.navController?.searchFilterThisFolderOnly
+                                              ?? false
 
     readonly property bool filterActive: root.appliedType !== SearchNodeType.Any
                                          || root.appliedCategory !== SearchCategory.Any
@@ -219,9 +220,9 @@ Popup {
             // The flat cross-drive listings are rooted at the Cloud Drive root rather
             // than at an open folder, so there is nothing for this to scope to and
             // C++ ignores it there.
-            enabled: root.navController?.viewKind !== ViewKind.Favourites
-                     && root.navController?.viewKind !== ViewKind.Recents
-                     && root.navController?.viewKind !== ViewKind.SharedLinks
+            enabled: root.navController?.viewKind !== ViewKind.Favourites && root.navController
+                     ?.viewKind !== ViewKind.Recents && root.navController?.viewKind
+                     !== ViewKind.SharedLinks
             text: qsTr("This folder only")
         }
 

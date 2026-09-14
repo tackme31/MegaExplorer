@@ -25,8 +25,7 @@ ColumnLayout {
     // it needs no "has it loaded yet" guard. Favourites, recents and search do: they
     // walk the tree on a worker and empty the model at the click, and this would
     // otherwise answer "No favourites yet" about a listing nobody has fetched yet.
-    visible: (root.listModel?.count ?? 0) === 0
-             && !(root.navController?.listingPending ?? false)
+    visible: (root.listModel?.count ?? 0) === 0 && !(root.navController?.listingPending ?? false)
 
     spacing: Theme.spacing.sm
 
@@ -69,8 +68,8 @@ ColumnLayout {
             if (root.favourites)
                 return qsTr("Right-click a file or folder and choose \"%1\".").arg(
                             ActionCatalog.entries["toggleFavourite"].label({
-                                                                              "favourited": false
-                                                                          }));
+                                                                               "favourited": false
+                                                                           }));
             if (root.sharedLinks)
                 return qsTr("Right-click a file or folder and choose \"%1\".").arg(
                             ActionCatalog.entries["copyLink"].label({}));

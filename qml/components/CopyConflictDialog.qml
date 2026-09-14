@@ -304,86 +304,86 @@ Dialog {
     // came from -- the icon beside it is the only thing that says so.
     function listEntries() {
         return root.conflictingFiles.map(n => ({
-                                                   "name": n,
-                                                   "isFolder": false
-                                               })).concat(root.conflictingFolders.map(n => ({
-                                                                                                "name": n,
-                                                                                                "isFolder": true
-                                                                                            })));
+            "name": n,
+            "isFolder": false
+        })).concat(root.conflictingFolders.map(n => ({
+        "name": n,
+        "isFolder": true
+    })));
     }
 
-    function detailText() {
+        function detailText() {
         const lines = [];
         // What each answer does lives in that button's tooltip, except the one
         // wording that announces unrecoverable loss: a warning nobody sees unless
         // they hover is not a warning.
         if (root.continueLosesData)
-            lines.push(root.continueLine());
+        lines.push(root.continueLine());
         if (root.unaffectedCount > 0)
-            lines.push(root.unaffectedLine());
+        lines.push(root.unaffectedLine());
         return lines.join("\n\n");
     }
 
-    // Whole sentences per case rather than clauses joined at runtime: a translator
-    // needs the sentence, and there are only five of them.
-    function continueLine() {
+        // Whole sentences per case rather than clauses joined at runtime: a translator
+        // needs the sentence, and there are only five of them.
+        function continueLine() {
         const files = root.conflictingFiles.length;
         const folders = root.conflictingFolders.length;
         if (root.operation === "move")
-            return qsTr(
-                        "\"Continue\" leaves both: MEGA allows two items with the same name and never merges folders.");
-        if (files > 0 && folders > 0)
-            return root.fileVersioningEnabled ? qsTr(
-                                                    "\"Continue\" keeps the existing files as earlier versions, and leaves two folders with the same name -- MEGA never merges one into another.") :
-                                                qsTr("\"Continue\" deletes the existing files outright -- file versioning is off for this account, so they cannot be recovered -- and leaves two folders with the same name, since MEGA never merges one into another.");
-        if (files > 0)
-            return root.fileVersioningEnabled ? qsTr(
-                                                    "\"Continue\" keeps the existing files as earlier versions.") :
-                                                qsTr("\"Continue\" deletes the existing files outright: file versioning is off for this account, so they do not go to the rubbish bin and cannot be recovered.");
         return qsTr(
-                    "\"Continue\" leaves two folders with the same name: MEGA never merges one into another.");
+        "\"Continue\" leaves both: MEGA allows two items with the same name and never merges folders.");
+        if (files > 0 && folders > 0)
+        return root.fileVersioningEnabled ? qsTr(
+        "\"Continue\" keeps the existing files as earlier versions, and leaves two folders with the same name -- MEGA never merges one into another.") :
+        qsTr("\"Continue\" deletes the existing files outright -- file versioning is off for this account, so they cannot be recovered -- and leaves two folders with the same name, since MEGA never merges one into another.");
+        if (files > 0)
+        return root.fileVersioningEnabled ? qsTr(
+        "\"Continue\" keeps the existing files as earlier versions.") : qsTr(
+        "\"Continue\" deletes the existing files outright: file versioning is off for this account, so they do not go to the rubbish bin and cannot be recovered.");
+        return qsTr(
+        "\"Continue\" leaves two folders with the same name: MEGA never merges one into another.");
     }
 
-    // A folder is skipped whole -- there is no per-child answer here -- which is
-    // not obvious from a list that names only the folder. Empty when nothing but
-    // files collide, since Skip needs no explaining there.
-    function skipLine() {
+        // A folder is skipped whole -- there is no per-child answer here -- which is
+        // not obvious from a list that names only the folder. Empty when nothing but
+        // files collide, since Skip needs no explaining there.
+        function skipLine() {
         if (root.conflictingFolders.length === 0)
-            return "";
+        return "";
         return qsTr("\"Skip\" leaves those folders out entirely, with everything inside them.");
     }
 
-    // The size rides along only on a copy: a move adds nothing to the account, so
-    // quoting bytes there would suggest data is being sent that is not.
-    function unaffectedLine() {
+        // The size rides along only on a copy: a move adds nothing to the account, so
+        // quoting bytes there would suggest data is being sent that is not.
+        function unaffectedLine() {
         if (root.operation === "move")
-            return qsTr("The other %1 item(s) are moved either way.").arg(root.unaffectedCount);
+        return qsTr("The other %1 item(s) are moved either way.").arg(root.unaffectedCount);
         if (root.unaffectedSize === "")
-            return qsTr("The other %1 item(s) are copied either way.").arg(root.unaffectedCount);
+        return qsTr("The other %1 item(s) are copied either way.").arg(root.unaffectedCount);
         return qsTr("The other %1 item(s) are copied either way (%2).").arg(
-                    root.unaffectedCount).arg(root.unaffectedSize);
+        root.unaffectedCount).arg(root.unaffectedSize);
     }
 
-    // The name Rename would give is named outright rather than described, since
-    // "renamed automatically" leaves the user unable to tell what to look for
-    // afterwards (SPEC_NAME_CONFLICT_COPY_MOVE 3-4). One example is enough for a
-    // batch -- the rest follow the same suffix.
-    function renameLine() {
+        // The name Rename would give is named outright rather than described, since
+        // "renamed automatically" leaves the user unable to tell what to look for
+        // afterwards (SPEC_NAME_CONFLICT_COPY_MOVE 3-4). One example is enough for a
+        // batch -- the rest follow the same suffix.
+        function renameLine() {
         const names = root.conflictNames;
         if (root.renamedTo.length === 0)
-            return qsTr("\"Rename\" adds them under names the destination does not use yet.");
+        return qsTr("\"Rename\" adds them under names the destination does not use yet.");
         if (names.length === 1)
-            return qsTr("\"Rename\" adds \"%1\" as \"%2\" instead.").arg(names[0]).arg(
-                        root.renamedTo[0]);
+        return qsTr("\"Rename\" adds \"%1\" as \"%2\" instead.").arg(names[0]).arg(
+        root.renamedTo[0]);
         return qsTr("\"Rename\" adds them under unused names, such as \"%1\" for \"%2\".").arg(
-                    root.renamedTo[0]).arg(names[0]);
+        root.renamedTo[0]).arg(names[0]);
     }
 
-    // Reassigned rather than push()ed: an in-place mutation of a `var` array
-    // leaves anything reading it unaware that it changed.
-    function showNextRequest() {
+        // Reassigned rather than push()ed: an in-place mutation of a `var` array
+        // leaves anything reading it unaware that it changed.
+        function showNextRequest() {
         if (root.pendingRequests.length === 0)
-            return;
+        return;
         const next = root.pendingRequests[0];
         root.pendingRequests = root.pendingRequests.slice(1);
         root.operation = next.operation;
@@ -400,48 +400,47 @@ Dialog {
         root.open();
     }
 
-    function enqueue(request) {
+        function enqueue(request) {
         root.pendingRequests = root.pendingRequests.concat([request]);
         if (!root.visible)
-            root.showNextRequest();
+        root.showNextRequest();
     }
 
-    Connections {
+        Connections {
         target: root.mutController
 
         function onCopyNameConflict(entries, conflictingFiles, conflictingFolders, renamedTo,
-                                    conflictingSize, unaffectedSize, destination,
-                                    destinationIsRoot) {
-            root.enqueue({
-                             "operation": "copy",
-                             "entries": entries,
-                             "conflictingFiles": conflictingFiles,
-                             "conflictingFolders": conflictingFolders,
-                             "renamedTo": renamedTo,
-                             "conflictingSize": conflictingSize,
-                             "unaffectedSize": unaffectedSize,
-                             "destinationHandle": destination,
-                             "destinationIsRoot": destinationIsRoot,
-                             "sourceHandle": 0,
-                             "sourceIsRoot": false
-                         });
-        }
+        conflictingSize, unaffectedSize, destination, destinationIsRoot) {
+        root.enqueue({
+        "operation": "copy",
+        "entries": entries,
+        "conflictingFiles": conflictingFiles,
+        "conflictingFolders": conflictingFolders,
+        "renamedTo": renamedTo,
+        "conflictingSize": conflictingSize,
+        "unaffectedSize": unaffectedSize,
+        "destinationHandle": destination,
+        "destinationIsRoot": destinationIsRoot,
+        "sourceHandle": 0,
+        "sourceIsRoot": false
+    });
+    }
 
         function onMoveNameConflict(entries, conflictingFiles, conflictingFolders, renamedTo,
-                                    destination, destinationIsRoot, source, sourceIsRoot) {
-            root.enqueue({
-                             "operation": "move",
-                             "entries": entries,
-                             "conflictingFiles": conflictingFiles,
-                             "conflictingFolders": conflictingFolders,
-                             "renamedTo": renamedTo,
-                             "conflictingSize": "",
-                             "unaffectedSize": "",
-                             "destinationHandle": destination,
-                             "destinationIsRoot": destinationIsRoot,
-                             "sourceHandle": source,
-                             "sourceIsRoot": sourceIsRoot
-                         });
-        }
+        destination, destinationIsRoot, source, sourceIsRoot) {
+        root.enqueue({
+        "operation": "move",
+        "entries": entries,
+        "conflictingFiles": conflictingFiles,
+        "conflictingFolders": conflictingFolders,
+        "renamedTo": renamedTo,
+        "conflictingSize": "",
+        "unaffectedSize": "",
+        "destinationHandle": destination,
+        "destinationIsRoot": destinationIsRoot,
+        "sourceHandle": source,
+        "sourceIsRoot": sourceIsRoot
+    });
     }
-}
+    }
+    }

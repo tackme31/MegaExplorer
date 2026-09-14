@@ -88,10 +88,10 @@ void PreviewService::requestRange(std::uint64_t handle,
                 },
                 [this, onDone, buffer, stop](Result<void> result) {
                     finish(stop, [&onDone, &buffer, &result] {
-                        onDone(result.success ? Result<std::vector<char>>::ok(std::move(*buffer))
-                                              : Result<std::vector<char>>::fail(
-                                                    std::move(result.errorMessage),
-                                                    result.errorCode));
+                        onDone(result.success
+                                   ? Result<std::vector<char>>::ok(std::move(*buffer))
+                                   : Result<std::vector<char>>::fail(std::move(result.errorMessage),
+                                                                     result.errorCode));
                     });
                 });
         },

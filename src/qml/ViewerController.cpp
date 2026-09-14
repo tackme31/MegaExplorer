@@ -109,11 +109,16 @@ ArchiveBrowser* ViewerController::openArchive(quint64 handle, qulonglong sizeByt
         tailOffset,
         tailLength,
         [this, target, handle, sizeBytes, tailOffset](Result<std::vector<char>> result) {
-            invokeOnGuiThread(
-                this,
-                [this, target, handle, sizeBytes, tailOffset, result = std::move(result)]() mutable {
-                    onArchiveTailFetched(target, handle, sizeBytes, tailOffset, std::move(result));
-                });
+            invokeOnGuiThread(this,
+                              [this,
+                               target,
+                               handle,
+                               sizeBytes,
+                               tailOffset,
+                               result = std::move(result)]() mutable {
+                                  onArchiveTailFetched(
+                                      target, handle, sizeBytes, tailOffset, std::move(result));
+                              });
         });
     return browser;
 }
@@ -128,22 +133,23 @@ void ViewerController::checkFormat(quint64 handle,
         0,
         kFormatSniffBytes,
         [this, handle, name, sizeBytes, kind](Result<std::vector<char>> head) {
-            invokeOnGuiThread(this, [this, handle, name, sizeBytes, kind, head = std::move(head)]() {
-                QString found;
-                if (!head.success)
-                {
-                    qCDebug(lcPreview) << "open-as format check failed:"
-                                       << QString::fromStdString(head.errorMessage)
-                                       << "code=" << head.errorCode;
-                }
-                else
-                {
-                    const SniffedFormat format = sniffFormat(head.value());
-                    if (sniffRulesOut(format, previewKindForViewer(kind)))
-                        found = sniffedFormatName(format);
-                }
-                emit formatChecked(handle, name, sizeBytes, kind, found);
-            });
+            invokeOnGuiThread(
+                this, [this, handle, name, sizeBytes, kind, head = std::move(head)]() {
+                    QString found;
+                    if (!head.success)
+                    {
+                        qCDebug(lcPreview) << "open-as format check failed:"
+                                           << QString::fromStdString(head.errorMessage)
+                                           << "code=" << head.errorCode;
+                    }
+                    else
+                    {
+                        const SniffedFormat format = sniffFormat(head.value());
+                        if (sniffRulesOut(format, previewKindForViewer(kind)))
+                            found = sniffedFormatName(format);
+                    }
+                    emit formatChecked(handle, name, sizeBytes, kind, found);
+                });
         });
 }
 
