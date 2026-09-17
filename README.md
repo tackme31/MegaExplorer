@@ -90,12 +90,6 @@ Hand a file to your browser, or to a program you register in the settings, strea
 downloaded. Only programs that take a URL as an argument work, and MegaExplorer has to stay
 running while they read it.
 
-## Roadmap
-
-- [ ] Live updates, watching the server for changes made elsewhere
-- [ ] Albums
-- [ ] Localisation, starting with Japanese
-
 ## Build
 
 Windows and the MSVC toolchain only. The MEGA SDK's Windows build doesn't support MinGW.
