@@ -84,6 +84,9 @@ target_compile_options(MegaExplorerWarnings INTERFACE /W4 /external:W0 /wd4702)
 # vcpkg only installs zlib as a dependency of the SDK's own ports; asking for it
 # here keeps ZipExtract from leaning on that.
 find_package(ZLIB REQUIRED)
+# The SDK's own static SQLite: main.cpp sets its process-wide mmap default. SDKlib's
+# find_package imported the target only in its own directory scope.
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 # SDK-free domain logic, shared between MegaExplorer and MegaExplorerTests.
 add_library(MegaExplorerCore STATIC
@@ -422,6 +425,7 @@ target_link_libraries(MegaExplorer
     PRIVATE MegaExplorerCore
     # crypt32 for src/platform's WindowsSessionStore (DPAPI), which stays here.
     PRIVATE crypt32
+    PRIVATE unofficial::sqlite3::sqlite3
     PRIVATE MegaExplorerWarnings
 )
 

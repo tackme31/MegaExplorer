@@ -53,6 +53,7 @@
 #include <QStyleHints>
 
 #include <memory>
+#include <sqlite3.h>
 #include <QtQml/qqmlextensionplugin.h>
 
 // The QML module's type registration sits in a generated translation unit nothing
@@ -127,6 +128,16 @@ int main(int argc, char* argv[])
     // 385s on a 640k-node account). toNativeSeparators because the SDK appends its
     // own components with backslashes, and a mixed-separator path breaks as soon as
     // anything prefixes it with \\?\ for long-path support.
+    // Opt-in: memory-maps the SDK's SQLite state cache, which a name search walks page by
+    // page (default 2 MB page cache; ~3 s -> ~1.5 s on a 600k-node account). Process-wide,
+    // so it has to land before MegaApi opens the first connection.
+    if (const int mmapMb = qEnvironmentVariableIntValue("MEGAEXPLORER_SQLITE_MMAP_MB"); mmapMb > 0)
+    {
+        const sqlite3_int64 mmapBytes = static_cast<sqlite3_int64>(mmapMb) * 1024 * 1024;
+        const int rc = sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, mmapBytes, mmapBytes);
+        qInfo() << "SQLite default mmap_size" << mmapBytes << "sqlite3_config rc" << rc;
+    }
+
     auto client = std::make_shared<MegaSdkClient>(QDir::toNativeSeparators(cacheDir).toStdString());
     auto sessionStore =
         std::make_shared<WindowsSessionStore>((cacheDir + "/session.dat").toStdString());

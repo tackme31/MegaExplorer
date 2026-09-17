@@ -55,6 +55,9 @@ A zip archive opens as a list of its contents, and you can download files from i
 Search your whole account or just the current folder, and narrow the results by file type,
 category, date modified, or favourite. "Go to folder" takes a result to where it lives.
 
+On a very large account, searching can take seconds; setting `MEGAEXPLORER_SQLITE_MMAP_MB=256`
+(off by default) memory-maps the local node database and roughly halves it.
+
 ### Transfers
 
 ![](./img/transfers.png)
