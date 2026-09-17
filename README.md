@@ -82,6 +82,14 @@ list.
 Point the settings at one local folder that mirrors your MEGA root, and you can open the matching
 local file, or reveal it in Windows Explorer. The two are never synced.
 
+### Open with
+
+![](./img/open_with.png)
+
+Hand a file to your browser, or to a program you register in the settings, streamed rather than
+downloaded. Only programs that take a URL as an argument work, and MegaExplorer has to stay
+running while they read it.
+
 ## Roadmap
 
 - [ ] Live updates, watching the server for changes made elsewhere
