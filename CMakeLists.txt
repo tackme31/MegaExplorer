@@ -123,6 +123,8 @@ add_library(MegaExplorerCore STATIC
     src/core/AuthService.cpp
     src/core/SearchService.h
     src/core/SearchService.cpp
+    src/core/SearchQuery.h
+    src/core/SearchQuery.cpp
     src/core/DownloadService.h
     src/core/DownloadService.cpp
     src/core/UploadService.h

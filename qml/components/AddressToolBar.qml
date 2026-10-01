@@ -165,6 +165,10 @@ ToolBar {
             // keystroke -- live: true would queue one such walk per character.
             // The walk runs on a worker now, so this no longer freezes the UI.
             live: false
+            // Stands in for the placeholder SearchField lacks.
+            ToolTip.visible: hovered && text === ""
+            ToolTip.delay: 800
+            ToolTip.text: qsTr("Search by name. Use tag:word to search tags.")
             // Enter (searchTriggered) and the magnifier (searchButtonPressed)
             // are separate signals; only the first is gated by live.
             onSearchTriggered: tabsController.currentNavigation?.search(text)

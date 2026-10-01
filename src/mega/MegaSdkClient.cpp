@@ -8,6 +8,7 @@
 
 #include <QMetaObject>
 #include <QObject>
+#include <QString>
 #include <Qt>
 #include <QThreadPool>
 
@@ -257,6 +258,29 @@ void applySearchFilter(mega::MegaSearchFilter& target, const SearchFilter& filte
         // literal now would drop nodes whose timestamp is a few seconds ahead of ours.
         target.byCreationTime(since, 0);
     }
+
+    // byTag takes a single term; nodeListToEntries checks the rest.
+    if (!filter.tags.empty())
+        target.byTag(filter.tags.front().c_str());
+}
+
+// The tag terms after the first, which byTag could not take. Case-insensitive like
+// the SDK's own match, but accents still count here.
+bool hasRemainingTags(mega::MegaNode* node, const std::vector<std::string>& terms)
+{
+    if (terms.size() < 2)
+        return true;
+    const std::unique_ptr<mega::MegaStringList> tags{node->getTags()};
+    for (std::size_t t = 1; t < terms.size(); ++t)
+    {
+        const QString term = QString::fromStdString(terms[t]);
+        bool found = false;
+        for (int i = 0; tags && i < tags->size() && !found; ++i)
+            found = QString::fromUtf8(tags->get(i)).contains(term, Qt::CaseInsensitive);
+        if (!found)
+            return false;
+    }
+    return true;
 }
 
 // Orders a listing the way the SDK's own comparators do, for the one listing that
@@ -278,7 +302,8 @@ void sortEntriesByKey(std::vector<FileEntry>& entries, SortOrder order)
         });
 }
 
-std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
+std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children,
+                                         const std::vector<std::string>& tagTerms = {})
 {
     std::vector<FileEntry> entries;
     entries.reserve(children ? static_cast<size_t>(children->size()) : 0);
@@ -286,8 +311,9 @@ std::vector<FileEntry> nodeListToEntries(mega::MegaNodeList* children)
     {
         for (int i = 0; i < children->size(); ++i)
         {
-            // owned by the list, do not delete
-            entries.push_back(nodeToEntry(children->get(i)));
+            mega::MegaNode* node = children->get(i); // owned by the list
+            if (hasRemainingTags(node, tagTerms))
+                entries.push_back(nodeToEntry(node));
         }
     }
     return entries;
@@ -560,7 +586,8 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
                 searchFilter.thisFolderOnly
                     ? mApi->getChildren(filter.get(), toMegaOrder(order), mListingCancelToken.get())
                     : mApi->search(filter.get(), toMegaOrder(order), mListingCancelToken.get()));
-            return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
+            return Result<std::vector<FileEntry>>::ok(
+                nodeListToEntries(results.get(), searchFilter.tags));
         },
         std::move(onDone));
 }
@@ -621,7 +648,8 @@ void MegaSdkClient::listFavourites(SortOrder order,
 
             std::unique_ptr<mega::MegaNodeList> results(
                 mApi->search(filter.get(), toMegaOrder(order), mListingCancelToken.get()));
-            return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
+            return Result<std::vector<FileEntry>>::ok(
+                nodeListToEntries(results.get(), searchFilter.tags));
         },
         std::move(onDone));
 }
@@ -666,7 +694,8 @@ void MegaSdkClient::listRecent(SortOrder order,
 
             std::unique_ptr<mega::MegaNodeList> results(
                 mApi->search(filter.get(), toMegaOrder(order), mListingCancelToken.get()));
-            return Result<std::vector<FileEntry>>::ok(nodeListToEntries(results.get()));
+            return Result<std::vector<FileEntry>>::ok(
+                nodeListToEntries(results.get(), searchFilter.tags));
         },
         std::move(onDone));
 }
@@ -702,7 +731,7 @@ void MegaSdkClient::listPublicLinks(SortOrder order,
 
                 std::unique_ptr<mega::MegaNodeList> results(
                     mApi->search(filter.get(), toMegaOrder(order), mListingCancelToken.get()));
-                std::vector<FileEntry> entries = nodeListToEntries(results.get());
+                std::vector<FileEntry> entries = nodeListToEntries(results.get(), searchFilter.tags);
                 entries.erase(std::remove_if(entries.begin(),
                                              entries.end(),
                                              [](const FileEntry& entry) {

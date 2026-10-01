@@ -320,6 +320,43 @@ TEST_F(FolderNavigationControllerTest, AFilterWithNoQueryIsAnActiveSearch)
     EXPECT_FALSE(seen.thisFolderOnly);
 }
 
+TEST_F(FolderNavigationControllerTest, TagWordsReachTheSearchAsTagsAndSurviveThePopup)
+{
+    // The tags live in the typed text, not the popup's state, so changing a popup
+    // facet re-runs the search with them still applied.
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    std::string seenName;
+    SearchFilter seen;
+    EXPECT_CALL(*client, search(_, _, _, _, _, _))
+        .WillRepeatedly(Invoke([&](std::uint64_t,
+                                   bool,
+                                   const std::string& name,
+                                   const SearchFilter& filter,
+                                   SortOrder,
+                                   std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            seenName = name;
+            seen = filter;
+            onDone(Result<std::vector<FileEntry>>::ok({entry("b.jpg", 2)}));
+        }));
+
+    controller->search(QStringLiteral("miku tag:1girl tag:chara:hatsune_miku"));
+    flush();
+    EXPECT_EQ(seenName, "miku");
+    EXPECT_EQ(seen.tags, (std::vector<std::string>{"1girl", "chara:hatsune_miku"}));
+
+    controller->setSearchFilter(SearchNodeTypeEnum::Files,
+                                SearchCategoryEnum::Any,
+                                SearchTimeWindowEnum::Any,
+                                false,
+                                false);
+    flush();
+    EXPECT_EQ(seen.nodeType, SearchNodeType::Files);
+    EXPECT_EQ(seen.tags, (std::vector<std::string>{"1girl", "chara:hatsune_miku"}));
+}
+
 TEST_F(FolderNavigationControllerTest, ScopingToTheOpenFolderReachesTheSearchQuery)
 {
     // The facet the adapter reads to pick getChildren over search, so it has to

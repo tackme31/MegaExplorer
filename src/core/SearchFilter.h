@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 // The facets the toolbar's advanced-search popup narrows a search by. Mapped onto
 // MegaSearchFilter in src/mega, so src/core keeps its no-SDK rule; the values here
 // are ours, not the SDK's integers.
@@ -53,12 +56,18 @@ struct SearchFilter
     // the Cloud Drive root and ignore it.
     bool thisFolderOnly = false;
 
+    // From the search box's `tag:` words, not the popup: the controller only sets it
+    // on the copy it hands to a search, so the popup's own state never carries it.
+    // Every term must match some tag, as a case-insensitive substring.
+    std::vector<std::string> tags;
+
     // "Narrows nothing", which is what lets an empty query still count as no search
     // at all -- SearchService refuses that pair rather than listing the whole drive.
     bool isDefault() const
     {
         return nodeType == SearchNodeType::Any && category == SearchCategory::Any &&
-               createdWithin == SearchTimeWindow::Any && !favouritesOnly && !thisFolderOnly;
+               createdWithin == SearchTimeWindow::Any && !favouritesOnly && !thisFolderOnly &&
+               tags.empty();
     }
 };
 
@@ -66,7 +75,7 @@ inline bool operator==(const SearchFilter& lhs, const SearchFilter& rhs)
 {
     return lhs.nodeType == rhs.nodeType && lhs.category == rhs.category &&
            lhs.createdWithin == rhs.createdWithin && lhs.favouritesOnly == rhs.favouritesOnly &&
-           lhs.thisFolderOnly == rhs.thisFolderOnly;
+           lhs.thisFolderOnly == rhs.thisFolderOnly && lhs.tags == rhs.tags;
 }
 
 inline bool operator!=(const SearchFilter& lhs, const SearchFilter& rhs)

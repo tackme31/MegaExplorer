@@ -2,6 +2,7 @@
 
 #include "app/Logging.h"
 #include "core/MenuActionResolver.h"
+#include "core/SearchQuery.h"
 #include "GuiThread.h"
 #include "NotificationController.h"
 #include "ViewKindEnum.h"
@@ -552,16 +553,18 @@ void FolderNavigationController::runVisibleSearch()
             });
         };
 
+    const SearchQuery query = parseSearchQuery(mLastSearchQuery);
+    SearchFilter filter = mSearchFilter;
+    filter.tags = query.tags;
+
     if (viewKind() == ViewKindEnum::Favourites)
-        mService->listFavourites(
-            mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
+        mService->listFavourites(mSortOrder, query.name, filter, std::move(onSearched));
     else if (viewKind() == ViewKindEnum::Recents)
-        mService->listRecent(mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
+        mService->listRecent(mSortOrder, query.name, filter, std::move(onSearched));
     else if (viewKind() == ViewKindEnum::SharedLinks)
-        mService->listSharedLinks(
-            mSortOrder, mLastSearchQuery, mSearchFilter, std::move(onSearched));
+        mService->listSharedLinks(mSortOrder, query.name, filter, std::move(onSearched));
     else
-        mSearchService->search(mLastSearchQuery, mSearchFilter, mSortOrder, std::move(onSearched));
+        mSearchService->search(query.name, filter, mSortOrder, std::move(onSearched));
 }
 
 void FolderNavigationController::applySearchResult(Result<std::vector<FileEntry>> result,

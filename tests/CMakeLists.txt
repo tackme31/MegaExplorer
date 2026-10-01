@@ -13,6 +13,7 @@ add_executable(MegaExplorerTests
     AuthServiceTest.cpp
     AccountServiceTest.cpp
     SearchServiceTest.cpp
+    SearchQueryTest.cpp
     DownloadServiceTest.cpp
     UploadServiceTest.cpp
     UploadScanServiceTest.cpp
