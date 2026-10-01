@@ -23,6 +23,9 @@ constexpr int kShutdownGraceMs = 5000;
 // Long because uv may first fetch Python and the dependencies.
 constexpr int kInitializeTimeoutMs = 5 * 60 * 1000;
 constexpr int kInvocationId = 1;
+// After this long without an answer to $/cancel the user is offered to kill the plugin.
+constexpr int kCancelGraceMs = 10000;
+constexpr int kCancelledCode = -32800;
 
 QString errorMessageOf(const QJsonObject& response)
 {
@@ -88,8 +91,15 @@ PluginRun::PluginRun(PluginManifest manifest,
                      const PluginHostApi* hostApi,
                      QObject* parent)
     : QObject(parent), mManifest(std::move(manifest)), mCommandId(std::move(commandId)),
-      mContext(std::move(context)), mHostApi(hostApi), mKillTimer(new QTimer(this)), mInitTimer(new QTimer(this))
+      mContext(std::move(context)), mHostApi(hostApi), mKillTimer(new QTimer(this)), mInitTimer(new QTimer(this)),
+      mCancelTimer(new QTimer(this))
 {
+    mCancelTimer->setSingleShot(true);
+    mCancelTimer->setInterval(kCancelGraceMs);
+    connect(mCancelTimer, &QTimer::timeout, this, [this] {
+        if (mStage != Stage::Done)
+            emit cancelIgnored();
+    });
     mInitTimer->setSingleShot(true);
     mInitTimer->setInterval(kInitializeTimeoutMs);
     connect(mInitTimer, &QTimer::timeout, this, [this] {
@@ -121,7 +131,7 @@ PluginRun::PluginRun(PluginManifest manifest,
             qCInfo(lcPlugin) << mManifest.id << "exited, code" << exitCode
                              << (status == QProcess::CrashExit ? "(crashed)" : "");
             if (mStage != Stage::Done)
-                finish(QStringLiteral("crashed"), {});
+                finish(mCancelRequested ? QStringLiteral("cancelled") : QStringLiteral("crashed"), {});
             deleteLater();
         });
 }
@@ -196,6 +206,38 @@ void PluginRun::start()
          {{QStringLiteral("apiVersion"), 1},
           {QStringLiteral("app"), app},
           {QStringLiteral("plugin"), plugin}});
+}
+
+void PluginRun::cancel()
+{
+    if (mStage == Stage::Done || mCancelRequested)
+        return;
+    mCancelRequested = true;
+    if (mStage == Stage::Initializing)
+    {
+        finish(QStringLiteral("cancelled"), {});
+        killAll();
+        return;
+    }
+    notify(QStringLiteral("$/cancel"), {{QStringLiteral("invocationId"), kInvocationId}});
+    mCancelTimer->start();
+}
+
+void PluginRun::forceStop()
+{
+    if (mStage == Stage::Done)
+        return;
+    qCInfo(lcPlugin) << mManifest.id << "force-stopped by the user";
+    finish(QStringLiteral("cancelled"), {});
+    killAll();
+}
+
+void PluginRun::notify(const QString& method, const QJsonObject& params)
+{
+    const QJsonObject message{{QStringLiteral("jsonrpc"), QStringLiteral("2.0")},
+                              {QStringLiteral("method"), method},
+                              {QStringLiteral("params"), params}};
+    mProcess.write(QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n');
 }
 
 void PluginRun::send(int id, const QString& method, const QJsonObject& params)
@@ -331,7 +373,14 @@ void PluginRun::handleResponse(const QJsonObject& message)
     }
     if (id == kExecuteId && mStage == Stage::Executing)
     {
-        if (isError)
+        const int errorCode =
+            message.value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt();
+        if (isError && errorCode == kCancelledCode)
+        {
+            qCInfo(lcPlugin) << mManifest.id << mCommandId << "was cancelled";
+            finish(QStringLiteral("cancelled"), {});
+        }
+        else if (isError)
         {
             qCInfo(lcPlugin) << mManifest.id << mCommandId
                              << "returned an error:" << errorMessageOf(message);
@@ -358,6 +407,7 @@ void PluginRun::finish(const QString& outcome, const QString& message)
     if (mStage == Stage::Done)
         return;
     mInitTimer->stop();
+    mCancelTimer->stop();
     mStage = Stage::Done;
     emit finished(outcome, message, mChanged);
 }

@@ -8,6 +8,7 @@
   "commands": [
     { "id": "count", "title": "Count to 40 slowly", "progress": true },
     { "id": "spin", "title": "Work without a total", "progress": true },
-    { "id": "quick", "title": "Finish at once", "progress": true }
+    { "id": "quick", "title": "Finish at once", "progress": true },
+    { "id": "stubborn", "title": "Ignore Cancel for a minute", "progress": true }
   ]
 }

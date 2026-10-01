@@ -20,7 +20,7 @@ public:
     // outcome is "ok", "error" (the plugin answered with an error), "notFound"
     // (run.command does not resolve), "failedToStart", "timeout"
     // (no answer to initialize), or "crashed" (exited or
-    // spoke garbage before answering). message is the plugin's text, if any.
+    // spoke garbage before answering), or "cancelled". message is the plugin's text, if any.
     PluginRun(PluginManifest manifest,
               QString commandId,
               QJsonObject context,
@@ -29,6 +29,10 @@ public:
     ~PluginRun() override;
 
     void start();
+    // Asks the plugin to stop ($/cancel); before command.execute it is simply killed.
+    void cancel();
+    // Kills the process; for a plugin that ignores cancel().
+    void forceStop();
 
     const PluginManifest& manifest() const
     {
@@ -42,6 +46,8 @@ signals:
     void executionStarted();
     // From ui.progress; current and total are -1 when the plugin left them out.
     void progressReported(qint64 current, qint64 total, const QString& message);
+    // Still running a while after cancel(); forceStop() is the way out.
+    void cancelIgnored();
 
 private:
     enum class Stage
@@ -53,6 +59,7 @@ private:
     };
 
     void send(int id, const QString& method, const QJsonObject& params);
+    void notify(const QString& method, const QJsonObject& params);
     void readStdout();
     void readStderr();
     void handleMessage(const QJsonObject& message);
@@ -71,10 +78,12 @@ private:
     QProcess mProcess;
     QTimer* mKillTimer;
     QTimer* mInitTimer;
+    QTimer* mCancelTimer;
     // A Win32 HANDLE; void* keeps <windows.h> out of this header.
     void* mJob = nullptr;
     QByteArray mStdoutBuffer;
     QByteArray mStderrBuffer;
     Stage mStage = Stage::Initializing;
     bool mChanged = false;
+    bool mCancelRequested = false;
 };

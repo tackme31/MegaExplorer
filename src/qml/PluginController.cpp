@@ -195,6 +195,13 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
                         scheduleProgressUpdate();
                     }
                 });
+        connect(run, &PluginRun::cancelIgnored, this, [this, pluginId] {
+            if (ProgressState* state = findProgress(pluginId))
+            {
+                state->forceStoppable = true;
+                emit progressRunsChanged();
+            }
+        });
         QTimer::singleShot(kProgressShowDelayMs, this, [this, pluginId] {
             if (ProgressState* state = findProgress(pluginId))
             {
@@ -216,15 +223,37 @@ QVariantList PluginController::progressRuns() const
     {
         if (!state.shown)
             continue;
-        runs.append(QVariantMap{{QStringLiteral("pluginName"), state.pluginName},
+        runs.append(QVariantMap{{QStringLiteral("pluginId"), state.pluginId},
+                                {QStringLiteral("pluginName"), state.pluginName},
                                 {QStringLiteral("commandTitle"), state.commandTitle},
                                 {QStringLiteral("startedAt"), state.startedAt},
                                 {QStringLiteral("preparing"), state.preparing},
                                 {QStringLiteral("current"), state.current},
                                 {QStringLiteral("total"), state.total},
-                                {QStringLiteral("message"), state.message}});
+                                {QStringLiteral("message"), state.message},
+                                {QStringLiteral("cancelling"), state.cancelling},
+                                {QStringLiteral("forceStoppable"), state.forceStoppable}});
     }
     return runs;
+}
+
+void PluginController::cancel(const QString& pluginId)
+{
+    PluginRun* run = mRuns.value(pluginId);
+    if (!run)
+        return;
+    if (ProgressState* state = findProgress(pluginId); state && !state->cancelling)
+    {
+        state->cancelling = true;
+        emit progressRunsChanged();
+    }
+    run->cancel();
+}
+
+void PluginController::forceStop(const QString& pluginId)
+{
+    if (PluginRun* run = mRuns.value(pluginId))
+        run->forceStop();
 }
 
 PluginController::ProgressState* PluginController::findProgress(const QString& pluginId)

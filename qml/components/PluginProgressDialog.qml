@@ -7,7 +7,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 // One instance in Main.qml, open while any "progress": true plugin command runs.
-// Not modal: there is no way to cancel a run yet, so a stuck plugin must not lock the window.
+// Not modal: a run over thousands of items must not keep the user out of the window.
 Dialog {
     id: root
 
@@ -82,7 +82,9 @@ Dialog {
                         elide: Text.ElideMiddle
                         color: Theme.color.textSecondary
                         font.pixelSize: Theme.font.caption
-                        text: row.modelData.preparing ? qsTr("Preparing…") : row.modelData.message
+                        text: row.modelData.cancelling ? qsTr("Cancelling…") : row.modelData.preparing ? qsTr(
+                                                                                                    "Preparing…") :
+                                                                                                row.modelData.message
                     }
 
                     Label {
@@ -99,6 +101,14 @@ Dialog {
                         text: qsTr("Elapsed %1").arg(root.formatElapsed(root.now
                                                                         - row.modelData.startedAt))
                     }
+                }
+
+                Button {
+                    Layout.alignment: Qt.AlignRight
+                    enabled: !row.modelData.cancelling || row.modelData.forceStoppable
+                    text: row.modelData.forceStoppable ? qsTr("Force quit") : qsTr("Cancel")
+                    onClicked: row.modelData.forceStoppable ? root.plugins.forceStop(row.modelData.pluginId) :
+                                                              root.plugins.cancel(row.modelData.pluginId)
                 }
             }
         }

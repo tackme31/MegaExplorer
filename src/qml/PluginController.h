@@ -28,8 +28,9 @@ class PluginController : public QObject
     // Bumped whenever a run starts or ends, so menu greying can re-evaluate.
     Q_PROPERTY(int runningRevision READ runningRevision NOTIFY runningChanged)
     // Runs of "progress": true commands that have been going for a moment, oldest first:
-    // maps of pluginName, commandTitle, startedAt (ms since epoch), preparing,
-    // current and total (-1 when unknown), message.
+    // maps of pluginId, pluginName, commandTitle, startedAt (ms since epoch), preparing,
+    // current and total (-1 when unknown), message, cancelling, and forceStoppable
+    // (cancelled but still running after a grace period).
     Q_PROPERTY(QVariantList progressRuns READ progressRuns NOTIFY progressRunsChanged)
 
 public:
@@ -63,6 +64,8 @@ public:
 
     // entries are FileListModel::selectedEntries() maps (handle, name, isFolder).
     Q_INVOKABLE void execute(const QString& actionId, const QVariantList& entries);
+    Q_INVOKABLE void cancel(const QString& pluginId);
+    Q_INVOKABLE void forceStop(const QString& pluginId);
 
 signals:
     void runningChanged();
@@ -88,6 +91,8 @@ private:
         qint64 current = -1;
         qint64 total = -1;
         QString message;
+        bool cancelling = false;
+        bool forceStoppable = false;
         bool shown = false;
     };
     ProgressState* findProgress(const QString& pluginId);

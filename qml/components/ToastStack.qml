@@ -219,6 +219,9 @@ Item {
         case "timeout":
             text = qsTr("%1 didn't start in time and was stopped").arg(pluginName);
             break;
+        case "cancelled":
+            // The user asked for it; the dialog closing is the answer.
+            break;
         default:
             text = qsTr("%1 stopped unexpectedly").arg(pluginName);
             break;
