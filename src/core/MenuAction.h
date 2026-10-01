@@ -82,6 +82,9 @@ enum class MenuAction
     // the same thing.
     SelectAll,
     Refresh,
+    // Placeholder for every installed plugin's commands, expanded by QML like
+    // OpenWithCustom: the plugin list lives in a folder src/core cannot see.
+    PluginCommands,
     // Last in the vocabulary because it is last in every menu, as in Explorer.
     // Offered in the Rubbish bin too: it only reads.
     Properties,

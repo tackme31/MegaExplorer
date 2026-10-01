@@ -25,6 +25,7 @@ Q_LOGGING_CATEGORY(lcAuth, "megaexplorer.auth")
 Q_LOGGING_CATEGORY(lcQuickAccess, "megaexplorer.quickaccess")
 Q_LOGGING_CATEGORY(lcFileOps, "megaexplorer.fileops")
 Q_LOGGING_CATEGORY(lcAccount, "megaexplorer.account")
+Q_LOGGING_CATEGORY(lcPlugin, "megaexplorer.plugin")
 
 namespace
 {

@@ -271,6 +271,8 @@ QtObject {
             // and a command line, not an icon, and reading one out of the .exe means a
             // shell call this app makes nowhere else. Neither check above run on it.
             readonly property string openWithProgram: "\uECAA" // AppIconDefault
+            // One plugin's submenu row; its command rows go without an icon.
+            readonly property string plugin: "\uEA86"        // Puzzle
             readonly property string newFolder: "\uE8F4"     // NewFolder
             readonly property string download: glyphSet.transferDown
             // Not yet checked against either icon font's cmap, nor drawn at 16px --

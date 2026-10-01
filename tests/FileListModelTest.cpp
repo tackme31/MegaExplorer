@@ -285,6 +285,7 @@ TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
                            "copy",
                            "rename",
                            "moveToRubbish",
+                           "pluginCommands",
                            "properties"}));
 
     FileListModel modelMulti;
@@ -292,7 +293,7 @@ TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
     modelMulti.selectRow(0, 0);
     modelMulti.selectRow(1, kCtrl);
     EXPECT_EQ(modelMulti.availableActions(),
-              (QStringList{"download", "cut", "copy", "moveToRubbish"}));
+              (QStringList{"download", "cut", "copy", "moveToRubbish", "pluginCommands"}));
 }
 
 TEST(FileListModelTest, AvailableActionsOffersOnlyMoveToRubbishForAMixedSelection)
@@ -304,7 +305,7 @@ TEST(FileListModelTest, AvailableActionsOffersOnlyMoveToRubbishForAMixedSelectio
 
     // Download is FilesOnly and Rename is SingleOnly, so the clipboard pair and
     // deleting are all that a mixed multi-selection can do.
-    EXPECT_EQ(model.availableActions(), (QStringList{"cut", "copy", "moveToRubbish"}));
+    EXPECT_EQ(model.availableActions(), (QStringList{"cut", "copy", "moveToRubbish", "pluginCommands"}));
 }
 
 TEST(FileListModelTest, AvailableActionsClearedAfterNavigation)
@@ -789,6 +790,7 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
                            "copy",
                            "rename",
                            "moveToRubbish",
+                           "pluginCommands",
                            "properties"}));
 
     model.setViewKind(ViewKind::Favourites);
@@ -810,6 +812,7 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
                            "removeLink",
                            "copy",
                            "rename",
+                           "pluginCommands",
                            "properties"}));
 }
 

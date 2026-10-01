@@ -198,6 +198,32 @@ Item {
                                            name));
     }
 
+    // outcome as PluginRun::finished. An "ok" with no message says nothing: the
+    // plugin chose not to report.
+    function showPluginResult(pluginName, outcome, message) {
+        let text = "";
+        switch (outcome) {
+        case "ok":
+            text = message;
+            break;
+        case "error":
+            text = message !== "" ? qsTr("%1: %2").arg(pluginName).arg(message) : qsTr("%1 failed").arg(
+                                        pluginName);
+            break;
+        case "notFound":
+            text = qsTr("%1: can't find \"%2\"").arg(pluginName).arg(message);
+            break;
+        case "failedToStart":
+            text = qsTr("%1 couldn't be started").arg(pluginName);
+            break;
+        default:
+            text = qsTr("%1 stopped unexpectedly").arg(pluginName);
+            break;
+        }
+        if (text !== "")
+            root.push(text, "", "");
+    }
+
     function showExternalHandoffNotice(text) {
         if (root.externalHandoffNoticeShown)
             return;

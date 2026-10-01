@@ -394,10 +394,25 @@ QtObject {
         };
     }
 
+    // ctx: entries. One run per plugin at a time, so a busy plugin's rows grey.
+    function pluginCommandEntry(actionId) {
+        return {
+            "icon": ctx => "",
+            "label": ctx => pluginController.commandTitle(actionId),
+            "group": pluginController.groupOf(actionId),
+            "enabled": ctx => pluginController.runningRevision >= 0 && pluginController.canRun(
+                                  actionId),
+            "trigger": ctx => pluginController.execute(actionId, ctx.entries)
+        };
+    }
+
     function lookup(actionId) {
         const entry = root.entries[actionId];
         if (entry !== undefined)
             return entry;
+        if (typeof actionId === "string" && actionId.startsWith("plugin:")
+                && pluginController.isMenuActionId(actionId))
+            return root.pluginCommandEntry(actionId);
         if (typeof actionId !== "string" || !actionId.startsWith(root.customOpenWithPrefix))
             return undefined;
         const index = parseInt(actionId.slice(root.customOpenWithPrefix.length), 10);
@@ -414,6 +429,10 @@ QtObject {
     function expand(actionIds) {
         const result = [];
         for (const id of actionIds) {
+            if (id === "pluginCommands") {
+                result.push(...pluginController.menuActionIds());
+                continue;
+            }
             if (id !== "openWithCustom") {
                 result.push(id);
                 continue;
@@ -451,11 +470,16 @@ QtObject {
         return result;
     }
 
+    // A plugin's submenu is not in `groups`: one exists per installed plugin.
     function groupLabel(group) {
+        if (group.startsWith("plugin:"))
+            return pluginController.groupLabel(group);
         return root.groups[group].label;
     }
 
     function groupIcon(group) {
+        if (group.startsWith("plugin:"))
+            return Theme.glyph.menu.plugin;
         return root.groups[group].icon;
     }
 

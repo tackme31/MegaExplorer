@@ -203,6 +203,12 @@ add_library(MegaExplorerQml STATIC
     src/qml/CacheController.cpp
     src/qml/OpenWithController.h
     src/qml/OpenWithController.cpp
+    src/qml/PluginManifest.h
+    src/qml/PluginManifest.cpp
+    src/qml/PluginRun.h
+    src/qml/PluginRun.cpp
+    src/qml/PluginController.h
+    src/qml/PluginController.cpp
     src/qml/PropertiesController.h
     src/qml/PropertiesController.cpp
     src/qml/TransferListModel.h

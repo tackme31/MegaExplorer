@@ -31,6 +31,7 @@
 #include "qml/LocalFolderController.h"
 #include "qml/NotificationController.h"
 #include "qml/OpenWithController.h"
+#include "qml/PluginController.h"
 #include "qml/PreviewController.h"
 #include "qml/PreviewImageProvider.h"
 #include "qml/PreviewImageStore.h"
@@ -189,6 +190,7 @@ int main(int argc, char* argv[])
     LocalFolderController localFolderController(localLinkService, &notifications);
     CacheController cacheController(thumbnailService);
     OpenWithController openWithController(&viewerController);
+    PluginController pluginController(QDir(cacheDir).filePath(QStringLiteral("plugins")));
     PropertiesController propertiesController(nodeDetailsService);
     TransferListModel transferListModel(&downloadController, &uploadController);
 
@@ -265,6 +267,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("localFolderController", &localFolderController);
     engine.rootContext()->setContextProperty("cacheController", &cacheController);
     engine.rootContext()->setContextProperty("openWithController", &openWithController);
+    engine.rootContext()->setContextProperty("pluginController", &pluginController);
     engine.rootContext()->setContextProperty("propertiesController", &propertiesController);
     engine.rootContext()->setContextProperty("transferListModel", &transferListModel);
     // The engine takes ownership of the provider, which is why the bytes it serves

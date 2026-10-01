@@ -723,6 +723,13 @@ ApplicationWindow {
     }
 
     Connections {
+        target: pluginController
+        function onCommandFinished(pluginName, outcome, message) {
+            toastStack.showPluginResult(pluginName, outcome, message);
+        }
+    }
+
+    Connections {
         target: notificationController
         function onErrorOccurred(context, reason, rawMessage) {
             toastStack.showError(context, reason, rawMessage);

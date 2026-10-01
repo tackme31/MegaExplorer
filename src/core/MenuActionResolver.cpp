@@ -272,6 +272,11 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
+        {MenuAction::PluginCommands,
+         {MenuSite::FileSelection},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
+         ActionTarget::Any,
+         ActionArity::Any},
         // SingleOnly: the dialog describes one node, and Rubbish is included --
         // unlike the other cross-view actions -- because reading a binned node's
         // size and location is exactly when it is wanted.
@@ -401,6 +406,8 @@ const char* menuActionId(MenuAction action)
             return "selectAll";
         case MenuAction::Refresh:
             return "refresh";
+        case MenuAction::PluginCommands:
+            return "pluginCommands";
         case MenuAction::Properties:
             return "properties";
     }

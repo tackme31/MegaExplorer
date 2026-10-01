@@ -263,7 +263,7 @@ TEST(MenuActionResolverTest, EmptySelectionYieldsNoActions)
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(1, 0));
-    ASSERT_EQ(result.size(), 19u);
+    ASSERT_EQ(result.size(), 20u);
     EXPECT_EQ(result[0], MenuAction::Open);
     EXPECT_EQ(result[1], MenuAction::OpenAsImage);
     EXPECT_EQ(result[2], MenuAction::OpenAsVideo);
@@ -282,35 +282,39 @@ TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
     EXPECT_EQ(result[15], MenuAction::Copy);
     EXPECT_EQ(result[16], MenuAction::Rename);
     EXPECT_EQ(result[17], MenuAction::MoveToRubbish);
-    EXPECT_EQ(result[18], MenuAction::Properties);
+    EXPECT_EQ(result[18], MenuAction::PluginCommands);
+    EXPECT_EQ(result[19], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersDownloadForMultipleFiles)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(3, 0));
-    ASSERT_EQ(result.size(), 4u);
+    ASSERT_EQ(result.size(), 5u);
     EXPECT_EQ(result[0], MenuAction::Download);
     EXPECT_EQ(result[1], MenuAction::Cut);
     EXPECT_EQ(result[2], MenuAction::Copy);
     EXPECT_EQ(result[3], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[4], MenuAction::PluginCommands);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersNoDownloadWhenSelectionContainsAFolder)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(1, 1));
-    ASSERT_EQ(result.size(), 3u);
+    ASSERT_EQ(result.size(), 4u);
     EXPECT_EQ(result[0], MenuAction::Cut);
     EXPECT_EQ(result[1], MenuAction::Copy);
     EXPECT_EQ(result[2], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[3], MenuAction::PluginCommands);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersNoDownloadForFoldersOnlySelection)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(0, 2));
-    ASSERT_EQ(result.size(), 3u);
+    ASSERT_EQ(result.size(), 4u);
     EXPECT_EQ(result[0], MenuAction::Cut);
     EXPECT_EQ(result[1], MenuAction::Copy);
     EXPECT_EQ(result[2], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[3], MenuAction::PluginCommands);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersNothingForEmptySelection)
@@ -504,7 +508,7 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsOpenLocalLocationWhereNoOneIte
 TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(0, 1));
-    ASSERT_EQ(result.size(), 12u);
+    ASSERT_EQ(result.size(), 13u);
     EXPECT_EQ(result[0], MenuAction::OpenLocalLocation);
     EXPECT_EQ(result[1], MenuAction::OpenInNewTab);
     EXPECT_EQ(result[2], MenuAction::TogglePin);
@@ -516,7 +520,8 @@ TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
     EXPECT_EQ(result[8], MenuAction::Copy);
     EXPECT_EQ(result[9], MenuAction::Rename);
     EXPECT_EQ(result[10], MenuAction::MoveToRubbish);
-    EXPECT_EQ(result[11], MenuAction::Properties);
+    EXPECT_EQ(result[11], MenuAction::PluginCommands);
+    EXPECT_EQ(result[12], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, TogglePinIdIsStable)
@@ -786,7 +791,7 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     // never move, and cut is a deferred move (its decision 1).
     const std::vector<MenuAction> result =
         resolveMenuActions(fileSelection(1, 0, ViewKind::Favourites));
-    ASSERT_EQ(result.size(), 17u);
+    ASSERT_EQ(result.size(), 18u);
     EXPECT_EQ(result[0], MenuAction::Open);
     EXPECT_EQ(result[1], MenuAction::OpenAsImage);
     EXPECT_EQ(result[2], MenuAction::OpenAsVideo);
@@ -803,7 +808,8 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     EXPECT_EQ(result[13], MenuAction::RemoveLink);
     EXPECT_EQ(result[14], MenuAction::Copy);
     EXPECT_EQ(result[15], MenuAction::Rename);
-    EXPECT_EQ(result[16], MenuAction::Properties);
+    EXPECT_EQ(result[16], MenuAction::PluginCommands);
+    EXPECT_EQ(result[17], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableStillOffersOpenInNewTabAndTogglePinInFavourites)

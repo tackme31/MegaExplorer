@@ -17,6 +17,7 @@ Q_DECLARE_LOGGING_CATEGORY(lcAuth)
 Q_DECLARE_LOGGING_CATEGORY(lcQuickAccess)
 Q_DECLARE_LOGGING_CATEGORY(lcFileOps)
 Q_DECLARE_LOGGING_CATEGORY(lcAccount)
+Q_DECLARE_LOGGING_CATEGORY(lcPlugin)
 
 // Installs a message handler writing every log call to both the console streams and
 // a file under AppLocalDataLocation. Must run before any other logging call: this is
