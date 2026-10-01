@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+**Talk to the user in Japanese** — every reply, question, and end-of-task summary, from the first
+message of a session, even when this file, the docs, or tool output are in English. Code, code
+comments, and commit messages stay in English as before.
+
 Guidance for Claude Code when working in this repo. Kept compact — detail that isn't needed every
 session lives in companion docs, linked from the relevant section below rather than inlined:
 
