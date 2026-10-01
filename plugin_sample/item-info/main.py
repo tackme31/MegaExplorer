@@ -1,50 +1,8 @@
-"""Reads items back from MegaExplorer with items.get / items.children.
+"""Reads items: items.get, items.children (paged), items.fetchPreview."""
 
-Raw JSON-RPC over stdio, no helper library: the plugin also *sends* requests
-here, so each call writes one line and reads until the matching response.
-"""
+from megaexplorer_plugin import NoPreview, Plugin
 
-import json
-import os
-import sys
-
-sys.stdin.reconfigure(encoding="utf-8")
-sys.stdout.reconfigure(encoding="utf-8")
-
-_next_id = 0
-
-
-def send(message):
-    sys.stdout.write(json.dumps(message, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
-
-
-def reply(msg_id, result=None, error=None):
-    message = {"jsonrpc": "2.0", "id": msg_id}
-    if error is not None:
-        message["error"] = error
-    else:
-        message["result"] = result
-    send(message)
-
-
-class RpcError(Exception):
-    pass
-
-
-def call(method, params):
-    """Calls the app and waits for its answer. Nothing else arrives meanwhile in v1."""
-    global _next_id
-    _next_id += 1
-    my_id = f"p{_next_id}"
-    send({"jsonrpc": "2.0", "id": my_id, "method": method, "params": params})
-    for line in sys.stdin:
-        message = json.loads(line)
-        if message.get("id") == my_id and "method" not in message:
-            if "error" in message:
-                raise RpcError(message["error"]["message"])
-            return message["result"]
-    raise RpcError("the app closed the pipe")
+plugin = Plugin()
 
 
 def human_size(size):
@@ -54,80 +12,54 @@ def human_size(size):
         size /= 1024
 
 
-def show(items):
-    item = call("items.get", {"handles": [items[0]["handle"]]})["items"][0]
-    parts = [item["path"]]
-    if item["type"] == "file":
-        parts.append(human_size(item["size"]))
-    if item["tags"]:
-        parts.append("tags: " + ", ".join(item["tags"]))
-    if item["favourite"]:
+@plugin.command("show")
+def show(ctx):
+    if not ctx.items:
+        return "Nothing is selected"
+    item = ctx.get(ctx.items[0])
+    parts = [item.path]
+    if item.is_file:
+        parts.append(human_size(item.size))
+    if item.tags:
+        parts.append("tags: " + ", ".join(item.tags))
+    if item.favourite:
         parts.append("favourite")
     return " | ".join(parts)
 
 
-def count_folder(items):
-    first = items[0]
-    folder = first["handle"] if first["type"] == "folder" else first["parent"]
+@plugin.command("count-folder")
+def count_folder(ctx):
+    if not ctx.items:
+        return "Nothing is selected"
+    first = ctx.items[0]
+    folder = first if first.is_folder else first.parent
     files = folders = 0
-    cursor = None
-    while True:
-        page = call("items.children", {"handle": folder, "cursor": cursor})
-        for child in page["items"]:
-            if child["type"] == "folder":
-                folders += 1
-            else:
-                files += 1
-        cursor = page["nextCursor"]
-        if cursor is None:
-            break
-    name = call("items.get", {"handles": [folder]})["items"][0]["path"]
-    return f"{name}: {files} files, {folders} folders"
+    for child in ctx.children(folder):
+        if child.is_folder:
+            folders += 1
+        else:
+            files += 1
+    return f"{ctx.get(folder).path}: {files} files, {folders} folders"
 
 
-def fetch_previews(items):
-    fetched = []
+@plugin.command("preview")
+def fetch_previews(ctx):
+    sizes = []
     missing = 0
-    for item in items:
-        if item["type"] != "file":
+    for item in ctx.items:
+        if not item.is_file:
             continue
         try:
-            path = call("items.fetchPreview", {"handle": item["handle"]})["path"]
-        except RpcError:
+            path = ctx.fetch_preview(item)
+        except NoPreview:
             missing += 1
             continue
-        with open(path, "rb") as f:
+        with path.open("rb") as f:
             is_jpeg = f.read(2) == bytes([0xFF, 0xD8])
+        print(f"preview {item.name} -> {path} ({path.stat().st_size} bytes, jpeg={is_jpeg})")
+        sizes.append(path.stat().st_size)
         # Left in place on purpose: the app removes the run's folder when the plugin exits.
-        print(f"preview {item['name']} -> {path} ({os.path.getsize(path)} bytes, jpeg={is_jpeg})",
-              file=sys.stderr)
-        fetched.append(os.path.getsize(path))
-    return (f"Fetched {len(fetched)} preview(s), {human_size(sum(fetched))}"
-            f"; {missing} without one")
+    return f"Fetched {len(sizes)} preview(s), {human_size(sum(sizes))}; {missing} without one"
 
 
-def execute(params):
-    items = params["context"]["items"]
-    if not items:
-        return {"message": "Nothing is selected"}, None
-    try:
-        if params["commandId"] == "show":
-            return {"message": show(items)}, None
-        if params["commandId"] == "preview":
-            return {"message": fetch_previews(items)}, None
-        return {"message": count_folder(items)}, None
-    except RpcError as error:
-        return None, {"code": 1, "message": str(error)}
-
-
-for line in sys.stdin:
-    request = json.loads(line)
-    method = request.get("method")
-    if method == "initialize":
-        reply(request["id"], {"apiVersion": 1})
-    elif method == "command.execute":
-        result, error = execute(request["params"])
-        reply(request["id"], result, error)
-    elif method == "shutdown":
-        reply(request["id"], {})
-        break
+plugin.run()

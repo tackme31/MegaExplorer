@@ -1,0 +1,382 @@
+"""A small helper for writing MegaExplorer plugins in Python.
+
+Hides the JSON-RPC over stdio described in the plugin protocol: the app knows
+nothing about this file, so it is a convenience, not part of the protocol.
+Standard library only. Copy this file next to your plugin's main.py.
+
+    from megaexplorer_plugin import Plugin
+
+    plugin = Plugin()
+
+    @plugin.command("count")
+    def count(ctx):
+        return f"{len(ctx.items)} item(s) selected"
+
+    plugin.run()
+
+A command function receives a Context and returns a message (str) to show as a
+toast, or None for no toast. Raising CommandError(message) reports a failure;
+any other exception does too, with its traceback written to the app's log.
+
+print() is safe to use: it goes to stderr, which the app writes to its log.
+"""
+
+import json
+import os
+import sys
+import threading
+import traceback
+from pathlib import Path
+
+__all__ = [
+    "Plugin",
+    "Context",
+    "Item",
+    "RpcError",
+    "NotFound",
+    "NoPreview",
+    "InvalidParams",
+    "MegaError",
+    "Cancelled",
+    "CommandError",
+]
+
+API_VERSION = 1
+_CANCELLED = -32800
+_METHOD_NOT_FOUND = -32601
+_NOT_FOUND = -32002
+_INVALID_PARAMS = -32602
+_MEGA_ERROR = -32010
+_COMMAND_FAILED = -32000
+
+
+class RpcError(Exception):
+    """The app answered a call with an error."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class NotFound(RpcError):
+    """The item does not exist (any more)."""
+
+
+class NoPreview(NotFound):
+    """fetch_preview: the item has no server-side preview, or is gone."""
+
+
+class InvalidParams(RpcError):
+    """The call's arguments were rejected."""
+
+
+class MegaError(RpcError):
+    """MEGA refused or failed the change. Part of it may already be applied."""
+
+
+class Cancelled(Exception):
+    """Raised by Context.check_cancelled() once the user pressed Cancel."""
+
+
+class CommandError(Exception):
+    """Raise to fail a command with a message for the user (no traceback logged)."""
+
+
+_ERRORS = {_NOT_FOUND: NotFound, _INVALID_PARAMS: InvalidParams, _MEGA_ERROR: MegaError}
+
+
+class Item:
+    """An item in the account.
+
+    Items from ctx.items carry only handle, name, type and parent, as they were
+    when the menu was clicked. Items returned by get(), children() and update()
+    also carry size, mtime, path, favourite, description and tags.
+    """
+
+    def __init__(self, data):
+        self.data = data
+        self.handle = data["handle"]
+        self.name = data.get("name")
+        self.type = data.get("type")
+        self.parent = data.get("parent")
+        self.size = data.get("size")
+        self.mtime = data.get("mtime")
+        self.path = data.get("path")
+        self.favourite = data.get("favourite")
+        self.description = data.get("description")
+        self.tags = data.get("tags")
+
+    @property
+    def is_file(self):
+        return self.type == "file"
+
+    @property
+    def is_folder(self):
+        return self.type == "folder"
+
+    def __repr__(self):
+        return f"Item({self.name!r}, {self.type}, {self.handle})"
+
+
+def _handle(x):
+    return x.handle if isinstance(x, Item) else x
+
+
+class _Connection:
+    """The JSON-RPC stream. Requests from the app go to a queue for the main
+    thread; answers to our own calls wake the caller; $/cancel sets a flag at once,
+    so a command busy computing still sees it."""
+
+    def __init__(self):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+        # The real stdout is kept for the protocol; fd 1 and sys.stdout become
+        # stderr so a stray print() cannot corrupt the stream.
+        self._out = os.dup(1)
+        os.dup2(2, 1)
+        sys.stdout = sys.stderr
+
+        self._write_lock = threading.Lock()
+        self._lock = threading.Lock()
+        self._pending = {}
+        self._next_id = 0
+        self._requests = []
+        self._requests_ready = threading.Condition(self._lock)
+        self._closed = False
+        self.cancelled = threading.Event()
+        # os.read, not sys.stdin.buffer: a daemon thread blocked in a
+        # BufferedReader dies with a fatal error at interpreter exit.
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self):
+        buffer = b""
+        while True:
+            chunk = os.read(0, 65536)
+            if not chunk:
+                break
+            buffer += chunk
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                if line.strip():
+                    self._dispatch(json.loads(line.decode("utf-8")))
+        with self._lock:
+            self._closed = True
+            for slot in self._pending.values():
+                slot["event"].set()
+            self._requests_ready.notify_all()
+
+    def _dispatch(self, message):
+        method = message.get("method")
+        if method is None:
+            with self._lock:
+                slot = self._pending.get(message.get("id"))
+            if slot is not None:
+                slot["message"] = message
+                slot["event"].set()
+            return
+        if "id" not in message:
+            if method == "$/cancel":
+                self.cancelled.set()
+            return
+        with self._lock:
+            self._requests.append(message)
+            self._requests_ready.notify()
+
+    def next_request(self):
+        with self._lock:
+            while not self._requests and not self._closed:
+                self._requests_ready.wait()
+            return self._requests.pop(0) if self._requests else None
+
+    def send(self, message):
+        data = (json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8")
+        with self._write_lock:
+            while data:
+                data = data[os.write(self._out, data):]
+
+    def reply(self, msg_id, result=None, error=None):
+        message = {"jsonrpc": "2.0", "id": msg_id}
+        if error is not None:
+            message["error"] = error
+        else:
+            message["result"] = result
+        self.send(message)
+
+    def notify(self, method, params):
+        self.send({"jsonrpc": "2.0", "method": method, "params": params})
+
+    def call(self, method, params):
+        event = threading.Event()
+        with self._lock:
+            if self._closed:
+                raise RpcError(0, "the app closed the connection")
+            self._next_id += 1
+            msg_id = f"p{self._next_id}"
+            slot = {"event": event, "message": None}
+            self._pending[msg_id] = slot
+        self.send({"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params})
+        event.wait()
+        with self._lock:
+            del self._pending[msg_id]
+        message = slot["message"]
+        if message is None:
+            raise RpcError(0, "the app closed the connection")
+        if "error" in message:
+            error = message["error"]
+            raise _ERRORS.get(error.get("code"), RpcError)(error.get("code"), error.get("message", ""))
+        return message.get("result")
+
+
+class Context:
+    """What a command function gets: the clicked items and the calls into the app."""
+
+    def __init__(self, connection, params, plugin_info):
+        self._connection = connection
+        self.command_id = params["commandId"]
+        self.invocation_id = params.get("invocationId")
+        context = params.get("context") or {}
+        self.site = context.get("site")
+        self.items = [Item(ref) for ref in context.get("items", [])]
+        self.plugin_dir = Path(plugin_info["dir"]) if plugin_info.get("dir") else None
+
+    @property
+    def item(self):
+        """The one selected item, or None when zero or several are selected."""
+        return self.items[0] if len(self.items) == 1 else None
+
+    # --- cancel and progress --------------------------------------------------
+
+    @property
+    def cancelled(self):
+        return self._connection.cancelled.is_set()
+
+    def check_cancelled(self):
+        """Raises Cancelled once the user pressed Cancel; the helper then answers -32800."""
+        if self.cancelled:
+            raise Cancelled()
+
+    def progress(self, current=None, total=None, message=None):
+        """Updates the progress dialog (needs "progress": true on the command).
+        Call it as often as you like: the app only redraws a few times a second."""
+        params = {"invocationId": self.invocation_id}
+        if current is not None:
+            params["current"] = current
+        if total is not None:
+            params["total"] = total
+        if message is not None:
+            params["message"] = message
+        self._connection.notify("ui.progress", params)
+
+    # --- items ------------------------------------------------------------------
+
+    def call(self, method, params):
+        """A raw protocol call, for methods this helper does not wrap yet."""
+        params = dict(params)
+        params.setdefault("invocationId", self.invocation_id)
+        return self._connection.call(method, params)
+
+    def get(self, x):
+        """The current state of one item (handle or Item)."""
+        return self.get_many([x])[0]
+
+    def get_many(self, xs):
+        result = self.call("items.get", {"handles": [_handle(x) for x in xs]})
+        return [Item(data) for data in result["items"]]
+
+    def children(self, x, type=None):
+        """The items in folder x, fetched page by page as you iterate."""
+        cursor = None
+        while True:
+            params = {"handle": _handle(x), "cursor": cursor}
+            if type is not None:
+                params["type"] = type
+            page = self.call("items.children", params)
+            for data in page["items"]:
+                yield Item(data)
+            cursor = page.get("nextCursor")
+            if cursor is None:
+                return
+
+    def update(self, x, name=None, description=None, favourite=None, tags_add=None, tags_remove=None):
+        """Changes item x and returns it as it is afterwards. Only what you pass
+        is touched; adding a tag it has, or removing one it lacks, is a no-op."""
+        params = {"handle": _handle(x)}
+        if name is not None:
+            params["name"] = name
+        if description is not None:
+            params["description"] = description
+        if favourite is not None:
+            params["favourite"] = favourite
+        tags = {}
+        if tags_add:
+            tags["add"] = list(tags_add)
+        if tags_remove:
+            tags["remove"] = list(tags_remove)
+        if tags:
+            params["tags"] = tags
+        return Item(self.call("items.update", params)["item"])
+
+    def fetch_preview(self, x):
+        """Saves item x's preview (a JPEG of up to 1000 px) and returns its Path.
+
+        The file is yours: delete it once read (close the image first on
+        Windows). The app removes whatever is left when the plugin exits.
+        Raises NoPreview when there is none."""
+        try:
+            return Path(self.call("items.fetchPreview", {"handle": _handle(x)})["path"])
+        except NotFound as error:
+            raise NoPreview(error.code, error.message) from None
+
+
+class Plugin:
+    def __init__(self):
+        self._connection = _Connection()
+        self._commands = {}
+        self.info = {}
+
+    def command(self, command_id):
+        """Decorator: registers a function for the command id in plugin.json."""
+
+        def register(function):
+            self._commands[command_id] = function
+            return function
+
+        return register
+
+    def run(self):
+        """Serves the app until it says shutdown or closes the pipe."""
+        connection = self._connection
+        while (request := connection.next_request()) is not None:
+            method = request.get("method")
+            params = request.get("params") or {}
+            if method == "initialize":
+                self.info = params.get("plugin", {})
+                connection.reply(request["id"], {"apiVersion": API_VERSION})
+            elif method == "command.execute":
+                result, error = self._execute(params)
+                connection.reply(request["id"], result, error)
+            elif method == "shutdown":
+                connection.reply(request["id"], {})
+                break
+            else:
+                connection.reply(
+                    request["id"],
+                    error={"code": _METHOD_NOT_FOUND, "message": f"Method not found: {method}"},
+                )
+        sys.stderr.flush()
+
+    def _execute(self, params):
+        function = self._commands.get(params.get("commandId"))
+        if function is None:
+            return None, {"code": _METHOD_NOT_FOUND, "message": f"Unknown command: {params.get('commandId')}"}
+        self._connection.cancelled.clear()
+        try:
+            message = function(Context(self._connection, params, self.info))
+        except Cancelled:
+            return None, {"code": _CANCELLED, "message": "Cancelled"}
+        except CommandError as error:
+            return None, {"code": _COMMAND_FAILED, "message": str(error)}
+        except Exception as error:  # noqa: BLE001 -- any failure becomes the command's error
+            traceback.print_exc()
+            return None, {"code": _COMMAND_FAILED, "message": str(error) or type(error).__name__}
+        return ({"message": message} if message else {}), None

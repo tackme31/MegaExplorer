@@ -1,43 +1,22 @@
-"""Minimal MegaExplorer plugin: raw JSON-RPC over stdio, no helper library."""
+"""The smallest plugin: reads the selection and answers with a toast."""
 
-import json
-import sys
+from megaexplorer_plugin import CommandError, Plugin
 
-# Windows pipes default to the ANSI code page; the protocol is UTF-8.
-sys.stdin.reconfigure(encoding="utf-8")
-sys.stdout.reconfigure(encoding="utf-8")
+plugin = Plugin()
 
 
-def reply(msg_id, result=None, error=None):
-    message = {"jsonrpc": "2.0", "id": msg_id}
-    if error is not None:
-        message["error"] = error
-    else:
-        message["result"] = result
-    sys.stdout.write(json.dumps(message, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+@plugin.command("hello")
+def hello(ctx):
+    print(f"hello from {ctx.command_id}")  # goes to the app's log
+    if not ctx.items:
+        return "Nothing is selected"
+    rest = f" and {len(ctx.items) - 1} more" if len(ctx.items) > 1 else ""
+    return f"Selected: {ctx.items[0].name}{rest}"
 
 
-def execute(params):
-    items = params["context"]["items"]
-    if params["commandId"] == "fail":
-        return None, {"code": 1, "message": "Failed on purpose"}
-    if not items:
-        return {"message": "Nothing is selected"}, None
-    first = items[0]["name"]
-    rest = f" and {len(items) - 1} more" if len(items) > 1 else ""
-    return {"message": f"Selected: {first}{rest}"}, None
+@plugin.command("fail")
+def fail(ctx):
+    raise CommandError("Failed on purpose")
 
 
-for line in sys.stdin:
-    request = json.loads(line)
-    method = request.get("method")
-    print(f"received {method}", file=sys.stderr, flush=True)
-    if method == "initialize":
-        reply(request["id"], {"apiVersion": 1})
-    elif method == "command.execute":
-        result, error = execute(request["params"])
-        reply(request["id"], result, error)
-    elif method == "shutdown":
-        reply(request["id"], {})
-        break
+plugin.run()
