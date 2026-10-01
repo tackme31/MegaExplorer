@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.sample.read-items",
+  "name": "Sample: Read items",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
+  "commands": [
+    { "id": "details", "title": "Show details (items.get)" },
+    { "id": "count-folder", "title": "Count the folder (items.children)" }
+  ]
+}

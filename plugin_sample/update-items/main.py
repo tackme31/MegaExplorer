@@ -1,4 +1,10 @@
-"""Changes items with items.update: tags, favourites."""
+"""Update items: items.update -- tags and favourites.
+
+Shows:
+- ctx.update(item, tags_add=[...]) / tags_remove / favourite / name / description
+- only what is passed is changed, and adding a tag the item already has is a no-op
+- after a command that changed something, the app re-reads the folder on screen
+"""
 
 from megaexplorer_plugin import Plugin
 

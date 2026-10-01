@@ -1,4 +1,14 @@
-"""Reports progress and honours Cancel."""
+"""Progress and cancel: the progress dialog, ui.progress and $/cancel.
+
+Shows:
+- "progress": true on a command in plugin.json -> the app opens a progress dialog
+  once the command has run for 300 ms (so "quick" never shows one)
+- ctx.progress(current, total, message): a bar with "12 / 40"; without a total
+  the bar just moves. Report as often as you like; the app redraws a few times a second.
+- ctx.check_cancelled(): raises once the user pressed Cancel, and the helper tells
+  the app the command was cancelled (no toast)
+- "stubborn" never checks: after 10 s the dialog offers Force quit, which kills it
+"""
 
 import time
 
