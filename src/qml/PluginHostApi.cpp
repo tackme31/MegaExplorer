@@ -333,31 +333,40 @@ void PluginHostApi::itemsUpdate(const QJsonObject& params, const Done& done) con
                                      "without ','")));
             return;
         }
-        const std::set<std::string> present(node.tags.begin(), node.tags.end());
-        const std::set<std::string> removing(remove->begin(), remove->end());
+        // The result is "current minus remove, plus add", so a tag in both lists stays.
+        // Keys match the SDK's own add/remove lookup: case-insensitive, accent-sensitive.
+        const auto key = [](const std::string& tag) {
+            return QString::fromStdString(tag).toCaseFolded();
+        };
+        std::set<QString> removeKeys;
+        for (const std::string& tag : *remove)
+            removeKeys.insert(key(tag));
+        std::set<QString> addKeys;
+        for (const std::string& tag : *add)
+            addKeys.insert(key(tag));
+        std::set<QString> presentKeys;
+        std::vector<std::string> removing;
+        for (const std::string& tag : node.tags)
+        {
+            const QString k = key(tag);
+            presentKeys.insert(k);
+            if (removeKeys.count(k) && !addKeys.count(k))
+                removing.push_back(tag);
+        }
+        std::set<QString> addedKeys;
         std::vector<std::string> adding;
         for (const std::string& tag : *add)
         {
-            if (removing.count(tag))
-            {
-                done(fail(kInvalidParams,
-                          QStringLiteral("tag \"%1\" is both added and removed")
-                              .arg(QString::fromStdString(tag))));
-                return;
-            }
-            if (!present.count(tag) &&
-                std::find(adding.begin(), adding.end(), tag) == adding.end())
+            const QString k = key(tag);
+            if (!presentKeys.count(k) && addedKeys.insert(k).second)
                 adding.push_back(tag);
         }
         // Removes first: a replacement must free its slots and bytes before the SDK
         // checks the 10-tag and 3000-byte limits for the adds.
         for (const std::string& tag : removing)
-        {
-            if (present.count(tag))
-                chain->steps.push_back([client, handle, tag](std::function<void(Result<void>)> onDone) {
-                    client->removeNodeTag(handle, tag, std::move(onDone));
-                });
-        }
+            chain->steps.push_back([client, handle, tag](std::function<void(Result<void>)> onDone) {
+                client->removeNodeTag(handle, tag, std::move(onDone));
+            });
         for (const std::string& tag : adding)
             chain->steps.push_back([client, handle, tag](std::function<void(Result<void>)> onDone) {
                 client->addNodeTag(handle, tag, std::move(onDone));

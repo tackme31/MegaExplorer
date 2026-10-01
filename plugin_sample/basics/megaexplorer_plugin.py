@@ -299,7 +299,12 @@ class Context:
 
     def update(self, x, name=None, description=None, favourite=None, tags_add=None, tags_remove=None):
         """Changes item x and returns it as it is afterwards. Only what you pass
-        is touched; adding a tag it has, or removing one it lacks, is a no-op."""
+        is touched; adding a tag it has, or removing one it lacks, is a no-op.
+
+        The tags end up as "current minus tags_remove, plus tags_add", so a tag
+        in both lists is kept. Tags match ignoring case, as MEGA compares them.
+        Only the difference is sent, so replacing a set of tags is simply
+        tags_remove=<all the old ones>, tags_add=<all the new ones>."""
         params = {"handle": _handle(x)}
         if name is not None:
             params["name"] = name

@@ -299,14 +299,56 @@ TEST_F(PluginHostApiTest, ItemsUpdateRejectsBadParamsBeforeSendingAnything)
          {QStringLiteral("tags"), QJsonObject{{QStringLiteral("add"), QJsonArray{QStringLiteral("a,b")}}}}});
     EXPECT_EQ(comma.errorCode, -32602);
     EXPECT_FALSE(comma.mutated);
+}
 
-    const PluginHostApi::Reply both = call(
+TEST_F(PluginHostApiTest, ItemsUpdateKeepsATagThatIsBothRemovedAndAdded)
+{
+    // A retag: drop every old plugin tag, add every new one; only the difference is sent.
+    NodeSnapshot before = node(7, "a.jpg", false);
+    before.tags = {"mine", "wd:1girl smile", "rating:general"};
+    EXPECT_CALL(*mClient, getNodeSnapshot(7)).WillRepeatedly(Return(Result<NodeSnapshot>::ok(before)));
+    EXPECT_CALL(*mClient, removeNodeTag(7, "rating:general", _)).WillOnce(succeed());
+    EXPECT_CALL(*mClient, addNodeTag(7, "rating:sensitive", _)).WillOnce(succeed());
+    EXPECT_CALL(*mClient, removeNodeTag(7, "wd:1girl smile", _)).Times(0);
+    EXPECT_CALL(*mClient, addNodeTag(7, "wd:1girl smile", _)).Times(0);
+    EXPECT_CALL(*mClient, removeNodeTag(7, "mine", _)).Times(0);
+
+    const PluginHostApi::Reply reply = call(
         QStringLiteral("items.update"),
         {{QStringLiteral("handle"), QStringLiteral("h7")},
          {QStringLiteral("tags"),
-          QJsonObject{{QStringLiteral("add"), QJsonArray{QStringLiteral("x")}},
-                      {QStringLiteral("remove"), QJsonArray{QStringLiteral("x")}}}}});
-    EXPECT_EQ(both.errorCode, -32602);
+          QJsonObject{{QStringLiteral("add"),
+                       QJsonArray{QStringLiteral("wd:1girl smile"), QStringLiteral("rating:sensitive")}},
+                      {QStringLiteral("remove"),
+                       QJsonArray{QStringLiteral("wd:1girl smile"), QStringLiteral("rating:general")}}}}});
+
+    ASSERT_FALSE(reply.errorCode.has_value());
+    EXPECT_TRUE(reply.mutated);
+}
+
+TEST_F(PluginHostApiTest, ItemsUpdateMatchesTagsIgnoringCaseButNotAccents)
+{
+    NodeSnapshot before = node(7, "a.jpg", false);
+    before.tags = {"Long_Hair", "Old", "cafe"};
+    EXPECT_CALL(*mClient, getNodeSnapshot(7)).WillRepeatedly(Return(Result<NodeSnapshot>::ok(before)));
+    // The SDK would answer EEXIST to adding "long_hair" next to "Long_Hair".
+    EXPECT_CALL(*mClient, addNodeTag(7, "long_hair", _)).Times(0);
+    // A remove names the tag as the item stores it, whatever case the plugin used.
+    EXPECT_CALL(*mClient, removeNodeTag(7, "Old", _)).WillOnce(succeed());
+    // The SDK compares add/remove with accents, so "cafe" with an accent is a different tag.
+    EXPECT_CALL(*mClient, addNodeTag(7, "caf\xC3\xA9", _)).WillOnce(succeed());
+    EXPECT_CALL(*mClient, addNodeTag(7, "CAF\xC3\x89", _)).Times(0);
+
+    const PluginHostApi::Reply reply = call(
+        QStringLiteral("items.update"),
+        {{QStringLiteral("handle"), QStringLiteral("h7")},
+         {QStringLiteral("tags"),
+          QJsonObject{{QStringLiteral("add"),
+                       QJsonArray{QStringLiteral("long_hair"), QString::fromUtf8("caf\xC3\xA9"), QString::fromUtf8("CAF\xC3\x89")}},
+                      {QStringLiteral("remove"), QJsonArray{QStringLiteral("OLD")}}}}});
+
+    ASSERT_FALSE(reply.errorCode.has_value());
+    EXPECT_TRUE(reply.mutated);
 }
 
 TEST_F(PluginHostApiTest, ItemsUpdateWithNothingToChangeIsANoOp)
