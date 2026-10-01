@@ -21,12 +21,12 @@ def reply(msg_id, result=None, error=None):
 def execute(params):
     items = params["context"]["items"]
     if params["commandId"] == "fail":
-        return None, {"code": 1, "message": "わざと失敗しました"}
+        return None, {"code": 1, "message": "Failed on purpose"}
     if not items:
-        return {"message": "何も選択されていません"}, None
+        return {"message": "Nothing is selected"}, None
     first = items[0]["name"]
-    rest = f" ほか {len(items) - 1} 件" if len(items) > 1 else ""
-    return {"message": f"選択: {first}{rest}"}, None
+    rest = f" and {len(items) - 1} more" if len(items) > 1 else ""
+    return {"message": f"Selected: {first}{rest}"}, None
 
 
 for line in sys.stdin:
