@@ -21,7 +21,7 @@ def tag_extension(ctx):
 
 @plugin.command("clear-tags")
 def clear_tags(ctx):
-    tagged = [item for item in ctx.get_many(ctx.items) if item.tags]
+    tagged = [item for item in ctx.items if item.tags]
     for item in tagged:
         ctx.update(item, tags_remove=item.tags)
     return f"Cleared tags on {len(tagged)} item(s)"

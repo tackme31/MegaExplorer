@@ -176,8 +176,8 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
     for (const QVariant& value : entries)
     {
         const quint64 handle = value.toMap().value(QStringLiteral("handle")).toULongLong();
-        if (std::optional<QJsonObject> ref = mHostApi.itemRef(handle))
-            items.append(*ref);
+        if (std::optional<QJsonObject> item = mHostApi.item(handle))
+            items.append(*item);
     }
     const QJsonObject context{{QStringLiteral("site"), QStringLiteral("selection")},
                               {QStringLiteral("items"), items}};

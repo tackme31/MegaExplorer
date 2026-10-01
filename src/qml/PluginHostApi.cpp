@@ -33,6 +33,26 @@ QString typeOf(const NodeSnapshot& node)
 {
     return node.isFolder ? QStringLiteral("folder") : QStringLiteral("file");
 }
+
+QJsonObject toItem(const IMegaClient& client, const NodeSnapshot& n)
+{
+    QJsonArray tags;
+    for (const std::string& tag : n.tags)
+        tags.append(QString::fromStdString(tag));
+    return QJsonObject{
+        {QStringLiteral("handle"), QString::fromStdString(client.handleToBase64(n.handle))},
+        {QStringLiteral("name"), QString::fromStdString(n.name)},
+        {QStringLiteral("type"), typeOf(n)},
+        {QStringLiteral("parent"),
+         n.hasParent ? QJsonValue(QString::fromStdString(client.handleToBase64(n.parentHandle)))
+                     : QJsonValue(QJsonValue::Null)},
+        {QStringLiteral("size"), static_cast<double>(n.sizeBytes)},
+        {QStringLiteral("mtime"), static_cast<double>(n.modificationTime)},
+        {QStringLiteral("path"), QString::fromStdString(n.path)},
+        {QStringLiteral("favourite"), n.isFavourite},
+        {QStringLiteral("description"), QString::fromStdString(n.description)},
+        {QStringLiteral("tags"), tags}};
+}
 } // namespace
 
 PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiContext)
@@ -57,43 +77,16 @@ void PluginHostApi::call(const QString& method,
         done(fail(kMethodNotFound, QStringLiteral("Method not found: %1").arg(method)));
 }
 
-std::optional<QJsonObject> PluginHostApi::itemRef(std::uint64_t handle) const
+std::optional<QJsonObject> PluginHostApi::item(std::uint64_t handle) const
 {
     const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle);
     if (!node.success)
         return std::nullopt;
-    const NodeSnapshot& n = node.value();
-    return QJsonObject{
-        {QStringLiteral("handle"), QString::fromStdString(mClient->handleToBase64(n.handle))},
-        {QStringLiteral("name"), QString::fromStdString(n.name)},
-        {QStringLiteral("type"), typeOf(n)},
-        {QStringLiteral("parent"),
-         n.hasParent ? QJsonValue(QString::fromStdString(mClient->handleToBase64(n.parentHandle)))
-                     : QJsonValue(QJsonValue::Null)}};
+    return toItem(*mClient, node.value());
 }
 
 namespace
 {
-QJsonObject toItem(const IMegaClient& client, const NodeSnapshot& n)
-{
-    QJsonArray tags;
-    for (const std::string& tag : n.tags)
-        tags.append(QString::fromStdString(tag));
-    return QJsonObject{
-        {QStringLiteral("handle"), QString::fromStdString(client.handleToBase64(n.handle))},
-        {QStringLiteral("name"), QString::fromStdString(n.name)},
-        {QStringLiteral("type"), typeOf(n)},
-        {QStringLiteral("parent"),
-         n.hasParent ? QJsonValue(QString::fromStdString(client.handleToBase64(n.parentHandle)))
-                     : QJsonValue(QJsonValue::Null)},
-        {QStringLiteral("size"), static_cast<double>(n.sizeBytes)},
-        {QStringLiteral("mtime"), static_cast<double>(n.modificationTime)},
-        {QStringLiteral("path"), QString::fromStdString(n.path)},
-        {QStringLiteral("favourite"), n.isFavourite},
-        {QStringLiteral("description"), QString::fromStdString(n.description)},
-        {QStringLiteral("tags"), tags}};
-}
-
 // value as a node handle, or the error reply to send instead.
 std::optional<PluginHostApi::Reply>
 decodeHandle(const IMegaClient& client, const QJsonValue& value, std::uint64_t* handle)

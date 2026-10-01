@@ -89,9 +89,9 @@ _ERRORS = {_NOT_FOUND: NotFound, _INVALID_PARAMS: InvalidParams, _MEGA_ERROR: Me
 class Item:
     """An item in the account.
 
-    Items from ctx.items carry only handle, name, type and parent, as they were
-    when the menu was clicked. Items returned by get(), children() and update()
-    also carry size, mtime, path, favourite, description and tags.
+    Every item carries handle, name, type, parent, size, mtime, path, favourite,
+    description and tags. Those in ctx.items are as they were when the menu was
+    clicked; call get() for the state now.
     """
 
     def __init__(self, data):
@@ -236,7 +236,7 @@ class Context:
         self.invocation_id = params.get("invocationId")
         context = params.get("context") or {}
         self.site = context.get("site")
-        self.items = [Item(ref) for ref in context.get("items", [])]
+        self.items = [Item(data) for data in context.get("items", [])]
         self.plugin_dir = Path(plugin_info["dir"]) if plugin_info.get("dir") else None
 
     @property

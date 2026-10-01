@@ -2,7 +2,7 @@
 
 The smallest plugin there is. Shows:
 - a command function returning a string -> the app shows it as a toast
-- ctx.items: what was selected when the menu was clicked (handle, name, type, parent)
+- ctx.items: what was selected when the menu was clicked (name, type, tags, ...)
 - raising CommandError -> the app shows "<plugin>: <message>" as an error toast
 - print() -> the app's log (MegaExplorer.log, prefixed [plugin:<id>])
 """

@@ -1,8 +1,10 @@
 """Read items: items.get and items.children.
 
 Shows:
-- ctx.get(item): the item as it is now, with path, size, tags, favourite...
-  (ctx.items only has what the menu knew when it was clicked)
+- ctx.items: the selection, already with path, size, tags, favourite...
+  as they were when the menu was clicked
+- ctx.get(x): an item that is not in the selection (here: the parent folder),
+  or the state of a selected one now
 - ctx.children(folder): every child, fetched page by page as the loop asks
 """
 
@@ -22,7 +24,7 @@ def human_size(size):
 def details(ctx):
     if not ctx.items:
         return "Nothing is selected"
-    item = ctx.get(ctx.items[0])
+    item = ctx.items[0]
     parts = [item.path]
     if item.is_file:
         parts.append(human_size(item.size))

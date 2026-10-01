@@ -185,17 +185,37 @@ TEST_F(PluginHostApiTest, UnknownMethodIsMethodNotFound)
     EXPECT_EQ(call(QStringLiteral("items.nope"), {}).errorCode, -32601);
 }
 
-TEST_F(PluginHostApiTest, ItemRefCarriesParentAndIsNullForAMissingNode)
+TEST_F(PluginHostApiTest, ContextItemIsAFullItemAndIsNullForAMissingNode)
 {
     NodeSnapshot root = node(1, "", true);
     root.hasParent = false;
+    NodeSnapshot file = node(2, "a.jpg", false);
+    file.tags = {"wd:1girl"};
+    file.description = "d";
     EXPECT_CALL(*mClient, getNodeSnapshot(1)).WillOnce(Return(Result<NodeSnapshot>::ok(root)));
+    EXPECT_CALL(*mClient, getNodeSnapshot(2)).WillRepeatedly(Return(Result<NodeSnapshot>::ok(file)));
     EXPECT_CALL(*mClient, getNodeSnapshot(99))
         .WillOnce(Return(Result<NodeSnapshot>::fail("gone", -9)));
-    const std::optional<QJsonObject> ref = mApi.itemRef(1);
-    ASSERT_TRUE(ref.has_value());
-    EXPECT_TRUE(ref->value(QStringLiteral("parent")).isNull());
-    EXPECT_FALSE(mApi.itemRef(99).has_value());
+
+    const std::optional<QJsonObject> rootItem = mApi.item(1);
+    ASSERT_TRUE(rootItem.has_value());
+    EXPECT_TRUE(rootItem->value(QStringLiteral("parent")).isNull());
+
+    // The same shape items.get returns, tags and description included.
+    const std::optional<QJsonObject> fileItem = mApi.item(2);
+    ASSERT_TRUE(fileItem.has_value());
+    EXPECT_EQ(fileItem->value(QStringLiteral("tags")).toArray(), QJsonArray{QStringLiteral("wd:1girl")});
+    EXPECT_EQ(fileItem->value(QStringLiteral("description")).toString(), QStringLiteral("d"));
+    EXPECT_TRUE(fileItem->contains(QStringLiteral("size")));
+    EXPECT_EQ(*fileItem, call(QStringLiteral("items.get"),
+                              {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h2")}}})
+                             .result.toObject()
+                             .value(QStringLiteral("items"))
+                             .toArray()
+                             .at(0)
+                             .toObject());
+
+    EXPECT_FALSE(mApi.item(99).has_value());
 }
 
 // ---- items.update -------------------------------------------------------

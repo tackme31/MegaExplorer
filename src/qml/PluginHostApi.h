@@ -45,9 +45,9 @@ public:
               const QString& tempDir,
               const Done& done) const;
 
-    // The context's ItemRef form: {handle, name, type, parent}. nullopt when the
-    // node no longer exists.
-    std::optional<QJsonObject> itemRef(std::uint64_t handle) const;
+    // The Item form items.get returns, also used for the context's items. nullopt
+    // when the node no longer exists.
+    std::optional<QJsonObject> item(std::uint64_t handle) const;
 
 private:
     Reply itemsGet(const QJsonObject& params) const;
