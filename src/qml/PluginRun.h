@@ -52,6 +52,8 @@ private:
     void handleResponse(const QJsonObject& message);
     void finish(const QString& outcome, const QString& message);
     void stopProcess();
+    // The process and everything it started.
+    void killAll();
 
     PluginManifest mManifest;
     QString mCommandId;
@@ -59,6 +61,8 @@ private:
     QProcess mProcess;
     QTimer* mKillTimer;
     QTimer* mInitTimer;
+    // A Win32 HANDLE; void* keeps <windows.h> out of this header.
+    void* mJob = nullptr;
     QByteArray mStdoutBuffer;
     QByteArray mStderrBuffer;
     Stage mStage = Stage::Initializing;
