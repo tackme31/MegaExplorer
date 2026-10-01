@@ -173,3 +173,40 @@ TEST(NodeDetailsServiceTest, PassesIsRootToBothReadsSoARootCanBeInspected)
     EXPECT_TRUE(captured.result.value().hasContents);
     EXPECT_EQ(captured.result.value().contents.fileCount, 5u);
 }
+
+TEST(NodeDetailsServiceTest, CarriesTheNodesTags)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    NodeSnapshot node;
+    node.tags = {"wd:1girl smile", "rating:general"};
+    EXPECT_CALL(*mockClient, getNodeSnapshot(42u))
+        .WillOnce(::testing::Return(Result<NodeSnapshot>::ok(node)));
+    EXPECT_CALL(*mockClient, getPath(42u, false, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(
+            Result<std::vector<PathSegment>>::ok(pathOf({"a.jpg"}))));
+
+    NodeDetailsService service(mockClient);
+    Captured captured;
+
+    service.loadDetails(42, false, false, captureInto(captured));
+
+    ASSERT_TRUE(captured.result.success);
+    EXPECT_EQ(captured.result.value().tags,
+              (std::vector<std::string>{"wd:1girl smile", "rating:general"}));
+}
+
+TEST(NodeDetailsServiceTest, DoesNotLookUpTagsForARoot)
+{
+    auto mockClient = std::make_shared<MockMegaClient>();
+    EXPECT_CALL(*mockClient, getNodeSnapshot(::testing::_)).Times(0);
+    EXPECT_CALL(*mockClient, getPath(0u, true, ::testing::_))
+        .WillOnce(::testing::InvokeArgument<2>(Result<std::vector<PathSegment>>::ok(pathOf({}))));
+
+    NodeDetailsService service(mockClient);
+    Captured captured;
+
+    service.loadDetails(0, true, false, captureInto(captured));
+
+    ASSERT_TRUE(captured.result.success);
+    EXPECT_TRUE(captured.result.value().tags.empty());
+}

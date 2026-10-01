@@ -76,6 +76,11 @@ bool PropertiesController::failed() const
     return mFailed;
 }
 
+QStringList PropertiesController::tags() const
+{
+    return mTags;
+}
+
 void PropertiesController::show(quint64 handle,
                                 bool isRoot,
                                 const QString& name,
@@ -99,6 +104,7 @@ void PropertiesController::show(quint64 handle,
     mFolderCount = -1;
     mLoading = true;
     mFailed = false;
+    mTags.clear();
     emit changed();
     emit showRequested();
 
@@ -125,6 +131,8 @@ void PropertiesController::show(quint64 handle,
                 const NodeDetails& details = result.value();
                 mParentPath = QString::fromStdString(details.parentPath);
                 mRootKind = static_cast<int>(details.rootKind);
+                for (const std::string& tag : details.tags)
+                    mTags << QString::fromStdString(tag);
                 if (details.hasContents)
                 {
                     mSizeBytes = static_cast<qulonglong>(details.contents.sizeBytes);

@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include <cstdint>
 #include <memory>
@@ -44,6 +45,7 @@ class PropertiesController : public QObject
     // Whether the lookup came back failed. The dialog stays open and says so rather
     // than raising a toast: the question was asked in a window that is still there.
     Q_PROPERTY(bool failed READ failed NOTIFY changed)
+    Q_PROPERTY(QStringList tags READ tags NOTIFY changed)
 
 public:
     explicit PropertiesController(std::shared_ptr<NodeDetailsService> service,
@@ -61,6 +63,7 @@ public:
     int folderCount() const;
     bool loading() const;
     bool failed() const;
+    QStringList tags() const;
 
     // Publishes what the row already knows, starts the lookup, and asks the dialog
     // to open. Everything but the handle comes from the caller because the listing
@@ -98,4 +101,5 @@ private:
     int mFolderCount = -1;
     bool mLoading = false;
     bool mFailed = false;
+    QStringList mTags;
 };

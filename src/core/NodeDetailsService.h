@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 // What the information dialog shows about one node beyond what its row already
 // carries: where it lives, and -- for a folder -- what is inside it.
@@ -23,6 +24,7 @@ struct NodeDetails
     // Zeroed and meaningless for a file; hasContents says which.
     FolderInfo contents;
     bool hasContents = false;
+    std::vector<std::string> tags;
 };
 
 // Gathers the two reads the information dialog needs that a listing row cannot

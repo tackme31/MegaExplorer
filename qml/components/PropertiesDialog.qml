@@ -79,6 +79,7 @@ Dialog {
     }
 
     GridLayout {
+        id: grid
         columns: 2
         columnSpacing: Theme.spacing.lg
         rowSpacing: Theme.spacing.md
@@ -145,6 +146,76 @@ Dialog {
         Label {
             visible: !root.properties.isFolder
             text: root.modifiedText()
+        }
+
+        Label {
+            Layout.alignment: Qt.AlignTop
+            text: qsTr("Tags")
+            color: Theme.color.textSecondary
+        }
+        ColumnLayout {
+            Layout.preferredWidth: root.properties.tags.length > 0 ? root.valueWidth : -1
+            Layout.maximumWidth: root.valueWidth
+            spacing: Theme.spacing.sm
+
+            Label {
+                visible: root.properties.tags.length === 0
+                text: root.pendingText() || qsTr("None")
+            }
+
+            // One line each, elided; the chevron (or the line) opens one tag in
+            // full, selectable so it can be copied.
+            Repeater {
+                model: root.properties.tags
+
+                delegate: RowLayout {
+                    id: tagRow
+
+                    required property string modelData
+                    property bool expanded: false
+
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.sm
+
+                    Label {
+                        Layout.alignment: Qt.AlignTop
+                        Layout.topMargin: 3
+                        font.family: Theme.font.iconFamily
+                        font.pixelSize: Theme.font.caption
+                        color: Theme.color.textSecondary
+                        text: tagRow.expanded ? Theme.glyph.chevronDown : Theme.glyph.chevronRight
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: tagRow.expanded = !tagRow.expanded
+                        }
+                    }
+                    Label {
+                        id: collapsedTag
+                        visible: !tagRow.expanded
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        text: tagRow.modelData
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: tagRow.expanded = true
+                        }
+                    }
+                    TextEdit {
+                        visible: tagRow.expanded
+                        Layout.fillWidth: true
+                        readOnly: true
+                        selectByMouse: true
+                        wrapMode: TextEdit.Wrap
+                        color: Theme.color.text
+                        font: collapsedTag.font
+                        text: tagRow.modelData
+                    }
+                }
+            }
         }
     }
 

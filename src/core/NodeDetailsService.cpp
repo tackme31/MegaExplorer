@@ -20,11 +20,21 @@ void NodeDetailsService::loadDetails(std::uint64_t handle,
     // an SDK thread -- deliberately holds no client: anything added there that calls
     // back into one needs its own keep-alive.
     //
+    std::vector<std::string> tags;
+    if (!isRoot)
+    {
+        if (const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle); node.success)
+            tags = node.value().tags;
+    }
     mClient->getPath(
         handle,
         isRoot,
-        [client = mClient, handle, isRoot, isFolder, onDone = std::move(onDone)](
-            Result<std::vector<PathSegment>> pathResult) {
+        [client = mClient,
+         handle,
+         isRoot,
+         isFolder,
+         tags = std::move(tags),
+         onDone = std::move(onDone)](Result<std::vector<PathSegment>> pathResult) {
             if (!pathResult.success)
             {
                 onDone(Result<NodeDetails>::fail(std::move(pathResult.errorMessage),
@@ -34,6 +44,7 @@ void NodeDetailsService::loadDetails(std::uint64_t handle,
 
             const std::vector<PathSegment>& segments = pathResult.value();
             NodeDetails details;
+            details.tags = tags;
             if (!segments.empty())
                 details.rootKind = segments.front().kind;
             // [1, size-1): segment 0 is the nameless root sentinel and the last is
