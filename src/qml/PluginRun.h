@@ -38,6 +38,10 @@ public:
 signals:
     // changed: whether any write reached the account, so the view is worth re-reading.
     void finished(const QString& outcome, const QString& message, bool changed);
+    // initialize was answered and command.execute sent.
+    void executionStarted();
+    // From ui.progress; current and total are -1 when the plugin left them out.
+    void progressReported(qint64 current, qint64 total, const QString& message);
 
 private:
     enum class Stage

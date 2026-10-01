@@ -34,6 +34,16 @@ TEST(PluginManifestTest, ParsesAValidManifest)
     EXPECT_EQ(manifest->commands[1].title, QStringLiteral("B"));
 }
 
+TEST(PluginManifestTest, ReadsTheProgressFlagPerCommand)
+{
+    QByteArray json = kValid;
+    json.replace(R"("title": "B" })", R"("title": "B", "progress": true })");
+    const auto manifest = parsePluginManifest(json, QStringLiteral("C:/p"));
+    ASSERT_TRUE(manifest.has_value());
+    EXPECT_FALSE(manifest->commands[0].progress);
+    EXPECT_TRUE(manifest->commands[1].progress);
+}
+
 TEST(PluginManifestTest, RejectsBrokenJson)
 {
     EXPECT_TRUE(errorFor("{").contains(QStringLiteral("JSON")));

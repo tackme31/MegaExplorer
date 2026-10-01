@@ -305,6 +305,7 @@ qt_add_qml_module(MegaExplorerQml
         qml/components/NameConflictDialog.qml
         qml/components/NewFolderDialog.qml
         qml/components/NodeDropArea.qml
+        qml/components/PluginProgressDialog.qml
         qml/components/PreviewPane.qml
         qml/components/PropertiesDialog.qml
         qml/components/PublicLinkDialog.qml

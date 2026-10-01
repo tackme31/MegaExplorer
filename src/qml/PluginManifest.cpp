@@ -61,7 +61,8 @@ parsePluginManifest(const QByteArray& json, const QString& dir, QString* error)
     {
         const QJsonObject obj = value.toObject();
         PluginCommand command{obj.value(QStringLiteral("id")).toString(),
-                              obj.value(QStringLiteral("title")).toString()};
+                              obj.value(QStringLiteral("title")).toString(),
+                              obj.value(QStringLiteral("progress")).toBool()};
         if (command.id.isEmpty() || command.id.contains(QLatin1Char('/')) ||
             command.title.isEmpty())
             return fail(error,

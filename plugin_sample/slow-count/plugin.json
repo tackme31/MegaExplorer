@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.slow-count",
+  "name": "Slow count",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
+  "commands": [
+    { "id": "count", "title": "Count to 40 slowly", "progress": true },
+    { "id": "spin", "title": "Work without a total", "progress": true },
+    { "id": "quick", "title": "Finish at once", "progress": true }
+  ]
+}

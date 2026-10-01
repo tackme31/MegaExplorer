@@ -295,6 +295,10 @@ ApplicationWindow {
         properties: propertiesController
     }
 
+    PluginProgressDialog {
+        plugins: pluginController
+    }
+
     ConfirmUploadDialog {
         uploads: uploadController
     }

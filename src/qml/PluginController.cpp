@@ -3,10 +3,12 @@
 #include "app/Logging.h"
 #include "PluginRun.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QTimer>
 #include <QVariantMap>
 
 #include <algorithm>
@@ -15,13 +17,20 @@
 namespace
 {
 const QString kActionPrefix = QStringLiteral("plugin:");
+// A command that finishes sooner never shows the dialog, so quick ones don't flash it.
+constexpr int kProgressShowDelayMs = 300;
+constexpr int kProgressUpdateIntervalMs = 100;
 } // namespace
 
 PluginController::PluginController(std::shared_ptr<IMegaClient> client,
                                    QString pluginsDir,
                                    QObject* parent)
-    : QObject(parent), mHostApi(std::move(client), this), mPluginsDir(std::move(pluginsDir))
+    : QObject(parent), mHostApi(std::move(client), this), mProgressUpdateTimer(new QTimer(this)),
+      mPluginsDir(std::move(pluginsDir))
 {
+    mProgressUpdateTimer->setSingleShot(true);
+    mProgressUpdateTimer->setInterval(kProgressUpdateIntervalMs);
+    connect(mProgressUpdateTimer, &QTimer::timeout, this, &PluginController::progressRunsChanged);
     reload();
 }
 
@@ -144,14 +153,94 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
             this,
             [this, pluginId, pluginName](const QString& outcome, const QString& message, bool changed) {
                 mRuns.remove(pluginId);
+                const auto progress =
+                    std::find_if(mProgress.begin(), mProgress.end(), [&](const ProgressState& state) {
+                        return state.pluginId == pluginId;
+                    });
+                if (progress != mProgress.end())
+                {
+                    const bool wasShown = progress->shown;
+                    mProgress.erase(progress);
+                    if (wasShown)
+                        emit progressRunsChanged();
+                }
                 ++mRunningRevision;
                 emit runningChanged();
                 emit commandFinished(pluginName, outcome, message, changed);
             });
+    const auto command =
+        std::find_if(plugin->commands.begin(), plugin->commands.end(), [&](const PluginCommand& c) {
+            return c.id == commandId;
+        });
+    if (command != plugin->commands.end() && command->progress)
+    {
+        mProgress.push_back(
+            {pluginId, pluginName, command->title, QDateTime::currentMSecsSinceEpoch()});
+        connect(run, &PluginRun::executionStarted, this, [this, pluginId] {
+            if (ProgressState* state = findProgress(pluginId))
+            {
+                state->preparing = false;
+                scheduleProgressUpdate();
+            }
+        });
+        connect(run,
+                &PluginRun::progressReported,
+                this,
+                [this, pluginId](qint64 current, qint64 total, const QString& message) {
+                    if (ProgressState* state = findProgress(pluginId))
+                    {
+                        state->current = current;
+                        state->total = total;
+                        state->message = message;
+                        scheduleProgressUpdate();
+                    }
+                });
+        QTimer::singleShot(kProgressShowDelayMs, this, [this, pluginId] {
+            if (ProgressState* state = findProgress(pluginId))
+            {
+                state->shown = true;
+                emit progressRunsChanged();
+            }
+        });
+    }
     mRuns.insert(pluginId, run);
     ++mRunningRevision;
     emit runningChanged();
     run->start();
+}
+
+QVariantList PluginController::progressRuns() const
+{
+    QVariantList runs;
+    for (const ProgressState& state : mProgress)
+    {
+        if (!state.shown)
+            continue;
+        runs.append(QVariantMap{{QStringLiteral("pluginName"), state.pluginName},
+                                {QStringLiteral("commandTitle"), state.commandTitle},
+                                {QStringLiteral("startedAt"), state.startedAt},
+                                {QStringLiteral("preparing"), state.preparing},
+                                {QStringLiteral("current"), state.current},
+                                {QStringLiteral("total"), state.total},
+                                {QStringLiteral("message"), state.message}});
+    }
+    return runs;
+}
+
+PluginController::ProgressState* PluginController::findProgress(const QString& pluginId)
+{
+    for (ProgressState& state : mProgress)
+    {
+        if (state.pluginId == pluginId)
+            return &state;
+    }
+    return nullptr;
+}
+
+void PluginController::scheduleProgressUpdate()
+{
+    if (!mProgressUpdateTimer->isActive())
+        mProgressUpdateTimer->start();
 }
 
 const PluginManifest* PluginController::findPlugin(const QString& pluginId) const

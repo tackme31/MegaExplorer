@@ -254,6 +254,20 @@ void PluginRun::handleMessage(const QJsonObject& message)
     const QString method = message.value(QStringLiteral("method")).toString();
     if (!message.contains(QStringLiteral("id")))
     {
+        if (method == QLatin1String("ui.progress") && mStage == Stage::Executing)
+        {
+            const QJsonObject params = message.value(QStringLiteral("params")).toObject();
+            const auto count = [&params](const char* key) -> qint64 {
+                const QJsonValue value = params.value(QLatin1String(key));
+                return value.isDouble() && value.toDouble() >= 0
+                           ? static_cast<qint64>(value.toDouble())
+                           : -1;
+            };
+            emit progressReported(count("current"),
+                                  count("total"),
+                                  params.value(QStringLiteral("message")).toString());
+            return;
+        }
         qCInfo(lcPlugin) << mManifest.id << "ignored notification" << method;
         return;
     }
@@ -312,6 +326,7 @@ void PluginRun::handleResponse(const QJsonObject& message)
              {{QStringLiteral("invocationId"), kInvocationId},
               {QStringLiteral("commandId"), mCommandId},
               {QStringLiteral("context"), mContext}});
+        emit executionStarted();
         return;
     }
     if (id == kExecuteId && mStage == Stage::Executing)

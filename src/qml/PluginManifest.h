@@ -10,6 +10,8 @@ struct PluginCommand
 {
     QString id;
     QString title;
+    // Shows the progress dialog while the command runs.
+    bool progress = false;
 };
 
 // One plugin's plugin.json (docs/investigations/STUDY_PLUGIN_V1_DESIGN.md §4).

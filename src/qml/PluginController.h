@@ -14,6 +14,7 @@
 
 class IMegaClient;
 class PluginRun;
+class QTimer;
 
 // The installed plugins (each a folder holding plugin.json under pluginsDir) and
 // running their commands. Menu IDs are "plugin:<pluginId>/<commandId>", which
@@ -26,6 +27,10 @@ class PluginController : public QObject
 
     // Bumped whenever a run starts or ends, so menu greying can re-evaluate.
     Q_PROPERTY(int runningRevision READ runningRevision NOTIFY runningChanged)
+    // Runs of "progress": true commands that have been going for a moment, oldest first:
+    // maps of pluginName, commandTitle, startedAt (ms since epoch), preparing,
+    // current and total (-1 when unknown), message.
+    Q_PROPERTY(QVariantList progressRuns READ progressRuns NOTIFY progressRunsChanged)
 
 public:
     PluginController(std::shared_ptr<IMegaClient> client,
@@ -41,6 +46,8 @@ public:
     {
         return mRunningRevision;
     }
+
+    QVariantList progressRuns() const;
 
     // Rescans pluginsDir. Plugins are kept in name order, which is menu order.
     Q_INVOKABLE void reload();
@@ -59,6 +66,7 @@ public:
 
 signals:
     void runningChanged();
+    void progressRunsChanged();
     // outcome and changed as PluginRun::finished.
     void commandFinished(const QString& pluginName,
                          const QString& outcome,
@@ -70,7 +78,25 @@ private:
     // Splits "plugin:<pluginId>/<commandId>"; false when actionId is not one.
     static bool splitActionId(const QString& actionId, QString* pluginId, QString* commandId);
 
+    struct ProgressState
+    {
+        QString pluginId;
+        QString pluginName;
+        QString commandTitle;
+        qint64 startedAt = 0;
+        bool preparing = true;
+        qint64 current = -1;
+        qint64 total = -1;
+        QString message;
+        bool shown = false;
+    };
+    ProgressState* findProgress(const QString& pluginId);
+    // Coalesces updates: a plugin may report every item, the dialog only needs a few a second.
+    void scheduleProgressUpdate();
+
     PluginHostApi mHostApi;
+    std::vector<ProgressState> mProgress;
+    QTimer* mProgressUpdateTimer;
     QString mPluginsDir;
     std::vector<PluginManifest> mPlugins;
     QHash<QString, PluginRun*> mRuns;
