@@ -753,6 +753,47 @@ int cmdRm(IMegaClient& client, const std::string& path)
     return 0;
 }
 
+int cmdUntag(IMegaClient& client, const std::string& path)
+{
+    const Result<Node> node = resolve(client, path);
+    if (!node.success)
+        return fail("resolve " + path + ": " + node.errorMessage);
+    if (node.value().isRoot)
+        return fail("refusing to untag the whole Cloud Drive");
+
+    int nodes = 0;
+    int removed = 0;
+    std::vector<std::uint64_t> pending{node.value().handle};
+    while (!pending.empty())
+    {
+        const Result<NodeSnapshot> snapshot = client.getNodeSnapshot(pending.back());
+        pending.pop_back();
+        if (!snapshot.success)
+            return fail("read node: " + snapshot.errorMessage);
+        const NodeSnapshot& n = snapshot.value();
+        ++nodes;
+        for (const std::string& tag : n.tags)
+        {
+            const Result<void> done = await<Result<void>>([&](auto onDone) {
+                client.removeNodeTag(n.handle, tag, std::move(onDone));
+            });
+            if (!done.success)
+                return fail("untag " + n.path, done);
+            ++removed;
+        }
+        if (n.isFolder)
+        {
+            const Result<std::vector<NodeSnapshot>> children = client.getChildSnapshots(n.handle);
+            if (!children.success)
+                return fail("list " + n.path + ": " + children.errorMessage);
+            for (const NodeSnapshot& child : children.value())
+                pending.push_back(child.handle);
+        }
+    }
+    std::printf("removed %d tag(s) from %d node(s) under %s\n", removed, nodes, path.c_str());
+    return 0;
+}
+
 int cmdMv(IMegaClient& client, const std::string& path, const std::string& destDir)
 {
     const Result<Node> node = resolve(client, path);
@@ -883,6 +924,7 @@ void usage()
                  "  put <local> <path>      upload one local file into a folder\n"
                  "  mv <path> <folder>      move a node into a folder, taken name or not\n"
                  "  rm <path>               move a node to the Rubbish bin\n"
+                 "  untag <path>            remove every tag from a node and everything under it\n"
                  "  fixture reset           rebuild the known test tree under "
                  "/MegaExplorerFixture\n"
                  "\n"
@@ -970,6 +1012,8 @@ int main(int argc, char* argv[])
         rc = cmdMv(*client, args[1], args[2]);
     else if (command == "rm" && args.size() > 1 && !emptyTarget)
         rc = cmdRm(*client, args[1]);
+    else if (command == "untag" && args.size() > 1 && !emptyTarget)
+        rc = cmdUntag(*client, args[1]);
     else if (command == "fixture" && args.size() > 1 && args[1] == "reset")
         rc = cmdFixtureReset(*client);
     else

@@ -42,6 +42,7 @@ megatool mkdir <path>            フォルダ作成。途中の階層も作る�
 megatool put <local> <path>      ローカルのファイル 1 個をフォルダへアップロード
 megatool mv <path> <folder>      ノードをフォルダへ移動。宛先に同名があっても止めない
 megatool rm <path>               ノードをゴミ箱へ移動
+megatool untag <path>            ノードと配下すべてのタグを外す（ルートは拒否）
 megatool fixture reset           /MegaExplorerFixture を既知の状態へ作り直す
 ```
 
