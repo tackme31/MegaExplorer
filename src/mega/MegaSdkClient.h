@@ -216,6 +216,10 @@ public:
 
     Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const override;
     Result<std::uint64_t> subtreeSize(std::uint64_t handle, bool isRoot) const override;
+    Result<NodeSnapshot> getNodeSnapshot(std::uint64_t handle) const override;
+    Result<std::vector<NodeSnapshot>> getChildSnapshots(std::uint64_t handle) const override;
+    std::string handleToBase64(std::uint64_t handle) const override;
+    Result<std::uint64_t> base64ToHandle(const std::string& base64) const override;
 
     Result<AccountIdentity> currentAccountIdentity() const override;
 

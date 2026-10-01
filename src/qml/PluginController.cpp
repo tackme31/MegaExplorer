@@ -17,8 +17,10 @@ namespace
 const QString kActionPrefix = QStringLiteral("plugin:");
 } // namespace
 
-PluginController::PluginController(QString pluginsDir, QObject* parent)
-    : QObject(parent), mPluginsDir(std::move(pluginsDir))
+PluginController::PluginController(std::shared_ptr<IMegaClient> client,
+                                   QString pluginsDir,
+                                   QObject* parent)
+    : QObject(parent), mHostApi(std::move(client)), mPluginsDir(std::move(pluginsDir))
 {
     reload();
 }
@@ -123,24 +125,19 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
     if (!plugin)
         return;
 
-    // Handles go out as decimal strings for now: a JSON number loses precision in
-    // JS-based plugins. Provisional until the base64 form lands with items.*.
+    // Re-read rather than taken from the row: the row has no parent, and a node
+    // deleted since the menu opened is dropped instead of handed over.
     QJsonArray items;
     for (const QVariant& value : entries)
     {
-        const QVariantMap entry = value.toMap();
-        items.append(QJsonObject{
-            {QStringLiteral("handle"),
-             QString::number(entry.value(QStringLiteral("handle")).toULongLong())},
-            {QStringLiteral("name"), entry.value(QStringLiteral("name")).toString()},
-            {QStringLiteral("type"),
-             entry.value(QStringLiteral("isFolder")).toBool() ? QStringLiteral("folder")
-                                                              : QStringLiteral("file")}});
+        const quint64 handle = value.toMap().value(QStringLiteral("handle")).toULongLong();
+        if (std::optional<QJsonObject> ref = mHostApi.itemRef(handle))
+            items.append(*ref);
     }
     const QJsonObject context{{QStringLiteral("site"), QStringLiteral("selection")},
                               {QStringLiteral("items"), items}};
 
-    auto* run = new PluginRun(*plugin, commandId, context, this);
+    auto* run = new PluginRun(*plugin, commandId, context, &mHostApi, this);
     const QString pluginName = plugin->name;
     connect(run,
             &PluginRun::finished,

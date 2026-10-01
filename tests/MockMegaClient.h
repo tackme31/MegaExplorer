@@ -193,6 +193,10 @@ public:
                 (const, override));
     MOCK_METHOD(Result<bool>, hasSubfolders, (std::uint64_t, bool), (const, override));
     MOCK_METHOD(Result<std::uint64_t>, subtreeSize, (std::uint64_t, bool), (const, override));
+    MOCK_METHOD(Result<NodeSnapshot>, getNodeSnapshot, (std::uint64_t), (const, override));
+    MOCK_METHOD(Result<std::vector<NodeSnapshot>>, getChildSnapshots, (std::uint64_t), (const, override));
+    MOCK_METHOD(std::string, handleToBase64, (std::uint64_t), (const, override));
+    MOCK_METHOD(Result<std::uint64_t>, base64ToHandle, (const std::string&), (const, override));
     MOCK_METHOD(Result<AccountIdentity>, currentAccountIdentity, (), (const, override));
     MOCK_METHOD(void,
                 getMyAvatar,

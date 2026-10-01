@@ -97,6 +97,7 @@ add_library(MegaExplorerCore STATIC
     src/core/FileEntry.h
     src/core/MegaErrorCodes.h
     src/core/NodeInfo.h
+    src/core/NodeSnapshot.h
     src/core/NodeRef.h
     src/core/PinnedFolder.h
     src/core/UploadOutcome.h
@@ -203,6 +204,8 @@ add_library(MegaExplorerQml STATIC
     src/qml/CacheController.cpp
     src/qml/OpenWithController.h
     src/qml/OpenWithController.cpp
+    src/qml/PluginHostApi.h
+    src/qml/PluginHostApi.cpp
     src/qml/PluginManifest.h
     src/qml/PluginManifest.cpp
     src/qml/PluginRun.h

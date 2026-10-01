@@ -1,4 +1,5 @@
 #pragma once
+#include "PluginHostApi.h"
 #include "PluginManifest.h"
 
 #include <QByteArray>
@@ -23,6 +24,7 @@ public:
     PluginRun(PluginManifest manifest,
               QString commandId,
               QJsonObject context,
+              const PluginHostApi* hostApi,
               QObject* parent = nullptr);
     ~PluginRun() override;
 
@@ -58,6 +60,8 @@ private:
     PluginManifest mManifest;
     QString mCommandId;
     QJsonObject mContext;
+    // Owned by PluginController, this run's parent. Not used once the run is being destroyed.
+    const PluginHostApi* mHostApi;
     QProcess mProcess;
     QTimer* mKillTimer;
     QTimer* mInitTimer;

@@ -4,6 +4,7 @@
 #include "FileEntry.h"
 #include "FolderInfo.h"
 #include "NodeInfo.h"
+#include "NodeSnapshot.h"
 #include "PathSegment.h"
 #include "RestoreTarget.h"
 #include "Result.h"
@@ -473,6 +474,17 @@ public:
     // getNumChildFiles() counts direct children only, and the recursive one
     // (getFolderInfo) is a request, not a read.
     virtual Result<std::uint64_t> subtreeSize(std::uint64_t handle, bool isRoot) const = 0;
+
+    // --- Plugin reads ---------------------------------------------------------
+    // In-memory, answered in-stack like hasSubfolders. Plugins name nodes by
+    // MEGA's 8-character base64 handle, the form a public link carries.
+
+    virtual Result<NodeSnapshot> getNodeSnapshot(std::uint64_t handle) const = 0;
+    // A folder's direct children in the SDK's default order. Fails on a file.
+    virtual Result<std::vector<NodeSnapshot>> getChildSnapshots(std::uint64_t handle) const = 0;
+    virtual std::string handleToBase64(std::uint64_t handle) const = 0;
+    // Fails on anything that is not a well-formed node handle.
+    virtual Result<std::uint64_t> base64ToHandle(const std::string& base64) const = 0;
 
     // --- Account-level reads -------------------------------------------------
 

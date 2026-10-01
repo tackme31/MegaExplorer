@@ -84,9 +84,10 @@ std::shared_ptr<JobStartupInfo> makeJobStartupInfo(HANDLE job)
 PluginRun::PluginRun(PluginManifest manifest,
                      QString commandId,
                      QJsonObject context,
+                     const PluginHostApi* hostApi,
                      QObject* parent)
     : QObject(parent), mManifest(std::move(manifest)), mCommandId(std::move(commandId)),
-      mContext(std::move(context)), mKillTimer(new QTimer(this)), mInitTimer(new QTimer(this))
+      mContext(std::move(context)), mHostApi(hostApi), mKillTimer(new QTimer(this)), mInitTimer(new QTimer(this))
 {
     mInitTimer->setSingleShot(true);
     mInitTimer->setInterval(kInitializeTimeoutMs);
@@ -249,20 +250,27 @@ void PluginRun::handleMessage(const QJsonObject& message)
         handleResponse(message);
         return;
     }
-    // No host methods yet: answer every request so the plugin is not left waiting.
     const QString method = message.value(QStringLiteral("method")).toString();
     if (!message.contains(QStringLiteral("id")))
     {
         qCInfo(lcPlugin) << mManifest.id << "ignored notification" << method;
         return;
     }
-    qCInfo(lcPlugin) << mManifest.id << "called unsupported method" << method;
-    const QJsonObject error{
-        {QStringLiteral("code"), -32601},
-        {QStringLiteral("message"), QStringLiteral("Method not found: %1").arg(method)}};
-    const QJsonObject reply{{QStringLiteral("jsonrpc"), QStringLiteral("2.0")},
-                            {QStringLiteral("id"), message.value(QStringLiteral("id"))},
-                            {QStringLiteral("error"), error}};
+    const PluginHostApi::Reply result =
+        mHostApi->call(method, message.value(QStringLiteral("params")).toObject());
+    QJsonObject reply{{QStringLiteral("jsonrpc"), QStringLiteral("2.0")},
+                      {QStringLiteral("id"), message.value(QStringLiteral("id"))}};
+    if (result.errorCode)
+    {
+        qCInfo(lcPlugin) << mManifest.id << method << "failed:" << result.errorMessage;
+        reply.insert(QStringLiteral("error"),
+                     QJsonObject{{QStringLiteral("code"), *result.errorCode},
+                                 {QStringLiteral("message"), result.errorMessage}});
+    }
+    else
+    {
+        reply.insert(QStringLiteral("result"), result.result);
+    }
     mProcess.write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n');
 }
 

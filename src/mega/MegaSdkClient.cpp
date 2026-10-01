@@ -142,6 +142,32 @@ FileEntry nodeToEntry(mega::MegaNode* node)
     return entry;
 }
 
+NodeSnapshot nodeToSnapshot(mega::MegaApi& api, mega::MegaNode* node)
+{
+    NodeSnapshot snapshot;
+    snapshot.handle = node->getHandle();
+    snapshot.name = node->getName() ? node->getName() : "";
+    snapshot.isFolder = node->isFolder();
+    snapshot.sizeBytes = node->isFile() ? static_cast<std::uint64_t>(node->getSize()) : 0;
+    snapshot.modificationTime = node->getModificationTime();
+    const mega::MegaHandle parent = node->getParentHandle();
+    snapshot.hasParent = parent != mega::INVALID_HANDLE;
+    snapshot.parentHandle = snapshot.hasParent ? parent : 0;
+    if (char* path = api.getNodePath(node))
+    {
+        snapshot.path = path;
+        delete[] path; // megaapi.h: "Use delete[] to release the memory"
+    }
+    snapshot.isFavourite = node->isFavourite();
+    snapshot.description = node->getDescription() ? node->getDescription() : "";
+    if (std::unique_ptr<mega::MegaStringList> tags{node->getTags()})
+    {
+        for (int i = 0; i < tags->size(); ++i)
+            snapshot.tags.emplace_back(tags->get(i));
+    }
+    return snapshot;
+}
+
 // Copies our SearchFilter onto the SDK's. Every facet is only touched when it is
 // narrowing something: MegaSearchFilter's "unset" defaults already mean "match
 // everything", and byCategory(FILE_TYPE_DEFAULT) is not the same as leaving it alone.
@@ -1605,6 +1631,57 @@ Result<std::uint64_t> MegaSdkClient::subtreeSize(std::uint64_t handle, bool isRo
     // negative can only mean the node went away between resolve and read.
     const long long size = mApi->getSize(node.get());
     return Result<std::uint64_t>::ok(size > 0 ? static_cast<std::uint64_t>(size) : 0);
+}
+
+Result<NodeSnapshot> MegaSdkClient::getNodeSnapshot(std::uint64_t handle) const
+{
+    if (mShuttingDown)
+        return Result<NodeSnapshot>::fail(kShutDownMessage, kClientShutDownCode);
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+        return Result<NodeSnapshot>::fail("No node with the given handle", MegaErrorCode::kENoEnt);
+    return Result<NodeSnapshot>::ok(nodeToSnapshot(*mApi, node.get()));
+}
+
+Result<std::vector<NodeSnapshot>> MegaSdkClient::getChildSnapshots(std::uint64_t handle) const
+{
+    if (mShuttingDown)
+        return Result<std::vector<NodeSnapshot>>::fail(kShutDownMessage, kClientShutDownCode);
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+        return Result<std::vector<NodeSnapshot>>::fail("No node with the given handle",
+                                                       MegaErrorCode::kENoEnt);
+    if (!node->isFolder())
+        return Result<std::vector<NodeSnapshot>>::fail("Not a folder", MegaErrorCode::kEArgs);
+
+    std::unique_ptr<mega::MegaNodeList> children(
+        mApi->getChildren(node.get(), mega::MegaApi::ORDER_DEFAULT_ASC));
+    std::vector<NodeSnapshot> snapshots;
+    if (children)
+    {
+        snapshots.reserve(static_cast<std::size_t>(children->size()));
+        for (int i = 0; i < children->size(); ++i)
+            snapshots.push_back(nodeToSnapshot(*mApi, children->get(i)));
+    }
+    return Result<std::vector<NodeSnapshot>>::ok(std::move(snapshots));
+}
+
+std::string MegaSdkClient::handleToBase64(std::uint64_t handle) const
+{
+    char* base64 = mega::MegaApi::handleToBase64(static_cast<mega::MegaHandle>(handle));
+    std::string result = base64 ? base64 : "";
+    delete[] base64; // megaapi.h: "Use delete[] to release the memory"
+    return result;
+}
+
+Result<std::uint64_t> MegaSdkClient::base64ToHandle(const std::string& base64) const
+{
+    // The SDK decodes garbage into some handle rather than failing, so only a
+    // string that encodes back to itself is accepted.
+    const mega::MegaHandle handle = mega::MegaApi::base64ToHandle(base64.c_str());
+    if (base64.empty() || handle == mega::INVALID_HANDLE || handleToBase64(handle) != base64)
+        return Result<std::uint64_t>::fail("Not a node handle", MegaErrorCode::kEArgs);
+    return Result<std::uint64_t>::ok(static_cast<std::uint64_t>(handle));
 }
 
 Result<AccountIdentity> MegaSdkClient::currentAccountIdentity() const

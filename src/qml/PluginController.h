@@ -1,4 +1,5 @@
 #pragma once
+#include "PluginHostApi.h"
 #include "PluginManifest.h"
 
 #include <QHash>
@@ -8,8 +9,10 @@
 #include <QVariantList>
 
 #include <QtQml/qqmlregistration.h>
+#include <memory>
 #include <vector>
 
+class IMegaClient;
 class PluginRun;
 
 // The installed plugins (each a folder holding plugin.json under pluginsDir) and
@@ -25,7 +28,9 @@ class PluginController : public QObject
     Q_PROPERTY(int runningRevision READ runningRevision NOTIFY runningChanged)
 
 public:
-    explicit PluginController(QString pluginsDir, QObject* parent = nullptr);
+    PluginController(std::shared_ptr<IMegaClient> client,
+                     QString pluginsDir,
+                     QObject* parent = nullptr);
 
     QString pluginsDir() const
     {
@@ -62,6 +67,7 @@ private:
     // Splits "plugin:<pluginId>/<commandId>"; false when actionId is not one.
     static bool splitActionId(const QString& actionId, QString* pluginId, QString* commandId);
 
+    PluginHostApi mHostApi;
     QString mPluginsDir;
     std::vector<PluginManifest> mPlugins;
     QHash<QString, PluginRun*> mRuns;

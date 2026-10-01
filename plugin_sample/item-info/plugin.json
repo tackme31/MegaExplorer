@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.item-info",
+  "name": "Item info",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
+  "commands": [
+    { "id": "show", "title": "Show details" },
+    { "id": "count-folder", "title": "Count folder contents" }
+  ]
+}
