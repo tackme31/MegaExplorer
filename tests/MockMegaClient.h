@@ -150,6 +150,18 @@ public:
                 (std::uint64_t, bool, std::function<void(Result<void>)>),
                 (override));
     MOCK_METHOD(void,
+                setNodeDescription,
+                (std::uint64_t, const std::string&, std::function<void(Result<void>)>),
+                (override));
+    MOCK_METHOD(void,
+                addNodeTag,
+                (std::uint64_t, const std::string&, std::function<void(Result<void>)>),
+                (override));
+    MOCK_METHOD(void,
+                removeNodeTag,
+                (std::uint64_t, const std::string&, std::function<void(Result<void>)>),
+                (override));
+    MOCK_METHOD(void,
                 exportNode,
                 (std::uint64_t, std::function<void(Result<std::string>)>),
                 (override));

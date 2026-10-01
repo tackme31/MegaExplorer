@@ -376,6 +376,19 @@ public:
                                   bool favourite,
                                   std::function<void(Result<void>)> onDone) = 0;
 
+    // An empty description removes it.
+    virtual void setNodeDescription(std::uint64_t handle,
+                                    const std::string& description,
+                                    std::function<void(Result<void>)> onDone) = 0;
+    // The SDK fails these on a tag already present (EEXIST) or absent (ENOENT), and
+    // rejects a tag containing ','.
+    virtual void addNodeTag(std::uint64_t handle,
+                            const std::string& tag,
+                            std::function<void(Result<void>)> onDone) = 0;
+    virtual void removeNodeTag(std::uint64_t handle,
+                               const std::string& tag,
+                               std::function<void(Result<void>)> onDone) = 0;
+
     // Issues -- or re-reads -- the node's public link, handing back the URL. Safe to
     // call on a node that already has one: MEGA returns the existing link rather than
     // minting a second, so this doubles as "get the link" and no caller has to know

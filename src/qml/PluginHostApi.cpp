@@ -1,11 +1,14 @@
 #include "PluginHostApi.h"
 
+#include "GuiThread.h"
 #include "core/IMegaClient.h"
 
 #include <QJsonArray>
 
 #include <algorithm>
+#include <set>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -30,15 +33,21 @@ QString typeOf(const NodeSnapshot& node)
 }
 } // namespace
 
-PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client) : mClient(std::move(client)) {}
+PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiContext)
+    : mClient(std::move(client)), mGuiContext(guiContext)
+{
+}
 
-PluginHostApi::Reply PluginHostApi::call(const QString& method, const QJsonObject& params) const
+void PluginHostApi::call(const QString& method, const QJsonObject& params, const Done& done) const
 {
     if (method == QStringLiteral("items.get"))
-        return itemsGet(params);
-    if (method == QStringLiteral("items.children"))
-        return itemsChildren(params);
-    return fail(kMethodNotFound, QStringLiteral("Method not found: %1").arg(method));
+        done(itemsGet(params));
+    else if (method == QStringLiteral("items.children"))
+        done(itemsChildren(params));
+    else if (method == QStringLiteral("items.update"))
+        itemsUpdate(params, done);
+    else
+        done(fail(kMethodNotFound, QStringLiteral("Method not found: %1").arg(method)));
 }
 
 std::optional<QJsonObject> PluginHostApi::itemRef(std::uint64_t handle) const
@@ -167,4 +176,180 @@ PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) con
     const QJsonValue next =
         end < matching.size() ? QJsonValue(QString::number(end)) : QJsonValue(QJsonValue::Null);
     return ok(QJsonObject{{QStringLiteral("items"), items}, {QStringLiteral("nextCursor"), next}});
+}
+
+namespace
+{
+using Step = std::function<void(std::function<void(Result<void>)>)>;
+
+// Runs steps one after another on the GUI thread, stopping at the first failure.
+struct UpdateChain : std::enable_shared_from_this<UpdateChain>
+{
+    std::shared_ptr<IMegaClient> client;
+    QObject* guiContext = nullptr;
+    std::uint64_t handle = 0;
+    std::vector<Step> steps;
+    std::size_t applied = 0;
+    PluginHostApi::Done done;
+
+    void next()
+    {
+        if (applied == steps.size())
+        {
+            finish();
+            return;
+        }
+        steps[applied]([self = shared_from_this()](Result<void> result) {
+            invokeOnGuiThread(self->guiContext, [self, result = std::move(result)]() {
+                if (!result.success)
+                {
+                    PluginHostApi::Reply reply = fail(
+                        PluginHostApi::kMegaError, QString::fromStdString(result.errorMessage));
+                    reply.mutated = self->applied > 0;
+                    self->done(reply);
+                    return;
+                }
+                ++self->applied;
+                self->next();
+            });
+        });
+    }
+
+    void finish()
+    {
+        const Result<NodeSnapshot> node = client->getNodeSnapshot(handle);
+        PluginHostApi::Reply reply =
+            node.success ? ok(QJsonObject{{QStringLiteral("item"), toItem(*client, node.value())}})
+                         : fail(PluginHostApi::kItemNotFound, QStringLiteral("No such item"));
+        reply.mutated = applied > 0;
+        done(reply);
+    }
+};
+
+// A tag list param as strings, or nullopt when it is not one.
+std::optional<std::vector<std::string>> readTags(const QJsonValue& value)
+{
+    std::vector<std::string> tags;
+    if (value.isUndefined() || value.isNull())
+        return tags;
+    if (!value.isArray())
+        return std::nullopt;
+    for (const QJsonValue tag : value.toArray())
+    {
+        // The SDK rejects ',' in a tag; checked here so nothing is half-applied.
+        if (!tag.isString() || tag.toString().isEmpty() || tag.toString().contains(QLatin1Char(',')))
+            return std::nullopt;
+        tags.push_back(tag.toString().toStdString());
+    }
+    return tags;
+}
+} // namespace
+
+void PluginHostApi::itemsUpdate(const QJsonObject& params, const Done& done) const
+{
+    std::uint64_t handle = 0;
+    if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
+    {
+        done(*error);
+        return;
+    }
+    const Result<NodeSnapshot> current = mClient->getNodeSnapshot(handle);
+    if (!current.success)
+    {
+        done(fail(kItemNotFound, QStringLiteral("No such item")));
+        return;
+    }
+    const NodeSnapshot& node = current.value();
+
+    // Every param is checked before anything is sent, and only real changes are:
+    // calling update with the item's current values is a no-op, not an error.
+    auto chain = std::make_shared<UpdateChain>();
+    chain->client = mClient;
+    chain->guiContext = mGuiContext;
+    chain->handle = handle;
+    chain->done = done;
+    std::shared_ptr<IMegaClient> client = mClient;
+
+    if (params.contains(QStringLiteral("name")))
+    {
+        const QJsonValue name = params.value(QStringLiteral("name"));
+        if (!name.isString() || name.toString().isEmpty())
+        {
+            done(fail(kInvalidParams, QStringLiteral("\"name\" must be a non-empty string")));
+            return;
+        }
+        const std::string value = name.toString().toStdString();
+        if (value != node.name)
+            chain->steps.push_back([client, handle, value](std::function<void(Result<void>)> onDone) {
+                client->renameNode(handle, value, std::move(onDone));
+            });
+    }
+    if (params.contains(QStringLiteral("description")))
+    {
+        const QJsonValue description = params.value(QStringLiteral("description"));
+        if (!description.isString())
+        {
+            done(fail(kInvalidParams, QStringLiteral("\"description\" must be a string")));
+            return;
+        }
+        const std::string value = description.toString().toStdString();
+        if (value != node.description)
+            chain->steps.push_back([client, handle, value](std::function<void(Result<void>)> onDone) {
+                client->setNodeDescription(handle, value, std::move(onDone));
+            });
+    }
+    if (params.contains(QStringLiteral("favourite")))
+    {
+        const QJsonValue favourite = params.value(QStringLiteral("favourite"));
+        if (!favourite.isBool())
+        {
+            done(fail(kInvalidParams, QStringLiteral("\"favourite\" must be a boolean")));
+            return;
+        }
+        const bool value = favourite.toBool();
+        if (value != node.isFavourite)
+            chain->steps.push_back([client, handle, value](std::function<void(Result<void>)> onDone) {
+                client->setNodeFavourite(handle, value, std::move(onDone));
+            });
+    }
+    if (params.contains(QStringLiteral("tags")))
+    {
+        const QJsonValue tagsParam = params.value(QStringLiteral("tags"));
+        const QJsonObject tags = tagsParam.toObject();
+        const std::optional<std::vector<std::string>> add = readTags(tags.value(QStringLiteral("add")));
+        const std::optional<std::vector<std::string>> remove =
+            readTags(tags.value(QStringLiteral("remove")));
+        if (!tagsParam.isObject() || !add || !remove)
+        {
+            done(fail(kInvalidParams,
+                      QStringLiteral("\"tags\" must be {add?, remove?} lists of non-empty tags "
+                                     "without ','")));
+            return;
+        }
+        const std::set<std::string> present(node.tags.begin(), node.tags.end());
+        const std::set<std::string> removing(remove->begin(), remove->end());
+        std::set<std::string> queued;
+        for (const std::string& tag : *add)
+        {
+            if (removing.count(tag))
+            {
+                done(fail(kInvalidParams,
+                          QStringLiteral("tag \"%1\" is both added and removed")
+                              .arg(QString::fromStdString(tag))));
+                return;
+            }
+            if (!present.count(tag) && queued.insert(tag).second)
+                chain->steps.push_back([client, handle, tag](std::function<void(Result<void>)> onDone) {
+                    client->addNodeTag(handle, tag, std::move(onDone));
+                });
+        }
+        for (const std::string& tag : removing)
+        {
+            if (present.count(tag))
+                chain->steps.push_back([client, handle, tag](std::function<void(Result<void>)> onDone) {
+                    client->removeNodeTag(handle, tag, std::move(onDone));
+                });
+        }
+    }
+    chain->next();
 }

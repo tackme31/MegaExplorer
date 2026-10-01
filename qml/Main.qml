@@ -724,8 +724,12 @@ ApplicationWindow {
 
     Connections {
         target: pluginController
-        function onCommandFinished(pluginName, outcome, message) {
+        function onCommandFinished(pluginName, outcome, message, changed) {
             toastStack.showPluginResult(pluginName, outcome, message);
+            // The app does not watch the account, so a plugin's writes only show
+            // once the listing is read again.
+            if (changed)
+                tabsController.currentNavigation?.refresh();
         }
     }
 

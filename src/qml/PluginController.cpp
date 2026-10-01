@@ -20,7 +20,7 @@ const QString kActionPrefix = QStringLiteral("plugin:");
 PluginController::PluginController(std::shared_ptr<IMegaClient> client,
                                    QString pluginsDir,
                                    QObject* parent)
-    : QObject(parent), mHostApi(std::move(client)), mPluginsDir(std::move(pluginsDir))
+    : QObject(parent), mHostApi(std::move(client), this), mPluginsDir(std::move(pluginsDir))
 {
     reload();
 }
@@ -142,11 +142,11 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
     connect(run,
             &PluginRun::finished,
             this,
-            [this, pluginId, pluginName](const QString& outcome, const QString& message) {
+            [this, pluginId, pluginName](const QString& outcome, const QString& message, bool changed) {
                 mRuns.remove(pluginId);
                 ++mRunningRevision;
                 emit runningChanged();
-                emit commandFinished(pluginName, outcome, message);
+                emit commandFinished(pluginName, outcome, message, changed);
             });
     mRuns.insert(pluginId, run);
     ++mRunningRevision;

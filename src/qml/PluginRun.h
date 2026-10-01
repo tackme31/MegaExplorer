@@ -36,7 +36,8 @@ public:
     }
 
 signals:
-    void finished(const QString& outcome, const QString& message);
+    // changed: whether any write reached the account, so the view is worth re-reading.
+    void finished(const QString& outcome, const QString& message, bool changed);
 
 private:
     enum class Stage
@@ -52,6 +53,7 @@ private:
     void readStderr();
     void handleMessage(const QJsonObject& message);
     void handleResponse(const QJsonObject& message);
+    void writeReply(const QJsonValue& id, const QString& method, const PluginHostApi::Reply& result);
     void finish(const QString& outcome, const QString& message);
     void stopProcess();
     // The process and everything it started.
@@ -70,4 +72,5 @@ private:
     QByteArray mStdoutBuffer;
     QByteArray mStderrBuffer;
     Stage mStage = Stage::Initializing;
+    bool mChanged = false;
 };

@@ -181,6 +181,15 @@ public:
     void setNodeFavourite(std::uint64_t handle,
                           bool favourite,
                           std::function<void(Result<void>)> onDone) override;
+    void setNodeDescription(std::uint64_t handle,
+                            const std::string& description,
+                            std::function<void(Result<void>)> onDone) override;
+    void addNodeTag(std::uint64_t handle,
+                    const std::string& tag,
+                    std::function<void(Result<void>)> onDone) override;
+    void removeNodeTag(std::uint64_t handle,
+                       const std::string& tag,
+                       std::function<void(Result<void>)> onDone) override;
 
     void exportNode(std::uint64_t handle, std::function<void(Result<std::string>)> onDone) override;
 

@@ -1275,6 +1275,63 @@ void MegaSdkClient::setNodeFavourite(std::uint64_t handle,
         node.get(), favourite, new megasdk::SimpleResultListener(std::move(onDone)));
 }
 
+void MegaSdkClient::setNodeDescription(std::uint64_t handle,
+                                       const std::string& description,
+                                       std::function<void(Result<void>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<void>::fail("No node with the given handle", MegaErrorCode::kENoEnt));
+        return;
+    }
+    // megaapi.h: a NULL description removes the attribute.
+    mApi->setNodeDescription(node.get(),
+                             description.empty() ? nullptr : description.c_str(),
+                             new megasdk::SimpleResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::addNodeTag(std::uint64_t handle,
+                               const std::string& tag,
+                               std::function<void(Result<void>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<void>::fail("No node with the given handle", MegaErrorCode::kENoEnt));
+        return;
+    }
+    mApi->addNodeTag(node.get(), tag.c_str(), new megasdk::SimpleResultListener(std::move(onDone)));
+}
+
+void MegaSdkClient::removeNodeTag(std::uint64_t handle,
+                                  const std::string& tag,
+                                  std::function<void(Result<void>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+    {
+        onDone(Result<void>::fail("No node with the given handle", MegaErrorCode::kENoEnt));
+        return;
+    }
+    mApi->removeNodeTag(node.get(), tag.c_str(), new megasdk::SimpleResultListener(std::move(onDone)));
+}
+
 void MegaSdkClient::exportNode(std::uint64_t handle,
                                std::function<void(Result<std::string>)> onDone)
 {

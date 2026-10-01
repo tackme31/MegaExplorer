@@ -5,6 +5,7 @@
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QLocale>
+#include <QPointer>
 #include <QTimer>
 
 #include <memory>
@@ -256,10 +257,26 @@ void PluginRun::handleMessage(const QJsonObject& message)
         qCInfo(lcPlugin) << mManifest.id << "ignored notification" << method;
         return;
     }
-    const PluginHostApi::Reply result =
-        mHostApi->call(method, message.value(QStringLiteral("params")).toObject());
-    QJsonObject reply{{QStringLiteral("jsonrpc"), QStringLiteral("2.0")},
-                      {QStringLiteral("id"), message.value(QStringLiteral("id"))}};
+    // The answer can arrive after this run is gone (a write still in flight when the
+    // plugin died); the QPointer drops it then.
+    const QJsonValue id = message.value(QStringLiteral("id"));
+    mHostApi->call(method,
+                   message.value(QStringLiteral("params")).toObject(),
+                   [self = QPointer<PluginRun>(this), id, method](const PluginHostApi::Reply& result) {
+                       if (self)
+                           self->writeReply(id, method, result);
+                   });
+}
+
+void PluginRun::writeReply(const QJsonValue& id,
+                           const QString& method,
+                           const PluginHostApi::Reply& result)
+{
+    if (result.mutated)
+        mChanged = true;
+    if (mProcess.state() != QProcess::Running)
+        return;
+    QJsonObject reply{{QStringLiteral("jsonrpc"), QStringLiteral("2.0")}, {QStringLiteral("id"), id}};
     if (result.errorCode)
     {
         qCInfo(lcPlugin) << mManifest.id << method << "failed:" << result.errorMessage;
@@ -327,7 +344,7 @@ void PluginRun::finish(const QString& outcome, const QString& message)
         return;
     mInitTimer->stop();
     mStage = Stage::Done;
-    emit finished(outcome, message);
+    emit finished(outcome, message, mChanged);
 }
 
 void PluginRun::stopProcess()

@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.tag-tools",
+  "name": "Tag tools",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
+  "commands": [
+    { "id": "tag-extension", "title": "Tag with extension" },
+    { "id": "clear-tags", "title": "Clear tags" },
+    { "id": "favourite", "title": "Add to favourites" }
+  ]
+}

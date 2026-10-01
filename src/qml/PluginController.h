@@ -59,8 +59,11 @@ public:
 
 signals:
     void runningChanged();
-    // outcome as PluginRun::finished.
-    void commandFinished(const QString& pluginName, const QString& outcome, const QString& message);
+    // outcome and changed as PluginRun::finished.
+    void commandFinished(const QString& pluginName,
+                         const QString& outcome,
+                         const QString& message,
+                         bool changed);
 
 private:
     const PluginManifest* findPlugin(const QString& pluginId) const;
