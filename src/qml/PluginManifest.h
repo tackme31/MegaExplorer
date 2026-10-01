@@ -6,13 +6,35 @@
 #include <optional>
 #include <vector>
 
+enum class PluginTargets
+{
+    Any,
+    Files,
+    Folders
+};
+
 struct PluginCommand
 {
     QString id;
     QString title;
     // Shows the progress dialog while the command runs.
     bool progress = false;
+    // when.targets / when.extensions: a selection that fails them greys the row.
+    PluginTargets targets = PluginTargets::Any;
+    // Lower case, without the dot. Empty accepts every extension.
+    QStringList extensions;
 };
+
+struct PluginSelectionItem
+{
+    QString name;
+    bool isFolder = false;
+};
+
+// Whether the command's row is enabled for this selection. Every item must pass;
+// a folder never passes a non-empty extensions list.
+bool pluginCommandAccepts(const PluginCommand& command,
+                          const std::vector<PluginSelectionItem>& selection);;
 
 // One plugin's plugin.json (docs/investigations/STUDY_PLUGIN_V1_DESIGN.md §4).
 struct PluginManifest

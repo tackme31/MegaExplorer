@@ -133,19 +133,8 @@ QString PluginController::groupLabel(const QString& group) const
 
 QString PluginController::commandTitle(const QString& actionId) const
 {
-    QString pluginId;
-    QString commandId;
-    if (!splitActionId(actionId, &pluginId, &commandId))
-        return {};
-    if (const PluginManifest* plugin = findPlugin(pluginId))
-    {
-        for (const PluginCommand& command : plugin->commands)
-        {
-            if (command.id == commandId)
-                return command.title;
-        }
-    }
-    return {};
+    const PluginCommand* command = findCommand(actionId);
+    return command ? command->title : QString();
 }
 
 bool PluginController::canRun(const QString& actionId) const
@@ -153,6 +142,22 @@ bool PluginController::canRun(const QString& actionId) const
     QString pluginId;
     QString commandId;
     return splitActionId(actionId, &pluginId, &commandId) && !mRuns.contains(pluginId);
+}
+
+bool PluginController::accepts(const QString& actionId, const QVariantList& entries) const
+{
+    const PluginCommand* command = findCommand(actionId);
+    if (!command)
+        return false;
+    std::vector<PluginSelectionItem> selection;
+    selection.reserve(static_cast<std::size_t>(entries.size()));
+    for (const QVariant& value : entries)
+    {
+        const QVariantMap entry = value.toMap();
+        selection.push_back({entry.value(QStringLiteral("name")).toString(),
+                             entry.value(QStringLiteral("isFolder")).toBool()});
+    }
+    return pluginCommandAccepts(*command, selection);
 }
 
 void PluginController::execute(const QString& actionId, const QVariantList& entries)
@@ -310,6 +315,23 @@ const PluginManifest* PluginController::findPlugin(const QString& pluginId) cons
     {
         if (plugin.id == pluginId)
             return &plugin;
+    }
+    return nullptr;
+}
+
+const PluginCommand* PluginController::findCommand(const QString& actionId) const
+{
+    QString pluginId;
+    QString commandId;
+    if (!splitActionId(actionId, &pluginId, &commandId))
+        return nullptr;
+    const PluginManifest* plugin = findPlugin(pluginId);
+    if (!plugin)
+        return nullptr;
+    for (const PluginCommand& command : plugin->commands)
+    {
+        if (command.id == commandId)
+            return &command;
     }
     return nullptr;
 }

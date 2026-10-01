@@ -394,14 +394,15 @@ QtObject {
         };
     }
 
-    // ctx: entries. One run per plugin at a time, so a busy plugin's rows grey.
+    // ctx: entries. Greyed while the plugin is busy (one run at a time) or when the
+    // selection fails the command's `when`.
     function pluginCommandEntry(actionId) {
         return {
             "icon": ctx => "",
             "label": ctx => pluginController.commandTitle(actionId),
             "group": pluginController.groupOf(actionId),
             "enabled": ctx => pluginController.runningRevision >= 0 && pluginController.canRun(
-                                  actionId),
+                                  actionId) && pluginController.accepts(actionId, ctx.entries),
             "trigger": ctx => pluginController.execute(actionId, ctx.entries)
         };
     }

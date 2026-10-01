@@ -64,6 +64,8 @@ public:
     Q_INVOKABLE QString commandTitle(const QString& actionId) const;
     // False while the same plugin is already running a command: one run at a time.
     Q_INVOKABLE bool canRun(const QString& actionId) const;
+    // The command's `when` against the selection; entries as for execute().
+    Q_INVOKABLE bool accepts(const QString& actionId, const QVariantList& entries) const;
 
     // entries are FileListModel::selectedEntries() maps (handle, name, isFolder).
     Q_INVOKABLE void execute(const QString& actionId, const QVariantList& entries);
@@ -81,6 +83,7 @@ signals:
 
 private:
     const PluginManifest* findPlugin(const QString& pluginId) const;
+    const PluginCommand* findCommand(const QString& actionId) const;
     // Splits "plugin:<pluginId>/<commandId>"; false when actionId is not one.
     static bool splitActionId(const QString& actionId, QString* pluginId, QString* commandId);
 

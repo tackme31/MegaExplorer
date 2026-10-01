@@ -23,6 +23,41 @@ std::optional<PluginManifest> fail(QString* error, const QString& reason)
         *error = reason;
     return std::nullopt;
 }
+
+// Fills command's targets/extensions from "when"; returns the reason on a bad value.
+std::optional<QString> readWhen(const QJsonObject& commandObj, PluginCommand* command)
+{
+    const QJsonValue whenValue = commandObj.value(QStringLiteral("when"));
+    if (whenValue.isUndefined())
+        return std::nullopt;
+    if (!whenValue.isObject())
+        return QStringLiteral("\"when\" must be an object");
+    const QJsonObject when = whenValue.toObject();
+
+    const QJsonValue targets = when.value(QStringLiteral("targets"));
+    if (targets == QJsonValue(QStringLiteral("files")))
+        command->targets = PluginTargets::Files;
+    else if (targets == QJsonValue(QStringLiteral("folders")))
+        command->targets = PluginTargets::Folders;
+    else if (!targets.isUndefined() && targets != QJsonValue(QStringLiteral("any")))
+        return QStringLiteral("\"when.targets\" must be \"files\", \"folders\" or \"any\"");
+
+    const QJsonValue extensions = when.value(QStringLiteral("extensions"));
+    if (extensions.isUndefined())
+        return std::nullopt;
+    if (!extensions.isArray())
+        return QStringLiteral("\"when.extensions\" must be a list of strings");
+    for (const QJsonValue extension : extensions.toArray())
+    {
+        QString text = extension.toString();
+        if (text.startsWith(QLatin1Char('.')))
+            text.remove(0, 1);
+        if (!extension.isString() || text.isEmpty())
+            return QStringLiteral("\"when.extensions\" must be a list of non-empty strings");
+        command->extensions << text.toLower();
+    }
+    return std::nullopt;
+}
 } // namespace
 
 std::optional<PluginManifest>
@@ -67,6 +102,8 @@ parsePluginManifest(const QByteArray& json, const QString& dir, QString* error)
             command.title.isEmpty())
             return fail(error,
                         QStringLiteral("a command needs an \"id\" without '/' and a \"title\""));
+        if (const std::optional<QString> whenError = readWhen(obj, &command))
+            return fail(error, QStringLiteral("command \"%1\": %2").arg(command.id, *whenError));
         for (const PluginCommand& existing : manifest.commands)
         {
             if (existing.id == command.id)
@@ -89,4 +126,25 @@ QString resolvePluginProgram(const PluginManifest& manifest)
         return info.isFile() ? info.absoluteFilePath() : QString();
     }
     return QStandardPaths::findExecutable(command);
+}
+
+bool pluginCommandAccepts(const PluginCommand& command,
+                          const std::vector<PluginSelectionItem>& selection)
+{
+    if (selection.empty())
+        return false;
+    for (const PluginSelectionItem& item : selection)
+    {
+        if (command.targets == PluginTargets::Files && item.isFolder)
+            return false;
+        if (command.targets == PluginTargets::Folders && !item.isFolder)
+            return false;
+        if (command.extensions.isEmpty())
+            continue;
+        const qsizetype dot = item.name.lastIndexOf(QLatin1Char('.'));
+        if (item.isFolder || dot < 0 ||
+            !command.extensions.contains(item.name.mid(dot + 1).toLower()))
+            return false;
+    }
+    return true;
 }
