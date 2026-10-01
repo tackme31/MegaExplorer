@@ -16,6 +16,8 @@ constexpr int kExecuteId = 2;
 constexpr int kShutdownId = 3;
 // How long a plugin gets to exit on its own after shutdown before it is killed.
 constexpr int kShutdownGraceMs = 5000;
+// Long because uv may first fetch Python and the dependencies.
+constexpr int kInitializeTimeoutMs = 5 * 60 * 1000;
 constexpr int kInvocationId = 1;
 
 QString errorMessageOf(const QJsonObject& response)
@@ -32,8 +34,15 @@ PluginRun::PluginRun(PluginManifest manifest,
                      QJsonObject context,
                      QObject* parent)
     : QObject(parent), mManifest(std::move(manifest)), mCommandId(std::move(commandId)),
-      mContext(std::move(context)), mKillTimer(new QTimer(this))
+      mContext(std::move(context)), mKillTimer(new QTimer(this)), mInitTimer(new QTimer(this))
 {
+    mInitTimer->setSingleShot(true);
+    mInitTimer->setInterval(kInitializeTimeoutMs);
+    connect(mInitTimer, &QTimer::timeout, this, [this] {
+        qCWarning(lcPlugin) << mManifest.id << "did not answer initialize in time; killing it";
+        finish(QStringLiteral("timeout"), {});
+        mProcess.kill();
+    });
     mKillTimer->setSingleShot(true);
     mKillTimer->setInterval(kShutdownGraceMs);
     connect(mKillTimer, &QTimer::timeout, this, [this] {
@@ -96,6 +105,7 @@ void PluginRun::start()
     mProcess.setProgram(program);
     mProcess.setArguments(mManifest.args);
     mProcess.start();
+    mInitTimer->start();
 
     QJsonObject app{{QStringLiteral("version"), QCoreApplication::applicationVersion()},
                     {QStringLiteral("locale"), QLocale().bcp47Name()}};
@@ -193,6 +203,7 @@ void PluginRun::handleResponse(const QJsonObject& message)
             stopProcess();
             return;
         }
+        mInitTimer->stop();
         mStage = Stage::Executing;
         send(kExecuteId,
              QStringLiteral("command.execute"),
@@ -229,6 +240,7 @@ void PluginRun::finish(const QString& outcome, const QString& message)
 {
     if (mStage == Stage::Done)
         return;
+    mInitTimer->stop();
     mStage = Stage::Done;
     emit finished(outcome, message);
 }

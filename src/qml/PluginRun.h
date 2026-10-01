@@ -17,7 +17,8 @@ class PluginRun : public QObject
 
 public:
     // outcome is "ok", "error" (the plugin answered with an error), "notFound"
-    // (run.command does not resolve), "failedToStart", or "crashed" (exited or
+    // (run.command does not resolve), "failedToStart", "timeout"
+    // (no answer to initialize), or "crashed" (exited or
     // spoke garbage before answering). message is the plugin's text, if any.
     PluginRun(PluginManifest manifest,
               QString commandId,
@@ -57,6 +58,7 @@ private:
     QJsonObject mContext;
     QProcess mProcess;
     QTimer* mKillTimer;
+    QTimer* mInitTimer;
     QByteArray mStdoutBuffer;
     QByteArray mStderrBuffer;
     Stage mStage = Stage::Initializing;

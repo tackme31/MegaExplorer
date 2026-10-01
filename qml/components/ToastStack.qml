@@ -216,6 +216,9 @@ Item {
         case "failedToStart":
             text = qsTr("%1 couldn't be started").arg(pluginName);
             break;
+        case "timeout":
+            text = qsTr("%1 didn't start in time and was stopped").arg(pluginName);
+            break;
         default:
             text = qsTr("%1 stopped unexpectedly").arg(pluginName);
             break;
