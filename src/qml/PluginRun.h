@@ -75,8 +75,8 @@ private:
     PluginManifest mManifest;
     QString mCommandId;
     QJsonObject mContext;
-    // Files fetched for the plugin; removed once the process has exited.
-    QString mTempDir;
+    // Its tempDir holds files fetched for the plugin; removed once the process has exited.
+    PluginHostApi::RunState mHostState;
     // Owned by PluginController, this run's parent. Not used once the run is being destroyed.
     const PluginHostApi* mHostApi;
     QProcess mProcess;

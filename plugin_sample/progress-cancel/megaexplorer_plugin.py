@@ -284,13 +284,23 @@ class Context:
         return [Item(data) for data in result["items"]]
 
     def children(self, x, type=None):
-        """The items in folder x, fetched page by page as you iterate."""
+        """The items in folder x, fetched page by page as you iterate.
+        type: None for both, "file" or "folder"."""
+        return self._pages("items.children", x, type)
+
+    def descendants(self, x, type=None):
+        """Everything under folder x, at any depth, fetched page by page as you
+        iterate. A folder comes before its contents (depth-first). The list is
+        fixed when iteration starts; items deleted since are left out."""
+        return self._pages("items.descendants", x, type)
+
+    def _pages(self, method, x, type):
         cursor = None
         while True:
             params = {"handle": _handle(x), "cursor": cursor}
             if type is not None:
                 params["type"] = type
-            page = self.call("items.children", params)
+            page = self.call(method, params)
             for data in page["items"]:
                 yield Item(data)
             cursor = page.get("nextCursor")

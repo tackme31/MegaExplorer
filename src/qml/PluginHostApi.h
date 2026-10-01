@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <vector>
 
 class IMegaClient;
 class QObject;
@@ -37,13 +38,20 @@ public:
     // lifetime); SDK answers are posted to its thread before done runs.
     PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiContext);
 
+    // What one plugin run keeps between its calls; owned by the run, so it all goes
+    // when the run ends.
+    struct RunState
+    {
+        // The run's own folder for fetched files; created on first use.
+        QString tempDir;
+        // items.descendants listings, fixed at their first page; a cursor indexes one.
+        std::vector<std::vector<std::uint64_t>> listings;
+    };
+
     // done always runs on guiContext's thread: in-stack for the in-memory reads,
-    // later for anything that goes to the server. tempDir is the calling run's own
-    // folder for fetched files; it is created on first use.
-    void call(const QString& method,
-              const QJsonObject& params,
-              const QString& tempDir,
-              const Done& done) const;
+    // later for anything that goes to the server. run is only touched before
+    // call returns.
+    void call(const QString& method, const QJsonObject& params, RunState& run, const Done& done) const;
 
     // The Item form items.get returns, also used for the context's items. nullopt
     // when the node no longer exists.
@@ -52,6 +60,7 @@ public:
 private:
     Reply itemsGet(const QJsonObject& params) const;
     Reply itemsChildren(const QJsonObject& params) const;
+    Reply itemsDescendants(const QJsonObject& params, RunState& run) const;
     void itemsUpdate(const QJsonObject& params, const Done& done) const;
     void itemsFetchPreview(const QJsonObject& params, const QString& tempDir, const Done& done) const;
 

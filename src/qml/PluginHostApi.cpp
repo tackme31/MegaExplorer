@@ -5,8 +5,10 @@
 
 #include <QDir>
 #include <QJsonArray>
+#include <QStringList>
 
 #include <algorithm>
+#include <iterator>
 #include <set>
 #include <utility>
 #include <vector>
@@ -62,17 +64,19 @@ PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiCo
 
 void PluginHostApi::call(const QString& method,
                          const QJsonObject& params,
-                         const QString& tempDir,
+                         RunState& run,
                          const Done& done) const
 {
     if (method == QStringLiteral("items.get"))
         done(itemsGet(params));
     else if (method == QStringLiteral("items.children"))
         done(itemsChildren(params));
+    else if (method == QStringLiteral("items.descendants"))
+        done(itemsDescendants(params, run));
     else if (method == QStringLiteral("items.update"))
         itemsUpdate(params, done);
     else if (method == QStringLiteral("items.fetchPreview"))
-        itemsFetchPreview(params, tempDir, done);
+        itemsFetchPreview(params, run.tempDir, done);
     else
         done(fail(kMethodNotFound, QStringLiteral("Method not found: %1").arg(method)));
 }
@@ -105,6 +109,35 @@ readHandle(const IMegaClient& client, const QJsonObject& params, std::uint64_t* 
 {
     return decodeHandle(client, params.value(QStringLiteral("handle")), handle);
 }
+
+// Which node types a listing keeps: both, or only files/folders.
+struct TypeFilter
+{
+    bool any = true;
+    bool folders = false;
+
+    bool keeps(const NodeSnapshot& node) const { return any || node.isFolder == folders; }
+};
+
+std::optional<PluginHostApi::Reply> readType(const QJsonObject& params, TypeFilter* filter)
+{
+    const QJsonValue type = params.value(QStringLiteral("type"));
+    filter->any = type.isUndefined() || type.isNull();
+    if (!filter->any && type != QStringLiteral("file") && type != QStringLiteral("folder"))
+        return fail(kInvalidParams, QStringLiteral("\"type\" must be \"file\" or \"folder\""));
+    filter->folders = type == QStringLiteral("folder");
+    return std::nullopt;
+}
+
+int readLimit(const QJsonObject& params)
+{
+    return std::clamp(params.value(QStringLiteral("limit")).toInt(kDefaultPageSize), 1, kMaxPageSize);
+}
+
+PluginHostApi::Reply page(const QJsonArray& items, const QJsonValue& nextCursor)
+{
+    return ok(QJsonObject{{QStringLiteral("items"), items}, {QStringLiteral("nextCursor"), nextCursor}});
+}
 } // namespace
 
 PluginHostApi::Reply PluginHostApi::itemsGet(const QJsonObject& params) const
@@ -133,11 +166,9 @@ PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) con
     if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
         return *error;
 
-    const QJsonValue type = params.value(QStringLiteral("type"));
-    const bool anyType = type.isUndefined() || type.isNull();
-    if (!anyType && type != QStringLiteral("file") && type != QStringLiteral("folder"))
-        return fail(kInvalidParams, QStringLiteral("\"type\" must be \"file\" or \"folder\""));
-    const bool wantFolders = type == QStringLiteral("folder");
+    TypeFilter filter;
+    if (std::optional<Reply> error = readType(params, &filter))
+        return *error;
 
     // The cursor is an offset into the (type-filtered) children, opaque to the plugin.
     int offset = 0;
@@ -153,8 +184,7 @@ PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) con
     {
         return fail(kInvalidParams, QStringLiteral("\"cursor\" must be a string"));
     }
-    const int limit =
-        std::clamp(params.value(QStringLiteral("limit")).toInt(kDefaultPageSize), 1, kMaxPageSize);
+    const int limit = readLimit(params);
 
     if (!mClient->getNodeSnapshot(handle).success)
         return fail(kItemNotFound, QStringLiteral("No such item"));
@@ -165,7 +195,7 @@ PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) con
     std::vector<const NodeSnapshot*> matching;
     for (const NodeSnapshot& child : children.value())
     {
-        if (anyType || child.isFolder == wantFolders)
+        if (filter.keeps(child))
             matching.push_back(&child);
     }
     const std::size_t begin = std::min(static_cast<std::size_t>(offset), matching.size());
@@ -173,9 +203,84 @@ PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) con
     QJsonArray items;
     for (std::size_t i = begin; i < end; ++i)
         items.append(toItem(*mClient, *matching[i]));
-    const QJsonValue next =
-        end < matching.size() ? QJsonValue(QString::number(end)) : QJsonValue(QJsonValue::Null);
-    return ok(QJsonObject{{QStringLiteral("items"), items}, {QStringLiteral("nextCursor"), next}});
+    return page(items, end < matching.size() ? QJsonValue(QString::number(end)) : QJsonValue(QJsonValue::Null));
+}
+
+PluginHostApi::Reply PluginHostApi::itemsDescendants(const QJsonObject& params, RunState& run) const
+{
+    std::uint64_t handle = 0;
+    if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
+        return *error;
+    TypeFilter filter;
+    if (std::optional<Reply> error = readType(params, &filter))
+        return *error;
+    const int limit = readLimit(params);
+
+    // The cursor is "<listing>:<offset>"; no cursor starts a new listing.
+    std::size_t listing = 0;
+    std::size_t offset = 0;
+    const QJsonValue cursor = params.value(QStringLiteral("cursor"));
+    if (cursor.isString())
+    {
+        const QStringList parts = cursor.toString().split(QLatin1Char(':'));
+        bool listingOk = false;
+        bool offsetOk = false;
+        if (parts.size() == 2)
+        {
+            listing = parts[0].toULongLong(&listingOk);
+            offset = parts[1].toULongLong(&offsetOk);
+        }
+        if (!listingOk || !offsetOk || listing >= run.listings.size() ||
+            offset > run.listings[listing].size())
+            return fail(kInvalidParams, QStringLiteral("Bad cursor"));
+    }
+    else if (!cursor.isUndefined() && !cursor.isNull())
+    {
+        return fail(kInvalidParams, QStringLiteral("\"cursor\" must be a string"));
+    }
+    else
+    {
+        if (!mClient->getNodeSnapshot(handle).success)
+            return fail(kItemNotFound, QStringLiteral("No such item"));
+        Result<std::vector<NodeSnapshot>> top = mClient->getChildSnapshots(handle);
+        if (!top.success)
+            return fail(kInvalidParams, QStringLiteral("Not a folder"));
+
+        // Depth-first pre-order: a folder comes before its contents. The stack holds
+        // nodes still to visit, pushed in reverse so they pop in the listed order.
+        std::vector<std::uint64_t> handles;
+        std::vector<NodeSnapshot> pending(std::make_move_iterator(top.value().rbegin()),
+                                          std::make_move_iterator(top.value().rend()));
+        while (!pending.empty())
+        {
+            const NodeSnapshot node = std::move(pending.back());
+            pending.pop_back();
+            if (filter.keeps(node))
+                handles.push_back(node.handle);
+            if (!node.isFolder)
+                continue;
+            Result<std::vector<NodeSnapshot>> children = mClient->getChildSnapshots(node.handle);
+            if (!children.success)
+                continue;
+            std::move(children.value().rbegin(), children.value().rend(), std::back_inserter(pending));
+        }
+        run.listings.push_back(std::move(handles));
+        listing = run.listings.size() - 1;
+    }
+
+    // A node gone since the listing was fixed is skipped, so a page can come up short.
+    const std::vector<std::uint64_t>& handles = run.listings[listing];
+    const std::size_t end = std::min(offset + static_cast<std::size_t>(limit), handles.size());
+    QJsonArray items;
+    for (std::size_t i = offset; i < end; ++i)
+    {
+        const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handles[i]);
+        if (node.success)
+            items.append(toItem(*mClient, node.value()));
+    }
+    return page(items,
+                end < handles.size() ? QJsonValue(QStringLiteral("%1:%2").arg(listing).arg(end))
+                                     : QJsonValue(QJsonValue::Null));
 }
 
 namespace

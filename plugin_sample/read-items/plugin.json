@@ -7,6 +7,7 @@
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
   "commands": [
     { "id": "details", "title": "Show details (items.get)" },
-    { "id": "count-folder", "title": "Count the folder (items.children)" }
+    { "id": "count-folder", "title": "Count the folder (items.children)" },
+    { "id": "count-tree", "title": "Count everything below (items.descendants)" }
   ]
 }

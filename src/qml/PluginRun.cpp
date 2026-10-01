@@ -93,7 +93,7 @@ PluginRun::PluginRun(PluginManifest manifest,
                      const PluginHostApi* hostApi,
                      QObject* parent)
     : QObject(parent), mManifest(std::move(manifest)), mCommandId(std::move(commandId)),
-      mContext(std::move(context)), mTempDir(std::move(tempDir)), mHostApi(hostApi), mKillTimer(new QTimer(this)), mInitTimer(new QTimer(this)),
+      mContext(std::move(context)), mHostState{std::move(tempDir), {}}, mHostApi(hostApi), mKillTimer(new QTimer(this)), mInitTimer(new QTimer(this)),
       mCancelTimer(new QTimer(this))
 {
     mCancelTimer->setSingleShot(true);
@@ -156,8 +156,8 @@ PluginRun::~PluginRun()
 void PluginRun::removeTempDir()
 {
     // QDir("") is the working directory: never let an empty path reach removeRecursively().
-    if (!mTempDir.isEmpty())
-        QDir(mTempDir).removeRecursively();
+    if (!mHostState.tempDir.isEmpty())
+        QDir(mHostState.tempDir).removeRecursively();
 }
 
 void PluginRun::killAll()
@@ -329,7 +329,7 @@ void PluginRun::handleMessage(const QJsonObject& message)
     const QJsonValue id = message.value(QStringLiteral("id"));
     mHostApi->call(method,
                    message.value(QStringLiteral("params")).toObject(),
-                   mTempDir,
+                   mHostState,
                    [self = QPointer<PluginRun>(this), id, method](const PluginHostApi::Reply& result) {
                        if (self)
                            self->writeReply(id, method, result);

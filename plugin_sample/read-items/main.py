@@ -1,4 +1,4 @@
-"""Read items: items.get and items.children.
+"""Read items: items.get, items.children and items.descendants.
 
 Shows:
 - ctx.items: the selection, already with path, size, tags, favourite...
@@ -6,6 +6,7 @@ Shows:
 - ctx.get(x): an item that is not in the selection (here: the parent folder),
   or the state of a selected one now
 - ctx.children(folder): every child, fetched page by page as the loop asks
+- ctx.descendants(folder, type="file"): everything below, at any depth
 """
 
 from megaexplorer_plugin import Plugin
@@ -48,6 +49,20 @@ def count_folder(ctx):
         else:
             files += 1
     return f"{ctx.get(folder).path}: {files} files, {folders} folders"
+
+
+@plugin.command("count-tree")
+def count_tree(ctx):
+    if not ctx.items:
+        return "Nothing is selected"
+    first = ctx.items[0]
+    folder = first if first.is_folder else first.parent
+    files = 0
+    size = 0
+    for item in ctx.descendants(folder, type="file"):
+        files += 1
+        size += item.size
+    return f"{ctx.get(folder).path}: {files} files below, {human_size(size)}"
 
 
 plugin.run()

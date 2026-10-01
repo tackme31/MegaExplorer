@@ -7,10 +7,12 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
+#include <QStringList>
 #include <QTemporaryDir>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <map>
 #include <optional>
 #include <tuple>
 
@@ -54,9 +56,8 @@ protected:
     PluginHostApi::Reply call(const QString& method, const QJsonObject& params)
     {
         std::optional<PluginHostApi::Reply> reply;
-        mApi.call(method, params, mTempDir.path(), [&reply](const PluginHostApi::Reply& r) {
-            reply = r;
-        });
+        mRun.tempDir = mTempDir.path();
+        mApi.call(method, params, mRun, [&reply](const PluginHostApi::Reply& r) { reply = r; });
         for (int i = 0; i < 20 && !reply; ++i)
             QCoreApplication::processEvents();
         EXPECT_TRUE(reply.has_value());
@@ -67,6 +68,7 @@ protected:
     QObject mGuiContext;
     PluginHostApi mApi{mClient, &mGuiContext};
     QTemporaryDir mTempDir;
+    PluginHostApi::RunState mRun;
 };
 } // namespace
 
@@ -142,6 +144,85 @@ TEST_F(PluginHostApiTest, ItemsChildrenRejectsAFile)
     const PluginHostApi::Reply reply = call(
         QStringLiteral("items.children"), {{QStringLiteral("handle"), QStringLiteral("h7")}});
     EXPECT_EQ(reply.errorCode, -32602);
+}
+
+namespace
+{
+QStringList names(const PluginHostApi::Reply& reply)
+{
+    QStringList result;
+    for (const QJsonValue item : reply.result.toObject().value(QStringLiteral("items")).toArray())
+        result.append(item.toObject().value(QStringLiteral("name")).toString());
+    return result;
+}
+} // namespace
+
+TEST_F(PluginHostApiTest, ItemsDescendantsListsDepthFirstFoldersBeforeTheirContents)
+{
+    // 1 { a, s { b, t { c } }, z }
+    std::map<std::uint64_t, NodeSnapshot> nodes{{1, node(1, "root", true)},  {10, node(10, "a", false)},
+                                                {11, node(11, "s", true)},   {12, node(12, "b", false)},
+                                                {13, node(13, "t", true)},   {15, node(15, "c", false)},
+                                                {14, node(14, "z", false)}};
+    std::map<std::uint64_t, std::vector<std::uint64_t>> tree{{1, {10, 11, 14}}, {11, {12, 13}}, {13, {15}}};
+    ON_CALL(*mClient, getNodeSnapshot(_)).WillByDefault([&nodes](std::uint64_t h) {
+        const auto it = nodes.find(h);
+        return it == nodes.end() ? Result<NodeSnapshot>::fail("gone", -9) : Result<NodeSnapshot>::ok(it->second);
+    });
+    ON_CALL(*mClient, getChildSnapshots(_)).WillByDefault([&nodes, &tree](std::uint64_t h) {
+        if (!nodes.count(h) || !nodes.at(h).isFolder)
+            return Result<std::vector<NodeSnapshot>>::fail("Not a folder", -2);
+        std::vector<NodeSnapshot> children;
+        for (std::uint64_t child : tree[h])
+            children.push_back(nodes.at(child));
+        return Result<std::vector<NodeSnapshot>>::ok(children);
+    });
+
+    const PluginHostApi::Reply all =
+        call(QStringLiteral("items.descendants"), {{QStringLiteral("handle"), QStringLiteral("h1")}});
+    ASSERT_FALSE(all.errorCode.has_value());
+    EXPECT_EQ(names(all), (QStringList{"a", "s", "b", "t", "c", "z"}));
+    EXPECT_TRUE(all.result.toObject().value(QStringLiteral("nextCursor")).isNull());
+
+    const QJsonObject filesParams{{QStringLiteral("handle"), QStringLiteral("h1")},
+                                  {QStringLiteral("type"), QStringLiteral("file")},
+                                  {QStringLiteral("limit"), 2}};
+    const PluginHostApi::Reply first = call(QStringLiteral("items.descendants"), filesParams);
+    EXPECT_EQ(names(first), (QStringList{"a", "b"}));
+    const QString cursor = first.result.toObject().value(QStringLiteral("nextCursor")).toString();
+    ASSERT_FALSE(cursor.isEmpty());
+
+    // The listing was fixed by the first page: a file added later is not in it, and
+    // one deleted since is skipped, so this page comes up one short.
+    nodes.emplace(16, node(16, "new", false));
+    tree[1].push_back(16);
+    nodes.erase(15);
+    QJsonObject nextParams = filesParams;
+    nextParams.insert(QStringLiteral("cursor"), cursor);
+    const PluginHostApi::Reply second = call(QStringLiteral("items.descendants"), nextParams);
+    ASSERT_FALSE(second.errorCode.has_value());
+    EXPECT_EQ(names(second), (QStringList{"z"}));
+    EXPECT_TRUE(second.result.toObject().value(QStringLiteral("nextCursor")).isNull());
+}
+
+TEST_F(PluginHostApiTest, ItemsDescendantsRejectsAFileAndAForeignCursor)
+{
+    EXPECT_CALL(*mClient, getNodeSnapshot(7))
+        .WillRepeatedly(Return(Result<NodeSnapshot>::ok(node(7, "cat.jpg", false))));
+    EXPECT_CALL(*mClient, getChildSnapshots(7))
+        .WillRepeatedly(Return(Result<std::vector<NodeSnapshot>>::fail("Not a folder", -2)));
+    EXPECT_EQ(call(QStringLiteral("items.descendants"), {{QStringLiteral("handle"), QStringLiteral("h7")}})
+                  .errorCode,
+              -32602);
+    // No listing was ever started in this run, so no cursor can be valid.
+    EXPECT_EQ(call(QStringLiteral("items.descendants"),
+                   {{QStringLiteral("handle"), QStringLiteral("h7")}, {QStringLiteral("cursor"), QStringLiteral("0:0")}})
+                  .errorCode,
+              -32602);
+    EXPECT_EQ(call(QStringLiteral("items.descendants"),
+                   {{QStringLiteral("handle"), QStringLiteral("h7")}, {QStringLiteral("cursor"), QStringLiteral("x")}})
+                  .errorCode,
+              -32602);
 }
 
 TEST_F(PluginHostApiTest, ItemsGetKeepsTheOrderOfHandles)
