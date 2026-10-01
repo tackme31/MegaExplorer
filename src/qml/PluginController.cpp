@@ -4,6 +4,7 @@
 #include "PluginRun.h"
 
 #include <QDateTime>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <utility>
+#include <windows.h>
 
 namespace
 {
@@ -20,14 +22,43 @@ const QString kActionPrefix = QStringLiteral("plugin:");
 // A command that finishes sooner never shows the dialog, so quick ones don't flash it.
 constexpr int kProgressShowDelayMs = 300;
 constexpr int kProgressUpdateIntervalMs = 100;
+
+bool isProcessRunning(DWORD pid)
+{
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!process)
+        return GetLastError() == ERROR_ACCESS_DENIED;
+    DWORD exitCode = 0;
+    const bool running = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+    CloseHandle(process);
+    return running;
+}
+
+// Per process rather than wiping tempRoot: two copies of the app may share a profile.
+void removeStaleTempDirs(const QString& tempRoot)
+{
+    if (tempRoot.isEmpty())
+        return;
+    const QDir root(tempRoot);
+    for (const QString& name : root.entryList(QDir::Dirs | QDir::NoDotAndDotDot))
+    {
+        bool isPid = false;
+        const DWORD pid = name.toULong(&isPid);
+        if (isPid && !isProcessRunning(pid))
+            QDir(root.filePath(name)).removeRecursively();
+    }
+}
 } // namespace
 
 PluginController::PluginController(std::shared_ptr<IMegaClient> client,
                                    QString pluginsDir,
+                                   const QString& tempRoot,
                                    QObject* parent)
     : QObject(parent), mHostApi(std::move(client), this), mProgressUpdateTimer(new QTimer(this)),
-      mPluginsDir(std::move(pluginsDir))
+      mPluginsDir(std::move(pluginsDir)),
+      mTempDir(QDir(tempRoot).filePath(QString::number(QCoreApplication::applicationPid())))
 {
+    removeStaleTempDirs(tempRoot);
     mProgressUpdateTimer->setSingleShot(true);
     mProgressUpdateTimer->setInterval(kProgressUpdateIntervalMs);
     connect(mProgressUpdateTimer, &QTimer::timeout, this, &PluginController::progressRunsChanged);
@@ -146,7 +177,8 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
     const QJsonObject context{{QStringLiteral("site"), QStringLiteral("selection")},
                               {QStringLiteral("items"), items}};
 
-    auto* run = new PluginRun(*plugin, commandId, context, &mHostApi, this);
+    const QString tempDir = QDir(mTempDir).filePath(QString::number(++mRunCount));
+    auto* run = new PluginRun(*plugin, commandId, context, tempDir, &mHostApi, this);
     const QString pluginName = plugin->name;
     connect(run,
             &PluginRun::finished,

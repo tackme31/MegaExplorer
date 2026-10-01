@@ -34,8 +34,11 @@ class PluginController : public QObject
     Q_PROPERTY(QVariantList progressRuns READ progressRuns NOTIFY progressRunsChanged)
 
 public:
+    // tempRoot holds the files fetched for plugins, one folder per app process
+    // and run beneath it; leftovers of processes no longer running are removed here.
     PluginController(std::shared_ptr<IMegaClient> client,
                      QString pluginsDir,
+                     const QString& tempRoot,
                      QObject* parent = nullptr);
 
     QString pluginsDir() const
@@ -106,4 +109,6 @@ private:
     std::vector<PluginManifest> mPlugins;
     QHash<QString, PluginRun*> mRuns;
     int mRunningRevision = 0;
+    QString mTempDir;
+    int mRunCount = 0;
 };

@@ -5,6 +5,7 @@ here, so each call writes one line and reads until the matching response.
 """
 
 import json
+import os
 import sys
 
 sys.stdin.reconfigure(encoding="utf-8")
@@ -84,6 +85,27 @@ def count_folder(items):
     return f"{name}: {files} files, {folders} folders"
 
 
+def fetch_previews(items):
+    fetched = []
+    missing = 0
+    for item in items:
+        if item["type"] != "file":
+            continue
+        try:
+            path = call("items.fetchPreview", {"handle": item["handle"]})["path"]
+        except RpcError:
+            missing += 1
+            continue
+        with open(path, "rb") as f:
+            is_jpeg = f.read(2) == bytes([0xFF, 0xD8])
+        # Left in place on purpose: the app removes the run's folder when the plugin exits.
+        print(f"preview {item['name']} -> {path} ({os.path.getsize(path)} bytes, jpeg={is_jpeg})",
+              file=sys.stderr)
+        fetched.append(os.path.getsize(path))
+    return (f"Fetched {len(fetched)} preview(s), {human_size(sum(fetched))}"
+            f"; {missing} without one")
+
+
 def execute(params):
     items = params["context"]["items"]
     if not items:
@@ -91,6 +113,8 @@ def execute(params):
     try:
         if params["commandId"] == "show":
             return {"message": show(items)}, None
+        if params["commandId"] == "preview":
+            return {"message": fetch_previews(items)}, None
         return {"message": count_folder(items)}, None
     except RpcError as error:
         return None, {"code": 1, "message": str(error)}

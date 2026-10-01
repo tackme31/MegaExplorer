@@ -7,6 +7,7 @@
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
   "commands": [
     { "id": "show", "title": "Show details" },
-    { "id": "count-folder", "title": "Count folder contents" }
+    { "id": "count-folder", "title": "Count folder contents" },
+    { "id": "preview", "title": "Fetch previews" }
   ]
 }

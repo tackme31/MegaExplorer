@@ -3,6 +3,7 @@
 #include "GuiThread.h"
 #include "core/IMegaClient.h"
 
+#include <QDir>
 #include <QJsonArray>
 
 #include <algorithm>
@@ -14,6 +15,7 @@ namespace
 {
 constexpr int kInvalidParams = -32602;
 constexpr int kMethodNotFound = -32601;
+constexpr int kInternalError = -32603;
 constexpr int kDefaultPageSize = 500;
 constexpr int kMaxPageSize = 1000;
 
@@ -38,7 +40,10 @@ PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiCo
 {
 }
 
-void PluginHostApi::call(const QString& method, const QJsonObject& params, const Done& done) const
+void PluginHostApi::call(const QString& method,
+                         const QJsonObject& params,
+                         const QString& tempDir,
+                         const Done& done) const
 {
     if (method == QStringLiteral("items.get"))
         done(itemsGet(params));
@@ -46,6 +51,8 @@ void PluginHostApi::call(const QString& method, const QJsonObject& params, const
         done(itemsChildren(params));
     else if (method == QStringLiteral("items.update"))
         itemsUpdate(params, done);
+    else if (method == QStringLiteral("items.fetchPreview"))
+        itemsFetchPreview(params, tempDir, done);
     else
         done(fail(kMethodNotFound, QStringLiteral("Method not found: %1").arg(method)));
 }
@@ -352,4 +359,44 @@ void PluginHostApi::itemsUpdate(const QJsonObject& params, const Done& done) con
         }
     }
     chain->next();
+}
+
+void PluginHostApi::itemsFetchPreview(const QJsonObject& params,
+                                      const QString& tempDir,
+                                      const Done& done) const
+{
+    std::uint64_t handle = 0;
+    if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
+    {
+        done(*error);
+        return;
+    }
+    const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle);
+    if (!node.success)
+    {
+        done(fail(kItemNotFound, QStringLiteral("No such item")));
+        return;
+    }
+    if (node.value().isFolder)
+    {
+        done(fail(kInvalidParams, QStringLiteral("A folder has no preview")));
+        return;
+    }
+    if (!QDir().mkpath(tempDir))
+    {
+        done(fail(kInternalError, QStringLiteral("Could not create %1").arg(tempDir)));
+        return;
+    }
+    // Hex, not the base64 handle: NTFS names are case-insensitive and base64 is not.
+    const QString path = QDir::toNativeSeparators(
+        QDir(tempDir).filePath(QString::number(handle, 16) + QStringLiteral(".jpg")));
+    QObject* guiContext = mGuiContext;
+    mClient->getPreview(
+        handle, path.toStdString(), [guiContext, done, path](Result<std::string> result) {
+            invokeOnGuiThread(guiContext, [done, path, success = result.success] {
+                // Any failure reads as "no preview": one only exists when the uploader made it.
+                done(success ? ok(QJsonObject{{QStringLiteral("path"), path}})
+                             : fail(kItemNotFound, QStringLiteral("This item has no preview")));
+            });
+        });
 }

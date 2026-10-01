@@ -3,9 +3,11 @@
 #include "MockMegaClient.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
+#include <QTemporaryDir>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -52,7 +54,9 @@ protected:
     PluginHostApi::Reply call(const QString& method, const QJsonObject& params)
     {
         std::optional<PluginHostApi::Reply> reply;
-        mApi.call(method, params, [&reply](const PluginHostApi::Reply& r) { reply = r; });
+        mApi.call(method, params, mTempDir.path(), [&reply](const PluginHostApi::Reply& r) {
+            reply = r;
+        });
         for (int i = 0; i < 20 && !reply; ++i)
             QCoreApplication::processEvents();
         EXPECT_TRUE(reply.has_value());
@@ -62,6 +66,7 @@ protected:
     std::shared_ptr<NiceMock<MockMegaClient>> mClient = std::make_shared<NiceMock<MockMegaClient>>();
     QObject mGuiContext;
     PluginHostApi mApi{mClient, &mGuiContext};
+    QTemporaryDir mTempDir;
 };
 } // namespace
 
@@ -291,4 +296,55 @@ TEST_F(PluginHostApiTest, ItemsUpdateWithNothingToChangeIsANoOp)
                                              {QStringLiteral("name"), QStringLiteral("a.jpg")}});
     ASSERT_FALSE(reply.errorCode.has_value());
     EXPECT_FALSE(reply.mutated);
+}
+
+TEST_F(PluginHostApiTest, ItemsFetchPreviewSavesIntoTheRunsTempDir)
+{
+    EXPECT_CALL(*mClient, getNodeSnapshot(26))
+        .WillOnce(Return(Result<NodeSnapshot>::ok(node(26, "cat.jpg", false))));
+    std::string requestedPath;
+    EXPECT_CALL(*mClient, getPreview(26, _, _))
+        .WillOnce([&requestedPath](std::uint64_t,
+                                   const std::string& path,
+                                   std::function<void(Result<std::string>)> onDone) {
+            requestedPath = path;
+            onDone(Result<std::string>::ok(path));
+        });
+
+    const PluginHostApi::Reply reply =
+        call(QStringLiteral("items.fetchPreview"), {{QStringLiteral("handle"), QStringLiteral("h26")}});
+
+    ASSERT_FALSE(reply.errorCode.has_value());
+    const QString path = reply.result.toObject().value(QStringLiteral("path")).toString();
+    EXPECT_EQ(path.toStdString(), requestedPath);
+    EXPECT_EQ(QDir::fromNativeSeparators(path), QDir(mTempDir.path()).filePath(QStringLiteral("1a.jpg")));
+    EXPECT_FALSE(reply.mutated);
+}
+
+TEST_F(PluginHostApiTest, ItemsFetchPreviewReportsAMissingPreviewAsNotFound)
+{
+    EXPECT_CALL(*mClient, getNodeSnapshot(7))
+        .WillOnce(Return(Result<NodeSnapshot>::ok(node(7, "a.txt", false))));
+    EXPECT_CALL(*mClient, getPreview(7, _, _))
+        .WillOnce([](std::uint64_t, const std::string&, std::function<void(Result<std::string>)> onDone) {
+            onDone(Result<std::string>::fail("not found", -9));
+        });
+
+    EXPECT_EQ(call(QStringLiteral("items.fetchPreview"), {{QStringLiteral("handle"), QStringLiteral("h7")}})
+                  .errorCode,
+              PluginHostApi::kItemNotFound);
+}
+
+TEST_F(PluginHostApiTest, ItemsFetchPreviewRejectsFoldersAndMissingItemsWithoutFetching)
+{
+    ON_CALL(*mClient, getNodeSnapshot(3))
+        .WillByDefault(Return(Result<NodeSnapshot>::ok(node(3, "dir", true))));
+    EXPECT_CALL(*mClient, getPreview(_, _, _)).Times(0);
+
+    EXPECT_EQ(call(QStringLiteral("items.fetchPreview"), {{QStringLiteral("handle"), QStringLiteral("h3")}})
+                  .errorCode,
+              -32602);
+    EXPECT_EQ(call(QStringLiteral("items.fetchPreview"), {{QStringLiteral("handle"), QStringLiteral("h4")}})
+                  .errorCode,
+              PluginHostApi::kItemNotFound);
 }

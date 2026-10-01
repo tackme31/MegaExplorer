@@ -190,7 +190,10 @@ int main(int argc, char* argv[])
     LocalFolderController localFolderController(localLinkService, &notifications);
     CacheController cacheController(thumbnailService);
     OpenWithController openWithController(&viewerController);
-    PluginController pluginController(client, QDir(cacheDir).filePath(QStringLiteral("plugins")));
+    PluginController pluginController(
+        client,
+        QDir(cacheDir).filePath(QStringLiteral("plugins")),
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/plugin-tmp"));
     PropertiesController propertiesController(nodeDetailsService);
     TransferListModel transferListModel(&downloadController, &uploadController);
 

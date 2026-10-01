@@ -38,8 +38,12 @@ public:
     PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiContext);
 
     // done always runs on guiContext's thread: in-stack for the in-memory reads,
-    // later for anything that goes to the server.
-    void call(const QString& method, const QJsonObject& params, const Done& done) const;
+    // later for anything that goes to the server. tempDir is the calling run's own
+    // folder for fetched files; it is created on first use.
+    void call(const QString& method,
+              const QJsonObject& params,
+              const QString& tempDir,
+              const Done& done) const;
 
     // The context's ItemRef form: {handle, name, type, parent}. nullopt when the
     // node no longer exists.
@@ -49,6 +53,7 @@ private:
     Reply itemsGet(const QJsonObject& params) const;
     Reply itemsChildren(const QJsonObject& params) const;
     void itemsUpdate(const QJsonObject& params, const Done& done) const;
+    void itemsFetchPreview(const QJsonObject& params, const QString& tempDir, const Done& done) const;
 
     std::shared_ptr<IMegaClient> mClient;
     QObject* mGuiContext;

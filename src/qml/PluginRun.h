@@ -24,6 +24,7 @@ public:
     PluginRun(PluginManifest manifest,
               QString commandId,
               QJsonObject context,
+              QString tempDir,
               const PluginHostApi* hostApi,
               QObject* parent = nullptr);
     ~PluginRun() override;
@@ -69,10 +70,13 @@ private:
     void stopProcess();
     // The process and everything it started.
     void killAll();
+    void removeTempDir();
 
     PluginManifest mManifest;
     QString mCommandId;
     QJsonObject mContext;
+    // Files fetched for the plugin; removed once the process has exited.
+    QString mTempDir;
     // Owned by PluginController, this run's parent. Not used once the run is being destroyed.
     const PluginHostApi* mHostApi;
     QProcess mProcess;
