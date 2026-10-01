@@ -54,7 +54,7 @@ def human_size(size):
 
 
 def show(items):
-    item = call("items.get", {"handle": items[0]["handle"]})["item"]
+    item = call("items.get", {"handles": [items[0]["handle"]]})["items"][0]
     parts = [item["path"]]
     if item["type"] == "file":
         parts.append(human_size(item["size"]))
@@ -80,7 +80,7 @@ def count_folder(items):
         cursor = page["nextCursor"]
         if cursor is None:
             break
-    name = call("items.get", {"handle": folder})["item"]["path"]
+    name = call("items.get", {"handles": [folder]})["items"][0]["path"]
     return f"{name}: {files} files, {folders} folders"
 
 

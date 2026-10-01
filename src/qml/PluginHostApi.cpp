@@ -78,30 +78,44 @@ QJsonObject toItem(const IMegaClient& client, const NodeSnapshot& n)
         {QStringLiteral("tags"), tags}};
 }
 
-// The handle param as a node handle, or the error reply to send instead.
+// value as a node handle, or the error reply to send instead.
 std::optional<PluginHostApi::Reply>
-readHandle(const IMegaClient& client, const QJsonObject& params, std::uint64_t* handle)
+decodeHandle(const IMegaClient& client, const QJsonValue& value, std::uint64_t* handle)
 {
-    const QJsonValue value = params.value(QStringLiteral("handle"));
     if (!value.isString())
-        return fail(kInvalidParams, QStringLiteral("\"handle\" must be a string"));
+        return fail(kInvalidParams, QStringLiteral("a handle must be a string"));
     const Result<std::uint64_t> decoded = client.base64ToHandle(value.toString().toStdString());
     if (!decoded.success)
         return fail(kInvalidParams, QStringLiteral("\"%1\" is not a handle").arg(value.toString()));
     *handle = decoded.value();
     return std::nullopt;
 }
+
+std::optional<PluginHostApi::Reply>
+readHandle(const IMegaClient& client, const QJsonObject& params, std::uint64_t* handle)
+{
+    return decodeHandle(client, params.value(QStringLiteral("handle")), handle);
+}
 } // namespace
 
 PluginHostApi::Reply PluginHostApi::itemsGet(const QJsonObject& params) const
 {
-    std::uint64_t handle = 0;
-    if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
-        return *error;
-    const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle);
-    if (!node.success)
-        return fail(kItemNotFound, QStringLiteral("No such item"));
-    return ok(QJsonObject{{QStringLiteral("item"), toItem(*mClient, node.value())}});
+    const QJsonValue handles = params.value(QStringLiteral("handles"));
+    if (!handles.isArray())
+        return fail(kInvalidParams, QStringLiteral("\"handles\" must be an array"));
+    // All or nothing: one missing node fails the call, naming it.
+    QJsonArray items;
+    for (const QJsonValue value : handles.toArray())
+    {
+        std::uint64_t handle = 0;
+        if (std::optional<Reply> error = decodeHandle(*mClient, value, &handle))
+            return *error;
+        const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle);
+        if (!node.success)
+            return fail(kItemNotFound, QStringLiteral("No such item: %1").arg(value.toString()));
+        items.append(toItem(*mClient, node.value()));
+    }
+    return ok(QJsonObject{{QStringLiteral("items"), items}});
 }
 
 PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) const
@@ -110,7 +124,13 @@ PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) con
     if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
         return *error;
 
-    // The cursor is an offset into the folder's children, opaque to the plugin.
+    const QJsonValue type = params.value(QStringLiteral("type"));
+    const bool anyType = type.isUndefined() || type.isNull();
+    if (!anyType && type != QStringLiteral("file") && type != QStringLiteral("folder"))
+        return fail(kInvalidParams, QStringLiteral("\"type\" must be \"file\" or \"folder\""));
+    const bool wantFolders = type == QStringLiteral("folder");
+
+    // The cursor is an offset into the (type-filtered) children, opaque to the plugin.
     int offset = 0;
     const QJsonValue cursor = params.value(QStringLiteral("cursor"));
     if (cursor.isString())
@@ -133,13 +153,18 @@ PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) con
     if (!children.success)
         return fail(kInvalidParams, QStringLiteral("Not a folder"));
 
-    const std::vector<NodeSnapshot>& all = children.value();
-    const std::size_t begin = std::min(static_cast<std::size_t>(offset), all.size());
-    const std::size_t end = std::min(begin + static_cast<std::size_t>(limit), all.size());
+    std::vector<const NodeSnapshot*> matching;
+    for (const NodeSnapshot& child : children.value())
+    {
+        if (anyType || child.isFolder == wantFolders)
+            matching.push_back(&child);
+    }
+    const std::size_t begin = std::min(static_cast<std::size_t>(offset), matching.size());
+    const std::size_t end = std::min(begin + static_cast<std::size_t>(limit), matching.size());
     QJsonArray items;
     for (std::size_t i = begin; i < end; ++i)
-        items.append(toItem(*mClient, all[i]));
+        items.append(toItem(*mClient, *matching[i]));
     const QJsonValue next =
-        end < all.size() ? QJsonValue(QString::number(end)) : QJsonValue(QJsonValue::Null);
+        end < matching.size() ? QJsonValue(QString::number(end)) : QJsonValue(QJsonValue::Null);
     return ok(QJsonObject{{QStringLiteral("items"), items}, {QStringLiteral("nextCursor"), next}});
 }

@@ -58,10 +58,10 @@ TEST_F(PluginHostApiTest, ItemsGetReturnsTheFullItem)
     EXPECT_CALL(*mClient, getNodeSnapshot(7)).WillOnce(Return(Result<NodeSnapshot>::ok(cat)));
 
     const PluginHostApi::Reply reply =
-        mApi.call(QStringLiteral("items.get"), {{QStringLiteral("handle"), QStringLiteral("h7")}});
+        mApi.call(QStringLiteral("items.get"), {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h7")}}});
 
     ASSERT_FALSE(reply.errorCode.has_value());
-    const QJsonObject item = reply.result.toObject().value(QStringLiteral("item")).toObject();
+    const QJsonObject item = reply.result.toObject().value(QStringLiteral("items")).toArray().at(0).toObject();
     EXPECT_EQ(item.value(QStringLiteral("handle")).toString(), QStringLiteral("h7"));
     EXPECT_EQ(item.value(QStringLiteral("type")).toString(), QStringLiteral("file"));
     EXPECT_EQ(item.value(QStringLiteral("parent")).toString(), QStringLiteral("h1"));
@@ -73,14 +73,14 @@ TEST_F(PluginHostApiTest, ItemsGetReturnsTheFullItem)
 TEST_F(PluginHostApiTest, ItemsGetRejectsAMalformedHandle)
 {
     const PluginHostApi::Reply reply =
-        mApi.call(QStringLiteral("items.get"), {{QStringLiteral("handle"), QStringLiteral("zz")}});
+        mApi.call(QStringLiteral("items.get"), {{QStringLiteral("handles"), QJsonArray{QStringLiteral("zz")}}});
     EXPECT_EQ(reply.errorCode, -32602);
 }
 
 TEST_F(PluginHostApiTest, ItemsGetReportsAMissingNode)
 {
     const PluginHostApi::Reply reply =
-        mApi.call(QStringLiteral("items.get"), {{QStringLiteral("handle"), QStringLiteral("h9")}});
+        mApi.call(QStringLiteral("items.get"), {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h9")}}});
     EXPECT_EQ(reply.errorCode, PluginHostApi::kItemNotFound);
 }
 
@@ -122,6 +122,42 @@ TEST_F(PluginHostApiTest, ItemsChildrenRejectsAFile)
     const PluginHostApi::Reply reply = mApi.call(
         QStringLiteral("items.children"), {{QStringLiteral("handle"), QStringLiteral("h7")}});
     EXPECT_EQ(reply.errorCode, -32602);
+}
+
+TEST_F(PluginHostApiTest, ItemsGetKeepsTheOrderOfHandles)
+{
+    EXPECT_CALL(*mClient, getNodeSnapshot(3))
+        .WillOnce(Return(Result<NodeSnapshot>::ok(node(3, "c", false))));
+    EXPECT_CALL(*mClient, getNodeSnapshot(2))
+        .WillOnce(Return(Result<NodeSnapshot>::ok(node(2, "b", false))));
+    const PluginHostApi::Reply reply = mApi.call(
+        QStringLiteral("items.get"),
+        {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h3"), QStringLiteral("h2")}}});
+    const QJsonArray items = reply.result.toObject().value(QStringLiteral("items")).toArray();
+    ASSERT_EQ(items.size(), 2);
+    EXPECT_EQ(items.at(0).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("c"));
+    EXPECT_EQ(items.at(1).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("b"));
+}
+
+TEST_F(PluginHostApiTest, ItemsChildrenFiltersByType)
+{
+    EXPECT_CALL(*mClient, getNodeSnapshot(1))
+        .WillRepeatedly(Return(Result<NodeSnapshot>::ok(node(1, "dir", true))));
+    std::vector<NodeSnapshot> children{node(10, "a", false), node(11, "sub", true), node(12, "c", false)};
+    EXPECT_CALL(*mClient, getChildSnapshots(1))
+        .WillRepeatedly(Return(Result<std::vector<NodeSnapshot>>::ok(children)));
+
+    const PluginHostApi::Reply folders = mApi.call(
+        QStringLiteral("items.children"),
+        {{QStringLiteral("handle"), QStringLiteral("h1")}, {QStringLiteral("type"), QStringLiteral("folder")}});
+    const QJsonArray items = folders.result.toObject().value(QStringLiteral("items")).toArray();
+    ASSERT_EQ(items.size(), 1);
+    EXPECT_EQ(items.at(0).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("sub"));
+
+    const PluginHostApi::Reply bad = mApi.call(
+        QStringLiteral("items.children"),
+        {{QStringLiteral("handle"), QStringLiteral("h1")}, {QStringLiteral("type"), QStringLiteral("link")}});
+    EXPECT_EQ(bad.errorCode, -32602);
 }
 
 TEST_F(PluginHostApiTest, UnknownMethodIsMethodNotFound)

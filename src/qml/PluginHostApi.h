@@ -16,7 +16,8 @@ class PluginHostApi
 {
 public:
     // Application error codes, JSON-RPC's -32000..-32099 "server error" range.
-    static constexpr int kItemNotFound = -32001;
+    // -32001 is reserved for PermissionDenied (STUDY_PLUGIN_V1_DESIGN.md §6-3).
+    static constexpr int kItemNotFound = -32002;
 
     struct Reply
     {
