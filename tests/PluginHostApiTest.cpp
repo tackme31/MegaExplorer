@@ -244,6 +244,28 @@ TEST_F(PluginHostApiTest, ItemsUpdateSendsOnlyRealChangesAndReturnsTheNewItem)
     EXPECT_EQ(item.value(QStringLiteral("name")).toString(), QStringLiteral("b.jpg"));
 }
 
+TEST_F(PluginHostApiTest, ItemsUpdateRemovesTagsBeforeAddingThem)
+{
+    // A replacement on an item at the 10-tag limit only fits if the old tag goes first.
+    NodeSnapshot before = node(7, "a.jpg", false);
+    before.tags = {"wd:old"};
+    EXPECT_CALL(*mClient, getNodeSnapshot(7)).WillRepeatedly(Return(Result<NodeSnapshot>::ok(before)));
+    {
+        testing::InSequence order;
+        EXPECT_CALL(*mClient, removeNodeTag(7, "wd:old", _)).WillOnce(succeed());
+        EXPECT_CALL(*mClient, addNodeTag(7, "wd:new", _)).WillOnce(succeed());
+    }
+
+    const PluginHostApi::Reply reply = call(
+        QStringLiteral("items.update"),
+        {{QStringLiteral("handle"), QStringLiteral("h7")},
+         {QStringLiteral("tags"),
+          QJsonObject{{QStringLiteral("add"), QJsonArray{QStringLiteral("wd:new")}},
+                      {QStringLiteral("remove"), QJsonArray{QStringLiteral("wd:old")}}}}});
+
+    ASSERT_FALSE(reply.errorCode.has_value());
+}
+
 TEST_F(PluginHostApiTest, ItemsUpdateStopsAtTheFirstFailureAndSaysItChangedSomething)
 {
     EXPECT_CALL(*mClient, getNodeSnapshot(7))

@@ -335,7 +335,7 @@ void PluginHostApi::itemsUpdate(const QJsonObject& params, const Done& done) con
         }
         const std::set<std::string> present(node.tags.begin(), node.tags.end());
         const std::set<std::string> removing(remove->begin(), remove->end());
-        std::set<std::string> queued;
+        std::vector<std::string> adding;
         for (const std::string& tag : *add)
         {
             if (removing.count(tag))
@@ -345,11 +345,12 @@ void PluginHostApi::itemsUpdate(const QJsonObject& params, const Done& done) con
                               .arg(QString::fromStdString(tag))));
                 return;
             }
-            if (!present.count(tag) && queued.insert(tag).second)
-                chain->steps.push_back([client, handle, tag](std::function<void(Result<void>)> onDone) {
-                    client->addNodeTag(handle, tag, std::move(onDone));
-                });
+            if (!present.count(tag) &&
+                std::find(adding.begin(), adding.end(), tag) == adding.end())
+                adding.push_back(tag);
         }
+        // Removes first: a replacement must free its slots and bytes before the SDK
+        // checks the 10-tag and 3000-byte limits for the adds.
         for (const std::string& tag : removing)
         {
             if (present.count(tag))
@@ -357,6 +358,10 @@ void PluginHostApi::itemsUpdate(const QJsonObject& params, const Done& done) con
                     client->removeNodeTag(handle, tag, std::move(onDone));
                 });
         }
+        for (const std::string& tag : adding)
+            chain->steps.push_back([client, handle, tag](std::function<void(Result<void>)> onDone) {
+                client->addNodeTag(handle, tag, std::move(onDone));
+            });
     }
     chain->next();
 }
