@@ -9,6 +9,7 @@ listing what it demonstrates.
 | `basics/` | Sample: Basics | The selection the app hands over (`ctx.items`), a toast from the return value, an error toast from `CommandError`, `print()` going to the app's log |
 | `read-items/` | Sample: Read items | `items.get` (`ctx.get`) for an item's current details; `items.children` (`ctx.children`) paged through a folder; `items.descendants` (`ctx.descendants`) for everything below it |
 | `fetch-preview/` | Sample: Fetch preview | `items.fetchPreview` (`ctx.fetch_preview`): the preview JPEG as a file, `NoPreview`, deleting the file once read |
+| `confirm/` | Sample: Confirm | `ui.confirm` (`ctx.confirm`): asking before doing something, the `danger` look, stopping quietly on Cancel |
 | `update-items/` | Sample: Update items | `items.update` (`ctx.update`): adding and removing tags, favourites; the view re-reads after a change |
 | `progress-cancel/` | Sample: Progress and cancel | `"progress": true`, `ui.progress` (`ctx.progress`) with and without a total, Cancel (`ctx.check_cancelled`), Force quit for a plugin that ignores it |
 | `_helper/` | — | `megaexplorer_plugin.py`, the Python helper every sample uses, and `sync.py` |

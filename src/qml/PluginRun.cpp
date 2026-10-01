@@ -27,6 +27,7 @@ constexpr int kInvocationId = 1;
 // After this long without an answer to $/cancel the user is offered to kill the plugin.
 constexpr int kCancelGraceMs = 10000;
 constexpr int kCancelledCode = -32800;
+constexpr int kInvalidParamsCode = -32602;
 
 QString errorMessageOf(const QJsonObject& response)
 {
@@ -327,6 +328,11 @@ void PluginRun::handleMessage(const QJsonObject& message)
     // The answer can arrive after this run is gone (a write still in flight when the
     // plugin died); the QPointer drops it then.
     const QJsonValue id = message.value(QStringLiteral("id"));
+    if (method == QLatin1String("ui.confirm"))
+    {
+        handleConfirm(id, message.value(QStringLiteral("params")).toObject());
+        return;
+    }
     mHostApi->call(method,
                    message.value(QStringLiteral("params")).toObject(),
                    mHostState,
@@ -357,6 +363,35 @@ void PluginRun::writeReply(const QJsonValue& id,
         reply.insert(QStringLiteral("result"), result.result);
     }
     mProcess.write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n');
+}
+
+void PluginRun::handleConfirm(const QJsonValue& id, const QJsonObject& params)
+{
+    const auto fail = [&](const QString& message) {
+        writeReply(id, QStringLiteral("ui.confirm"), {{}, kInvalidParamsCode, message, false});
+    };
+    if (mStage != Stage::Executing)
+        return fail(QStringLiteral("ui.confirm is only allowed during command.execute"));
+    if (!mConfirmId.isUndefined())
+        return fail(QStringLiteral("Another ui.confirm is still open"));
+    const QJsonValue message = params.value(QStringLiteral("message"));
+    const QJsonValue title = params.value(QStringLiteral("title"));
+    const QJsonValue okLabel = params.value(QStringLiteral("okLabel"));
+    const QJsonValue danger = params.value(QStringLiteral("danger"));
+    const auto optionalString = [](const QJsonValue& v) { return v.isUndefined() || v.isNull() || v.isString(); };
+    if (!message.isString() || message.toString().isEmpty() || !optionalString(title) ||
+        !optionalString(okLabel) || !(danger.isUndefined() || danger.isNull() || danger.isBool()))
+        return fail(QStringLiteral("ui.confirm takes {message, title?, okLabel?, danger?}"));
+    mConfirmId = id;
+    emit confirmRequested(title.toString(), message.toString(), okLabel.toString(), danger.toBool());
+}
+
+void PluginRun::answerConfirm(bool ok)
+{
+    if (mConfirmId.isUndefined())
+        return;
+    const QJsonValue id = std::exchange(mConfirmId, QJsonValue(QJsonValue::Undefined));
+    writeReply(id, QStringLiteral("ui.confirm"), {QJsonObject{{QStringLiteral("ok"), ok}}, std::nullopt, {}, false});
 }
 
 void PluginRun::handleResponse(const QJsonObject& message)

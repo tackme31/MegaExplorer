@@ -267,6 +267,19 @@ class Context:
             params["message"] = message
         self._connection.notify("ui.progress", params)
 
+    # --- asking the user ----------------------------------------------------------
+
+    def confirm(self, message, title=None, ok_label=None, danger=False):
+        """Asks the user and waits for the answer: True for OK, False for Cancel.
+        danger=True marks the OK button as destructive and focuses Cancel.
+        The title defaults to the plugin's name, ok_label to "OK"."""
+        params = {"message": message, "danger": danger}
+        if title is not None:
+            params["title"] = title
+        if ok_label is not None:
+            params["okLabel"] = ok_label
+        return bool(self.call("ui.confirm", params)["ok"])
+
     # --- items ------------------------------------------------------------------
 
     def call(self, method, params):

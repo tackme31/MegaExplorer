@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.sample.confirm",
+  "name": "Sample: Confirm",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
+  "commands": [
+    { "id": "ask", "title": "Ask before counting" },
+    { "id": "ask-danger", "title": "Ask before something destructive" }
+  ]
+}

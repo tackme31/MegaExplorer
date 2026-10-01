@@ -299,6 +299,11 @@ ApplicationWindow {
         plugins: pluginController
     }
 
+    // After the progress dialog, so a question asked mid-run stacks above it.
+    PluginConfirmDialog {
+        plugins: pluginController
+    }
+
     ConfirmUploadDialog {
         uploads: uploadController
     }

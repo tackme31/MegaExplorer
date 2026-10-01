@@ -32,6 +32,9 @@ class PluginController : public QObject
     // current and total (-1 when unknown), message, cancelling, and forceStoppable
     // (cancelled but still running after a grace period).
     Q_PROPERTY(QVariantList progressRuns READ progressRuns NOTIFY progressRunsChanged)
+    // Open ui.confirm questions, oldest first: maps of pluginId, pluginName, title,
+    // message, okLabel and danger. Answered with answerConfirm().
+    Q_PROPERTY(QVariantList confirmRequests READ confirmRequests NOTIFY confirmRequestsChanged)
 
 public:
     // tempRoot holds the files fetched for plugins, one folder per app process
@@ -52,6 +55,7 @@ public:
     }
 
     QVariantList progressRuns() const;
+    QVariantList confirmRequests() const;
 
     // Rescans pluginsDir. Plugins are kept in name order, which is menu order.
     Q_INVOKABLE void reload();
@@ -71,10 +75,12 @@ public:
     Q_INVOKABLE void execute(const QString& actionId, const QVariantList& entries);
     Q_INVOKABLE void cancel(const QString& pluginId);
     Q_INVOKABLE void forceStop(const QString& pluginId);
+    Q_INVOKABLE void answerConfirm(const QString& pluginId, bool ok);
 
 signals:
     void runningChanged();
     void progressRunsChanged();
+    void confirmRequestsChanged();
     // outcome and changed as PluginRun::finished.
     void commandFinished(const QString& pluginName,
                          const QString& outcome,
@@ -105,8 +111,21 @@ private:
     // Coalesces updates: a plugin may report every item, the dialog only needs a few a second.
     void scheduleProgressUpdate();
 
+    struct ConfirmState
+    {
+        QString pluginId;
+        QString pluginName;
+        QString title;
+        QString message;
+        QString okLabel;
+        bool danger = false;
+    };
+    // Drops pluginId's open question, if any.
+    void removeConfirm(const QString& pluginId);
+
     PluginHostApi mHostApi;
     std::vector<ProgressState> mProgress;
+    std::vector<ConfirmState> mConfirms;
     QTimer* mProgressUpdateTimer;
     QString mPluginsDir;
     std::vector<PluginManifest> mPlugins;

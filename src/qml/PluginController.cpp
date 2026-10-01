@@ -190,6 +190,7 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
             this,
             [this, pluginId, pluginName](const QString& outcome, const QString& message, bool changed) {
                 mRuns.remove(pluginId);
+                removeConfirm(pluginId);
                 const auto progress =
                     std::find_if(mProgress.begin(), mProgress.end(), [&](const ProgressState& state) {
                         return state.pluginId == pluginId;
@@ -204,6 +205,16 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
                 ++mRunningRevision;
                 emit runningChanged();
                 emit commandFinished(pluginName, outcome, message, changed);
+            });
+    connect(run,
+            &PluginRun::confirmRequested,
+            this,
+            [this, pluginId, pluginName](const QString& title,
+                                         const QString& message,
+                                         const QString& okLabel,
+                                         bool danger) {
+                mConfirms.push_back({pluginId, pluginName, title, message, okLabel, danger});
+                emit confirmRequestsChanged();
             });
     const auto command =
         std::find_if(plugin->commands.begin(), plugin->commands.end(), [&](const PluginCommand& c) {
@@ -291,6 +302,39 @@ void PluginController::forceStop(const QString& pluginId)
 {
     if (PluginRun* run = mRuns.value(pluginId))
         run->forceStop();
+}
+
+QVariantList PluginController::confirmRequests() const
+{
+    QVariantList requests;
+    for (const ConfirmState& state : mConfirms)
+    {
+        requests.append(QVariantMap{{QStringLiteral("pluginId"), state.pluginId},
+                                    {QStringLiteral("pluginName"), state.pluginName},
+                                    {QStringLiteral("title"), state.title},
+                                    {QStringLiteral("message"), state.message},
+                                    {QStringLiteral("okLabel"), state.okLabel},
+                                    {QStringLiteral("danger"), state.danger}});
+    }
+    return requests;
+}
+
+void PluginController::answerConfirm(const QString& pluginId, bool ok)
+{
+    removeConfirm(pluginId);
+    if (PluginRun* run = mRuns.value(pluginId))
+        run->answerConfirm(ok);
+}
+
+void PluginController::removeConfirm(const QString& pluginId)
+{
+    const auto confirm = std::find_if(mConfirms.begin(), mConfirms.end(), [&](const ConfirmState& state) {
+        return state.pluginId == pluginId;
+    });
+    if (confirm == mConfirms.end())
+        return;
+    mConfirms.erase(confirm);
+    emit confirmRequestsChanged();
 }
 
 PluginController::ProgressState* PluginController::findProgress(const QString& pluginId)

@@ -34,6 +34,8 @@ public:
     void cancel();
     // Kills the process; for a plugin that ignores cancel().
     void forceStop();
+    // The user's answer to the open ui.confirm; ignored when none is open.
+    void answerConfirm(bool ok);
 
     const PluginManifest& manifest() const
     {
@@ -49,6 +51,9 @@ signals:
     void progressReported(qint64 current, qint64 total, const QString& message);
     // Still running a while after cancel(); forceStop() is the way out.
     void cancelIgnored();
+    // From ui.confirm; the plugin waits until answerConfirm(). title and okLabel are
+    // empty when the plugin left them out.
+    void confirmRequested(const QString& title, const QString& message, const QString& okLabel, bool danger);
 
 private:
     enum class Stage
@@ -65,6 +70,7 @@ private:
     void readStderr();
     void handleMessage(const QJsonObject& message);
     void handleResponse(const QJsonObject& message);
+    void handleConfirm(const QJsonValue& id, const QJsonObject& params);
     void writeReply(const QJsonValue& id, const QString& method, const PluginHostApi::Reply& result);
     void finish(const QString& outcome, const QString& message);
     void stopProcess();
@@ -90,4 +96,7 @@ private:
     Stage mStage = Stage::Initializing;
     bool mChanged = false;
     bool mCancelRequested = false;
+    // The id of the ui.confirm awaiting the user; undefined when none is.
+    // Not the default: a default QJsonValue is Null, which is a valid id.
+    QJsonValue mConfirmId{QJsonValue::Undefined};
 };
