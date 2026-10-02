@@ -381,8 +381,9 @@ bash scripts/loop_verify.sh          # add --full to see the generated sources' 
 ```
 
 It closes a running `MegaExplorer.exe` first (otherwise the link dies with `LNK1104`),
-reconfigures when `QML_FILES` changed, **fails on a single warning of ours**, then runs `ctest`, and
-prints only a handful of lines unless something failed. It is what `/evolve` uses, so it must not
+reconfigures when `QML_FILES` changed, **fails on a single warning of ours**, then runs the
+GoogleTest binary once and the QML tests in parallel via `ctest`, and prints only a handful of
+lines unless something failed. It is what `/evolve` uses, so it must not
 depend on an IDE. The `qtcreator` MCP server (`mcp__qtcreator__build` / `list_issues` /
 `list_file_issues`, see `docs/BUILD.md`) is an optional convenience for interactive sessions only.
 

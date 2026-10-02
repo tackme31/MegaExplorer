@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Single machine-verification entry point for the /evolve loop: close our exes,
 # (re)configure if needed, build every target in the preset, fail on any /W4
-# warning of ours, then run ctest. Terse on success -- the loop pays for every
+# warning of ours, then run the tests. Terse on success -- the loop pays for every
 # line of this output in context, so a clean run is a handful of lines and only
 # failures print detail.
 #
@@ -170,15 +170,30 @@ echo "[ok] warnings     0"
 
 # -------------------------------------------------------------------- 5. tests
 if [ "$run_tests" -eq 1 ]; then
+    # The gtest binary runs once, not through ctest: gtest_discover_tests gives
+    # each case its own process, and loading Qt ~1000 times was ~100 s of a 7 s suite.
     SECONDS=0
-    "$CTEST" --preset msvc-debug >"$LOG" 2>&1
+    "$BUILD_DIR/Debug/MegaExplorerTests.exe" --gtest_brief=1 >"$LOG" 2>&1
     test_status=$?
     if [ "$test_status" -ne 0 ]; then
         echo "--- failing tests ---"
-        grep -E '^\s*[0-9]+ - .*(Failed|Timeout)|tests failed out of|FAIL!' "$LOG" | head -n 40
-        fail "ctest ($SECONDS s)"
+        grep -E '^\[  FAILED  \]|\): error: ' "$LOG" | head -n 40
+        # A crash prints no FAILED line; the tail shows which case was running.
+        grep -q '^\[  FAILED  \]' "$LOG" || tail -n 15 "$LOG"
+        fail "gtest ($SECONDS s, exit $test_status)"
     fi
-    step ctest "$SECONDS"
+    step gtest "$SECONDS"
+    grep -E '^\[  PASSED  \]' "$LOG" | tail -n 1
+
+    SECONDS=0
+    "$CTEST" --preset msvc-debug -R '^QmlTest\.' --no-tests=error -j "$(nproc)" >"$LOG" 2>&1
+    test_status=$?
+    if [ "$test_status" -ne 0 ]; then
+        echo "--- failing tests ---"
+        grep -E '^\s*[0-9]+ - .*(Failed|Timeout)|tests failed out of|FAIL!|No tests were found' "$LOG" | head -n 40
+        fail "qml tests ($SECONDS s)"
+    fi
+    step "qml tests" "$SECONDS"
     grep -E 'tests passed' "$LOG" | tail -n 1
 fi
 
