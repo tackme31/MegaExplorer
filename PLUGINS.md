@@ -440,6 +440,9 @@ Other notifications are logged and ignored.
 | No `initialize` answer in 5 min | `<name> didn't start in time and was stopped` | — |
 | Exited before answering | `<name> stopped unexpectedly` | — |
 
+The progress dialog of a `"progress": true` command is modal: the window cannot be used until the
+command ends or is cancelled, so the user cannot change the items it is working on behind it. A
+command without `"progress": true` shows no dialog and leaves the window usable.
 With `"progress": true` and `"result": "dialog"`, the progress row turns into the result in place.
 The full result text is always written to the log.
 

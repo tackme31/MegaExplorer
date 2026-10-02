@@ -9,7 +9,8 @@ import QtQuick.Layouts
 // One instance in Main.qml: a row per "progress": true command running, and per
 // finished "result": "dialog" command until its Close. A row that was showing
 // progress turns into the result in place.
-// Not modal: a run over thousands of items must not keep the user out of the window.
+// Modal: changing items behind a run (tags, logout) can undo or misdirect its work.
+// A long run is left with Cancel, or another window of the app.
 Dialog {
     id: root
 
@@ -46,7 +47,7 @@ Dialog {
 
     parent: Overlay.overlay
     anchors.centerIn: Overlay.overlay
-    modal: false
+    modal: true
     closePolicy: Popup.NoAutoClose
     visible: root.runs.length > 0
     width: Math.min(520, Overlay.overlay.width - 48)
