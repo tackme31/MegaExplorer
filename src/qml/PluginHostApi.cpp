@@ -3,11 +3,23 @@
 #include "GuiThread.h"
 #include "core/IMegaClient.h"
 
+#include "core/DownloadService.h"
+#include "core/FileOperationService.h"
+#include "core/MegaErrorCodes.h"
+
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
+#include <QRegularExpression>
 #include <QStringList>
 
 #include <algorithm>
+#include <atomic>
+#include <cmath>
+#include <deque>
+#include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <set>
 #include <utility>
@@ -57,8 +69,8 @@ QJsonObject toItem(const IMegaClient& client, const NodeSnapshot& n)
 }
 } // namespace
 
-PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiContext)
-    : mClient(std::move(client)), mGuiContext(guiContext)
+PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiContext, UserDownloads downloads)
+    : mClient(std::move(client)), mGuiContext(guiContext), mDownloads(std::move(downloads))
 {
 }
 
@@ -77,6 +89,16 @@ void PluginHostApi::call(const QString& method,
         itemsUpdate(params, done);
     else if (method == QStringLiteral("items.fetchPreview"))
         itemsFetchPreview(params, run.tempDir, done);
+    else if (method == QStringLiteral("items.fetchFile"))
+        itemsFetchFile(params, run, done);
+    else if (method == QStringLiteral("items.readRange"))
+        itemsReadRange(params, run, done);
+    else if (method == QStringLiteral("items.upload"))
+        itemsUpload(params, run, done);
+    else if (method == QStringLiteral("items.createFolder"))
+        itemsCreateFolder(params, done);
+    else if (method == QStringLiteral("transfers.download"))
+        done(transfersDownload(params));
     else
         done(fail(kMethodNotFound, QStringLiteral("Method not found: %1").arg(method)));
 }
@@ -511,4 +533,636 @@ void PluginHostApi::itemsFetchPreview(const QJsonObject& params,
                              : fail(kItemNotFound, QStringLiteral("This item has no preview")));
             });
         });
+}
+
+struct PluginHostApi::TransferQueue
+{
+    // Starts one transfer and calls finish exactly once, on the GUI thread. May set abort.
+    using Job = std::function<void(const std::shared_ptr<TransferQueue>& queue, const Done& finish)>;
+
+    std::deque<std::pair<Job, Done>> pending;
+    bool busy = false;
+    bool cancelled = false;
+    std::function<void()> abort;
+    // Each fetched file gets a folder of its own, so two fetches never collide.
+    int nextSlot = 0;
+};
+
+namespace
+{
+using TransferQueue = PluginHostApi::TransferQueue;
+
+constexpr std::uint64_t kMaxReadRangeBytes = 1024 * 1024;
+
+// MegaSdkClient keys its cancel tokens by transfer id, shared with the app's own
+// download and upload queues; those count up from 1, so these start far above.
+std::uint64_t nextPluginTransferId()
+{
+    static std::atomic<std::uint64_t> next{std::uint64_t{1} << 62};
+    return next++;
+}
+
+PluginHostApi::Reply cancelledReply(bool mutated = false)
+{
+    PluginHostApi::Reply reply = fail(PluginHostApi::kCancelled, QStringLiteral("Cancelled"));
+    reply.mutated = mutated;
+    return reply;
+}
+
+PluginHostApi::Reply megaFail(const std::string& message)
+{
+    return fail(PluginHostApi::kMegaError, QString::fromStdString(message));
+}
+
+PluginHostApi::Reply conflict(const QString& message, const QString& reason, const QString& detail = {})
+{
+    PluginHostApi::Reply reply = fail(PluginHostApi::kConflict, message);
+    QJsonObject data{{QStringLiteral("reason"), reason}};
+    if (!detail.isEmpty())
+        data.insert(QStringLiteral("message"), detail);
+    reply.errorData = data;
+    return reply;
+}
+
+// The new node as an Item, or just its handle if the local tree has not caught up.
+QJsonObject createdItem(const IMegaClient& client, std::uint64_t handle)
+{
+    const Result<NodeSnapshot> node = client.getNodeSnapshot(handle);
+    if (node.success)
+        return toItem(client, node.value());
+    return {{QStringLiteral("handle"), QString::fromStdString(client.handleToBase64(handle))}};
+}
+
+std::optional<PluginHostApi::Reply>
+readNode(const IMegaClient& client, const QJsonValue& value, bool wantFolder, NodeSnapshot* out)
+{
+    std::uint64_t handle = 0;
+    if (std::optional<PluginHostApi::Reply> error = decodeHandle(client, value, &handle))
+        return error;
+    const Result<NodeSnapshot> node = client.getNodeSnapshot(handle);
+    if (!node.success)
+        return fail(PluginHostApi::kItemNotFound, QStringLiteral("No such item: %1").arg(value.toString()));
+    if (node.value().isFolder != wantFolder)
+        return fail(kInvalidParams,
+                    wantFolder ? QStringLiteral("%1 is not a folder").arg(value.toString())
+                               : QStringLiteral("%1 is not a file").arg(value.toString()));
+    *out = node.value();
+    return std::nullopt;
+}
+
+// One of choices, the first being the default.
+std::optional<PluginHostApi::Reply>
+readChoice(const QJsonObject& params, const QString& key, const QStringList& choices, QString* out)
+{
+    const QJsonValue value = params.value(key);
+    if (value.isUndefined() || value.isNull())
+    {
+        *out = choices.first();
+        return std::nullopt;
+    }
+    if (!value.isString() || !choices.contains(value.toString()))
+        return fail(kInvalidParams, QStringLiteral("%1 must be one of: %2").arg(key, choices.join(QStringLiteral(", "))));
+    *out = value.toString();
+    return std::nullopt;
+}
+
+std::optional<PluginHostApi::Reply>
+readName(const QJsonValue& value, QString* out)
+{
+    if (!value.isString() || !FileOperationService::isValidName(value.toString().toStdString()))
+        return fail(kInvalidParams, QStringLiteral("name must be a non-blank name without / or \\"));
+    *out = value.toString();
+    return std::nullopt;
+}
+
+std::optional<PluginHostApi::Reply>
+readBytes(const QJsonObject& params, const QString& key, bool required, std::optional<std::uint64_t>* out)
+{
+    const QJsonValue value = params.value(key);
+    if (value.isUndefined() || value.isNull())
+    {
+        if (required)
+            return fail(kInvalidParams, QStringLiteral("%1 is required").arg(key));
+        out->reset();
+        return std::nullopt;
+    }
+    const double number = value.toDouble(-1);
+    // 2^53: beyond it a JSON number no longer holds every whole value.
+    if (!value.isDouble() || number < 0 || number != std::floor(number) || number > 9007199254740992.0)
+        return fail(kInvalidParams, QStringLiteral("%1 must be a whole number of bytes").arg(key));
+    *out = static_cast<std::uint64_t>(number);
+    return std::nullopt;
+}
+
+struct ByteRange
+{
+    std::uint64_t offset = 0;
+    std::uint64_t length = 0;
+};
+
+// offset/length as a range inside node, the length cut at the end of the file.
+// nullopt in *out when neither is given and they are not required.
+std::optional<PluginHostApi::Reply>
+readByteRange(const QJsonObject& params, const NodeSnapshot& node, bool required, std::optional<ByteRange>* out)
+{
+    std::optional<std::uint64_t> offset;
+    std::optional<std::uint64_t> length;
+    if (std::optional<PluginHostApi::Reply> error = readBytes(params, QStringLiteral("offset"), required, &offset))
+        return error;
+    if (std::optional<PluginHostApi::Reply> error = readBytes(params, QStringLiteral("length"), required, &length))
+        return error;
+    if (!offset && !length)
+    {
+        out->reset();
+        return std::nullopt;
+    }
+    const std::uint64_t start = offset.value_or(0);
+    if (start >= node.sizeBytes)
+        return fail(kInvalidParams,
+                    QStringLiteral("offset %1 is at or past the end of the file (%2 bytes)")
+                        .arg(start)
+                        .arg(node.sizeBytes));
+    const std::uint64_t available = node.sizeBytes - start;
+    const std::uint64_t count = length ? std::min(*length, available) : available;
+    if (count == 0)
+        return fail(kInvalidParams, QStringLiteral("length must be more than 0"));
+    *out = ByteRange{start, count};
+    return std::nullopt;
+}
+
+// A relative folder path inside the Downloads folder, with '/' separators; empty for its top.
+std::optional<PluginHostApi::Reply> readSubPath(const QJsonValue& value, QString* out)
+{
+    out->clear();
+    if (value.isUndefined() || value.isNull())
+        return std::nullopt;
+    const auto bad = [&value] {
+        return fail(kInvalidParams,
+                    QStringLiteral("subPath \"%1\" must be a relative folder path, without .. or characters "
+                                   "Windows does not allow")
+                        .arg(value.toString()));
+    };
+    if (!value.isString())
+        return bad();
+    QString path = value.toString();
+    path.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    if (path.startsWith(QLatin1Char('/')))
+        return bad();
+    static const QRegularExpression forbidden(QStringLiteral("[<>:\"|?*\\x00-\\x1f]"));
+    QStringList parts;
+    for (const QString& part : path.split(QLatin1Char('/'), Qt::SkipEmptyParts))
+    {
+        // Windows drops a trailing dot or space, which would turn ".." back on.
+        if (part.endsWith(QLatin1Char('.')) || part.endsWith(QLatin1Char(' ')) || part.contains(forbidden))
+            return bad();
+        parts.append(part);
+    }
+    *out = parts.join(QLatin1Char('/'));
+    return std::nullopt;
+}
+
+void pump(const std::shared_ptr<TransferQueue>& queue)
+{
+    while (!queue->busy && !queue->pending.empty())
+    {
+        auto [job, done] = std::move(queue->pending.front());
+        queue->pending.pop_front();
+        queue->busy = true;
+        job(queue, [queue, done = std::move(done)](const PluginHostApi::Reply& reply) {
+            queue->busy = false;
+            queue->abort = nullptr;
+            done(queue->cancelled && reply.errorCode ? cancelledReply(reply.mutated) : reply);
+            pump(queue);
+        });
+    }
+}
+
+void enqueueTransfer(PluginHostApi::RunState& run, TransferQueue::Job job, const PluginHostApi::Done& done)
+{
+    if (!run.transfers)
+        run.transfers = std::make_shared<TransferQueue>();
+    if (run.transfers->cancelled)
+    {
+        done(cancelledReply());
+        return;
+    }
+    run.transfers->pending.emplace_back(std::move(job), done);
+    pump(run.transfers);
+}
+
+void fetchWholeFile(const std::shared_ptr<IMegaClient>& client,
+                    QObject* guiContext,
+                    const NodeSnapshot& node,
+                    const QString& dir,
+                    const std::shared_ptr<TransferQueue>& queue,
+                    const PluginHostApi::Done& finish)
+{
+    const QString path = QDir::toNativeSeparators(
+        QDir(dir).filePath(QString::fromStdString(DownloadService::safeLocalFileName(node.name))));
+    const std::uint64_t id = nextPluginTransferId();
+    queue->abort = [client, id] { client->cancelDownload(id); };
+    client->download(
+        node.handle,
+        path.toStdString(),
+        id,
+        [](std::uint64_t, std::uint64_t) {},
+        [guiContext, finish, dir](Result<DownloadOutcome> result) {
+            invokeOnGuiThread(guiContext, [finish, dir, result = std::move(result)] {
+                if (result.success)
+                {
+                    finish(ok(QJsonObject{
+                        {QStringLiteral("path"),
+                         QDir::toNativeSeparators(QString::fromStdString(result.value().localPath))}}));
+                    return;
+                }
+                QDir(dir).removeRecursively();
+                finish(result.errorCode == MegaErrorCode::kEIncomplete ? cancelledReply()
+                                                                         : megaFail(result.errorMessage));
+            });
+        });
+}
+
+// What a streamed range read writes into; filled on the SDK's thread, read on the
+// GUI thread only after onDone.
+struct RangeSink
+{
+    std::ofstream file;
+    QByteArray buffer;
+    bool toFile = false;
+    bool writeFailed = false;
+    std::atomic<bool> aborted{false};
+};
+
+void readRangeInto(const std::shared_ptr<IMegaClient>& client,
+                   QObject* guiContext,
+                   std::uint64_t handle,
+                   ByteRange range,
+                   const std::shared_ptr<RangeSink>& sink,
+                   const std::shared_ptr<TransferQueue>& queue,
+                   std::function<void(const Result<void>&)> onDone)
+{
+    queue->abort = [sink] { sink->aborted = true; };
+    client->readFileRangeStreamed(
+        handle,
+        range.offset,
+        range.length,
+        [sink](const char* data, std::size_t size) {
+            if (sink->aborted)
+                return false;
+            if (!sink->toFile)
+            {
+                sink->buffer.append(data, static_cast<qsizetype>(size));
+                return true;
+            }
+            sink->file.write(data, static_cast<std::streamsize>(size));
+            sink->writeFailed = !sink->file;
+            return !sink->writeFailed;
+        },
+        [guiContext, onDone = std::move(onDone)](Result<void> result) {
+            invokeOnGuiThread(guiContext, [onDone, result = std::move(result)] { onDone(result); });
+        });
+}
+
+void fetchFileRange(const std::shared_ptr<IMegaClient>& client,
+                    QObject* guiContext,
+                    const NodeSnapshot& node,
+                    ByteRange range,
+                    const QString& dir,
+                    const std::shared_ptr<TransferQueue>& queue,
+                    const PluginHostApi::Done& finish)
+{
+    const QString path = QDir::toNativeSeparators(QDir(dir).filePath(
+        QStringLiteral("%1.%2-%3.part").arg(QString::number(node.handle, 16)).arg(range.offset).arg(range.length)));
+    auto sink = std::make_shared<RangeSink>();
+    sink->toFile = true;
+    sink->file.open(std::filesystem::path(path.toStdWString()), std::ios::binary);
+    if (!sink->file)
+    {
+        finish(fail(kInternalError, QStringLiteral("Could not create %1").arg(path)));
+        return;
+    }
+    readRangeInto(client, guiContext, node.handle, range, sink, queue, [finish, dir, path, sink](const Result<void>& result) {
+        sink->file.close();
+        if (result.success && sink->file)
+        {
+            finish(ok(QJsonObject{{QStringLiteral("path"), path}}));
+            return;
+        }
+        QDir(dir).removeRecursively();
+        if (sink->aborted)
+            finish(cancelledReply());
+        else if (sink->writeFailed || result.success)
+            finish(fail(kInternalError, QStringLiteral("Could not write %1").arg(path)));
+        else
+            finish(megaFail(result.errorMessage));
+    });
+}
+} // namespace
+
+void PluginHostApi::cancelTransfers(RunState& run)
+{
+    const std::shared_ptr<TransferQueue> queue = run.transfers;
+    if (!queue)
+        return;
+    queue->cancelled = true;
+    const auto pending = std::exchange(queue->pending, {});
+    for (const auto& entry : pending)
+        entry.second(cancelledReply());
+    if (queue->abort)
+        queue->abort();
+}
+
+void PluginHostApi::abandonTransfers(RunState& run)
+{
+    const std::shared_ptr<TransferQueue> queue = run.transfers;
+    if (!queue)
+        return;
+    queue->cancelled = true;
+    queue->pending.clear();
+    if (queue->abort)
+        queue->abort();
+}
+
+void PluginHostApi::itemsFetchFile(const QJsonObject& params, RunState& run, const Done& done) const
+{
+    NodeSnapshot node;
+    if (std::optional<Reply> error = readNode(*mClient, params.value(QStringLiteral("handle")), false, &node))
+        return done(*error);
+    std::optional<ByteRange> range;
+    if (std::optional<Reply> error = readByteRange(params, node, false, &range))
+        return done(*error);
+    if (run.tempDir.isEmpty())
+        return done(fail(kInternalError, QStringLiteral("This run has no folder for fetched files")));
+
+    enqueueTransfer(
+        run,
+        [client = mClient, guiContext = mGuiContext, node, range, tempDir = run.tempDir](
+            const std::shared_ptr<TransferQueue>& queue, const Done& finish) {
+            const QString dir = QDir(tempDir).filePath(QStringLiteral("files/%1").arg(++queue->nextSlot));
+            if (!QDir().mkpath(dir))
+                return finish(fail(kInternalError, QStringLiteral("Could not create %1").arg(dir)));
+            if (range)
+                fetchFileRange(client, guiContext, node, *range, dir, queue, finish);
+            else
+                fetchWholeFile(client, guiContext, node, dir, queue, finish);
+        },
+        done);
+}
+
+void PluginHostApi::itemsReadRange(const QJsonObject& params, RunState& run, const Done& done) const
+{
+    NodeSnapshot node;
+    if (std::optional<Reply> error = readNode(*mClient, params.value(QStringLiteral("handle")), false, &node))
+        return done(*error);
+    std::optional<ByteRange> range;
+    if (std::optional<Reply> error = readByteRange(params, node, true, &range))
+        return done(*error);
+    if (range->length > kMaxReadRangeBytes)
+        return done(fail(kInvalidParams,
+                         QStringLiteral("items.readRange reads at most %1 bytes at a time; use items.fetchFile "
+                                        "with offset and length for more")
+                             .arg(kMaxReadRangeBytes)));
+
+    enqueueTransfer(
+        run,
+        [client = mClient, guiContext = mGuiContext, handle = node.handle, byteRange = *range](
+            const std::shared_ptr<TransferQueue>& queue, const Done& finish) {
+            auto sink = std::make_shared<RangeSink>();
+            readRangeInto(client, guiContext, handle, byteRange, sink, queue, [finish, sink](const Result<void>& result) {
+                if (sink->aborted)
+                    return finish(cancelledReply());
+                if (!result.success)
+                    return finish(megaFail(result.errorMessage));
+                finish(ok(QJsonObject{{QStringLiteral("data"), QString::fromLatin1(sink->buffer.toBase64())},
+                                      {QStringLiteral("length"), static_cast<double>(sink->buffer.size())}}));
+            });
+        },
+        done);
+}
+
+void PluginHostApi::itemsUpload(const QJsonObject& params, RunState& run, const Done& done) const
+{
+    NodeSnapshot parent;
+    if (std::optional<Reply> error = readNode(*mClient, params.value(QStringLiteral("parent")), true, &parent))
+        return done(*error);
+    const QJsonValue localPath = params.value(QStringLiteral("localPath"));
+    const QFileInfo local(localPath.toString());
+    if (!localPath.isString() || !local.isAbsolute() || !local.isFile())
+        return done(fail(kInvalidParams, QStringLiteral("localPath must be the absolute path of an existing file")));
+    QString name = local.fileName();
+    const QJsonValue nameValue = params.value(QStringLiteral("name"));
+    if (!nameValue.isUndefined() && !nameValue.isNull())
+    {
+        if (std::optional<Reply> error = readName(nameValue, &name))
+            return done(*error);
+    }
+    QString onConflict;
+    if (std::optional<Reply> error = readChoice(params,
+                                                QStringLiteral("onConflict"),
+                                                {QStringLiteral("rename"), QStringLiteral("fail"), QStringLiteral("version")},
+                                                &onConflict))
+        return done(*error);
+    const Result<void> allowed = mClient->checkUpload(parent.handle, false);
+    if (!allowed.success)
+        return done(allowed.errorCode == MegaErrorCode::kENoEnt
+                        ? fail(kItemNotFound, QStringLiteral("The folder no longer exists"))
+                        : megaFail(allowed.errorMessage));
+
+    std::set<std::string> taken;
+    bool clash = false;
+    if (const Result<std::vector<NodeSnapshot>> children = mClient->getChildSnapshots(parent.handle);
+        children.success)
+    {
+        for (const NodeSnapshot& child : children.value())
+        {
+            taken.insert(child.name);
+            clash = clash || (!child.isFolder && child.name == name.toStdString());
+        }
+    }
+    bool checkVersioning = false;
+    if (clash)
+    {
+        if (onConflict == QLatin1String("fail"))
+            return done(conflict(QStringLiteral("A file named %1 already exists there").arg(name), QStringLiteral("exists")));
+        if (onConflict == QLatin1String("rename"))
+            name = QString::fromStdString(FileOperationService::uniqueMoveName(name.toStdString(), false, taken));
+        else
+            checkVersioning = true;
+    }
+
+    enqueueTransfer(
+        run,
+        [client = mClient,
+         guiContext = mGuiContext,
+         path = QDir::toNativeSeparators(local.absoluteFilePath()).toStdString(),
+         parentHandle = parent.handle,
+         nodeName = name.toStdString(),
+         checkVersioning](const std::shared_ptr<TransferQueue>& queue, const Done& finish) {
+            const auto start = [client, guiContext, path, parentHandle, nodeName, queue, finish] {
+                if (queue->cancelled)
+                    return finish(cancelledReply());
+                const std::uint64_t id = nextPluginTransferId();
+                queue->abort = [client, id] { client->cancelUpload(id); };
+                client->upload(
+                    path,
+                    parentHandle,
+                    false,
+                    nodeName,
+                    id,
+                    [](std::uint64_t, std::uint64_t) {},
+                    [client, guiContext, finish](Result<UploadOutcome> result) {
+                        invokeOnGuiThread(guiContext, [client, finish, result = std::move(result)] {
+                            if (!result.success)
+                                return finish(result.errorCode == MegaErrorCode::kEIncomplete
+                                                  ? cancelledReply()
+                                                  : megaFail(result.errorMessage));
+                            Reply reply = ok(QJsonObject{
+                                {QStringLiteral("item"), createdItem(*client, result.value().nodeHandle)}});
+                            reply.mutated = true;
+                            finish(reply);
+                        });
+                    });
+            };
+            if (!checkVersioning)
+                return start();
+            client->getFileVersioningEnabled([guiContext, finish, start](Result<bool> result) {
+                invokeOnGuiThread(guiContext, [finish, start, result = std::move(result)] {
+                    // kENoEnt: the account never touched the setting, which means enabled.
+                    if (!result.success && result.errorCode != MegaErrorCode::kENoEnt)
+                        return finish(megaFail(result.errorMessage));
+                    if (result.success && !result.value())
+                        return finish(conflict(
+                            QStringLiteral("A file with that name already exists"),
+                            QStringLiteral("versioningDisabled"),
+                            QStringLiteral("Versioning is off for this account, so replacing would delete the "
+                                           "existing file permanently.")));
+                    start();
+                });
+            });
+        },
+        done);
+}
+
+void PluginHostApi::itemsCreateFolder(const QJsonObject& params, const Done& done) const
+{
+    NodeSnapshot parent;
+    if (std::optional<Reply> error = readNode(*mClient, params.value(QStringLiteral("parent")), true, &parent))
+        return done(*error);
+    QString name;
+    if (std::optional<Reply> error = readName(params.value(QStringLiteral("name")), &name))
+        return done(*error);
+    QString onConflict;
+    if (std::optional<Reply> error = readChoice(params,
+                                                QStringLiteral("onConflict"),
+                                                {QStringLiteral("existing"), QStringLiteral("fail"), QStringLiteral("rename")},
+                                                &onConflict))
+        return done(*error);
+
+    std::set<std::string> taken;
+    std::optional<NodeSnapshot> existing;
+    if (const Result<std::vector<NodeSnapshot>> children = mClient->getChildSnapshots(parent.handle);
+        children.success)
+    {
+        for (const NodeSnapshot& child : children.value())
+        {
+            taken.insert(child.name);
+            if (child.isFolder && !existing && child.name == name.toStdString())
+                existing = child;
+        }
+    }
+    if (existing)
+    {
+        if (onConflict == QLatin1String("existing"))
+            return done(ok(QJsonObject{{QStringLiteral("item"), toItem(*mClient, *existing)},
+                                       {QStringLiteral("created"), false}}));
+        if (onConflict == QLatin1String("fail"))
+            return done(conflict(QStringLiteral("A folder named %1 already exists there").arg(name), QStringLiteral("exists")));
+        name = QString::fromStdString(FileOperationService::uniqueMoveName(name.toStdString(), true, taken));
+    }
+
+    mClient->createFolder(
+        parent.handle,
+        false,
+        name.toStdString(),
+        [client = mClient, guiContext = mGuiContext, done, name](Result<std::uint64_t> result) {
+            invokeOnGuiThread(guiContext, [client, done, name, result = std::move(result)] {
+                if (!result.success)
+                    return done(result.errorCode == MegaErrorCode::kEExist
+                                    ? conflict(QStringLiteral("A folder named %1 already exists there").arg(name),
+                                               QStringLiteral("exists"))
+                                    : megaFail(result.errorMessage));
+                Reply reply = ok(QJsonObject{{QStringLiteral("item"), createdItem(*client, result.value())},
+                                             {QStringLiteral("created"), true}});
+                reply.mutated = true;
+                done(reply);
+            });
+        });
+}
+
+PluginHostApi::Reply PluginHostApi::transfersDownload(const QJsonObject& params) const
+{
+    if (!mDownloads.enqueue || mDownloads.root.isEmpty())
+        return fail(kInternalError, QStringLiteral("Downloads are not available"));
+    const QJsonValue itemsValue = params.value(QStringLiteral("items"));
+    if (!itemsValue.isArray() || itemsValue.toArray().isEmpty())
+        return fail(kInvalidParams, QStringLiteral("items must be a non-empty array of {handle, subPath?}"));
+    QString onConflict;
+    if (std::optional<Reply> error = readChoice(params,
+                                                QStringLiteral("onConflict"),
+                                                {QStringLiteral("rename"), QStringLiteral("skip"), QStringLiteral("overwrite")},
+                                                &onConflict))
+        return *error;
+
+    struct Planned
+    {
+        NodeSnapshot node;
+        QString dir;
+    };
+    std::vector<Planned> planned;
+    const QDir root(mDownloads.root);
+    for (const QJsonValue& value : itemsValue.toArray())
+    {
+        if (!value.isObject())
+            return fail(kInvalidParams, QStringLiteral("items must be a non-empty array of {handle, subPath?}"));
+        const QJsonObject entry = value.toObject();
+        Planned plan;
+        if (std::optional<Reply> error = readNode(*mClient, entry.value(QStringLiteral("handle")), false, &plan.node))
+            return *error;
+        QString subPath;
+        if (std::optional<Reply> error = readSubPath(entry.value(QStringLiteral("subPath")), &subPath))
+            return *error;
+        plan.dir = subPath.isEmpty() ? root.path() : root.filePath(subPath);
+        planned.push_back(std::move(plan));
+    }
+    for (const Planned& plan : planned)
+    {
+        if (!QDir().mkpath(plan.dir))
+            return fail(kInternalError, QStringLiteral("Could not create %1").arg(QDir::toNativeSeparators(plan.dir)));
+    }
+
+    int queued = 0;
+    int skipped = 0;
+    for (const Planned& plan : planned)
+    {
+        const QString name = QString::fromStdString(plan.node.name);
+        const QString path = QDir::toNativeSeparators(
+            QDir(plan.dir).filePath(QString::fromStdString(DownloadService::safeLocalFileName(plan.node.name))));
+        // "rename" needs nothing here: the download itself suffixes " (1)".
+        if (QFileInfo::exists(path))
+        {
+            if (onConflict == QLatin1String("skip"))
+            {
+                ++skipped;
+                continue;
+            }
+            if (onConflict == QLatin1String("overwrite") && !QFile::moveToTrash(path) && !QFile::remove(path))
+                return fail(kInternalError,
+                            QStringLiteral("Could not replace %1 (%2 file(s) were queued before it)").arg(path).arg(queued));
+        }
+        if (mDownloads.enqueue(plan.node.handle, name, plan.node.sizeBytes, path))
+            ++queued;
+        else
+            ++skipped;
+    }
+    return ok(QJsonObject{{QStringLiteral("queued"), queued}, {QStringLiteral("skipped"), skipped}});
 }

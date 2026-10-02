@@ -144,7 +144,7 @@ public:
         (override));
     MOCK_METHOD(void,
                 createFolder,
-                (std::uint64_t, bool, const std::string&, std::function<void(Result<void>)>),
+                (std::uint64_t, bool, const std::string&, std::function<void(Result<std::uint64_t>)>),
                 (override));
     MOCK_METHOD(void,
                 setNodeFavourite,
@@ -185,6 +185,7 @@ public:
                 (const std::string&,
                  std::uint64_t,
                  bool,
+                 const std::string&,
                  std::uint64_t,
                  std::function<void(std::uint64_t, std::uint64_t)>,
                  std::function<void(Result<UploadOutcome>)>),

@@ -130,7 +130,13 @@ void FileOperationService::createFolder(std::uint64_t parentHandle,
         return;
     }
 
-    mClient->createFolder(parentHandle, parentIsRoot, name, std::move(onDone));
+    mClient->createFolder(parentHandle,
+                          parentIsRoot,
+                          name,
+                          [onDone = std::move(onDone)](Result<std::uint64_t> result) {
+                              onDone(result.success ? Result<void>::ok()
+                                                    : Result<void>::fail(result.errorMessage, result.errorCode));
+                          });
 }
 
 void FileOperationService::moveToRubbish(std::uint64_t handle,

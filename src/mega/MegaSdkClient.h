@@ -111,6 +111,7 @@ public:
     upload(const std::string& localPath,
            std::uint64_t parentHandle,
            bool parentIsRoot,
+           const std::string& fileName,
            std::uint64_t transferId,
            std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
            std::function<void(Result<UploadOutcome>)> onDone) override;
@@ -178,7 +179,7 @@ public:
     void createFolder(std::uint64_t parentHandle,
                       bool parentIsRoot,
                       const std::string& name,
-                      std::function<void(Result<void>)> onDone) override;
+                      std::function<void(Result<std::uint64_t>)> onDone) override;
 
     void setNodeFavourite(std::uint64_t handle,
                           bool favourite,

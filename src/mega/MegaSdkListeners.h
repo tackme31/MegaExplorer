@@ -64,6 +64,28 @@ private:
     std::function<void(Result<void>)> mOnDone;
 };
 
+// SimpleResultListener for a request that creates a node: hands back its handle.
+class NodeHandleResultListener : public mega::MegaRequestListener
+{
+public:
+    explicit NodeHandleResultListener(std::function<void(Result<std::uint64_t>)> onDone)
+        : mOnDone(std::move(onDone))
+    {}
+
+    void onRequestFinish(mega::MegaApi* /*api*/, mega::MegaRequest* request, mega::MegaError* e) override
+    {
+        int code = e->getErrorCode();
+        if (code == mega::MegaError::API_OK)
+            mOnDone(Result<std::uint64_t>::ok(static_cast<std::uint64_t>(request->getNodeHandle())));
+        else
+            mOnDone(Result<std::uint64_t>::fail(e->getErrorString(), code));
+        delete this;
+    }
+
+private:
+    std::function<void(Result<std::uint64_t>)> mOnDone;
+};
+
 // SimpleResultListener plus onRequestUpdate, which the SDK documents as firing for
 // TYPE_FETCH_NODES only (megaapi.h:9261) and which reports the `f` response's HTTP
 // download progress. Nothing here smooths over the caveats in

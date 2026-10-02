@@ -53,8 +53,9 @@ void removeStaleTempDirs(const QString& tempRoot)
 PluginController::PluginController(std::shared_ptr<IMegaClient> client,
                                    QString pluginsDir,
                                    const QString& tempRoot,
+                                   PluginHostApi::UserDownloads downloads,
                                    QObject* parent)
-    : QObject(parent), mHostApi(std::move(client), this), mProgressUpdateTimer(new QTimer(this)),
+    : QObject(parent), mHostApi(std::move(client), this, std::move(downloads)), mProgressUpdateTimer(new QTimer(this)),
       mPluginsDir(std::move(pluginsDir)),
       mTempDir(QDir(tempRoot).filePath(QString::number(QCoreApplication::applicationPid())))
 {

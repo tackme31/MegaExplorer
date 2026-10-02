@@ -145,6 +145,7 @@ PluginRun::PluginRun(PluginManifest manifest,
                              << (status == QProcess::CrashExit ? "(crashed)" : "");
             if (mStage != Stage::Done)
                 finish(mCancelRequested ? QStringLiteral("cancelled") : QStringLiteral("crashed"), {});
+            PluginHostApi::abandonTransfers(mHostState);
             removeTempDir();
             deleteLater();
         });
@@ -161,6 +162,7 @@ PluginRun::~PluginRun()
     }
     if (mJob)
         CloseHandle(mJob);
+    PluginHostApi::abandonTransfers(mHostState);
     removeTempDir();
 }
 
@@ -242,6 +244,7 @@ void PluginRun::cancel()
         return;
     }
     notify(QStringLiteral("$/cancel"), {{QStringLiteral("invocationId"), kInvocationId}});
+    PluginHostApi::cancelTransfers(mHostState);
     mCancelTimer->start();
 }
 
@@ -364,9 +367,11 @@ void PluginRun::writeReply(const QJsonValue& id,
     if (result.errorCode)
     {
         qCInfo(lcPlugin) << mManifest.id << method << "failed:" << result.errorMessage;
-        reply.insert(QStringLiteral("error"),
-                     QJsonObject{{QStringLiteral("code"), *result.errorCode},
-                                 {QStringLiteral("message"), result.errorMessage}});
+        QJsonObject error{{QStringLiteral("code"), *result.errorCode},
+                          {QStringLiteral("message"), result.errorMessage}};
+        if (!result.errorData.isUndefined())
+            error.insert(QStringLiteral("data"), result.errorData);
+        reply.insert(QStringLiteral("error"), error);
     }
     else
     {

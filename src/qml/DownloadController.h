@@ -39,6 +39,9 @@ public:
     // before the first SDK update. No-ops if the handle is already queued or active.
     Q_INVOKABLE void downloadFile(quint64 handle, QString name, quint64 sizeBytes);
 
+    // downloadFile into an exact path, for plugins; false when the handle is already queued.
+    bool enqueueDownload(quint64 handle, const QString& name, quint64 sizeBytes, const QString& destinationPath);
+
     // Extracts the file row called name, in the folder browser shows, into the same
     // Downloads folder as a download. Only the leaf name is used: the archive's own
     // folders are never recreated on disk, which is what keeps "../" entries inside it

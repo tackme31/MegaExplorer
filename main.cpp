@@ -203,7 +203,12 @@ int main(int argc, char* argv[])
     PluginController pluginController(
         client,
         QDir(cacheDir).filePath(QStringLiteral("plugins")),
-        QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/plugin-tmp"));
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/plugin-tmp"),
+        PluginHostApi::UserDownloads{
+            QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
+            [&downloadController](std::uint64_t handle, const QString& name, std::uint64_t sizeBytes, const QString& path) {
+                return downloadController.enqueueDownload(handle, name, sizeBytes, path);
+            }});
     PropertiesController propertiesController(nodeDetailsService);
     TransferListModel transferListModel(&downloadController, &uploadController);
 

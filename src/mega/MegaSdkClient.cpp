@@ -869,6 +869,7 @@ void MegaSdkClient::download(std::uint64_t handle,
 void MegaSdkClient::upload(const std::string& localPath,
                            std::uint64_t parentHandle,
                            bool parentIsRoot,
+                           const std::string& fileName,
                            std::uint64_t transferId,
                            std::function<void(std::uint64_t, std::uint64_t)> onProgress,
                            std::function<void(Result<UploadOutcome>)> onDone)
@@ -909,9 +910,11 @@ void MegaSdkClient::upload(const std::string& localPath,
         cancelTokenRaw = slot.get();
     }
 
-    // options == nullptr means all defaults; megaapi.cpp only copies the struct when
-    // it is non-null, so there is nothing to construct here.
-    mApi->startUpload(localPath, parent.get(), cancelTokenRaw, /*options*/ nullptr, listener);
+    // options == nullptr means all defaults; megaapi.cpp copies the struct, so a stack
+    // one is enough when a name is given.
+    mega::MegaUploadOptions options;
+    options.fileName = fileName;
+    mApi->startUpload(localPath, parent.get(), cancelTokenRaw, fileName.empty() ? nullptr : &options, listener);
 }
 
 void MegaSdkClient::cancelDownload(std::uint64_t transferId)
@@ -1597,26 +1600,26 @@ void MegaSdkClient::copyNode(std::uint64_t handle,
 void MegaSdkClient::createFolder(std::uint64_t parentHandle,
                                  bool parentIsRoot,
                                  const std::string& name,
-                                 std::function<void(Result<void>)> onDone)
+                                 std::function<void(Result<std::uint64_t>)> onDone)
 {
     if (mShuttingDown)
     {
-        onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
+        onDone(Result<std::uint64_t>::fail(kShutDownMessage, kClientShutDownCode));
         return;
     }
     std::unique_ptr<mega::MegaNode> parent = resolveNode(parentHandle, parentIsRoot);
     if (!parent)
     {
-        onDone(Result<void>::fail("No parent folder with the given handle (nodes not "
-                                  "fetched / folder deleted)",
-                                  MegaErrorCode::kENoEnt));
+        onDone(Result<std::uint64_t>::fail("No parent folder with the given handle (nodes not "
+                                           "fetched / folder deleted)",
+                                           MegaErrorCode::kENoEnt));
         return;
     }
 
     // No pre-check for an existing same-named folder: the API answers that
     // itself with API_EEXIST (see IMegaClient::createFolder).
     mApi->createFolder(
-        name.c_str(), parent.get(), new megasdk::SimpleResultListener(std::move(onDone)));
+        name.c_str(), parent.get(), new megasdk::NodeHandleResultListener(std::move(onDone)));
 }
 
 Result<void> MegaSdkClient::checkMove(std::uint64_t handle,

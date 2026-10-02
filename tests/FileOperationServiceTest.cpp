@@ -377,7 +377,7 @@ TEST(FileOperationServiceTest, CreateFolderPassesAValidNameStraightThrough)
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
     EXPECT_CALL(*client, createFolder(22u, false, std::string("Reports"), _))
-        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<3>(Result<std::uint64_t>::ok(5)));
     Capture captured;
 
     service.createFolder(22, false, "Reports", captured.sink());
@@ -409,7 +409,7 @@ TEST(FileOperationServiceTest, CreateFolderPropagatesTheServersDuplicateNameReje
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
     EXPECT_CALL(*client, createFolder(22u, false, _, _))
-        .WillOnce(InvokeArgument<3>(Result<void>::fail("already exists", MegaErrorCode::kEExist)));
+        .WillOnce(InvokeArgument<3>(Result<std::uint64_t>::fail("already exists", MegaErrorCode::kEExist)));
     Capture captured;
 
     service.createFolder(22, false, "Reports", captured.sink());
@@ -424,7 +424,7 @@ TEST(FileOperationServiceTest, CreateFolderForwardsTheRootSentinel)
     auto client = std::make_shared<MockMegaClient>();
     FileOperationService service(client);
     EXPECT_CALL(*client, createFolder(0u, true, std::string("Reports"), _))
-        .WillOnce(InvokeArgument<3>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<3>(Result<std::uint64_t>::ok(5)));
     Capture captured;
 
     service.createFolder(0, true, "Reports", captured.sink());

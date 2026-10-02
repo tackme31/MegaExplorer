@@ -24,6 +24,11 @@
     { "id": "clear-tags", "title": "Clear tags (items.update)" },
     { "id": "add-favourite", "title": "Add to favourites (items.update)" },
 
+    { "id": "download-selected", "title": "Download (transfers.download, files only)",
+      "when": { "targets": "files" } },
+    { "id": "upload-text", "title": "Upload a text file here (items.upload)" },
+    { "id": "create-folder", "title": "Create a folder here (items.createFolder)" },
+
     { "id": "show-confirm", "title": "Show confirm" },
     { "id": "show-confirm-danger", "title": "Show confirm (danger)" },
 

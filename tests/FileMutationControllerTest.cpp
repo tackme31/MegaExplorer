@@ -1541,11 +1541,11 @@ TEST_F(FileMutationControllerTest, BusyClearsWhenAnOperationFails)
     controller->loadRoot();
     flush();
 
-    std::function<void(Result<void>)> pending;
+    std::function<void(Result<std::uint64_t>)> pending;
     EXPECT_CALL(*client, createFolder(_, _, std::string("x"), _))
         .WillOnce(Invoke(
             [&pending](
-                std::uint64_t, bool, const std::string&, std::function<void(Result<void>)> onDone) {
+                std::uint64_t, bool, const std::string&, std::function<void(Result<std::uint64_t>)> onDone) {
                 pending = std::move(onDone);
             }));
 
@@ -1556,7 +1556,7 @@ TEST_F(FileMutationControllerTest, BusyClearsWhenAnOperationFails)
     // The kEExist branch returns early and without a toast -- of createFolder's
     // four outcomes, the one most likely to leak the count if it were
     // decremented per-branch rather than once above them.
-    pending(Result<void>::fail("already exists", MegaErrorCode::kEExist));
+    pending(Result<std::uint64_t>::fail("already exists", MegaErrorCode::kEExist));
     flush();
 
     EXPECT_FALSE(controller->busy());

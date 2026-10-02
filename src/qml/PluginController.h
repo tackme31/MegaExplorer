@@ -45,6 +45,7 @@ public:
     PluginController(std::shared_ptr<IMegaClient> client,
                      QString pluginsDir,
                      const QString& tempRoot,
+                     PluginHostApi::UserDownloads downloads = {},
                      QObject* parent = nullptr);
 
     QString pluginsDir() const

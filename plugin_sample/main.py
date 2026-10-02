@@ -9,11 +9,15 @@ the section you need; plugin.json says how each command is declared
 - Reading items: items.get, items.children, items.descendants
 - Previews: items.fetchPreview
 - Changing items: items.update (tags, favourites)
+- Transfers: transfers.download, items.upload, items.createFolder
 - Asking the user: ui.confirm
 - Progress and cancel: ui.progress, $/cancel, Force quit
 """
 
+import os
+import tempfile
 import time
+from datetime import datetime
 
 from megaexplorer_plugin import CommandError, NoPreview, Plugin
 
@@ -166,6 +170,44 @@ def add_favourite(ctx):
     for item in ctx.items:
         ctx.update(item, favourite=True)
     return f"Added {len(ctx.items)} item(s) to favourites"
+
+
+# --- Transfers -------------------------------------------------------------------
+# ctx.download hands files to the app's own downloads: they appear in its transfer
+# list, land in the user's Downloads folder (here in a "MegaExplorer Sample"
+# folder below it) and carry on after the plugin exits. ctx.upload and
+# ctx.create_folder wait for the result and return the new Item. Both upload-text
+# and create-folder work in the selected folder, or the one holding the selected
+# file. A name already taken gets " (2)" ("rename"), so neither ever collides.
+
+
+@plugin.command("download-selected")
+def download_selected(ctx):
+    files = [item for item in ctx.items if item.is_file]
+    result = ctx.download(files, sub_path="MegaExplorer Sample")
+    return f"Queued {result['queued']} download(s), skipped {result['skipped']}"
+
+
+@plugin.command("upload-text")
+def upload_text(ctx):
+    folder = folder_of(ctx)
+    stamp = datetime.now()
+    fd, path = tempfile.mkstemp(suffix=".txt")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(f"Uploaded by the Sample plugin at {stamp:%Y-%m-%d %H:%M:%S}.\n")
+        item = ctx.upload(folder, path, name=f"sample-{stamp:%Y%m%d-%H%M%S}.txt")
+    finally:
+        os.remove(path)
+    return f"Uploaded {item.name} to {item.path}"
+
+
+@plugin.command("create-folder")
+def create_folder(ctx):
+    folder = folder_of(ctx)
+    name = f"Sample folder {datetime.now():%Y-%m-%d %H%M%S}"
+    item, _ = ctx.create_folder(folder, name, on_conflict="rename")
+    return f"Created {item.path}"
 
 
 # --- Asking the user ------------------------------------------------------------

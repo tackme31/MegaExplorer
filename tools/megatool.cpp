@@ -284,7 +284,7 @@ Result<Node> makeDirs(IMegaClient& client, const std::string& path)
             continue;
         }
 
-        const Result<void> created = await<Result<void>>([&](auto done) {
+        const Result<std::uint64_t> created = await<Result<std::uint64_t>>([&](auto done) {
             client.createFolder(node.handle, node.isRoot, part, std::move(done));
         });
         if (!created.success)
@@ -724,6 +724,7 @@ int cmdPut(IMegaClient& client, const std::string& localPath, const std::string&
         client.upload(native.toStdString(),
                       parent.value().handle,
                       parent.value().isRoot,
+                      /*fileName*/ {},
                       /*transferId*/ 1, // one transfer per run, and nothing here cancels
                       kIgnoreProgress,
                       std::move(done));

@@ -204,12 +204,16 @@ public:
     // recursively, as one transfer -- progress and completion are reported for the
     // tree, not per file inside it.
     //
+    // fileName names the new node; empty keeps the local name. A file of that name
+    // already in the folder gets the upload as its new version (SPEC_NAME_CONFLICT_UPLOAD 1-3).
+    //
     // Two-callback shape for the same reason as download(), and transferId means the
     // same thing here.
     virtual void
     upload(const std::string& localPath,
            std::uint64_t parentHandle,
            bool parentIsRoot,
+           const std::string& fileName,
            std::uint64_t transferId,
            std::function<void(std::uint64_t transferredBytes, std::uint64_t totalBytes)> onProgress,
            std::function<void(Result<UploadOutcome>)> onDone) = 0;
@@ -369,11 +373,11 @@ public:
     // *server's* -- onDone reports MegaErrorCode::kEExist -- and deliberately the
     // only one: an in-memory pre-check could go stale between check and call. Note
     // MEGA lets a file and a folder share a name, so an existing *file* of that
-    // name is not a conflict.
+    // name is not a conflict. onDone carries the new folder's handle.
     virtual void createFolder(std::uint64_t parentHandle,
                               bool parentIsRoot,
                               const std::string& name,
-                              std::function<void(Result<void>)> onDone) = 0;
+                              std::function<void(Result<std::uint64_t>)> onDone) = 0;
 
     // Sets or clears the node's "favourite" attribute. Idempotent -- the SDK reports
     // success for a value the node already has, so a caller whose cached flag has

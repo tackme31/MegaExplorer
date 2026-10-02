@@ -63,11 +63,12 @@ protected:
                 downloadDone = done;
                 downloadDones.push_back(std::move(done));
             }));
-        EXPECT_CALL(*client, upload(_, _, _, _, _, _))
+        EXPECT_CALL(*client, upload(_, _, _, _, _, _, _))
             .Times(AnyNumber())
             .WillRepeatedly(Invoke([this](const std::string&,
                                           std::uint64_t,
                                           bool,
+                                          const std::string&,
                                           std::uint64_t,
                                           ProgressCallback progress,
                                           UploadDone done) {

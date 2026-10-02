@@ -1,9 +1,11 @@
 #include "qml/PluginHostApi.h"
 
 #include "MockMegaClient.h"
+#include "core/MegaErrorCodes.h"
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
@@ -512,4 +514,332 @@ TEST_F(PluginHostApiTest, ItemsFetchPreviewRejectsFoldersAndMissingItemsWithoutF
     EXPECT_EQ(call(QStringLiteral("items.fetchPreview"), {{QStringLiteral("handle"), QStringLiteral("h4")}})
                   .errorCode,
               PluginHostApi::kItemNotFound);
+}
+
+namespace {
+NodeSnapshot sizedFile(std::uint64_t handle, const std::string &name,
+                       std::uint64_t size) {
+  NodeSnapshot n = node(handle, name, false);
+  n.sizeBytes = size;
+  return n;
+}
+
+using DownloadDone = std::function<void(Result<DownloadOutcome>)>;
+using ProgressFn = std::function<void(std::uint64_t, std::uint64_t)>;
+using ChunkFn = std::function<bool(const char *, std::size_t)>;
+using VoidDone = std::function<void(Result<void>)>;
+} // namespace
+
+TEST_F(PluginHostApiTest,
+       ItemsFetchFileDownloadsIntoAFolderOfItsOwnInTheRunsTempDir) {
+  ON_CALL(*mClient, getNodeSnapshot(26))
+      .WillByDefault(
+          Return(Result<NodeSnapshot>::ok(sizedFile(26, "cat.jpg", 10))));
+  std::string requestedPath;
+  EXPECT_CALL(*mClient, download(26, _, _, _, _))
+      .WillOnce([&requestedPath](std::uint64_t, const std::string &path,
+                                 std::uint64_t, ProgressFn,
+                                 DownloadDone onDone) {
+        requestedPath = path;
+        onDone(Result<DownloadOutcome>::ok(DownloadOutcome{path}));
+      });
+
+  const PluginHostApi::Reply reply =
+      call(QStringLiteral("items.fetchFile"),
+           {{QStringLiteral("handle"), QStringLiteral("h26")}});
+
+  ASSERT_FALSE(reply.errorCode.has_value()) << reply.errorMessage.toStdString();
+  EXPECT_EQ(QDir::fromNativeSeparators(QString::fromStdString(requestedPath)),
+            QDir(mTempDir.path()).filePath(QStringLiteral("files/1/cat.jpg")));
+  EXPECT_EQ(reply.result.toObject()
+                .value(QStringLiteral("path"))
+                .toString()
+                .toStdString(),
+            requestedPath);
+}
+
+TEST_F(PluginHostApiTest, ItemsFetchFileWithARangeWritesOnlyThoseBytes) {
+  ON_CALL(*mClient, getNodeSnapshot(26))
+      .WillByDefault(
+          Return(Result<NodeSnapshot>::ok(sizedFile(26, "a.zip", 100))));
+  EXPECT_CALL(*mClient, readFileRangeStreamed(26, 90, 10, _, _))
+      .WillOnce([](std::uint64_t, std::uint64_t, std::uint64_t, ChunkFn onChunk,
+                   VoidDone onDone) {
+        onChunk("0123456789", 10);
+        onDone(Result<void>::ok());
+      });
+
+  // length is cut at the end of the file.
+  const PluginHostApi::Reply reply =
+      call(QStringLiteral("items.fetchFile"),
+           {{QStringLiteral("handle"), QStringLiteral("h26")},
+            {QStringLiteral("offset"), 90},
+            {QStringLiteral("length"), 50}});
+
+  ASSERT_FALSE(reply.errorCode.has_value()) << reply.errorMessage.toStdString();
+  QFile file(reply.result.toObject().value(QStringLiteral("path")).toString());
+  ASSERT_TRUE(file.open(QIODevice::ReadOnly));
+  EXPECT_EQ(file.readAll(), QByteArray("0123456789"));
+}
+
+TEST_F(PluginHostApiTest, ItemsReadRangeReturnsBase64AndCapsTheLength) {
+  ON_CALL(*mClient, getNodeSnapshot(26))
+      .WillByDefault(Return(
+          Result<NodeSnapshot>::ok(sizedFile(26, "a.bin", 10 * 1024 * 1024))));
+  EXPECT_CALL(*mClient, readFileRangeStreamed(26, 4, 3, _, _))
+      .WillOnce([](std::uint64_t, std::uint64_t, std::uint64_t, ChunkFn onChunk,
+                   VoidDone onDone) {
+        onChunk("abc", 3);
+        onDone(Result<void>::ok());
+      });
+
+  const PluginHostApi::Reply reply =
+      call(QStringLiteral("items.readRange"),
+           {{QStringLiteral("handle"), QStringLiteral("h26")},
+            {QStringLiteral("offset"), 4},
+            {QStringLiteral("length"), 3}});
+  ASSERT_FALSE(reply.errorCode.has_value()) << reply.errorMessage.toStdString();
+  EXPECT_EQ(reply.result.toObject().value(QStringLiteral("data")).toString(),
+            QStringLiteral("YWJj"));
+
+  EXPECT_EQ(call(QStringLiteral("items.readRange"),
+                 {{QStringLiteral("handle"), QStringLiteral("h26")},
+                  {QStringLiteral("offset"), 0},
+                  {QStringLiteral("length"), 1024 * 1024 + 1}})
+                .errorCode,
+            -32602);
+  EXPECT_EQ(call(QStringLiteral("items.readRange"),
+                 {{QStringLiteral("handle"), QStringLiteral("h26")},
+                  {QStringLiteral("offset"), 10 * 1024 * 1024},
+                  {QStringLiteral("length"), 1}})
+                .errorCode,
+            -32602);
+}
+
+TEST_F(PluginHostApiTest,
+       TransfersRunOneAtATimeAndCancelStopsTheRunningAndTheQueued) {
+  ON_CALL(*mClient, getNodeSnapshot(_)).WillByDefault([](std::uint64_t h) {
+    return Result<NodeSnapshot>::ok(sizedFile(h, "f" + std::to_string(h), 10));
+  });
+  DownloadDone firstDone;
+  std::uint64_t firstId = 0;
+  EXPECT_CALL(*mClient, download(1, _, _, _, _))
+      .WillOnce([&](std::uint64_t, const std::string &, std::uint64_t id,
+                    ProgressFn, DownloadDone onDone) {
+        firstId = id;
+        firstDone = std::move(onDone);
+      });
+  EXPECT_CALL(*mClient, download(2, _, _, _, _)).Times(0);
+
+  mRun.tempDir = mTempDir.path();
+  std::optional<PluginHostApi::Reply> first;
+  std::optional<PluginHostApi::Reply> second;
+  mApi.call(QStringLiteral("items.fetchFile"),
+            {{QStringLiteral("handle"), QStringLiteral("h1")}}, mRun,
+            [&first](const PluginHostApi::Reply &r) { first = r; });
+  mApi.call(QStringLiteral("items.fetchFile"),
+            {{QStringLiteral("handle"), QStringLiteral("h2")}}, mRun,
+            [&second](const PluginHostApi::Reply &r) { second = r; });
+  ASSERT_TRUE(firstDone);
+  EXPECT_FALSE(second.has_value());
+
+  EXPECT_CALL(*mClient, cancelDownload(firstId))
+      .WillOnce([&firstDone](std::uint64_t) {
+        firstDone(Result<DownloadOutcome>::fail("aborted",
+                                                MegaErrorCode::kEIncomplete));
+      });
+  PluginHostApi::cancelTransfers(mRun);
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(second->errorCode, PluginHostApi::kCancelled);
+  for (int i = 0; i < 20 && !first; ++i)
+    QCoreApplication::processEvents();
+  ASSERT_TRUE(first.has_value());
+  EXPECT_EQ(first->errorCode, PluginHostApi::kCancelled);
+
+  // Later ones are refused straight away.
+  std::optional<PluginHostApi::Reply> third;
+  mApi.call(QStringLiteral("items.fetchFile"),
+            {{QStringLiteral("handle"), QStringLiteral("h2")}}, mRun,
+            [&third](const PluginHostApi::Reply &r) { third = r; });
+  ASSERT_TRUE(third.has_value());
+  EXPECT_EQ(third->errorCode, PluginHostApi::kCancelled);
+}
+
+TEST_F(PluginHostApiTest,
+       ItemsCreateFolderReturnsTheNewFolderOrTheExistingOne) {
+  ON_CALL(*mClient, getNodeSnapshot(1))
+      .WillByDefault(Return(Result<NodeSnapshot>::ok(node(1, "root", true))));
+  ON_CALL(*mClient, getNodeSnapshot(50))
+      .WillByDefault(
+          Return(Result<NodeSnapshot>::ok(node(50, "Reports (2)", true))));
+  ON_CALL(*mClient, getChildSnapshots(1))
+      .WillByDefault(Return(Result<std::vector<NodeSnapshot>>::ok(
+          {node(9, "Reports", true), node(8, "notes", false)})));
+  EXPECT_CALL(*mClient, createFolder(1, false, std::string("Reports (2)"), _))
+      .WillOnce([](std::uint64_t, bool, const std::string &,
+                   std::function<void(Result<std::uint64_t>)> onDone) {
+        onDone(Result<std::uint64_t>::ok(50));
+      });
+  const auto handleOf = [](const PluginHostApi::Reply &reply) {
+    return reply.result.toObject()
+        .value(QStringLiteral("item"))
+        .toObject()
+        .value(QStringLiteral("handle"))
+        .toString();
+  };
+
+  // "existing", the default: no request at all.
+  PluginHostApi::Reply reply =
+      call(QStringLiteral("items.createFolder"),
+           {{QStringLiteral("parent"), QStringLiteral("h1")},
+            {QStringLiteral("name"), QStringLiteral("Reports")}});
+  ASSERT_FALSE(reply.errorCode.has_value());
+  EXPECT_FALSE(
+      reply.result.toObject().value(QStringLiteral("created")).toBool());
+  EXPECT_EQ(handleOf(reply), QStringLiteral("h9"));
+  EXPECT_FALSE(reply.mutated);
+
+  reply = call(QStringLiteral("items.createFolder"),
+               {{QStringLiteral("parent"), QStringLiteral("h1")},
+                {QStringLiteral("name"), QStringLiteral("Reports")},
+                {QStringLiteral("onConflict"), QStringLiteral("fail")}});
+  EXPECT_EQ(reply.errorCode, PluginHostApi::kConflict);
+  EXPECT_EQ(
+      reply.errorData.toObject().value(QStringLiteral("reason")).toString(),
+      QStringLiteral("exists"));
+
+  reply = call(QStringLiteral("items.createFolder"),
+               {{QStringLiteral("parent"), QStringLiteral("h1")},
+                {QStringLiteral("name"), QStringLiteral("Reports")},
+                {QStringLiteral("onConflict"), QStringLiteral("rename")}});
+  ASSERT_FALSE(reply.errorCode.has_value());
+  EXPECT_TRUE(
+      reply.result.toObject().value(QStringLiteral("created")).toBool());
+  EXPECT_EQ(handleOf(reply), QStringLiteral("h50"));
+  EXPECT_TRUE(reply.mutated);
+}
+
+TEST_F(PluginHostApiTest,
+       ItemsUploadRenamesOnAClashAndRefusesVersionWhenVersioningIsOff) {
+  QFile local(QDir(mTempDir.path()).filePath(QStringLiteral("notes.txt")));
+  ASSERT_TRUE(local.open(QIODevice::WriteOnly));
+  local.write("x");
+  local.close();
+  ON_CALL(*mClient, getNodeSnapshot(1))
+      .WillByDefault(Return(Result<NodeSnapshot>::ok(node(1, "root", true))));
+  ON_CALL(*mClient, getNodeSnapshot(60))
+      .WillByDefault(
+          Return(Result<NodeSnapshot>::ok(node(60, "notes (2).txt", false))));
+  ON_CALL(*mClient, checkUpload(1, false))
+      .WillByDefault(Return(Result<void>::ok()));
+  ON_CALL(*mClient, getChildSnapshots(1))
+      .WillByDefault(Return(Result<std::vector<NodeSnapshot>>::ok(
+          {node(8, "notes.txt", false)})));
+  ON_CALL(*mClient, getFileVersioningEnabled(_))
+      .WillByDefault([](std::function<void(Result<bool>)> onDone) {
+        onDone(Result<bool>::ok(false));
+      });
+  EXPECT_CALL(*mClient,
+              upload(_, 1, false, std::string("notes (2).txt"), _, _, _))
+      .WillOnce([](const std::string &, std::uint64_t, bool,
+                   const std::string &, std::uint64_t, ProgressFn,
+                   std::function<void(Result<UploadOutcome>)> onDone) {
+        onDone(Result<UploadOutcome>::ok(UploadOutcome{60}));
+      });
+  const QJsonObject base{{QStringLiteral("parent"), QStringLiteral("h1")},
+                         {QStringLiteral("localPath"),
+                          QDir::toNativeSeparators(local.fileName())}};
+
+  PluginHostApi::Reply reply = call(QStringLiteral("items.upload"), base);
+  ASSERT_FALSE(reply.errorCode.has_value()) << reply.errorMessage.toStdString();
+  EXPECT_EQ(reply.result.toObject()
+                .value(QStringLiteral("item"))
+                .toObject()
+                .value(QStringLiteral("handle"))
+                .toString(),
+            QStringLiteral("h60"));
+  EXPECT_TRUE(reply.mutated);
+
+  QJsonObject failParams = base;
+  failParams.insert(QStringLiteral("onConflict"), QStringLiteral("fail"));
+  reply = call(QStringLiteral("items.upload"), failParams);
+  EXPECT_EQ(reply.errorCode, PluginHostApi::kConflict);
+  EXPECT_EQ(
+      reply.errorData.toObject().value(QStringLiteral("reason")).toString(),
+      QStringLiteral("exists"));
+
+  QJsonObject versionParams = base;
+  versionParams.insert(QStringLiteral("onConflict"), QStringLiteral("version"));
+  reply = call(QStringLiteral("items.upload"), versionParams);
+  EXPECT_EQ(reply.errorCode, PluginHostApi::kConflict);
+  EXPECT_EQ(
+      reply.errorData.toObject().value(QStringLiteral("reason")).toString(),
+      QStringLiteral("versioningDisabled"));
+
+  QJsonObject missing = base;
+  missing.insert(QStringLiteral("localPath"),
+                 QDir(mTempDir.path()).filePath(QStringLiteral("nope.txt")));
+  EXPECT_EQ(call(QStringLiteral("items.upload"), missing).errorCode, -32602);
+}
+
+TEST_F(PluginHostApiTest,
+       TransfersDownloadQueuesUnderTheDownloadsFolderAndHonoursOnConflict) {
+  QTemporaryDir downloads;
+  std::vector<QString> queuedPaths;
+  PluginHostApi api{
+      mClient,
+      &mGuiContext,
+      {downloads.path(), [&queuedPaths](std::uint64_t, const QString &,
+                                        std::uint64_t, const QString &path) {
+         queuedPaths.push_back(QDir::fromNativeSeparators(path));
+         return true;
+       }}};
+  ON_CALL(*mClient, getNodeSnapshot(26))
+      .WillByDefault(
+          Return(Result<NodeSnapshot>::ok(sizedFile(26, "cat.jpg", 10))));
+  ON_CALL(*mClient, getNodeSnapshot(3))
+      .WillByDefault(Return(Result<NodeSnapshot>::ok(node(3, "dir", true))));
+  const auto download = [&](const QJsonObject &params) {
+    std::optional<PluginHostApi::Reply> reply;
+    api.call(QStringLiteral("transfers.download"), params, mRun,
+             [&reply](const PluginHostApi::Reply &r) { reply = r; });
+    return reply.value_or(PluginHostApi::Reply{});
+  };
+  const auto items = [](const QString &subPath) {
+    return QJsonArray{
+        QJsonObject{{QStringLiteral("handle"), QStringLiteral("h26")},
+                    {QStringLiteral("subPath"), subPath}}};
+  };
+
+  PluginHostApi::Reply reply = download(
+      {{QStringLiteral("items"), items(QStringLiteral("trip\\day1"))}});
+  ASSERT_FALSE(reply.errorCode.has_value()) << reply.errorMessage.toStdString();
+  EXPECT_EQ(reply.result.toObject().value(QStringLiteral("queued")).toInt(), 1);
+  ASSERT_EQ(queuedPaths.size(), 1u);
+  EXPECT_EQ(
+      queuedPaths[0],
+      QDir(downloads.path()).filePath(QStringLiteral("trip/day1/cat.jpg")));
+  EXPECT_TRUE(QDir(downloads.path()).exists(QStringLiteral("trip/day1")));
+
+  QFile existing(queuedPaths[0]);
+  ASSERT_TRUE(existing.open(QIODevice::WriteOnly));
+  existing.close();
+  reply =
+      download({{QStringLiteral("items"), items(QStringLiteral("trip/day1"))},
+                {QStringLiteral("onConflict"), QStringLiteral("skip")}});
+  EXPECT_EQ(reply.result.toObject().value(QStringLiteral("skipped")).toInt(),
+            1);
+  EXPECT_EQ(queuedPaths.size(), 1u);
+
+  for (const QString &bad : {QStringLiteral("../out"), QStringLiteral("/abs"),
+                             QStringLiteral("C:/x"), QStringLiteral("a/./b")})
+    EXPECT_EQ(download({{QStringLiteral("items"), items(bad)}}).errorCode,
+              -32602)
+        << bad.toStdString();
+  EXPECT_EQ(download({{QStringLiteral("items"),
+                       QJsonArray{QJsonObject{
+                           {QStringLiteral("handle"), QStringLiteral("h3")}}}}})
+                .errorCode,
+            -32602);
+  EXPECT_EQ(queuedPaths.size(), 1u);
 }

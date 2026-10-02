@@ -18,6 +18,9 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 | Tag with the extension (items.update, images only) | `ctx.update(tags_add=...)`; `"when"` with `extensions` |
 | Clear tags (items.update) | `ctx.update(tags_remove=...)` |
 | Add to favourites (items.update) | `ctx.update(favourite=True)`; the view re-reads after a change |
+| Download (transfers.download, files only) | `ctx.download`: the app's own downloads, into `Downloads\MegaExplorer Sample` |
+| Upload a text file here (items.upload) | `ctx.upload`: a generated text file into the selected folder (or the file's folder) |
+| Create a folder here (items.createFolder) | `ctx.create_folder` with a dated name and `on_conflict="rename"` |
 | Show confirm | `ctx.confirm`: asking first, stopping quietly on Cancel |
 | Show confirm (danger) | `danger=True`, `title`, `ok_label` |
 | Show progress | `"progress": true`, `ctx.progress` with a total, Cancel (`ctx.check_cancelled`) |
@@ -26,7 +29,7 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 | Finish before the progress dialog | A quick command never flashes the dialog |
 | Ignore Cancel (Force quit) | A plugin that ignores Cancel: Force quit after 10 s |
 
-The "items.update" rows change the real account (there is no undo): try them on a test
+The "items.update", upload and folder rows change the real account (there is no undo): try them on a test
 folder.
 
 ## Trying it

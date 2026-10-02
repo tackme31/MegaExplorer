@@ -390,6 +390,107 @@ result:  {"path": "C:\\Users\\...\\plugin-tmp\\...\\1a2b3c4d.jpg"}
   ends, and leftovers of a crashed run on the next app start.
 - This downloads from MEGA. Fetch what you need, one at a time; please don't hammer the servers.
 
+#### `items.fetchFile`
+
+Downloads a file (or a byte range of it) for the plugin to work on, and returns its path.
+
+```
+params:  {"handle": "AbCd1234", "offset": 1048576, "length": 65536}
+result:  {"path": "C:\\Users\\...\\plugin-tmp\\...\\files\\3\\cat.jpg"}
+```
+
+- `offset` and `length` are optional. Without either, the whole file is saved under its own name.
+  With one or both, only that range is saved (as `<handle>.<offset>-<length>.part`); `offset`
+  defaults to 0, `length` to the rest of the file, and a `length` past the end is cut there. An
+  `offset` at or past the end is `-32602`. There is no size limit: check the Item's `size` first.
+- Each call gets a folder of its own inside the run's temp folder, so two fetches never collide.
+  As with `items.fetchPreview`, the file is yours, and what is left is removed when the run ends.
+- Nothing is shown to the user while it runs. For anything long, declare the command with
+  `"progress": true` and report progress yourself.
+- A folder → `-32602`; no such item → `-32002`; MEGA failed → `-32010`.
+
+#### `items.readRange`
+
+Reads up to 1 MiB of a file straight into the response, for headers, EXIF or an archive's index.
+
+```
+params:  {"handle": "AbCd1234", "offset": 0, "length": 65536}
+result:  {"data": "<base64>", "length": 65536}
+```
+
+- `offset` and `length` are required. A `length` past the end of the file is cut there; `length`
+  in the result is how many bytes `data` holds. More than 1 MiB (1048576) is `-32602`: read it in
+  pieces, or use `items.fetchFile` with `offset`/`length` for a large range.
+
+#### Transfers: one at a time, stopped by Cancel
+
+`items.fetchFile`, `items.readRange` and `items.upload` are queued: the app runs one at a time,
+in the order they arrive, so sending several at once does not make them parallel. When the user
+presses Cancel, the app sends `$/cancel` **and** stops the running transfer and everything still
+queued; each of those calls answers `-32800`, and any transfer requested after that is refused with
+`-32800` too. A half-written file is removed. The plugin only has to stop and answer
+`command.execute` with `-32800`.
+
+#### `items.upload`
+
+Uploads a local file into a folder and returns the new item once the upload has finished.
+
+```
+params:  {"parent": "XyZw9876", "localPath": "C:\\work\\out.txt",
+          "name": "result.txt", "onConflict": "rename"}
+result:  {"item": Item}
+```
+
+- `localPath`: absolute path of an existing file (folders are not accepted; create them with
+  `items.createFolder`). The app does not touch the local file afterwards.
+- `name`: optional, the name in MEGA; defaults to the local file's name. No `/` or `\`.
+- `onConflict`, for when a **file** of that name is already in the folder:
+  - `"rename"` (default): uploaded as `name (2).txt`, `name (3).txt`, ...
+  - `"fail"`: `-32004` with `data.reason: "exists"`, nothing uploaded.
+  - `"version"`: becomes the existing file's new version (the old content stays as a previous
+    version). If file versioning is **off** for the account this would delete the old file for
+    good, so it is refused instead: `-32004` with `data.reason: "versioningDisabled"`.
+- Not shown in the app's transfer list. The view is refreshed after the run.
+- A read-only or vanished folder → `-32002` / `-32010`.
+
+#### `items.createFolder`
+
+Creates a folder and returns it.
+
+```
+params:  {"parent": "XyZw9876", "name": "Tagged", "onConflict": "existing"}
+result:  {"item": Item, "created": true}
+```
+
+- One level only; for a path, call it once per level with `"existing"`.
+- `onConflict`, for when a **folder** of that name is already there (a file of that name is no
+  conflict):
+  - `"existing"` (default): that folder is returned with `created: false`; nothing is sent to MEGA.
+  - `"fail"`: `-32004` with `data.reason: "exists"`.
+  - `"rename"`: created as `name (2)`, `name (3)`, ...
+
+#### `transfers.download`
+
+Hands files to the app's own downloads, for the user to keep, as the menu's Download does.
+
+```
+params:  {"items": [{"handle": "AbCd1234", "subPath": "trip\\day1"},
+                    {"handle": "EfGh5678"}],
+          "onConflict": "rename"}
+result:  {"queued": 2, "skipped": 0}
+```
+
+- Files land in the user's **Downloads** folder; `subPath` is an optional relative folder path
+  below it, per item, created as needed. `..`, absolute paths and characters Windows does not
+  allow are `-32602`. Files only: a folder is `-32602`.
+- All items are checked before any is queued.
+- Returns as soon as the files are queued. They appear in the app's transfer list, carry on after
+  the run ends, and the plugin is not told when they finish. If you need the file yourself, use
+  `items.fetchFile` instead.
+- `onConflict`, for when a file of that name is already there: `"rename"` (default, the download
+  is saved as `name (1).ext`), `"skip"`, or `"overwrite"` (the old file goes to the Recycle Bin).
+  A file already in the download queue is skipped too; `skipped` counts both.
+
 #### `ui.confirm`
 
 Asks the user a yes/no question in a modal dialog and waits for the answer.
@@ -432,9 +533,10 @@ Other notifications are logged and ignored.
 | `-32602` | Invalid params | Bad or missing params, malformed handle or cursor, a folder where a file is needed (or the reverse). |
 | `-32603` | Internal error | The app failed on its own side (e.g. could not create the temp folder). |
 | `-32002` | Not found | The item does not exist (any more), or has no preview. |
+| `-32004` | Conflict | The name is taken and `onConflict` did not resolve it; nothing changed. `data.reason` says why: `"exists"`, or `"versioningDisabled"` (see `items.upload`). |
 | `-32010` | MEGA error | MEGA rejected or failed a change. Part of an `items.update` may already be applied. |
 | `-32001` | — | Reserved for a future permission check. |
-| `-32800` | Cancelled | Sent **by the plugin** to answer `command.execute` after `$/cancel`. |
+| `-32800` | Cancelled | Sent **by the plugin** to answer `command.execute` after `$/cancel`; sent **by the app** for a transfer it stopped on Cancel. |
 | `-32000` | — | What the Python helper uses for a failed command. Any non-`-32800` code works there. |
 
 ## What the user sees
@@ -542,11 +644,17 @@ plugin.run()
 | `ctx.descendants(x, type=None)` | `items.descendants`, iterated page by page |
 | `ctx.update(x, name=, description=, favourite=, tags_add=, tags_remove=)` | `items.update` |
 | `ctx.fetch_preview(x)` → `Path` | `items.fetchPreview`; raises `NoPreview` |
+| `ctx.fetch_file(x, offset=, length=)` → `Path` | `items.fetchFile` |
+| `ctx.read_range(x, offset, length)` → `bytes` | `items.readRange` |
+| `ctx.upload(parent, local_path, name=, on_conflict=)` → `Item` | `items.upload`; raises `Conflict` |
+| `ctx.create_folder(parent, name, on_conflict=)` → `(Item, created)` | `items.createFolder`; raises `Conflict` |
+| `ctx.download(xs, sub_path=, on_conflict=)` → `{"queued", "skipped"}` | `transfers.download`; an entry of `xs` may be an `(x, sub_path)` pair |
 | `ctx.confirm(message, title=, ok_label=, danger=)` → `bool` | `ui.confirm` |
 | `ctx.progress(current=, total=, message=)` | `ui.progress` |
 | `ctx.cancelled`, `ctx.check_cancelled()` | `$/cancel` seen; the latter raises `Cancelled` → `-32800` |
 | `ctx.call(method, params)` | any method, raw |
-| `RpcError`, `NotFound`, `NoPreview`, `InvalidParams`, `MegaError` | error responses to a call |
+| `RpcError`, `NotFound`, `NoPreview`, `InvalidParams`, `MegaError`, `Conflict` (`.reason`) | error responses to a call; `.data` holds `error.data` |
+| `Cancelled` from a transfer call | `-32800`: the app stopped it on Cancel; let it propagate |
 
 `x` may be a handle string or an `Item`. `print()` is redirected to stderr, so it cannot corrupt
 the protocol stream.
@@ -561,7 +669,7 @@ Planned or considered, but not available yet — don't depend on any of these:
 - A permission system, a consent prompt, and a settings page listing installed plugins
 - Commands on the folder background or the current folder (`context.site` other than `"selection"`)
 - `when` conditions on the view or the number of selected items
-- Downloading or uploading files, and creating, copying, moving or deleting items
+- Copying, moving or deleting items
 - `ui.toast`, input and choice dialogs; a `log` method
 - Per-plugin settings managed by the app (`plugin.dataDir`)
 - Reading `manifestVersion` from the manifest, and checking `invocationId`

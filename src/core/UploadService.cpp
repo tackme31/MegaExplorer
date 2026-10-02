@@ -273,6 +273,7 @@ void UploadService::startNextIfIdle()
                 localPath,
                 parentHandle,
                 parentIsRoot,
+                /*fileName*/ {},
                 id,
                 [this, id](std::uint64_t transferred, std::uint64_t total) {
                     std::function<void(UploadJob)> onProgress;

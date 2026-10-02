@@ -113,16 +113,23 @@ qreal DownloadController::activeProgress() const
 
 void DownloadController::downloadFile(quint64 handle, QString name, quint64 sizeBytes)
 {
-    if (mService->hasJobForHandle(static_cast<std::uint64_t>(handle)))
-        return; // already queued/active, don't double-enqueue
+    enqueueDownload(handle, name, sizeBytes, computeDestinationPath(name));
+}
 
-    QString destinationPath = computeDestinationPath(name);
+bool DownloadController::enqueueDownload(quint64 handle,
+                                         const QString& name,
+                                         quint64 sizeBytes,
+                                         const QString& destinationPath)
+{
+    if (mService->hasJobForHandle(static_cast<std::uint64_t>(handle)))
+        return false;
     mService->enqueue(static_cast<std::uint64_t>(handle),
                       name.toStdString(),
                       destinationPath.toStdString(),
                       static_cast<std::uint64_t>(sizeBytes));
     publishQueue();
-    refreshActiveJob(); // already on the GUI thread here (called from QML)
+    refreshActiveJob(); // GUI thread: QML and plugin calls both arrive there
+    return true;
 }
 
 void DownloadController::extractArchiveEntry(ArchiveBrowser* browser, const QString& name)

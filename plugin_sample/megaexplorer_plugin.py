@@ -24,6 +24,7 @@ The message may run to many lines. Where it is shown is the command's
 print() is safe to use: it goes to stderr, which the app writes to its log.
 """
 
+import base64
 import json
 import os
 import sys
@@ -40,6 +41,7 @@ __all__ = [
     "NoPreview",
     "InvalidParams",
     "MegaError",
+    "Conflict",
     "Cancelled",
     "CommandError",
 ]
@@ -48,6 +50,7 @@ API_VERSION = 1
 _CANCELLED = -32800
 _METHOD_NOT_FOUND = -32601
 _NOT_FOUND = -32002
+_CONFLICT = -32004
 _INVALID_PARAMS = -32602
 _MEGA_ERROR = -32010
 _COMMAND_FAILED = -32000
@@ -56,10 +59,11 @@ _COMMAND_FAILED = -32000
 class RpcError(Exception):
     """The app answered a call with an error."""
 
-    def __init__(self, code, message):
+    def __init__(self, code, message, data=None):
         super().__init__(message)
         self.code = code
         self.message = message
+        self.data = data if isinstance(data, dict) else {}
 
 
 class NotFound(RpcError):
@@ -78,8 +82,19 @@ class MegaError(RpcError):
     """MEGA refused or failed the change. Part of it may already be applied."""
 
 
+class Conflict(RpcError):
+    """upload / create_folder: the name is taken and on_conflict did not resolve it.
+    Nothing was changed. reason is "exists", or "versioningDisabled" when
+    on_conflict="version" would have deleted the old file for good."""
+
+    @property
+    def reason(self):
+        return self.data.get("reason")
+
+
 class Cancelled(Exception):
-    """Raised by Context.check_cancelled() once the user pressed Cancel."""
+    """Raised by Context.check_cancelled() once the user pressed Cancel, and by a
+    transfer (fetch_file, read_range, upload) the app stopped for that reason."""
 
 
 class CommandError(Exception):
@@ -95,7 +110,7 @@ def _command_failed(text):
     return error
 
 
-_ERRORS = {_NOT_FOUND: NotFound, _INVALID_PARAMS: InvalidParams, _MEGA_ERROR: MegaError}
+_ERRORS = {_NOT_FOUND: NotFound, _CONFLICT: Conflict, _INVALID_PARAMS: InvalidParams, _MEGA_ERROR: MegaError}
 
 
 class Item:
@@ -235,7 +250,11 @@ class _Connection:
             raise RpcError(0, "the app closed the connection")
         if "error" in message:
             error = message["error"]
-            raise _ERRORS.get(error.get("code"), RpcError)(error.get("code"), error.get("message", ""))
+            if error.get("code") == _CANCELLED:
+                raise Cancelled()
+            raise _ERRORS.get(error.get("code"), RpcError)(
+                error.get("code"), error.get("message", ""), error.get("data")
+            )
         return message.get("result")
 
 
@@ -366,6 +385,84 @@ class Context:
             return Path(self.call("items.fetchPreview", {"handle": _handle(x)})["path"])
         except NotFound as error:
             raise NoPreview(error.code, error.message) from None
+
+    # --- file contents ------------------------------------------------------------
+    # The app runs fetch_file, read_range and upload one at a time, and stops the
+    # running one when the user presses Cancel: the call then raises Cancelled.
+    # Nothing is shown while they run; give a long command "progress": true and
+    # report progress yourself.
+
+    def fetch_file(self, x, offset=None, length=None):
+        """Downloads file x for the plugin to work on and returns its Path.
+
+        With offset and/or length, only that byte range is saved (length is cut
+        at the end of the file). Like fetch_preview, the file is yours and the
+        app removes whatever is left when the plugin exits."""
+        params = {"handle": _handle(x)}
+        if offset is not None:
+            params["offset"] = offset
+        if length is not None:
+            params["length"] = length
+        return Path(self.call("items.fetchFile", params)["path"])
+
+    def read_range(self, x, offset, length):
+        """Up to 1 MiB of file x, as bytes, without a file in between; fewer
+        bytes at the end of the file. For more, use fetch_file(x, offset, length)."""
+        result = self.call("items.readRange", {"handle": _handle(x), "offset": offset, "length": length})
+        return base64.b64decode(result["data"])
+
+    def upload(self, parent, local_path, name=None, on_conflict=None):
+        """Uploads the file at local_path into folder parent and returns the new Item.
+
+        name defaults to the local file's name. When a file of that name is already
+        there, on_conflict says what happens: "rename" (the default, "name (2).txt"),
+        "fail" (raises Conflict) or "version" (the upload becomes the existing
+        file's new version; raises Conflict if versioning is off for the account).
+        The local file is left alone."""
+        params = {"parent": _handle(parent), "localPath": str(Path(local_path).resolve())}
+        if name is not None:
+            params["name"] = name
+        if on_conflict is not None:
+            params["onConflict"] = on_conflict
+        return Item(self.call("items.upload", params)["item"])
+
+    def create_folder(self, parent, name, on_conflict=None):
+        """Creates folder name in folder parent; returns (Item, created).
+
+        When a folder of that name is already there, on_conflict says what happens:
+        "existing" (the default: that folder is returned, created is False), "fail"
+        (raises Conflict) or "rename" ("name (2)")."""
+        params = {"parent": _handle(parent), "name": name}
+        if on_conflict is not None:
+            params["onConflict"] = on_conflict
+        result = self.call("items.createFolder", params)
+        return Item(result["item"]), bool(result["created"])
+
+    # --- downloads for the user -----------------------------------------------------
+
+    def download(self, xs, sub_path=None, on_conflict=None):
+        """Queues files for the user in the app's own downloads, as the menu's
+        Download does, and returns at once with {"queued": n, "skipped": n}.
+
+        They land in the user's Downloads folder, in sub_path below it if given
+        (folders are created). An entry of xs may also be an (item, sub_path)
+        pair, to place each file on its own. When a file of that name is already
+        there, on_conflict decides: "rename" (the default, "name (1).txt"),
+        "skip" or "overwrite" (the old file goes to the Recycle Bin). The
+        transfers carry on after the plugin exits; it is not told when they end."""
+        entries = []
+        for x in xs:
+            own_path = sub_path
+            if isinstance(x, tuple):
+                x, own_path = x
+            entry = {"handle": _handle(x)}
+            if own_path:
+                entry["subPath"] = str(own_path)
+            entries.append(entry)
+        params = {"items": entries}
+        if on_conflict is not None:
+            params["onConflict"] = on_conflict
+        return self.call("transfers.download", params)
 
 
 class Plugin:
