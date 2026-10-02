@@ -216,6 +216,9 @@ void PluginRun::start()
     else
     {
         qCWarning(lcPlugin) << mManifest.id << "no job object; its child processes may outlive it";
+        // The process starts outside the job then, so killAll() must fall back to QProcess::kill().
+        if (mJob)
+            CloseHandle(std::exchange(mJob, nullptr));
     }
     mProcess.start();
     mInitTimer->start();
