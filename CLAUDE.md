@@ -4,6 +4,12 @@
 message of a session, even when this file, the docs, or tool output are in English. Code, code
 comments, and commit messages stay in English as before.
 
+**In an interactive session, change no code until the user explicitly asks for it to be
+implemented.** A question ("can we…?", "is it possible…?"), a report of a problem, or agreement
+with an analysis is a request for an answer, not a go-ahead: answer, propose, and wait. This covers
+source, QML, scripts and build files alike. The `/evolve` cycle, which works unattended on a
+`docs/ROADMAP.md` item, is exempt.
+
 Guidance for Claude Code when working in this repo. Kept compact — detail that isn't needed every
 session lives in companion docs, linked from the relevant section below rather than inlined:
 
