@@ -6,7 +6,7 @@ listing what it demonstrates.
 
 | Folder | Menu | Demonstrates |
 | --- | --- | --- |
-| `basics/` | Sample: Basics | The selection the app hands over (`ctx.items`), a toast from the return value, an error toast from `CommandError`, `print()` going to the app's log |
+| `basics/` | Sample: Basics | The selection the app hands over (`ctx.items`), a toast from the return value, an error toast from `CommandError`, `"result": "dialog"` for a long result or error, `print()` going to the app's log |
 | `read-items/` | Sample: Read items | `items.get` (`ctx.get`) for an item's current details; `items.children` (`ctx.children`) paged through a folder; `items.descendants` (`ctx.descendants`) for everything below it |
 | `fetch-preview/` | Sample: Fetch preview | `items.fetchPreview` (`ctx.fetch_preview`): the preview JPEG as a file, `NoPreview`, deleting the file once read |
 | `confirm/` | Sample: Confirm | `ui.confirm` (`ctx.confirm`): asking before doing something, the `danger` look, stopping quietly on Cancel |

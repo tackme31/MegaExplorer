@@ -19,6 +19,9 @@ struct PluginCommand
     QString title;
     // Shows the progress dialog while the command runs.
     bool progress = false;
+    // "result": "dialog": the run's message ends up in a dialog (the progress
+    // dialog, when there is one) instead of a toast.
+    bool resultInDialog = false;
     // when.targets / when.extensions: a selection that fails them greys the row.
     PluginTargets targets = PluginTargets::Any;
     // Lower case, without the dot. Empty accepts every extension.

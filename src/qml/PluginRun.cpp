@@ -37,6 +37,16 @@ QString errorMessageOf(const QJsonObject& response)
         .toString();
 }
 
+// What the user is shown for an error: error.message is one sentence by JSON-RPC's
+// rule, so the full text, if any, comes in error.data.message.
+QString errorTextOf(const QJsonObject& response)
+{
+    const QJsonObject error = response.value(QStringLiteral("error")).toObject();
+    const QJsonValue full = error.value(QStringLiteral("data")).toObject().value(QStringLiteral("message"));
+    return full.isString() && !full.toString().isEmpty() ? full.toString()
+                                                         : error.value(QStringLiteral("message")).toString();
+}
+
 // Kills everything inside once the last handle closes -- including when this app
 // dies -- so a plugin's own children (uv's python.exe) go with it.
 HANDLE createKillOnCloseJob()
@@ -429,14 +439,18 @@ void PluginRun::handleResponse(const QJsonObject& message)
         }
         else if (isError)
         {
-            qCInfo(lcPlugin) << mManifest.id << mCommandId
-                             << "returned an error:" << errorMessageOf(message);
-            finish(QStringLiteral("error"), errorMessageOf(message));
+            const QString text = errorTextOf(message);
+            qCInfo(lcPlugin).noquote() << mManifest.id << mCommandId << "returned an error:" << text;
+            finish(QStringLiteral("error"), text);
         }
         else
         {
-            const QJsonObject result = message.value(QStringLiteral("result")).toObject();
-            finish(QStringLiteral("ok"), result.value(QStringLiteral("message")).toString());
+            // Logged in full: a toast shows only the first lines.
+            const QString text =
+                message.value(QStringLiteral("result")).toObject().value(QStringLiteral("message")).toString();
+            if (!text.isEmpty())
+                qCInfo(lcPlugin).noquote() << mManifest.id << mCommandId << "returned:" << text;
+            finish(QStringLiteral("ok"), text);
         }
         stopProcess();
         return;

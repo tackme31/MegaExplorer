@@ -653,6 +653,9 @@ Item {
                         Layout.alignment: Qt.AlignVCenter
                         text: card.text
                         wrapMode: Text.Wrap
+                        // A plugin's message can be a whole report; the full text is in the log.
+                        maximumLineCount: 3
+                        elide: Text.ElideRight
                         color: Theme.color.text
                         font.pixelSize: Theme.font.body
                     }

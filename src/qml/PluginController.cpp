@@ -182,29 +182,54 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
     const QJsonObject context{{QStringLiteral("site"), QStringLiteral("selection")},
                               {QStringLiteral("items"), items}};
 
+    const auto command =
+        std::find_if(plugin->commands.begin(), plugin->commands.end(), [&](const PluginCommand& c) {
+            return c.id == commandId;
+        });
+    if (command == plugin->commands.end())
+        return;
     const QString tempDir = QDir(mTempDir).filePath(QString::number(++mRunCount));
     auto* run = new PluginRun(*plugin, commandId, context, tempDir, &mHostApi, this);
     const QString pluginName = plugin->name;
+    const QString commandTitle = command->title;
+    const bool resultInDialog = command->resultInDialog;
+    const qint64 startedAt = QDateTime::currentMSecsSinceEpoch();
+    const int runId = mRunCount;
     connect(run,
             &PluginRun::finished,
             this,
-            [this, pluginId, pluginName](const QString& outcome, const QString& message, bool changed) {
+            [this, runId, pluginId, pluginName, commandTitle, startedAt, resultInDialog](
+                const QString& outcome, const QString& message, bool changed) {
                 mRuns.remove(pluginId);
                 removeConfirm(pluginId);
-                const auto progress =
-                    std::find_if(mProgress.begin(), mProgress.end(), [&](const ProgressState& state) {
-                        return state.pluginId == pluginId;
-                    });
-                if (progress != mProgress.end())
+                ProgressState* state = findProgress(pluginId);
+                // Cancelling is the user's own doing: nothing to report, wherever results go.
+                const bool inDialog = resultInDialog && outcome != QStringLiteral("cancelled");
+                if (inDialog)
                 {
-                    const bool wasShown = progress->shown;
-                    mProgress.erase(progress);
+                    if (!state)
+                    {
+                        mProgress.push_back({runId, pluginId, pluginName, commandTitle, startedAt});
+                        state = &mProgress.back();
+                    }
+                    state->finished = true;
+                    state->preparing = false;
+                    state->shown = true;
+                    state->outcome = outcome;
+                    state->result = message;
+                    state->finishedAt = QDateTime::currentMSecsSinceEpoch();
+                    emit progressRunsChanged();
+                }
+                else if (state)
+                {
+                    const bool wasShown = state->shown;
+                    mProgress.erase(mProgress.begin() + (state - mProgress.data()));
                     if (wasShown)
                         emit progressRunsChanged();
                 }
                 ++mRunningRevision;
                 emit runningChanged();
-                emit commandFinished(pluginName, outcome, message, changed);
+                emit commandFinished(pluginName, outcome, message, changed, inDialog);
             });
     connect(run,
             &PluginRun::confirmRequested,
@@ -216,14 +241,9 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
                 mConfirms.push_back({pluginId, pluginName, title, message, okLabel, danger});
                 emit confirmRequestsChanged();
             });
-    const auto command =
-        std::find_if(plugin->commands.begin(), plugin->commands.end(), [&](const PluginCommand& c) {
-            return c.id == commandId;
-        });
-    if (command != plugin->commands.end() && command->progress)
+    if (command->progress)
     {
-        mProgress.push_back(
-            {pluginId, pluginName, command->title, QDateTime::currentMSecsSinceEpoch()});
+        mProgress.push_back({runId, pluginId, pluginName, commandTitle, startedAt});
         connect(run, &PluginRun::executionStarted, this, [this, pluginId] {
             if (ProgressState* state = findProgress(pluginId))
             {
@@ -280,9 +300,25 @@ QVariantList PluginController::progressRuns() const
                                 {QStringLiteral("total"), state.total},
                                 {QStringLiteral("message"), state.message},
                                 {QStringLiteral("cancelling"), state.cancelling},
-                                {QStringLiteral("forceStoppable"), state.forceStoppable}});
+                                {QStringLiteral("forceStoppable"), state.forceStoppable},
+                                {QStringLiteral("runId"), state.runId},
+                                {QStringLiteral("finished"), state.finished},
+                                {QStringLiteral("outcome"), state.outcome},
+                                {QStringLiteral("result"), state.result},
+                                {QStringLiteral("finishedAt"), state.finishedAt}});
     }
     return runs;
+}
+
+void PluginController::dismissResult(int runId)
+{
+    const auto state = std::find_if(mProgress.begin(), mProgress.end(), [&](const ProgressState& s) {
+        return s.finished && s.runId == runId;
+    });
+    if (state == mProgress.end())
+        return;
+    mProgress.erase(state);
+    emit progressRunsChanged();
 }
 
 void PluginController::cancel(const QString& pluginId)
@@ -341,7 +377,7 @@ PluginController::ProgressState* PluginController::findProgress(const QString& p
 {
     for (ProgressState& state : mProgress)
     {
-        if (state.pluginId == pluginId)
+        if (state.pluginId == pluginId && !state.finished)
             return &state;
     }
     return nullptr;

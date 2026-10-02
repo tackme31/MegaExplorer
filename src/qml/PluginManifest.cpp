@@ -102,6 +102,12 @@ parsePluginManifest(const QByteArray& json, const QString& dir, QString* error)
             command.title.isEmpty())
             return fail(error,
                         QStringLiteral("a command needs an \"id\" without '/' and a \"title\""));
+        const QJsonValue result = obj.value(QStringLiteral("result"));
+        if (!result.isUndefined() && result != QStringLiteral("toast") && result != QStringLiteral("dialog"))
+            return fail(error,
+                        QStringLiteral("command \"%1\": \"result\" must be \"toast\" or \"dialog\"")
+                            .arg(command.id));
+        command.resultInDialog = result == QStringLiteral("dialog");
         if (const std::optional<QString> whenError = readWhen(obj, &command))
             return fail(error, QStringLiteral("command \"%1\": %2").arg(command.id, *whenError));
         for (const PluginCommand& existing : manifest.commands)

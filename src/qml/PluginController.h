@@ -27,10 +27,13 @@ class PluginController : public QObject
 
     // Bumped whenever a run starts or ends, so menu greying can re-evaluate.
     Q_PROPERTY(int runningRevision READ runningRevision NOTIFY runningChanged)
-    // Runs of "progress": true commands that have been going for a moment, oldest first:
-    // maps of pluginId, pluginName, commandTitle, startedAt (ms since epoch), preparing,
-    // current and total (-1 when unknown), message, cancelling, and forceStoppable
-    // (cancelled but still running after a grace period).
+    // The plugin dialog's rows, oldest first: runs of "progress": true commands that
+    // have been going for a moment, and finished runs of "result": "dialog" commands
+    // until dismissResult(). Maps of runId, pluginId, pluginName, commandTitle,
+    // startedAt (ms since epoch), preparing, current and total (-1 when unknown),
+    // message (the progress text), cancelling, forceStoppable (cancelled but still
+    // running after a grace period), and finished, outcome (as PluginRun::finished),
+    // result (the plugin's message) and finishedAt.
     Q_PROPERTY(QVariantList progressRuns READ progressRuns NOTIFY progressRunsChanged)
     // Open ui.confirm questions, oldest first: maps of pluginId, pluginName, title,
     // message, okLabel and danger. Answered with answerConfirm().
@@ -75,17 +78,20 @@ public:
     Q_INVOKABLE void execute(const QString& actionId, const QVariantList& entries);
     Q_INVOKABLE void cancel(const QString& pluginId);
     Q_INVOKABLE void forceStop(const QString& pluginId);
+    Q_INVOKABLE void dismissResult(int runId);
     Q_INVOKABLE void answerConfirm(const QString& pluginId, bool ok);
 
 signals:
     void runningChanged();
     void progressRunsChanged();
     void confirmRequestsChanged();
-    // outcome and changed as PluginRun::finished.
+    // outcome and changed as PluginRun::finished. inDialog: the result is shown in
+    // progressRuns, so no toast is wanted.
     void commandFinished(const QString& pluginName,
                          const QString& outcome,
                          const QString& message,
-                         bool changed);
+                         bool changed,
+                         bool inDialog);
 
 private:
     const PluginManifest* findPlugin(const QString& pluginId) const;
@@ -95,6 +101,7 @@ private:
 
     struct ProgressState
     {
+        int runId = 0;
         QString pluginId;
         QString pluginName;
         QString commandTitle;
@@ -106,7 +113,12 @@ private:
         bool cancelling = false;
         bool forceStoppable = false;
         bool shown = false;
+        bool finished = false;
+        QString outcome;
+        QString result;
+        qint64 finishedAt = 0;
     };
+    // The row of pluginId's run in progress, not a finished one.
     ProgressState* findProgress(const QString& pluginId);
     // Coalesces updates: a plugin may report every item, the dialog only needs a few a second.
     void scheduleProgressUpdate();

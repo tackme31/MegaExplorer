@@ -14,9 +14,12 @@ Standard library only. Copy this file next to your plugin's main.py.
 
     plugin.run()
 
-A command function receives a Context and returns a message (str) to show as a
-toast, or None for no toast. Raising CommandError(message) reports a failure;
-any other exception does too, with its traceback written to the app's log.
+A command function receives a Context and returns a message (str) for the
+user, or None for none. Raising CommandError(message) reports a failure; any
+other exception does too, with its traceback written to the app's log.
+The message may run to many lines. Where it is shown is the command's
+"result" in plugin.json: a toast (the default, first 3 lines) or, with
+"result": "dialog", a dialog that shows all of it.
 
 print() is safe to use: it goes to stderr, which the app writes to its log.
 """
@@ -80,7 +83,16 @@ class Cancelled(Exception):
 
 
 class CommandError(Exception):
-    """Raise to fail a command with a message for the user (no traceback logged)."""
+    """Raise to fail a command with a message for the user (no traceback logged).
+    Like a returned message, it may run to many lines."""
+
+
+def _command_failed(text):
+    # JSON-RPC wants error.message to be one sentence; the whole text goes in data.
+    error = {"code": _COMMAND_FAILED, "message": text.split("\n", 1)[0]}
+    if "\n" in text:
+        error["data"] = {"message": text}
+    return error
 
 
 _ERRORS = {_NOT_FOUND: NotFound, _INVALID_PARAMS: InvalidParams, _MEGA_ERROR: MegaError}
@@ -403,8 +415,8 @@ class Plugin:
         except Cancelled:
             return None, {"code": _CANCELLED, "message": "Cancelled"}
         except CommandError as error:
-            return None, {"code": _COMMAND_FAILED, "message": str(error)}
+            return None, _command_failed(str(error))
         except Exception as error:  # noqa: BLE001 -- any failure becomes the command's error
             traceback.print_exc()
-            return None, {"code": _COMMAND_FAILED, "message": str(error) or type(error).__name__}
+            return None, _command_failed(str(error) or type(error).__name__)
         return ({"message": message} if message else {}), None

@@ -6,7 +6,9 @@ import QtQuick.Controls.FluentWinUI3
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// One instance in Main.qml, open while any "progress": true plugin command runs.
+// One instance in Main.qml: a row per "progress": true command running, and per
+// finished "result": "dialog" command until its Close. A row that was showing
+// progress turns into the result in place.
 // Not modal: a run over thousands of items must not keep the user out of the window.
 Dialog {
     id: root
@@ -24,13 +26,31 @@ Dialog {
         return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
     }
 
+    // outcome as PluginRun::finished; the same cases as ToastStack.showPluginResult.
+    function statusText(run) {
+        switch (run.outcome) {
+        case "ok":
+            return qsTr("Done");
+        case "error":
+            return qsTr("Failed");
+        case "notFound":
+            return qsTr("Can't find \"%1\"").arg(run.result);
+        case "failedToStart":
+            return qsTr("Couldn't be started");
+        case "timeout":
+            return qsTr("Didn't start in time and was stopped");
+        default:
+            return qsTr("Stopped unexpectedly");
+        }
+    }
+
     parent: Overlay.overlay
     anchors.centerIn: Overlay.overlay
     modal: false
     closePolicy: Popup.NoAutoClose
     visible: root.runs.length > 0
-    width: Math.min(420, Overlay.overlay.width - 48)
-    title: root.runs.length === 1 ? root.runs[0].pluginName : qsTr("Plugins running")
+    width: Math.min(520, Overlay.overlay.width - 48)
+    title: root.runs.length === 1 ? root.runs[0].pluginName : qsTr("Plugins")
 
     onVisibleChanged: root.now = Date.now()
 
@@ -52,7 +72,13 @@ Dialog {
                 id: row
 
                 required property var modelData
-                readonly property bool counted: !row.modelData.preparing && row.modelData.total > 0
+                readonly property bool finished: row.modelData.finished
+                readonly property bool counted: !row.finished && !row.modelData.preparing
+                                                && row.modelData.total > 0
+                // notFound's message is the program it looked for, already in the status line.
+                readonly property bool hasResult: row.finished && row.modelData.result !== ""
+                                                  && (row.modelData.outcome === "ok"
+                                                      || row.modelData.outcome === "error")
 
                 Layout.fillWidth: true
                 spacing: Theme.spacing.sm
@@ -66,6 +92,7 @@ Dialog {
                 }
 
                 ProgressBar {
+                    visible: !row.finished
                     Layout.fillWidth: true
                     indeterminate: !row.counted
                     from: 0
@@ -80,9 +107,10 @@ Dialog {
                     Label {
                         Layout.fillWidth: true
                         elide: Text.ElideMiddle
-                        color: Theme.color.textSecondary
+                        color: row.finished && row.modelData.outcome !== "ok" ? Theme.color.danger :
+                                                                                Theme.color.textSecondary
                         font.pixelSize: Theme.font.caption
-                        text: row.modelData.cancelling ? qsTr("Cancelling…") : row.modelData.preparing ? qsTr(
+                        text: row.finished ? root.statusText(row.modelData) : row.modelData.cancelling ? qsTr("Cancelling…") : row.modelData.preparing ? qsTr(
                                                                                                     "Preparing…") :
                                                                                                 row.modelData.message
                     }
@@ -98,12 +126,53 @@ Dialog {
                     Label {
                         color: Theme.color.textSecondary
                         font.pixelSize: Theme.font.caption
-                        text: qsTr("Elapsed %1").arg(root.formatElapsed(root.now
+                        text: qsTr("Elapsed %1").arg(root.formatElapsed((row.finished ? row.modelData.finishedAt :
+                                                                                        root.now)
                                                                         - row.modelData.startedAt))
                     }
                 }
 
+                ScrollView {
+                    id: resultView
+
+                    visible: row.hasResult
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(resultText.implicitHeight, 240)
+
+                    TextArea {
+                        id: resultText
+
+                        readOnly: true
+                        selectByMouse: true
+                        wrapMode: TextEdit.Wrap
+                        textFormat: TextEdit.PlainText
+                        text: row.hasResult ? row.modelData.result : ""
+                    }
+                }
+
+                RowLayout {
+                    visible: row.finished
+                    Layout.alignment: Qt.AlignRight
+                    spacing: Theme.spacing.md
+
+                    Button {
+                        visible: row.hasResult
+                        text: qsTr("Copy")
+                        onClicked: {
+                            resultText.selectAll();
+                            resultText.copy();
+                            resultText.deselect();
+                        }
+                    }
+
+                    Button {
+                        text: qsTr("Close")
+                        onClicked: root.plugins.dismissResult(row.modelData.runId)
+                    }
+                }
+
                 Button {
+                    visible: !row.finished
                     Layout.alignment: Qt.AlignRight
                     enabled: !row.modelData.cancelling || row.modelData.forceStoppable
                     text: row.modelData.forceStoppable ? qsTr("Force quit") : qsTr("Cancel")
