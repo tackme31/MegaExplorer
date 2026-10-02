@@ -272,15 +272,17 @@ def _pid_of(hwnd: int) -> int:
     return pid.value
 
 
-def _image_name_of(pid: int) -> str:
+def _is_our_exe(pid: int) -> bool:
+    """Whether pid runs this tree's Debug build. By full path, not name: a released
+    MegaExplorer.exe the user is working in has the same name and must be left alone."""
     handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not handle:
-        return ""
+        return False
     buf = ctypes.create_unicode_buffer(32768)
     size = wintypes.DWORD(len(buf))
     ok = kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size))
     kernel32.CloseHandle(handle)
-    return Path(buf.value).name.lower() if ok else ""
+    return bool(ok) and os.path.normcase(buf.value) == os.path.normcase(str(EXE_PATH.resolve()))
 
 
 def _client_size(hwnd: int) -> tuple[int, int]:
@@ -305,7 +307,7 @@ def enum_candidate_windows(pid: int | None = None) -> list[int]:
         else:
             # Match the exe, not the title: Qt Creator with this project open is
             # also a "Qt*" window whose title contains "MegaExplorer".
-            if _image_name_of(_pid_of(hwnd)) != EXE_PATH.name.lower():
+            if not _is_our_exe(_pid_of(hwnd)):
                 return True
         found.append(hwnd)
         return True
@@ -346,12 +348,12 @@ def find_window(required: bool = True) -> int | None:
         hwnd
         and user32.IsWindow(hwnd)
         and user32.IsWindowVisible(hwnd)
-        and _image_name_of(_pid_of(hwnd)) == EXE_PATH.name.lower()
+        and _is_our_exe(_pid_of(hwnd))
     ):
         return hwnd
 
     pid = session.get("pid")
-    if pid and _process_alive(pid) and _image_name_of(pid) == EXE_PATH.name.lower():
+    if pid and _process_alive(pid) and _is_our_exe(pid):
         candidates = enum_candidate_windows(pid)
         if candidates:
             session["hwnd"] = candidates[0]
@@ -867,6 +869,8 @@ def do_close(args) -> None:
     hwnd = find_window(required=False)
     session = load_session()
     pid = session.get("pid") or (_pid_of(hwnd) if hwnd else None)
+    if pid and not _is_our_exe(pid):
+        pid = None  # a stale session pid, since reused by some other process
 
     closed = "not-running"
     if hwnd:
