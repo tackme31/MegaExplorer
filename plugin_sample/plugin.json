@@ -3,6 +3,7 @@
   "id": "com.example.sample",
   "name": "Sample",
   "version": "0.1.0",
+  "description": "Exercises every part of the plugin API, one command each.",
   "apiVersion": 1,
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
   "commands": [

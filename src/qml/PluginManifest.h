@@ -49,6 +49,9 @@ struct PluginManifest
     QString id;
     QString name;
     QString version;
+    QString description;
+    // Only an http(s) URL is kept, since it will be opened as a link; anything else is "".
+    QString repositoryUrl;
     int apiVersion = 0;
     // The folder plugin.json was read from: the working directory of the process,
     // and what a relative run.command is resolved against.

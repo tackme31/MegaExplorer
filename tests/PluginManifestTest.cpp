@@ -36,6 +36,38 @@ TEST(PluginManifestTest, ParsesAValidManifest)
     EXPECT_EQ(manifest->apiVersion, 1);
 }
 
+TEST(PluginManifestTest, ReadsDescriptionAndRepositoryUrl)
+{
+    const auto manifest = parsePluginManifest(R"({
+      "id": "x", "name": "X", "apiVersion": 1, "run": { "command": "x" },
+      "description": "Tags images.", "repositoryUrl": "https://github.com/example/x",
+      "commands": [ { "id": "a", "title": "A" } ]
+    })", QStringLiteral("C:/p"));
+    ASSERT_TRUE(manifest.has_value());
+    EXPECT_EQ(manifest->description, QStringLiteral("Tags images."));
+    EXPECT_EQ(manifest->repositoryUrl, QStringLiteral("https://github.com/example/x"));
+
+    const auto bare = parsePluginManifest(kValid, QStringLiteral("C:/p"));
+    ASSERT_TRUE(bare.has_value());
+    EXPECT_TRUE(bare->description.isEmpty());
+    EXPECT_TRUE(bare->repositoryUrl.isEmpty());
+}
+
+TEST(PluginManifestTest, DropsARepositoryUrlThatIsNotHttp)
+{
+    for (const char* url : {"file:///C:/Windows/system32/calc.exe", "javascript:alert(1)",
+                            "github.com/example/x", "https://", "ftp://example.com/x"})
+    {
+        const QByteArray json = QByteArray(R"({
+          "id": "x", "name": "X", "apiVersion": 1, "run": { "command": "x" },
+          "repositoryUrl": ")") + url + R"(", "commands": [ { "id": "a", "title": "A" } ]
+        })";
+        const auto manifest = parsePluginManifest(json, QStringLiteral("C:/p"));
+        ASSERT_TRUE(manifest.has_value()) << url;
+        EXPECT_TRUE(manifest->repositoryUrl.isEmpty()) << url;
+    }
+}
+
 TEST(PluginManifestTest, KeepsAnApiVersionThisAppDoesNotSpeak)
 {
     QByteArray json = kValid;

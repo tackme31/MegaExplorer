@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QUrl>
 
 namespace
 {
@@ -80,6 +81,11 @@ parsePluginManifest(const QByteArray& json, const QString& dir, QString* error)
     if (manifest.name.isEmpty())
         return fail(error, QStringLiteral("\"name\" is missing"));
     manifest.version = root.value(QStringLiteral("version")).toString();
+    manifest.description = root.value(QStringLiteral("description")).toString();
+    const QUrl repositoryUrl(root.value(QStringLiteral("repositoryUrl")).toString(), QUrl::StrictMode);
+    if (repositoryUrl.isValid() && !repositoryUrl.host().isEmpty() &&
+        (repositoryUrl.scheme() == QLatin1String("https") || repositoryUrl.scheme() == QLatin1String("http")))
+        manifest.repositoryUrl = repositoryUrl.toString();
     const QJsonValue apiVersion = root.value(QStringLiteral("apiVersion"));
     if (!apiVersion.isDouble() || apiVersion.toDouble() != apiVersion.toInt() || apiVersion.toInt() < 1)
         return fail(error, QStringLiteral("\"apiVersion\" is missing or not a positive integer"));

@@ -140,6 +140,8 @@ sequenceDiagram
   "id": "com.example.tagger",
   "name": "Tagger",
   "version": "1.2.0",
+  "description": "Tags images with what is in them.",
+  "repositoryUrl": "https://github.com/example/tagger",
   "apiVersion": 1,
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
   "commands": [
@@ -159,6 +161,8 @@ sequenceDiagram
 | `id` | yes | Unique id, `[a-z0-9][a-z0-9.-]*`. A reverse domain name is a good habit. |
 | `name` | yes | Submenu label, and the name in toasts and dialogs. |
 | `version` | no | Your plugin's version; passed back to you in `initialize`. |
+| `description` | no | A short description of what the plugin does. Not shown anywhere yet. |
+| `repositoryUrl` | no | Where the plugin's source or home page lives. Only an `http://` or `https://` URL is kept; anything else is ignored. Not shown anywhere yet. |
 | `apiVersion` | yes | The plugin API version the plugin was written for, a positive integer. See [API version](#api-version). |
 | `run.command` | yes | The program to start. Without a `/` or `\` it is looked up on `PATH`; with one, it is relative to the plugin folder (e.g. `bin/plugin.exe`). |
 | `run.args` | no | Arguments, as an array of strings. No shell is involved, so no quoting or expansion happens. |
