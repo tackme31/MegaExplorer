@@ -78,6 +78,9 @@ public:
     Q_INVOKABLE void execute(const QString& actionId, const QVariantList& entries);
     Q_INVOKABLE void cancel(const QString& pluginId);
     Q_INVOKABLE void forceStop(const QString& pluginId);
+    // Kills every run at once, without $/cancel: called on logout, after which a
+    // run's handles would name nothing, or a node of the next account.
+    Q_INVOKABLE void forceStopAll();
     Q_INVOKABLE void dismissResult(int runId);
     Q_INVOKABLE void answerConfirm(const QString& pluginId, bool ok);
 

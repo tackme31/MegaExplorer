@@ -95,6 +95,12 @@ no consent prompt: every plugin in the plugins folder is enabled. Only install p
 - **Process tree.** The plugin is started inside a Windows Job Object, so its own child processes
   (`uv`'s `python.exe`, for instance) are killed along with it when it is stopped, and when the app
   exits.
+- **Killed without notice.** When the user signs out, or closes the app, every running plugin is
+  killed at once: no `$/cancel`, no `shutdown`, no chance to clean up. It can stop part-way through
+  changing an item (an `items.update` applies its changes one by one), so write a plugin that can
+  simply be run again — skip what is already done, and redo an item whose change is incomplete.
+  Signing out in *another* MegaExplorer process that shares the session is not noticed: the run
+  carries on, and its calls fail.
 
 The sequence of one run:
 

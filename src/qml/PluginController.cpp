@@ -350,6 +350,14 @@ void PluginController::forceStop(const QString& pluginId)
         run->forceStop();
 }
 
+void PluginController::forceStopAll()
+{
+    // A copy: each run's finished() handler removes it from mRuns.
+    const QList<PluginRun*> runs = mRuns.values();
+    for (PluginRun* run : runs)
+        run->forceStop();
+}
+
 QVariantList PluginController::confirmRequests() const
 {
     QVariantList requests;

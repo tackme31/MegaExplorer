@@ -774,6 +774,7 @@ ApplicationWindow {
             if (authController.authState === AuthController.LoggedIn) {
                 window.loadSignedInContent();
             } else if (authController.authState === AuthController.LoggedOut) {
+                pluginController.forceStopAll();
                 window.signedInContentLoaded = false;
                 tabsController.resetAll();
                 folderTreeModel.reset();
