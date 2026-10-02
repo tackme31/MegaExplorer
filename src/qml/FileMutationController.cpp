@@ -753,8 +753,15 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
     // locations (favourites, recents, the bin's own top), which carry handle 0 and
     // are not somewhere a node can be moved back to. A Rename answer is not undone:
     // the name it picked stays, only the folder goes back.
+    //
+    // The Cloud Drive root carries handle 0 too, with isRoot set, and can be moved
+    // back to. The bin's top reports itself the same way, so it is told apart by this
+    // tab's view: only a drag starts there (Cut is Cloud Drive only), and a drag's
+    // batch runs on the tab it started from.
+    const bool sourceIsBinTop = source == 0 && sourceIsRoot && mNavigation->atRoot() &&
+                                mNavigation->viewKind() == static_cast<int>(ViewKind::Rubbish);
     QVariantMap undo;
-    if (source != 0)
+    if (source != 0 || (sourceIsRoot && !sourceIsBinTop))
     {
         undo.insert(QStringLiteral("action"), QStringLiteral("move"));
         undo.insert(QStringLiteral("entries"), ClipboardController::toVariantList(issued));

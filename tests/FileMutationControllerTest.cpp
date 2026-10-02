@@ -230,7 +230,13 @@ protected:
     // breadcrumb handle is 0.
     void givenCurrentFolderHandle(std::uint64_t handle)
     {
-        const PathSegment here{"here", handle, true, ViewKind::CloudDrive};
+        givenBreadcrumb(PathSegment{"here", handle, true, ViewKind::CloudDrive});
+    }
+
+    // The breadcrumb's last segment is what a move reads its source from; these are
+    // the shapes the real screens resolve to (the Cloud Drive root is handle 0).
+    void givenBreadcrumb(const PathSegment& here)
+    {
         EXPECT_CALL(*client, getPath(_, _, _))
             .WillRepeatedly(InvokeArgument<2>(
                 Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{here})));
@@ -657,12 +663,55 @@ TEST_F(FileMutationControllerTest, MoveEntriesToOffersTheReverseMoveAsItsUndo)
     EXPECT_EQ(undoEntries.first().toMap().value(QStringLiteral("handle")).toULongLong(), 1u);
 }
 
+TEST_F(FileMutationControllerTest, MoveEntriesToOffersUndoFromTheCloudDriveRoot)
+{
+    // The root's segment carries handle 0, like the synthesized locations, but it
+    // is somewhere the nodes can go back to.
+    givenRootListing({entry("a", 1)});
+    givenBreadcrumb(PathSegment{"", 0, true, ViewKind::CloudDrive});
+    controller->loadRoot();
+    flush();
+    givenChildrenOf(99u, {});
+
+    EXPECT_CALL(*client, moveNode(1u, 99u, false, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->moveEntriesTo(clipboardEntries({entry("a", 1)}), 99, false);
+    flush();
+    flush();
+
+    EXPECT_EQ(lastUndo.value(QStringLiteral("action")).toString(), QStringLiteral("move"));
+    EXPECT_EQ(lastUndo.value(QStringLiteral("target")).toULongLong(), 0u);
+    EXPECT_TRUE(lastUndo.value(QStringLiteral("targetIsRoot")).toBool());
+}
+
+TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoFromTheRubbishBinTop)
+{
+    // Same handle 0 and isRoot as the Cloud Drive root; moving "back" there would
+    // put the nodes in the Drive instead of the bin.
+    givenRootListing({entry("a", 1)});
+    givenBreadcrumb(PathSegment{"", 0, true, ViewKind::Rubbish});
+    controller->loadRoot();
+    flush();
+    givenChildrenOf(99u, {});
+
+    EXPECT_CALL(*client, moveNode(1u, 99u, false, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->moveEntriesTo(clipboardEntries({entry("a", 1)}), 99, false);
+    flush();
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_TRUE(lastUndo.isEmpty());
+}
+
 TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoWhenTheSourceIsNotAFolder)
 {
-    // givenRootListing leaves the breadcrumb empty, which is the shape the
-    // favourites and recents screens have on purpose: handle 0, so there is
-    // nowhere to put the nodes back.
+    // The favourites screen's shape: one nameless segment, handle 0, not a root,
+    // so there is nowhere to put the nodes back.
     givenRootListing({entry("a", 1)});
+    givenBreadcrumb(PathSegment{"", 0, false, ViewKind::Favourites});
     controller->loadRoot();
     flush();
     givenChildrenOf(99u, {});
