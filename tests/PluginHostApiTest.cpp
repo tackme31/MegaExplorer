@@ -881,3 +881,49 @@ TEST_F(PluginHostApiTest, TransfersDownloadOverwriteLeavesTheFileAloneForAnAlrea
   EXPECT_EQ(enqueued, 1);
   EXPECT_TRUE(QFile::exists(QDir(downloads.path()).filePath(QStringLiteral("a.txt"))));
 }
+
+TEST_F(PluginHostApiTest, ItemsUploadChecksForAClashWhenItsTurnComesNotWhenQueued) {
+  QFile local(QDir(mTempDir.path()).filePath(QStringLiteral("notes.txt")));
+  ASSERT_TRUE(local.open(QIODevice::WriteOnly));
+  local.write("x");
+  local.close();
+  ON_CALL(*mClient, getNodeSnapshot(1))
+      .WillByDefault(Return(Result<NodeSnapshot>::ok(node(1, "root", true))));
+  ON_CALL(*mClient, getNodeSnapshot(60))
+      .WillByDefault(Return(Result<NodeSnapshot>::ok(node(60, "notes.txt", false))));
+  ON_CALL(*mClient, checkUpload(1, false)).WillByDefault(Return(Result<void>::ok()));
+  std::vector<NodeSnapshot> children;
+  ON_CALL(*mClient, getChildSnapshots(1)).WillByDefault([&children](std::uint64_t) {
+    return Result<std::vector<NodeSnapshot>>::ok(children);
+  });
+  std::function<void(Result<UploadOutcome>)> firstDone;
+  EXPECT_CALL(*mClient, upload(_, 1, false, std::string("notes.txt"), _, _, _))
+      .WillOnce([&firstDone](const std::string &, std::uint64_t, bool, const std::string &,
+                             std::uint64_t, ProgressFn,
+                             std::function<void(Result<UploadOutcome>)> onDone) {
+        firstDone = std::move(onDone);
+      });
+  const QJsonObject params{{QStringLiteral("parent"), QStringLiteral("h1")},
+                           {QStringLiteral("localPath"), QDir::toNativeSeparators(local.fileName())},
+                           {QStringLiteral("onConflict"), QStringLiteral("fail")}};
+
+  mRun.tempDir = mTempDir.path();
+  std::optional<PluginHostApi::Reply> first;
+  std::optional<PluginHostApi::Reply> second;
+  mApi.call(QStringLiteral("items.upload"), params, mRun,
+            [&first](const PluginHostApi::Reply &r) { first = r; });
+  mApi.call(QStringLiteral("items.upload"), params, mRun,
+            [&second](const PluginHostApi::Reply &r) { second = r; });
+  ASSERT_TRUE(firstDone);
+  EXPECT_FALSE(second.has_value());
+
+  children = {node(60, "notes.txt", false)};
+  firstDone(Result<UploadOutcome>::ok(UploadOutcome{60}));
+  for (int i = 0; i < 20 && !second; ++i)
+    QCoreApplication::processEvents();
+
+  ASSERT_TRUE(first.has_value());
+  EXPECT_FALSE(first->errorCode.has_value());
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(second->errorCode, PluginHostApi::kConflict);
+}

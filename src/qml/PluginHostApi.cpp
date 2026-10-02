@@ -968,36 +968,43 @@ void PluginHostApi::itemsUpload(const QJsonObject& params, RunState& run, const 
                         ? fail(kItemNotFound, QStringLiteral("The folder no longer exists"))
                         : megaFail(allowed.errorMessage));
 
-    std::set<std::string> taken;
-    bool clash = false;
-    if (const Result<std::vector<NodeSnapshot>> children = mClient->getChildSnapshots(parent.handle);
-        children.success)
-    {
-        for (const NodeSnapshot& child : children.value())
-        {
-            taken.insert(child.name);
-            clash = clash || (!child.isFolder && child.name == name.toStdString());
-        }
-    }
-    bool checkVersioning = false;
-    if (clash)
-    {
-        if (onConflict == QLatin1String("fail"))
-            return done(conflict(QStringLiteral("A file named %1 already exists there").arg(name), QStringLiteral("exists")));
-        if (onConflict == QLatin1String("rename"))
-            name = QString::fromStdString(FileOperationService::uniqueMoveName(name.toStdString(), false, taken));
-        else
-            checkVersioning = true;
-    }
-
     enqueueTransfer(
         run,
         [client = mClient,
          guiContext = mGuiContext,
          path = QDir::toNativeSeparators(local.absoluteFilePath()).toStdString(),
          parentHandle = parent.handle,
-         nodeName = name.toStdString(),
-         checkVersioning](const std::shared_ptr<TransferQueue>& queue, const Done& finish) {
+         requestedName = name.toStdString(),
+         onConflict](const std::shared_ptr<TransferQueue>& queue, const Done& finish) {
+            if (queue->cancelled)
+                return finish(cancelledReply());
+            // Resolved here, not when the request arrived: an upload queued ahead of
+            // this one may have taken the name since.
+            std::string nodeName = requestedName;
+            std::set<std::string> taken;
+            bool clash = false;
+            if (const Result<std::vector<NodeSnapshot>> children = client->getChildSnapshots(parentHandle);
+                children.success)
+            {
+                for (const NodeSnapshot& child : children.value())
+                {
+                    taken.insert(child.name);
+                    clash = clash || (!child.isFolder && child.name == requestedName);
+                }
+            }
+            bool checkVersioning = false;
+            if (clash)
+            {
+                if (onConflict == QLatin1String("fail"))
+                    return finish(conflict(
+                        QStringLiteral("A file named %1 already exists there").arg(QString::fromStdString(requestedName)),
+                        QStringLiteral("exists")));
+                if (onConflict == QLatin1String("rename"))
+                    nodeName = FileOperationService::uniqueMoveName(requestedName, false, taken);
+                else
+                    checkVersioning = true;
+            }
+
             const auto start = [client, guiContext, path, parentHandle, nodeName, queue, finish] {
                 if (queue->cancelled)
                     return finish(cancelledReply());

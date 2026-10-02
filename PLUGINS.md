@@ -445,7 +445,8 @@ result:  {"item": Item}
 - `localPath`: absolute path of an existing file (folders are not accepted; create them with
   `items.createFolder`). The app does not touch the local file afterwards.
 - `name`: optional, the name in MEGA; defaults to the local file's name. No `/` or `\`.
-- `onConflict`, for when a **file** of that name is already in the folder:
+- `onConflict`, for when a **file** of that name is already in the folder when the upload's turn
+  comes — so an earlier upload of the same name, still queued, counts:
   - `"rename"` (default): uploaded as `name (2).txt`, `name (3).txt`, ...
   - `"fail"`: `-32004` with `data.reason: "exists"`, nothing uploaded.
   - `"version"`: becomes the existing file's new version (the old content stays as a previous
