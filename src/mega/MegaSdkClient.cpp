@@ -554,6 +554,29 @@ Result<RestoreTarget> MegaSdkClient::getRestoreTarget(std::uint64_t handle) cons
     return Result<RestoreTarget>::ok(RestoreTarget{0, true, true});
 }
 
+Result<ParentLocation> MegaSdkClient::getParentLocation(std::uint64_t handle) const
+{
+    if (mShuttingDown)
+        return Result<ParentLocation>::fail(kShutDownMessage, kClientShutDownCode);
+
+    std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
+    if (!node)
+        return Result<ParentLocation>::fail("No node with the given handle", MegaErrorCode::kENoEnt);
+    std::unique_ptr<mega::MegaNode> parent(mApi->getParentNode(node.get()));
+    if (!parent)
+        return Result<ParentLocation>::fail("The node has no parent", MegaErrorCode::kENoEnt);
+
+    const mega::MegaHandle parentHandle = parent->getHandle();
+    std::unique_ptr<mega::MegaNode> root(mApi->getRootNode());
+    if (root && parentHandle == root->getHandle())
+        return Result<ParentLocation>::ok(ParentLocation{0, true, false});
+    std::unique_ptr<mega::MegaNode> rubbish(mApi->getRubbishNode());
+    if (rubbish && parentHandle == rubbish->getHandle())
+        return Result<ParentLocation>::ok(ParentLocation{0, true, true});
+    return Result<ParentLocation>::ok(
+        ParentLocation{static_cast<std::uint64_t>(parentHandle), false, false});
+}
+
 void MegaSdkClient::getChildren(std::uint64_t handle,
                                 SortOrder order,
                                 std::function<void(Result<std::vector<FileEntry>>)> onDone)

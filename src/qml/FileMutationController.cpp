@@ -50,6 +50,11 @@ void putOnClipboard(const QString& text)
     if (qobject_cast<QGuiApplication*>(QCoreApplication::instance()) != nullptr)
         QGuiApplication::clipboard()->setText(text);
 }
+
+bool sameFolder(const ParentLocation& a, const ParentLocation& b)
+{
+    return a.handle == b.handle && a.isRoot == b.isRoot && a.isRubbishBin == b.isRubbishBin;
+}
 } // namespace
 
 FileMutationController::DestinationSnapshot
@@ -570,25 +575,13 @@ void FileMutationController::moveEntriesTo(const QVariantList& entries,
                                            quint64 target,
                                            bool targetIsRoot)
 {
-    // A drag started in this tab, so this tab is where the nodes came from --
-    // read *now*, because a refresh mid-batch could in principle move it. A search
-    // listing's rows come from many folders, so it names none, as favourites do:
-    // otherwise the move's Undo would send them all to the searched folder.
-    const bool fromSearch = mNavigation->searchActive();
-    moveEntriesFrom(ClipboardController::toNodeRefs(entries),
-                    target,
-                    targetIsRoot,
-                    fromSearch ? 0 : mNavigation->currentHandle(),
-                    fromSearch ? false : mNavigation->atRoot(),
-                    MoveConflict::Ask);
+    moveEntries(ClipboardController::toNodeRefs(entries), target, targetIsRoot, MoveConflict::Ask);
 }
 
-void FileMutationController::moveEntriesFrom(const std::vector<NodeRef>& entries,
-                                             quint64 target,
-                                             bool targetIsRoot,
-                                             quint64 source,
-                                             bool sourceIsRoot,
-                                             MoveConflict onConflict)
+void FileMutationController::moveEntries(const std::vector<NodeRef>& entries,
+                                         quint64 target,
+                                         bool targetIsRoot,
+                                         MoveConflict onConflict)
 {
     if (entries.empty())
         return;
@@ -598,14 +591,8 @@ void FileMutationController::moveEntriesFrom(const std::vector<NodeRef>& entries
         static_cast<std::uint64_t>(target),
         targetIsRoot,
         kNameOrder,
-        [this,
-         self = shared_from_this(),
-         entries,
-         target,
-         targetIsRoot,
-         source,
-         sourceIsRoot,
-         onConflict](Result<std::vector<FileEntry>> result) {
+        [this, self = shared_from_this(), entries, target, targetIsRoot, onConflict](
+            Result<std::vector<FileEntry>> result) {
             invokeOnGuiThread(
                 this,
                 [this,
@@ -613,8 +600,6 @@ void FileMutationController::moveEntriesFrom(const std::vector<NodeRef>& entries
                  entries,
                  target,
                  targetIsRoot,
-                 source,
-                 sourceIsRoot,
                  onConflict,
                  result = std::move(result)]() mutable {
                     mBusy->end();
@@ -638,8 +623,6 @@ void FileMutationController::moveEntriesFrom(const std::vector<NodeRef>& entries
                     startMoveBatch(entries,
                                    target,
                                    targetIsRoot,
-                                   source,
-                                   sourceIsRoot,
                                    DestinationSnapshot::of(result.value()),
                                    onConflict);
                 });
@@ -649,8 +632,6 @@ void FileMutationController::moveEntriesFrom(const std::vector<NodeRef>& entries
 void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
                                             quint64 target,
                                             bool targetIsRoot,
-                                            quint64 source,
-                                            bool sourceIsRoot,
                                             DestinationSnapshot destination,
                                             MoveConflict onConflict)
 {
@@ -703,9 +684,7 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
                                   conflictingFolders,
                                   renamedFiles + renamedFolders,
                                   target,
-                                  targetIsRoot,
-                                  source,
-                                  sourceIsRoot);
+                                  targetIsRoot);
             return;
         }
         // Nothing collides, so every answer means the same thing here; Skip is the
@@ -715,24 +694,14 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
 
     // Names are settled before the batch starts because the batch has to be told how
     // many moves to expect, and Skip removes entries from that count.
-    struct PlannedMove
-    {
-        std::uint64_t handle;
-        std::string newName;
-    };
+    const ParentLocation to{static_cast<std::uint64_t>(target), targetIsRoot, false};
     std::vector<PlannedMove> plan;
     plan.reserve(entries.size());
-    // The same entries the plan issues, kept in NodeRef form for the undo payload
-    // below -- a skipped entry never left, so offering to move it back would be a
-    // move the user did not make.
-    std::vector<NodeRef> issued;
-    issued.reserve(entries.size());
     for (std::size_t i = 0; i < entries.size(); ++i)
     {
         const NodeRef& entry = entries[i];
         if (colliding[i] && onConflict == MoveConflict::Skip)
             continue;
-        issued.push_back(entry);
         if (colliding[i] && onConflict == MoveConflict::Rename)
         {
             const std::string chosen =
@@ -740,52 +709,135 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
             // Claimed right away: MEGA allows duplicate siblings, so two colliding
             // entries must not be handed the same new name.
             destination.taken.insert(chosen);
-            plan.push_back({entry.handle, chosen});
+            plan.push_back({entry, to, chosen});
             continue;
         }
-        plan.push_back({entry.handle, std::string()});
+        plan.push_back({entry, to, std::string()});
     }
 
     if (plan.empty())
         return;
 
     clearClipboardIfSpentBy(entries);
+    issueMoveBatch(plan);
+}
 
-    // The inverse is the same call with the two ends swapped, so the toast needs no
-    // machinery of its own. Withheld when the source is one of the synthesized
-    // locations (favourites, recents, the bin's own top), which carry handle 0 and
-    // are not somewhere a node can be moved back to. A Rename answer is not undone:
-    // the name it picked stays, only the folder goes back.
-    //
-    // The Cloud Drive root carries handle 0 too, with isRoot set, and can be moved
-    // back to. The bin's top reports itself the same way, so it is told apart by this
-    // tab's view: only a drag starts there (Cut is Cloud Drive only), and a drag's
-    // batch runs on the tab it started from.
-    const bool sourceIsBinTop = source == 0 && sourceIsRoot && mNavigation->atRoot() &&
-                                mNavigation->viewKind() == static_cast<int>(ViewKind::Rubbish);
-    QVariantMap undo;
-    if (source != 0 || (sourceIsRoot && !sourceIsBinTop))
+void FileMutationController::undoMove(const QVariantList& groups)
+{
+    std::vector<PlannedMove> plan;
+    for (const QVariant& group : groups)
     {
+        const QVariantMap map = group.toMap();
+        const ParentLocation to{
+            static_cast<std::uint64_t>(map.value(QStringLiteral("target")).toULongLong()),
+            map.value(QStringLiteral("targetIsRoot")).toBool(),
+            map.value(QStringLiteral("toRubbish")).toBool()};
+        for (const NodeRef& entry :
+             ClipboardController::toNodeRefs(map.value(QStringLiteral("entries")).toList()))
+            plan.push_back({entry, to, std::string()});
+    }
+    if (!plan.empty())
+        issueMoveBatch(plan);
+}
+
+void FileMutationController::issueMoveBatch(const std::vector<PlannedMove>& plan)
+{
+    // Every origin is read before the first move is issued, while each node is
+    // still where the user picked it from.
+    struct Group
+    {
+        ParentLocation folder;
+        std::vector<NodeRef> entries;
+    };
+    std::vector<Group> origins;
+    bool everyOriginKnown = true;
+    for (const PlannedMove& planned : plan)
+    {
+        const Result<ParentLocation> origin = mFileOps->parentLocationOf(planned.entry.handle);
+        if (!origin.success)
+        {
+            everyOriginKnown = false;
+            continue;
+        }
+        // Under the name it has once moved: a Rename answer is not undone, only the
+        // folder goes back.
+        NodeRef moved = planned.entry;
+        if (!planned.newName.empty())
+            moved.name = planned.newName;
+        auto group = std::find_if(origins.begin(), origins.end(), [&origin](const Group& g) {
+            return sameFolder(g.folder, origin.value());
+        });
+        if (group == origins.end())
+            origins.push_back({origin.value(), {moved}});
+        else
+            group->entries.push_back(moved);
+    }
+
+    QVariantMap undo;
+    if (everyOriginKnown)
+    {
+        QVariantList groups;
+        for (const Group& group : origins)
+        {
+            groups.append(QVariantMap{
+                {QStringLiteral("target"), static_cast<quint64>(group.folder.handle)},
+                {QStringLiteral("targetIsRoot"), group.folder.isRoot},
+                {QStringLiteral("toRubbish"), group.folder.isRubbishBin},
+                {QStringLiteral("entries"), ClipboardController::toVariantList(group.entries)}});
+        }
         undo.insert(QStringLiteral("action"), QStringLiteral("move"));
-        undo.insert(QStringLiteral("entries"), ClipboardController::toVariantList(issued));
-        undo.insert(QStringLiteral("target"), source);
-        undo.insert(QStringLiteral("targetIsRoot"), sourceIsRoot);
-        undo.insert(QStringLiteral("source"), target);
-        undo.insert(QStringLiteral("sourceIsRoot"), targetIsRoot);
+        undo.insert(QStringLiteral("groups"), groups);
+    }
+
+    std::vector<ParentLocation> touched;
+    const auto touch = [&touched](const ParentLocation& folder) {
+        if (std::none_of(touched.begin(), touched.end(), [&folder](const ParentLocation& seen) {
+                return sameFolder(seen, folder);
+            }))
+            touched.push_back(folder);
+    };
+    for (const PlannedMove& planned : plan)
+        touch(planned.destination);
+    for (const Group& group : origins)
+        touch(group.folder);
+    QVariantList folders;
+    for (const ParentLocation& folder : touched)
+    {
+        folders.append(QVariantMap{{QStringLiteral("handle"), static_cast<quint64>(folder.handle)},
+                                   {QStringLiteral("isRoot"), folder.isRoot}});
     }
 
     auto batch = mBulk.start(
         "move",
         static_cast<int>(plan.size()),
         {},
-        [this, target, targetIsRoot, source, sourceIsRoot](int succeeded, int) {
+        [this, folders](int succeeded, int) {
             if (succeeded > 0)
-                emit nodesMoved(target, targetIsRoot, source, sourceIsRoot);
+                emit nodesMoved(folders);
         },
         undo);
 
     for (const PlannedMove& planned : plan)
-        moveOne(planned.handle, target, targetIsRoot, planned.newName, batch);
+    {
+        // The bin's top is (0, true) like the Cloud Drive root, so moveNode cannot
+        // address it.
+        if (planned.destination.isRubbishBin)
+        {
+            mFileOps->moveToRubbish(planned.entry.handle,
+                                    [this, self = shared_from_this(), batch](Result<void> result) {
+                                        invokeOnGuiThread(
+                                            this, [batch, result = std::move(result)]() {
+                                                batch->settle(result);
+                                            });
+                                    });
+            continue;
+        }
+        moveOne(planned.entry.handle,
+                planned.destination.handle,
+                planned.destination.isRoot,
+                planned.newName,
+                batch);
+    }
 }
 
 void FileMutationController::clearClipboardIfSpentBy(const std::vector<NodeRef>& entries)
@@ -826,44 +878,23 @@ void FileMutationController::moveOne(std::uint64_t handle,
 
 void FileMutationController::moveIgnoringExisting(const QVariantList& entries,
                                                   quint64 target,
-                                                  bool targetIsRoot,
-                                                  quint64 source,
-                                                  bool sourceIsRoot)
+                                                  bool targetIsRoot)
 {
-    moveEntriesFrom(ClipboardController::toNodeRefs(entries),
-                    target,
-                    targetIsRoot,
-                    source,
-                    sourceIsRoot,
-                    MoveConflict::Proceed);
+    moveEntries(ClipboardController::toNodeRefs(entries), target, targetIsRoot, MoveConflict::Proceed);
 }
 
 void FileMutationController::moveRenamingExisting(const QVariantList& entries,
                                                   quint64 target,
-                                                  bool targetIsRoot,
-                                                  quint64 source,
-                                                  bool sourceIsRoot)
+                                                  bool targetIsRoot)
 {
-    moveEntriesFrom(ClipboardController::toNodeRefs(entries),
-                    target,
-                    targetIsRoot,
-                    source,
-                    sourceIsRoot,
-                    MoveConflict::Rename);
+    moveEntries(ClipboardController::toNodeRefs(entries), target, targetIsRoot, MoveConflict::Rename);
 }
 
 void FileMutationController::moveSkippingExisting(const QVariantList& entries,
                                                   quint64 target,
-                                                  bool targetIsRoot,
-                                                  quint64 source,
-                                                  bool sourceIsRoot)
+                                                  bool targetIsRoot)
 {
-    moveEntriesFrom(ClipboardController::toNodeRefs(entries),
-                    target,
-                    targetIsRoot,
-                    source,
-                    sourceIsRoot,
-                    MoveConflict::Skip);
+    moveEntries(ClipboardController::toNodeRefs(entries), target, targetIsRoot, MoveConflict::Skip);
 }
 
 bool FileMutationController::canPaste() const
@@ -937,9 +968,7 @@ void FileMutationController::paste()
         // and after any conflict dialog. A copy keeps its content either way, so
         // pasting twice is a legitimate way to get two copies.
         const std::vector<NodeRef> cut = mClipboard->entries();
-        const quint64 source = mClipboard->sourceHandle();
-        const bool sourceIsRoot = mClipboard->sourceIsRoot();
-        moveEntriesFrom(cut, target, targetIsRoot, source, sourceIsRoot, MoveConflict::Ask);
+        moveEntries(cut, target, targetIsRoot, MoveConflict::Ask);
         return;
     }
 

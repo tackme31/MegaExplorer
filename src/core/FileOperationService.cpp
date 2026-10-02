@@ -155,6 +155,11 @@ Result<RestoreTarget> FileOperationService::restoreTargetFor(std::uint64_t handl
     return mClient->getRestoreTarget(handle);
 }
 
+Result<ParentLocation> FileOperationService::parentLocationOf(std::uint64_t handle) const
+{
+    return mClient->getParentLocation(handle);
+}
+
 void FileOperationService::setFavourite(std::uint64_t handle,
                                         bool favourite,
                                         std::function<void(Result<void>)> onDone)

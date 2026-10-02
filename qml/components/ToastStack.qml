@@ -365,8 +365,7 @@ Item {
         if (undo.action === "restore")
             mutations.restoreHandles(undo.handles);
         else if (undo.action === "move")
-            mutations.moveIgnoringExisting(undo.entries, undo.target, undo.targetIsRoot, undo.source,
-                                           undo.sourceIsRoot);
+            mutations.undoMove(undo.groups);
     }
 
     // Bulk-operation outcomes, fed by

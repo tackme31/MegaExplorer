@@ -73,6 +73,7 @@ public:
                 (SortOrder, std::function<void(Result<std::vector<FileEntry>>)>),
                 (override));
     MOCK_METHOD(Result<RestoreTarget>, getRestoreTarget, (std::uint64_t), (const, override));
+    MOCK_METHOD(Result<ParentLocation>, getParentLocation, (std::uint64_t), (const, override));
     MOCK_METHOD(void, removeNode, (std::uint64_t, std::function<void(Result<void>)>), (override));
     MOCK_METHOD(void, cleanRubbishBin, (std::function<void(Result<void>)>), (override));
     MOCK_METHOD(void,

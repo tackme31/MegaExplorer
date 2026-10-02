@@ -5,6 +5,7 @@
 #include "FolderInfo.h"
 #include "NodeInfo.h"
 #include "NodeSnapshot.h"
+#include "ParentLocation.h"
 #include "PathSegment.h"
 #include "RestoreTarget.h"
 #include "Result.h"
@@ -170,6 +171,11 @@ public:
     // the node with no other way out of the bin. Fails only when the node itself is
     // gone.
     virtual Result<RestoreTarget> getRestoreTarget(std::uint64_t handle) const = 0;
+
+    // The folder a node is in right now, synchronous like getRestoreTarget. Fails
+    // when the node is gone or has no parent in this account's tree (the top of an
+    // incoming share).
+    virtual Result<ParentLocation> getParentLocation(std::uint64_t handle) const = 0;
 
     // Downloads to the exact local path destinationPath -- the caller resolves it,
     // since IMegaClient has no filesystem access of its own.

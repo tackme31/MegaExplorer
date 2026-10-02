@@ -43,10 +43,6 @@ Dialog {
     property string unaffectedSize: ""
     property var destinationHandle: 0
     property bool destinationIsRoot: false
-    // Only a move announces where the nodes came from, so these stay unset for
-    // a copy.
-    property var sourceHandle: 0
-    property bool sourceIsRoot: false
 
     // Bound to accountController by whoever declares this dialog, rather than read
     // off the root context here, so the QML test can instantiate it without
@@ -174,8 +170,7 @@ Dialog {
             onClicked: {
                 if (root.operation === "move")
                     root.mutController.moveIgnoringExisting(root.entries, root.destinationHandle,
-                                                            root.destinationIsRoot,
-                                                            root.sourceHandle, root.sourceIsRoot);
+                                                            root.destinationIsRoot);
                 else
                     root.mutController.copyIgnoringExisting(root.entries, root.destinationHandle,
                                                             root.destinationIsRoot);
@@ -200,8 +195,7 @@ Dialog {
             onClicked: {
                 if (root.operation === "move")
                     root.mutController.moveRenamingExisting(root.entries, root.destinationHandle,
-                                                            root.destinationIsRoot,
-                                                            root.sourceHandle, root.sourceIsRoot);
+                                                            root.destinationIsRoot);
                 else
                     root.mutController.copyRenamingExisting(root.entries, root.destinationHandle,
                                                             root.destinationIsRoot);
@@ -223,8 +217,7 @@ Dialog {
             onClicked: {
                 if (root.operation === "move")
                     root.mutController.moveSkippingExisting(root.entries, root.destinationHandle,
-                                                            root.destinationIsRoot,
-                                                            root.sourceHandle, root.sourceIsRoot);
+                                                            root.destinationIsRoot);
                 else
                     root.mutController.copySkippingExisting(root.entries, root.destinationHandle,
                                                             root.destinationIsRoot);
@@ -395,8 +388,6 @@ Dialog {
         root.unaffectedSize = next.unaffectedSize;
         root.destinationHandle = next.destinationHandle;
         root.destinationIsRoot = next.destinationIsRoot;
-        root.sourceHandle = next.sourceHandle;
-        root.sourceIsRoot = next.sourceIsRoot;
         root.open();
     }
 
@@ -420,14 +411,12 @@ Dialog {
         "conflictingSize": conflictingSize,
         "unaffectedSize": unaffectedSize,
         "destinationHandle": destination,
-        "destinationIsRoot": destinationIsRoot,
-        "sourceHandle": 0,
-        "sourceIsRoot": false
+        "destinationIsRoot": destinationIsRoot
     });
     }
 
         function onMoveNameConflict(entries, conflictingFiles, conflictingFolders, renamedTo,
-        destination, destinationIsRoot, source, sourceIsRoot) {
+        destination, destinationIsRoot) {
         root.enqueue({
         "operation": "move",
         "entries": entries,
@@ -437,9 +426,7 @@ Dialog {
         "conflictingSize": "",
         "unaffectedSize": "",
         "destinationHandle": destination,
-        "destinationIsRoot": destinationIsRoot,
-        "sourceHandle": source,
-        "sourceIsRoot": sourceIsRoot
+        "destinationIsRoot": destinationIsRoot
     });
     }
     }

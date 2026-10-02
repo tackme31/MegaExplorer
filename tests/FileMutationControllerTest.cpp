@@ -74,6 +74,12 @@ protected:
         EXPECT_CALL(*client, subtreeSize(::testing::_, ::testing::_))
             .Times(::testing::AnyNumber())
             .WillRepeatedly(::testing::Return(Result<std::uint64_t>::ok(0)));
+        // Every move reads where its nodes are for the Undo; with no parent known
+        // the Undo is withheld, which is all the tests that ignore it need.
+        EXPECT_CALL(*client, getParentLocation(::testing::_))
+            .Times(::testing::AnyNumber())
+            .WillRepeatedly(::testing::Return(
+                Result<ParentLocation>::fail("no parent", MegaErrorCode::kENoEnt)));
         navigationService = std::make_shared<FolderNavigationService>(client);
         searchService = std::make_shared<SearchService>(client, navigationService);
         fileOps = std::make_shared<FileOperationService>(client);
@@ -142,9 +148,7 @@ protected:
                                 QStringList folders,
                                 QStringList renamedTo,
                                 quint64 destination,
-                                bool destinationIsRoot,
-                                quint64 source,
-                                bool sourceIsRoot) {
+                                bool destinationIsRoot) {
                              ++moveConflictCalls;
                              lastMoveConflictEntries = entries;
                              lastMoveConflictFiles = files;
@@ -152,8 +156,6 @@ protected:
                              lastMoveConflictRenamedTo = renamedTo;
                              lastMoveConflictDestination = destination;
                              lastMoveConflictDestinationIsRoot = destinationIsRoot;
-                             lastMoveConflictSource = source;
-                             lastMoveConflictSourceIsRoot = sourceIsRoot;
                          });
 
         QObject::connect(mutations.get(),
@@ -224,17 +226,20 @@ protected:
                 Result<std::vector<PathSegment>>::ok(std::vector<PathSegment>{})));
     }
 
-    // Overrides givenRootListing's empty path with one carrying a real handle:
-    // the undo a move offers is withheld for the synthesized locations
-    // (favourites, recents, the bin's top), which are exactly the ones whose
-    // breadcrumb handle is 0.
+    // Overrides givenRootListing's empty path with one carrying a real handle.
     void givenCurrentFolderHandle(std::uint64_t handle)
     {
         givenBreadcrumb(PathSegment{"here", handle, true, ViewKind::CloudDrive});
     }
 
-    // The breadcrumb's last segment is what a move reads its source from; these are
-    // the shapes the real screens resolve to (the Cloud Drive root is handle 0).
+    // The shapes the real screens' breadcrumbs resolve to (the Cloud Drive root is
+    // handle 0).
+    void givenParent(std::uint64_t handle, ParentLocation parent)
+    {
+        EXPECT_CALL(*client, getParentLocation(handle))
+            .WillRepeatedly(Return(Result<ParentLocation>::ok(parent)));
+    }
+
     void givenBreadcrumb(const PathSegment& here)
     {
         EXPECT_CALL(*client, getPath(_, _, _))
@@ -292,8 +297,6 @@ protected:
     QStringList lastMoveConflictRenamedTo;
     quint64 lastMoveConflictDestination = 0;
     bool lastMoveConflictDestinationIsRoot = false;
-    quint64 lastMoveConflictSource = 0;
-    bool lastMoveConflictSourceIsRoot = false;
     int duplicateCalls = 0;
     QVariantList lastDuplicateEntries;
 };
@@ -640,10 +643,10 @@ TEST_F(FileMutationControllerTest, MoveHandlesToRubbishOffersRestoreAsItsUndo)
 TEST_F(FileMutationControllerTest, MoveEntriesToOffersTheReverseMoveAsItsUndo)
 {
     givenRootListing({entry("a", 1)});
-    givenCurrentFolderHandle(7u);
     controller->loadRoot();
     flush();
     givenChildrenOf(99u, {});
+    givenParent(1u, ParentLocation{7, false, false});
 
     EXPECT_CALL(*client, moveNode(1u, 99u, false, "", _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
@@ -653,25 +656,24 @@ TEST_F(FileMutationControllerTest, MoveEntriesToOffersTheReverseMoveAsItsUndo)
     flush();
 
     EXPECT_EQ(lastUndo.value(QStringLiteral("action")).toString(), QStringLiteral("move"));
-    // The two ends swapped: the undo moves back to where the drag started.
-    EXPECT_EQ(lastUndo.value(QStringLiteral("target")).toULongLong(), 7u);
-    EXPECT_TRUE(lastUndo.value(QStringLiteral("targetIsRoot")).toBool());
-    EXPECT_EQ(lastUndo.value(QStringLiteral("source")).toULongLong(), 99u);
-    EXPECT_FALSE(lastUndo.value(QStringLiteral("sourceIsRoot")).toBool());
-    const QVariantList undoEntries = lastUndo.value(QStringLiteral("entries")).toList();
+    const QVariantList groups = lastUndo.value(QStringLiteral("groups")).toList();
+    ASSERT_EQ(static_cast<int>(groups.size()), 1);
+    const QVariantMap group = groups.first().toMap();
+    EXPECT_EQ(group.value(QStringLiteral("target")).toULongLong(), 7u);
+    EXPECT_FALSE(group.value(QStringLiteral("targetIsRoot")).toBool());
+    EXPECT_FALSE(group.value(QStringLiteral("toRubbish")).toBool());
+    const QVariantList undoEntries = group.value(QStringLiteral("entries")).toList();
     ASSERT_EQ(static_cast<int>(undoEntries.size()), 1);
     EXPECT_EQ(undoEntries.first().toMap().value(QStringLiteral("handle")).toULongLong(), 1u);
 }
 
 TEST_F(FileMutationControllerTest, MoveEntriesToOffersUndoFromTheCloudDriveRoot)
 {
-    // The root's segment carries handle 0, like the synthesized locations, but it
-    // is somewhere the nodes can go back to.
     givenRootListing({entry("a", 1)});
-    givenBreadcrumb(PathSegment{"", 0, true, ViewKind::CloudDrive});
     controller->loadRoot();
     flush();
     givenChildrenOf(99u, {});
+    givenParent(1u, ParentLocation{0, true, false});
 
     EXPECT_CALL(*client, moveNode(1u, 99u, false, "", _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
@@ -680,20 +682,21 @@ TEST_F(FileMutationControllerTest, MoveEntriesToOffersUndoFromTheCloudDriveRoot)
     flush();
     flush();
 
-    EXPECT_EQ(lastUndo.value(QStringLiteral("action")).toString(), QStringLiteral("move"));
-    EXPECT_EQ(lastUndo.value(QStringLiteral("target")).toULongLong(), 0u);
-    EXPECT_TRUE(lastUndo.value(QStringLiteral("targetIsRoot")).toBool());
+    const QVariantList groups = lastUndo.value(QStringLiteral("groups")).toList();
+    ASSERT_EQ(static_cast<int>(groups.size()), 1);
+    EXPECT_EQ(groups.first().toMap().value(QStringLiteral("target")).toULongLong(), 0u);
+    EXPECT_TRUE(groups.first().toMap().value(QStringLiteral("targetIsRoot")).toBool());
+    EXPECT_FALSE(groups.first().toMap().value(QStringLiteral("toRubbish")).toBool());
 }
 
-TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoFromTheRubbishBinTop)
+TEST_F(FileMutationControllerTest, MoveEntriesToOffersUndoBackIntoTheRubbishBinTop)
 {
-    // Same handle 0 and isRoot as the Cloud Drive root; moving "back" there would
-    // put the nodes in the Drive instead of the bin.
     givenRootListing({entry("a", 1)});
     givenBreadcrumb(PathSegment{"", 0, true, ViewKind::Rubbish});
     controller->loadRoot();
     flush();
     givenChildrenOf(99u, {});
+    givenParent(1u, ParentLocation{0, true, true});
 
     EXPECT_CALL(*client, moveNode(1u, 99u, false, "", _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
@@ -702,35 +705,110 @@ TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoFromTheRubbishBinTo
     flush();
     flush();
 
-    EXPECT_EQ(lastSucceeded, 1);
-    EXPECT_TRUE(lastUndo.isEmpty());
+    const QVariantList groups = lastUndo.value(QStringLiteral("groups")).toList();
+    ASSERT_EQ(static_cast<int>(groups.size()), 1);
+    EXPECT_TRUE(groups.first().toMap().value(QStringLiteral("toRubbish")).toBool());
 }
 
-TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoFromSearchResults)
+TEST_F(FileMutationControllerTest, MoveEntriesToFromSearchResultsUndoesPerParentFolder)
 {
-    // The rows come from many folders under the searched one; moving them "back"
-    // to the searched folder would put them somewhere they never were.
-    givenRootListing({entry("a", 1)});
+    // The rows come from different folders under the searched one, and each has
+    // to go back to its own -- not to the searched folder.
+    givenRootListing({entry("a", 1), entry("b", 2), entry("c", 3)});
     givenCurrentFolderHandle(7u);
     controller->loadRoot();
     flush();
     EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
-        .WillRepeatedly(InvokeArgument<5>(
-            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a", 1)})));
+        .WillRepeatedly(InvokeArgument<5>(Result<std::vector<FileEntry>>::ok(
+            std::vector<FileEntry>{entry("a", 1), entry("b", 2), entry("c", 3)})));
     controller->search(QStringLiteral("q"));
     flush();
     ASSERT_TRUE(controller->searchActive());
     givenChildrenOf(99u, {});
+    givenParent(1u, ParentLocation{30, false, false});
+    givenParent(2u, ParentLocation{40, false, false});
+    givenParent(3u, ParentLocation{30, false, false});
 
-    EXPECT_CALL(*client, moveNode(1u, 99u, false, "", _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(_, 99u, false, "", _))
+        .Times(3)
+        .WillRepeatedly(InvokeArgument<4>(Result<void>::ok()));
 
-    mutations->moveEntriesTo(clipboardEntries({entry("a", 1)}), 99, false);
+    mutations->moveEntriesTo(clipboardEntries({entry("a", 1), entry("b", 2), entry("c", 3)}),
+                             99,
+                             false);
     flush();
     flush();
 
-    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastSucceeded, 3);
+    const QVariantList groups = lastUndo.value(QStringLiteral("groups")).toList();
+    ASSERT_EQ(static_cast<int>(groups.size()), 2);
+    const QVariantMap first = groups.at(0).toMap();
+    const QVariantMap second = groups.at(1).toMap();
+    EXPECT_EQ(first.value(QStringLiteral("target")).toULongLong(), 30u);
+    EXPECT_EQ(static_cast<int>(first.value(QStringLiteral("entries")).toList().size()), 2);
+    EXPECT_EQ(second.value(QStringLiteral("target")).toULongLong(), 40u);
+    EXPECT_EQ(static_cast<int>(second.value(QStringLiteral("entries")).toList().size()), 1);
+}
+
+TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoWhenAParentCannotBeRead)
+{
+    // The top of an incoming share has no parent in this account; a partial Undo
+    // would leave that node behind without saying so.
+    givenRootListing({entry("a", 1), entry("b", 2)});
+    controller->loadRoot();
+    flush();
+    givenChildrenOf(99u, {});
+    givenParent(1u, ParentLocation{30, false, false});
+
+    EXPECT_CALL(*client, moveNode(_, 99u, false, "", _))
+        .Times(2)
+        .WillRepeatedly(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->moveEntriesTo(clipboardEntries({entry("a", 1), entry("b", 2)}), 99, false);
+    flush();
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 2);
     EXPECT_TRUE(lastUndo.isEmpty());
+}
+
+TEST_F(FileMutationControllerTest, UndoMoveIssuesEveryGroupAsOneBatch)
+{
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+    givenParent(1u, ParentLocation{99, false, false});
+    givenParent(2u, ParentLocation{99, false, false});
+    givenParent(3u, ParentLocation{99, false, false});
+
+    EXPECT_CALL(*client, moveNode(1u, 30u, false, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(2u, 0u, true, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveToRubbish(3u, _)).WillOnce(InvokeArgument<1>(Result<void>::ok()));
+
+    const auto group = [this](quint64 target, bool isRoot, bool toRubbish, const FileEntry& e) {
+        return QVariantMap{{QStringLiteral("target"), target},
+                           {QStringLiteral("targetIsRoot"), isRoot},
+                           {QStringLiteral("toRubbish"), toRubbish},
+                           {QStringLiteral("entries"), clipboardEntries({e})}};
+    };
+    mutations->undoMove(QVariantList{group(30, false, false, entry("a", 1)),
+                                     group(0, true, false, entry("b", 2)),
+                                     group(0, true, true, entry("c", 3))});
+    flush();
+    flush();
+
+    EXPECT_EQ(operationCalls, 1);
+    EXPECT_EQ(lastContext, QStringLiteral("move"));
+    EXPECT_EQ(lastSucceeded, 3);
+    // Undoing the Undo puts them all back where the first move had sent them.
+    const QVariantList redo = lastUndo.value(QStringLiteral("groups")).toList();
+    ASSERT_EQ(static_cast<int>(redo.size()), 1);
+    EXPECT_EQ(redo.first().toMap().value(QStringLiteral("target")).toULongLong(), 99u);
+    EXPECT_EQ(static_cast<int>(redo.first().toMap().value(QStringLiteral("entries")).toList().size()),
+              3);
 }
 
 TEST_F(FileMutationControllerTest, PasteIsRefusedInSearchResults)
@@ -755,44 +833,27 @@ TEST_F(FileMutationControllerTest, PasteIsRefusedInSearchResults)
     flush();
 }
 
-TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoWhenTheSourceIsNotAFolder)
-{
-    // The favourites screen's shape: one nameless segment, handle 0, not a root,
-    // so there is nowhere to put the nodes back.
-    givenRootListing({entry("a", 1)});
-    givenBreadcrumb(PathSegment{"", 0, false, ViewKind::Favourites});
-    controller->loadRoot();
-    flush();
-    givenChildrenOf(99u, {});
-
-    EXPECT_CALL(*client, moveNode(1u, 99u, false, "", _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
-
-    mutations->moveEntriesTo(clipboardEntries({entry("a", 1)}), 99, false);
-    flush();
-    flush();
-
-    EXPECT_EQ(lastSucceeded, 1);
-    EXPECT_TRUE(lastUndo.isEmpty());
-}
-
 TEST_F(FileMutationControllerTest, MoveUndoLeavesOutTheEntriesThatWereSkipped)
 {
     givenRootListing({});
     controller->loadRoot();
     flush();
     givenChildrenOf(7u, {entry("a.txt", 90)});
+    givenParent(1u, ParentLocation{5, false, false});
+    givenParent(2u, ParentLocation{5, false, false});
 
     EXPECT_CALL(*client, moveNode(1u, _, _, _, _)).Times(0);
     EXPECT_CALL(*client, moveNode(2u, 7u, false, "", _))
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
     mutations->moveSkippingExisting(
-        clipboardEntries({entry("a.txt", 1), entry("b.txt", 2)}), 7, false, 5, false);
+        clipboardEntries({entry("a.txt", 1), entry("b.txt", 2)}), 7, false);
     flush();
     flush();
 
-    const QVariantList undoEntries = lastUndo.value(QStringLiteral("entries")).toList();
+    const QVariantList groups = lastUndo.value(QStringLiteral("groups")).toList();
+    ASSERT_EQ(static_cast<int>(groups.size()), 1);
+    const QVariantList undoEntries = groups.first().toMap().value(QStringLiteral("entries")).toList();
     ASSERT_EQ(static_cast<int>(undoEntries.size()), 1);
     EXPECT_EQ(undoEntries.first().toMap().value(QStringLiteral("handle")).toULongLong(), 2u);
 }
@@ -2123,62 +2184,36 @@ TEST_F(FileMutationControllerTest, PasteMovesInsteadOfCopyingWhenTheClipboardHol
     EXPECT_EQ(lastSucceeded, 1);
 }
 
-TEST_F(FileMutationControllerTest, PasteReportsTheClipboardsSourceFolderInNodesMoved)
+TEST_F(FileMutationControllerTest, NodesMovedReportsTheDestinationAndEveryParentFolder)
 {
-    // The regression the moveEntriesFrom split exists for: this tab is standing
-    // at the root, but the nodes were cut from folder 7, and folder 7 is what
-    // the other tabs have to refresh.
+    // The other tabs refresh from this list, so a cut taken in folder 7 and pasted
+    // at the root has to name 7 even though this tab never showed it.
     givenRootListing({});
     controller->loadRoot();
     flush();
-    clipboard->cut(clipboardEntries({entry("a", 1)}), 7, false);
+    clipboard->cut(clipboardEntries({entry("a", 1), entry("b", 2)}), 7, false);
+    givenParent(1u, ParentLocation{7, false, false});
+    givenParent(2u, ParentLocation{8, false, false});
 
-    quint64 reportedSource = 0;
-    bool reportedSourceIsRoot = true;
+    QVariantList reported;
     QObject::connect(mutations.get(),
                      &FileMutationController::nodesMoved,
                      mutations.get(),
-                     [&](quint64, bool, quint64 source, bool sourceIsRoot) {
-                         reportedSource = source;
-                         reportedSourceIsRoot = sourceIsRoot;
-                     });
+                     [&](const QVariantList& folders) { reported = folders; });
 
     EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, moveNode(_, _, _, _, _))
+        .Times(2)
+        .WillRepeatedly(InvokeArgument<4>(Result<void>::ok()));
 
     mutations->paste();
     flush();
     flush();
 
-    EXPECT_EQ(reportedSource, 7u);
-    EXPECT_FALSE(reportedSourceIsRoot);
-}
-
-TEST_F(FileMutationControllerTest, MoveEntriesToStillReportsItsOwnFolderAsTheSource)
-{
-    // The other half of that split: a drag's source is the dragging tab, which
-    // here is the root.
-    givenRootListing({entry("a", 1)});
-    controller->loadRoot();
-    flush();
-    givenChildrenOf(99u, {});
-
-    bool reportedSourceIsRoot = false;
-    QObject::connect(mutations.get(),
-                     &FileMutationController::nodesMoved,
-                     mutations.get(),
-                     [&](quint64, bool, quint64, bool sourceIsRoot) {
-                         reportedSourceIsRoot = sourceIsRoot;
-                     });
-
-    EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
-    EXPECT_CALL(*client, moveNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
-
-    mutations->moveEntriesTo(clipboardEntries({entry("a", 1)}), 99, false);
-    flush();
-    flush();
-
-    EXPECT_TRUE(reportedSourceIsRoot);
+    ASSERT_EQ(static_cast<int>(reported.size()), 3);
+    EXPECT_TRUE(reported.at(0).toMap().value(QStringLiteral("isRoot")).toBool());
+    EXPECT_EQ(reported.at(1).toMap().value(QStringLiteral("handle")).toULongLong(), 7u);
+    EXPECT_EQ(reported.at(2).toMap().value(QStringLiteral("handle")).toULongLong(), 8u);
 }
 
 TEST_F(FileMutationControllerTest, PasteEmitsNodesCopiedOnlyWhenSomethingSucceeded)
@@ -2531,8 +2566,6 @@ TEST_F(FileMutationControllerTest, MoveEntriesToAsksBeforeLandingOnATakenName)
     EXPECT_TRUE(lastMoveConflictFolders.isEmpty());
     EXPECT_EQ(lastMoveConflictDestination, 7u);
     EXPECT_FALSE(lastMoveConflictDestinationIsRoot);
-    // The drag started in this tab, which is standing at the root.
-    EXPECT_TRUE(lastMoveConflictSourceIsRoot);
 }
 
 TEST_F(FileMutationControllerTest, MoveEntriesToMatchesCollisionsByKind)
@@ -2571,7 +2604,7 @@ TEST_F(FileMutationControllerTest, MoveSkippingExistingMovesOnlyTheEntriesThatDi
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
     mutations->moveSkippingExisting(
-        clipboardEntries({entry("a.txt", 1), entry("b.txt", 2)}), 7, false, 0, true);
+        clipboardEntries({entry("a.txt", 1), entry("b.txt", 2)}), 7, false);
     flush();
     flush();
 
@@ -2592,7 +2625,7 @@ TEST_F(FileMutationControllerTest, MoveSkippingExistingIssuesNothingWhenEverythi
 
     EXPECT_CALL(*client, moveNode(_, _, _, _, _)).Times(0);
 
-    mutations->moveSkippingExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
+    mutations->moveSkippingExisting(clipboardEntries({entry("a.txt", 1)}), 7, false);
     flush();
     flush();
 
@@ -2619,7 +2652,7 @@ TEST_F(FileMutationControllerTest, MoveIgnoringExistingIssuesEveryEntryAsAPlainM
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
     mutations->moveIgnoringExisting(
-        clipboardEntries({entry("a.txt", 1), entry("d", 2, true)}), 7, false, 0, true);
+        clipboardEntries({entry("a.txt", 1), entry("d", 2, true)}), 7, false);
     flush();
     flush();
 
@@ -2648,9 +2681,7 @@ TEST_F(FileMutationControllerTest, MoveRenamingExistingRenamesOnlyWhatCollided)
     mutations->moveRenamingExisting(
         clipboardEntries({entry("a.txt", 1), entry("d", 2, true), entry("free.txt", 3)}),
         7,
-        false,
-        0,
-        true);
+        false);
     flush();
     flush();
 
@@ -2670,7 +2701,7 @@ TEST_F(FileMutationControllerTest, MoveRenamingExistingRefusesASetThatBringsOneN
     EXPECT_CALL(*client, moveNode(_, _, _, _, _)).Times(0);
 
     mutations->moveRenamingExisting(
-        clipboardEntries({entry("a.txt", 1), entry("a.txt", 2)}), 7, false, 0, true);
+        clipboardEntries({entry("a.txt", 1), entry("a.txt", 2)}), 7, false);
     flush();
     flush();
 
@@ -2694,7 +2725,7 @@ TEST_F(FileMutationControllerTest, MoveRenamingExistingDodgesTheBatchsOwnUnrenam
         .WillOnce(InvokeArgument<4>(Result<void>::ok()));
 
     mutations->moveRenamingExisting(
-        clipboardEntries({entry("x.txt", 1), entry("x (2).txt", 2)}), 7, false, 0, true);
+        clipboardEntries({entry("x.txt", 1), entry("x (2).txt", 2)}), 7, false);
     flush();
     flush();
 
@@ -2779,7 +2810,7 @@ TEST_F(FileMutationControllerTest, MoveIgnoringExistingReportsAMoveTheSdkWouldRe
     EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
     EXPECT_CALL(*client, moveToRubbish(_, _)).Times(0);
 
-    mutations->moveIgnoringExisting(clipboardEntries({entry("a.txt", 1)}), 7, false, 0, true);
+    mutations->moveIgnoringExisting(clipboardEntries({entry("a.txt", 1)}), 7, false);
     flush();
     flush();
 
@@ -2808,10 +2839,9 @@ TEST_F(FileMutationControllerTest, MoveEntriesToRefusesTheWholeDropWhenTheTarget
     EXPECT_EQ(lastErrorContext, QStringLiteral("move"));
 }
 
-TEST_F(FileMutationControllerTest, PasteOfACutAsksAndReportsTheClipboardsSourceFolder)
+TEST_F(FileMutationControllerTest, PasteOfACutAsksBeforeLandingOnATakenName)
 {
-    // The cut branch of paste() goes through the same check, and the source it
-    // has to carry through the question is the clipboard's, not this tab's.
+    // The cut branch of paste() goes through the same check.
     givenRootListing({entry("a", 90)});
     controller->loadRoot();
     flush();
@@ -2825,8 +2855,6 @@ TEST_F(FileMutationControllerTest, PasteOfACutAsksAndReportsTheClipboardsSourceF
 
     ASSERT_EQ(moveConflictCalls, 1);
     EXPECT_EQ(lastMoveConflictFiles, QStringList{QStringLiteral("a")});
-    EXPECT_EQ(lastMoveConflictSource, 7u);
-    EXPECT_FALSE(lastMoveConflictSourceIsRoot);
     EXPECT_TRUE(lastMoveConflictDestinationIsRoot);
 }
 
@@ -2889,9 +2917,7 @@ TEST_F(FileMutationControllerTest, TheMoveAnswerClearsTheClipboardOnceItIssuesTh
     // The answer comes back the way QML sends it: the entries the signal carried.
     mutations->moveSkippingExisting(lastMoveConflictEntries,
                                     lastMoveConflictDestination,
-                                    lastMoveConflictDestinationIsRoot,
-                                    lastMoveConflictSource,
-                                    lastMoveConflictSourceIsRoot);
+                                    lastMoveConflictDestinationIsRoot);
     flush();
     flush();
 

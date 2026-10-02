@@ -98,6 +98,7 @@ public:
                             std::function<void(Result<std::vector<FileEntry>>)> onDone) override;
 
     Result<RestoreTarget> getRestoreTarget(std::uint64_t handle) const override;
+    Result<ParentLocation> getParentLocation(std::uint64_t handle) const override;
 
     void download(
         std::uint64_t handle,

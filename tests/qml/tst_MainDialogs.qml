@@ -276,8 +276,7 @@ TestCase {
                                     var renamedTo, string conflictingSize, string unaffectedSize,
                                     var destination, bool destinationIsRoot)
             signal moveNameConflict(var entries, var conflictingFiles, var conflictingFolders,
-                                    var renamedTo, var destination, bool destinationIsRoot,
-                                    var source, bool sourceIsRoot)
+                                    var renamedTo, var destination, bool destinationIsRoot)
 
             function copyIgnoringExisting(entries, target, targetIsRoot) {
             }
@@ -285,11 +284,11 @@ TestCase {
             }
             function copySkippingExisting(entries, target, targetIsRoot) {
             }
-            function moveIgnoringExisting(entries, target, targetIsRoot, source, sourceIsRoot) {
+            function moveIgnoringExisting(entries, target, targetIsRoot) {
             }
-            function moveRenamingExisting(entries, target, targetIsRoot, source, sourceIsRoot) {
+            function moveRenamingExisting(entries, target, targetIsRoot) {
             }
-            function moveSkippingExisting(entries, target, targetIsRoot, source, sourceIsRoot) {
+            function moveSkippingExisting(entries, target, targetIsRoot) {
             }
         }
     }
@@ -1422,7 +1421,7 @@ TestCase {
         c.mut.moveNameConflict([
                                    {},
                                    {}
-                               ], ["a.txt"], [], ["a (2).txt"], 42, false, 7, false);
+                               ], ["a.txt"], [], ["a (2).txt"], 42, false);
 
         tryCompare(c.dialog, "opened", true);
         const text = conflictText(c.dialog);
@@ -1532,7 +1531,7 @@ TestCase {
 
         c.mut.moveNameConflict([
                                    {}
-                               ], ["a.txt"], [], ["a (2).txt"], 42, false, 7, false);
+                               ], ["a.txt"], [], ["a (2).txt"], 42, false);
 
         tryCompare(c.dialog, "opened", true);
         compare(c.dialog.continueLosesData, false);

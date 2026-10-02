@@ -369,19 +369,23 @@ TabContext TabsController::createTab()
 
     // A drop onto another tab leaves that tab's listing on screen and stale. The
     // mover has already refreshed itself, so only the other tabs are fanned out to
-    // -- both ends of the move, since one folder lost nodes and another gained them.
+    // -- every folder the move touched, since some lost nodes and one gained them.
     // The folder tree is still not refreshed; that is Phase 16's.
     connect(context.mutations.get(),
             &FileMutationController::nodesMoved,
             this,
-            [this, navigation](
-                quint64 destination, bool destinationIsRoot, quint64 source, bool sourceIsRoot) {
+            [this, navigation](const QVariantList& folders) {
                 for (const TabContext& tab : mTabs)
                 {
                     if (tab.navigation.get() == navigation)
                         continue;
-                    tab.navigation->refreshIfShowing(destination, destinationIsRoot);
-                    tab.navigation->refreshIfShowing(source, sourceIsRoot);
+                    for (const QVariant& folder : folders)
+                    {
+                        const QVariantMap map = folder.toMap();
+                        tab.navigation->refreshIfShowing(
+                            map.value(QStringLiteral("handle")).toULongLong(),
+                            map.value(QStringLiteral("isRoot")).toBool());
+                    }
                 }
                 refreshCurrentTabIfStale();
             });

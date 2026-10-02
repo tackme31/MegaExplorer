@@ -38,6 +38,8 @@ public:
     // fallback), and the move itself then goes through move() like any other.
     Result<RestoreTarget> restoreTargetFor(std::uint64_t handle) const;
 
+    Result<ParentLocation> parentLocationOf(std::uint64_t handle) const;
+
     // Gated on canMove(), so a caller that skipped the hover-time pre-check still
     // can't issue a move the SDK would only refuse later. An empty newName keeps the
     // source's name; a non-empty one is validated like rename()'s.
