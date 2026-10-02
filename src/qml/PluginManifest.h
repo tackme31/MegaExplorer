@@ -40,11 +40,16 @@ bool pluginCommandAccepts(const PluginCommand& command,
                           const std::vector<PluginSelectionItem>& selection);;
 
 // One plugin's plugin.json (docs/investigations/STUDY_PLUGIN_V1_DESIGN.md §4).
+// The plugin protocol version this app speaks. Bump it only on a breaking change:
+// a plugin declaring any other version is listed but cannot run.
+inline constexpr int kPluginApiVersion = 1;
+
 struct PluginManifest
 {
     QString id;
     QString name;
     QString version;
+    int apiVersion = 0;
     // The folder plugin.json was read from: the working directory of the process,
     // and what a relative run.command is resolved against.
     QString dir;

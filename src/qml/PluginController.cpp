@@ -88,6 +88,9 @@ void PluginController::reload()
             continue;
         }
         qCInfo(lcPlugin) << "loaded" << manifest->id << manifest->version << "from" << dir;
+        if (manifest->apiVersion != kPluginApiVersion)
+            qCWarning(lcPlugin) << manifest->id << "is written for plugin API" << manifest->apiVersion
+                                << "but this app speaks" << kPluginApiVersion << "- its commands are disabled";
         mPlugins.push_back(std::move(*manifest));
     }
     std::stable_sort(
@@ -128,7 +131,13 @@ QString PluginController::groupLabel(const QString& group) const
     if (!group.startsWith(kActionPrefix))
         return {};
     const PluginManifest* plugin = findPlugin(group.mid(kActionPrefix.size()));
-    return plugin ? plugin->name : QString();
+    if (!plugin)
+        return {};
+    if (plugin->apiVersion < kPluginApiVersion)
+        return tr("%1 (needs an update)").arg(plugin->name);
+    if (plugin->apiVersion > kPluginApiVersion)
+        return tr("%1 (needs a newer MEGA Explorer)").arg(plugin->name);
+    return plugin->name;
 }
 
 QString PluginController::commandTitle(const QString& actionId) const
@@ -141,7 +150,10 @@ bool PluginController::canRun(const QString& actionId) const
 {
     QString pluginId;
     QString commandId;
-    return splitActionId(actionId, &pluginId, &commandId) && !mRuns.contains(pluginId);
+    if (!splitActionId(actionId, &pluginId, &commandId) || mRuns.contains(pluginId))
+        return false;
+    const PluginManifest* plugin = findPlugin(pluginId);
+    return plugin && plugin->apiVersion == kPluginApiVersion;
 }
 
 bool PluginController::accepts(const QString& actionId, const QVariantList& entries) const
@@ -167,7 +179,7 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
     if (!splitActionId(actionId, &pluginId, &commandId) || mRuns.contains(pluginId))
         return;
     const PluginManifest* plugin = findPlugin(pluginId);
-    if (!plugin)
+    if (!plugin || plugin->apiVersion != kPluginApiVersion)
         return;
 
     // Re-read rather than taken from the row: the row has no parent, and a node

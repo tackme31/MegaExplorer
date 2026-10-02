@@ -225,7 +225,7 @@ void PluginRun::start()
                        {QStringLiteral("dir"), mManifest.dir}};
     send(kInitializeId,
          QStringLiteral("initialize"),
-         {{QStringLiteral("apiVersion"), 1},
+         {{QStringLiteral("apiVersion"), kPluginApiVersion},
           {QStringLiteral("app"), app},
           {QStringLiteral("plugin"), plugin}});
 }

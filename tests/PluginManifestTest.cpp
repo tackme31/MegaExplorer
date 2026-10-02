@@ -8,6 +8,7 @@ const QByteArray kValid = R"({
   "id": "com.example.hello",
   "name": "Hello",
   "version": "0.1.0",
+  "apiVersion": 1,
   "unknownKey": true,
   "run": { "command": "uv", "args": ["run", "main.py"] },
   "commands": [ { "id": "a", "title": "A" }, { "id": "b", "title": "B" } ]
@@ -32,6 +33,26 @@ TEST(PluginManifestTest, ParsesAValidManifest)
     EXPECT_EQ(manifest->args, (QStringList{QStringLiteral("run"), QStringLiteral("main.py")}));
     ASSERT_EQ(manifest->commands.size(), 2u);
     EXPECT_EQ(manifest->commands[1].title, QStringLiteral("B"));
+    EXPECT_EQ(manifest->apiVersion, 1);
+}
+
+TEST(PluginManifestTest, KeepsAnApiVersionThisAppDoesNotSpeak)
+{
+    QByteArray json = kValid;
+    json.replace("\"apiVersion\": 1", "\"apiVersion\": 7");
+    const auto manifest = parsePluginManifest(json, QStringLiteral("C:/p"));
+    ASSERT_TRUE(manifest.has_value());
+    EXPECT_EQ(manifest->apiVersion, 7);
+}
+
+TEST(PluginManifestTest, RejectsAMissingOrBadApiVersion)
+{
+    for (const char* replacement : {"", "\"apiVersion\": \"1\",", "\"apiVersion\": 0,", "\"apiVersion\": 1.5,"})
+    {
+        QByteArray json = kValid;
+        json.replace("\"apiVersion\": 1,", replacement);
+        EXPECT_TRUE(errorFor(json).contains(QStringLiteral("apiVersion"))) << replacement;
+    }
 }
 
 TEST(PluginManifestTest, ReadsTheProgressFlagPerCommand)

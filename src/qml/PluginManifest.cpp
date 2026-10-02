@@ -80,6 +80,10 @@ parsePluginManifest(const QByteArray& json, const QString& dir, QString* error)
     if (manifest.name.isEmpty())
         return fail(error, QStringLiteral("\"name\" is missing"));
     manifest.version = root.value(QStringLiteral("version")).toString();
+    const QJsonValue apiVersion = root.value(QStringLiteral("apiVersion"));
+    if (!apiVersion.isDouble() || apiVersion.toDouble() != apiVersion.toInt() || apiVersion.toInt() < 1)
+        return fail(error, QStringLiteral("\"apiVersion\" is missing or not a positive integer"));
+    manifest.apiVersion = apiVersion.toInt();
 
     const QJsonObject run = root.value(QStringLiteral("run")).toObject();
     manifest.command = run.value(QStringLiteral("command")).toString();
