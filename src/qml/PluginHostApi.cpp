@@ -1157,7 +1157,7 @@ PluginHostApi::Reply PluginHostApi::transfersDownload(const QJsonObject& params)
             }
             if (onConflict == QLatin1String("overwrite") && !QFile::moveToTrash(path) && !QFile::remove(path))
                 return fail(kInternalError,
-                            QStringLiteral("Could not replace %1 (%2 file(s) were queued before it)").arg(path).arg(queued));
+                            QStringLiteral("Could not replace %1 (%2 file(s) were queued before it)").arg(path, QString::number(queued)));
         }
         if (mDownloads.enqueue(plan.node.handle, name, plan.node.sizeBytes, path))
             ++queued;
