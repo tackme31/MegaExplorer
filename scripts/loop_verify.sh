@@ -46,6 +46,23 @@ done
 fail() { echo "[FAIL] $*"; exit 1; }
 step() { printf '[ok] %-12s %ss\n' "$1" "$2"; }
 
+# ------------------------------------------------------------------ 0. lock
+# Two runs in one tree relink each other's test exes mid-ctest (0xc0000142 on
+# most tests) and append to the same $LOG, so the summary line can be the other
+# run's. mkdir is the atomic test-and-set; a lock whose owner is gone is stale.
+LOCK=$BUILD_DIR/loop_verify.lock
+mkdir -p "$BUILD_DIR"
+if ! mkdir "$LOCK" 2>/dev/null; then
+    owner=$(cat "$LOCK/pid" 2>/dev/null)
+    if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
+        fail "another loop_verify (pid $owner) is using $BUILD_DIR; wait for it to finish"
+    fi
+    rm -rf "$LOCK"
+    mkdir "$LOCK" 2>/dev/null || fail "could not take $LOCK"
+fi
+echo $$ >"$LOCK/pid"
+trap 'rm -rf "$LOCK"' EXIT
+
 # ------------------------------------------------------------- 1. close ours
 # A running MegaExplorer.exe or megatool.exe holds its own .exe open and the
 # link dies with LNK1104, which would stall an unattended cycle.
