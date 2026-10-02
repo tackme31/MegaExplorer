@@ -90,6 +90,13 @@ Hand a file to your browser, or to a program you register in the settings, strea
 downloaded. Only programs that take a URL as an argument work, and MegaExplorer has to stay
 running while they read it.
 
+### Plugins
+
+Add your own commands to the right-click menu with a plugin: a separate program, in any language,
+that reads and tags your items through a small JSON-RPC API. The plugin API is experimental and
+may change in any release. [PLUGINS.md](PLUGINS.md) covers writing one, and
+[plugin_sample/](plugin_sample/) has working examples in Python.
+
 ## Build
 
 Windows and the MSVC toolchain only. The MEGA SDK's Windows build doesn't support MinGW.
