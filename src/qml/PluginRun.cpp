@@ -253,9 +253,10 @@ void PluginRun::cancel()
 
 void PluginRun::forceStop()
 {
-    if (mStage == Stage::Done)
+    // A run that has answered can still be running through its shutdown grace.
+    if (mStage == Stage::Done && mProcess.state() == QProcess::NotRunning)
         return;
-    qCInfo(lcPlugin) << mManifest.id << "force-stopped by the user";
+    qCInfo(lcPlugin) << mManifest.id << "force-stopped";
     finish(QStringLiteral("cancelled"), {});
     killAll();
 }
@@ -344,6 +345,13 @@ void PluginRun::handleMessage(const QJsonObject& message)
     // The answer can arrive after this run is gone (a write still in flight when the
     // plugin died); the QPointer drops it then.
     const QJsonValue id = message.value(QStringLiteral("id"));
+    // After the result the run's changes are already reported, and on sign-out the
+    // next account's nodes could be reached; before execute there is no command yet.
+    if (mStage != Stage::Executing)
+    {
+        writeReply(id, method, {{}, kInvalidParamsCode, QStringLiteral("%1 is only allowed during command.execute").arg(method), false});
+        return;
+    }
     if (method == QLatin1String("ui.confirm"))
     {
         handleConfirm(id, message.value(QStringLiteral("params")).toObject());
@@ -388,8 +396,6 @@ void PluginRun::handleConfirm(const QJsonValue& id, const QJsonObject& params)
     const auto fail = [&](const QString& message) {
         writeReply(id, QStringLiteral("ui.confirm"), {{}, kInvalidParamsCode, message, false});
     };
-    if (mStage != Stage::Executing)
-        return fail(QStringLiteral("ui.confirm is only allowed during command.execute"));
     if (!mConfirmId.isUndefined())
         return fail(QStringLiteral("Another ui.confirm is still open"));
     const QJsonValue message = params.value(QStringLiteral("message"));

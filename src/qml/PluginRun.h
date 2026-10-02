@@ -32,7 +32,8 @@ public:
     void start();
     // Asks the plugin to stop ($/cancel); before command.execute it is simply killed.
     void cancel();
-    // Kills the process; for a plugin that ignores cancel().
+    // Kills the process, also one still in its shutdown grace after the result;
+    // for a plugin that ignores cancel(), and on sign-out.
     void forceStop();
     // The user's answer to the open ui.confirm; ignored when none is open.
     void answerConfirm(bool ok);

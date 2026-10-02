@@ -353,8 +353,9 @@ void PluginController::forceStop(const QString& pluginId)
 
 void PluginController::forceStopAll()
 {
-    // A copy: each run's finished() handler removes it from mRuns.
-    const QList<PluginRun*> runs = mRuns.values();
+    // Not mRuns: a run leaves it once it answers, while its process may live on
+    // through the shutdown grace.
+    const QList<PluginRun*> runs = findChildren<PluginRun*>(Qt::FindDirectChildrenOnly);
     for (PluginRun* run : runs)
         run->forceStop();
 }

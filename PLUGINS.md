@@ -302,7 +302,8 @@ still sees this message. Cancel is only reachable from the progress dialog, so o
 
 ### Methods the plugin can call
 
-All of these are requests (they carry an `id`) and may only be called during `command.execute`.
+All of these are requests (they carry an `id`) and may only be called during `command.execute`;
+one sent before it starts or after it is answered gets `-32602`.
 `invocationId` may be included in params; it is ignored in this version.
 
 #### `items.get`
