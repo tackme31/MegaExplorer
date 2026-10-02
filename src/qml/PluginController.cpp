@@ -133,10 +133,8 @@ QString PluginController::groupLabel(const QString& group) const
     const PluginManifest* plugin = findPlugin(group.mid(kActionPrefix.size()));
     if (!plugin)
         return {};
-    if (plugin->apiVersion < kPluginApiVersion)
-        return tr("%1 (needs an update)").arg(plugin->name);
-    if (plugin->apiVersion > kPluginApiVersion)
-        return tr("%1 (needs a newer MEGA Explorer)").arg(plugin->name);
+    if (plugin->apiVersion != kPluginApiVersion)
+        return tr("%1 (incompatible)").arg(plugin->name);
     return plugin->name;
 }
 

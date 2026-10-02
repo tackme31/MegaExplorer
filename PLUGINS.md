@@ -175,14 +175,9 @@ which one a plugin was written for. The number goes up only when the API changes
 breaks existing plugins; additions (a new method, a new optional field) leave it alone.
 
 When the two differ, the plugin still appears in the menu, but its commands are greyed out and
-never started, and the submenu says why:
-
-| Plugin's `apiVersion` | Submenu label | What to do |
-| --- | --- | --- |
-| lower than the app's | `<name> (needs an update)` | Update the plugin to the current API |
-| higher than the app's | `<name> (needs a newer MEGA Explorer)` | Update the app |
-
-The log records the mismatch at startup. A manifest without a valid `apiVersion` is rejected like
+never started, and the submenu reads `<name> (incompatible)`. The log says which side is behind:
+a plugin written for a lower version needs updating to the current API, one written for a higher
+version needs a newer MEGA Explorer. A manifest without a valid `apiVersion` is rejected like
 any other broken manifest.
 
 Because `run.command` is a program, Windows `.cmd`/`.bat` files are not supported; start an `.exe`.
