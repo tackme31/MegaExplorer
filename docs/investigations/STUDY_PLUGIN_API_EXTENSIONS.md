@@ -1,11 +1,12 @@
 # プラグイン API の追加候補
 
-**状態（2026-10-03）: 候補の洗い出しのみ。どれを入れるかは未決定、実装なし。**
+**状態（2026-10-03）: 推奨順 1（ダウンロード・範囲読み・アップロード・フォルダ作成）の仕様を決定、
+未実装（§F）。それ以外の候補は未決定。**
 現行 API（`items.get` / `children` / `descendants` / `update` / `fetchPreview`、`ui.confirm`、
 `ui.progress`）は WD Tagger プラグインの必要分しか無いため、汎用プラグインに要りそうなものを
 `STUDY_PLUGIN_V1_DESIGN.md` §6-3 の予定分と `IMegaClient` の既存機能から拾った。
 「下地」はアプリ側に既に実装があり、公開するだけで済むかどうか。
-次の手順: 採用するものを選び、API ごとに決めることを推奨案つきで詰める。
+次の手順: §F を実装する。
 
 ## A. ファイルの中身（転送）
 
@@ -66,3 +67,72 @@
    すぐ恩恵を受ける。
 3. `copy` / `move` / `trash` と権限表示 — 一緒に。
 4. 残り（`search`、リンク、`account.info`、`ui.*`）は必要になった時点で。
+
+## F. 決定: 推奨順 1 の仕様（2026-10-03）
+
+§A の `items.download` は用途で2つに分けた。**処理用**（プラグインが読んで使う素材。`fetchPreview` と同じ
+位置づけで使い捨て）と、**ユーザー向け**（手元に残す成果物。プラグインがユーザーの代わりに
+「ダウンロード」を押す）では、寿命・見せ方・衝突の扱いがまるで違うため。`readRange` は「大きい範囲」
+（zip のエントリ本体など、GB 級）を base64 で返せないので、大きい範囲は `fetchFile` の範囲指定で受ける。
+
+### F-1. `items.fetchFile {handle, offset?, length?}` → `{path}`（処理用）
+
+- 実行ごとの一時フォルダ（`fetchPreview` と同じ置き場）へ保存。ファイルはプラグインのもので、移動・削除自由。
+  実行終了時にアプリが残りを消す。
+- サイズ上限なし（Item の `size` を見て判断するのはプラグイン）。`offset` / `length` 指定でその範囲だけを
+  一時ファイルにする。
+- **アプリは何も表示しない**。バイト単位の進捗も無し。長い処理ではプラグインが進捗ダイアログ
+  （`"progress": true` ＋ `ui.progress`）を出す前提。
+- 1 本ずつ順番に処理（複数送られてもアプリのキューで直列化。MEGA に負荷を掛けない方針）。
+- 中断は `$/cancel` のみ: アプリがその実行の進行中・待ちの `fetchFile` を全部中断し `-32800` を返す。
+  書きかけはアプリが消す。個別の `$/cancelRequest` は必要になるまで作らない。
+
+### F-2. `items.readRange {handle, offset, length}` → `{data, length}`
+
+- `data` は base64。1 回の上限 1 MiB、超えたら `-32602`（大きい範囲は F-1 の範囲指定へ）。
+- ファイル末尾を超える分は切り詰める。`$/cancel` で中断。
+
+### F-3. `transfers.download {items: [{handle, subPath?}], onConflict?}`（ユーザー向け）
+
+- 保存先は **OS の「ダウンロード」フォルダ固定**（アプリのメニューの「ダウンロード」と同じ）。`subPath` は
+  そこからの相対パスで項目ごとに指定（省略で直下）。`..`・絶対パスは `-32602`。無いフォルダはアプリが作る
+  （作るのはダウンロードフォルダの中だけ）。
+- ファイルのみ。アプリのダウンロードキューに入れ、**キュー投入で応答**。転送一覧に出て、実行が終わっても
+  続く。完了はプラグインに知らせない（完了を前提に処理するなら F-1）。
+- `onConflict`: `"rename"`（既定、「(1)」）/ `"skip"`（既にあれば飛ばす）/ `"overwrite"`。
+
+### F-4. `items.upload {parent, localPath, name?, onConflict?}` → `{item}`
+
+- ファイルのみ（フォルダは F-5 と組み合わせる。SDK のフォルダアップロードは既存フォルダへの強制マージと
+  中身のバージョン化があり、`onConflict` と整合しないため）。
+- 完了まで待って作られた Item を返す。転送一覧には出さない。1 本ずつ順番、`$/cancel` で中断（F-1 と同じ）。
+- `onConflict`: `"rename"`（既定）/ `"fail"`（`-32004` Conflict）/ `"version"`（既存の新バージョンにする）。
+  **バージョン管理がオフのアカウントで `"version"` はエラー**: 旧ファイルがゴミ箱にも行かず消え
+  （`SPEC_NAME_CONFLICT_UPLOAD.md` §1-4）、アプリ自身のアップロードならダイアログで示すところを、
+  プラグイン経由だとユーザーの目を通らないため。
+- アプリは `localPath` のファイルを消さない。
+
+### F-5. `items.createFolder {parent, name, onConflict?}` → `{item, created}`
+
+- 1 階層のみ。階層はプラグイン（またはヘルパ）が `"existing"` で順に呼ぶ。
+- `onConflict`: `"existing"`（既定、あればそれを返し `created: false`）/ `"fail"`（`-32004`）/ `"rename"`。
+
+### F-6. 権限・同意
+
+今回は入れない。F の 5 つは既存のものを消さない追加系が中心（消えうるのはローカルの `overwrite` だけ）。
+**`move` / `trash` を出す前に必ず入れる。**
+
+### F-7. 実装メモ（決定に付随する作業）
+
+- `IMegaClient::createFolder` は作ったフォルダのハンドルを返さない → 返すよう変える。
+- `IMegaClient::download` は同名に黙って「(1)」を付ける（`COLLISION_CHECK_ASSUMEDIFFERENT`）→ `skip` /
+  `overwrite` のため切り替え可能にする。
+- バージョン管理の有無は既存の `getFileVersioningEnabled` で判定。
+- エラーコード `-32004` Conflict を使い始める。F-4 の版管理オフ時の拒否も `-32004` にし、`data.reason` で
+  区別する（`"exists"` = `onConflict: "fail"`、`"versioningDisabled"` = 版管理オフで `"version"`）。
+  `-32010` にしないのは、MEGA に何も送らないアプリ側の拒否で「MEGA の失敗」ではなく、ヘルパでは
+  `MegaError` になり「切り替える」でなく「リトライ／打ち切り」に誘導するため。新設しないのは、
+  プラグインから見て `"fail"` と同じ状況（同名あり・何も変わっていない）で、取る行動
+  （`"rename"` でやり直すか `ui.confirm`）も同じだから。
+- upload / createFolder で変更があれば既存の `changed` で実行後に表示を更新。
+- `PLUGINS.md` のリファレンスとヘルパ（`megaexplorer_plugin.py`）を同時に更新する。
