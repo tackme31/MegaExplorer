@@ -220,9 +220,13 @@ QtObject {
                                         "cut": {
                                             "icon": ctx => Theme.glyph.menu.cut,
                                             "label": ctx => qsTr("Cut"),
+                                            // A search listing names no one source folder (see
+                                            // FileMutationController::moveEntriesTo).
                                             "trigger": ctx => clipboardController.cut(ctx.entries,
-                                                                                      ctx.navController.currentHandle,
-                                                                                      ctx.navController.atRoot)
+                                                                                      ctx.navController.searchActive
+                                                                                      ? 0 : ctx.navController.currentHandle,
+                                                                                      !ctx.navController.searchActive
+                                                                                      && ctx.navController.atRoot)
                                         },
                                         // ctx: entries, navController
                                         "copy": {

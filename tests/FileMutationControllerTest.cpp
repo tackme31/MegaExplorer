@@ -706,6 +706,55 @@ TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoFromTheRubbishBinTo
     EXPECT_TRUE(lastUndo.isEmpty());
 }
 
+TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoFromSearchResults)
+{
+    // The rows come from many folders under the searched one; moving them "back"
+    // to the searched folder would put them somewhere they never were.
+    givenRootListing({entry("a", 1)});
+    givenCurrentFolderHandle(7u);
+    controller->loadRoot();
+    flush();
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
+        .WillRepeatedly(InvokeArgument<5>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a", 1)})));
+    controller->search(QStringLiteral("q"));
+    flush();
+    ASSERT_TRUE(controller->searchActive());
+    givenChildrenOf(99u, {});
+
+    EXPECT_CALL(*client, moveNode(1u, 99u, false, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->moveEntriesTo(clipboardEntries({entry("a", 1)}), 99, false);
+    flush();
+    flush();
+
+    EXPECT_EQ(lastSucceeded, 1);
+    EXPECT_TRUE(lastUndo.isEmpty());
+}
+
+TEST_F(FileMutationControllerTest, PasteIsRefusedInSearchResults)
+{
+    // The destination would be the searched folder, not where the results are.
+    givenRootListing({entry("a.txt", 1)});
+    givenCurrentFolderHandle(7u);
+    controller->loadRoot();
+    flush();
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
+        .WillRepeatedly(InvokeArgument<5>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a.txt", 1)})));
+    controller->search(QStringLiteral("q"));
+    flush();
+    ASSERT_TRUE(controller->searchActive());
+    clipboard->copy(clipboardEntries({entry("z.txt", 5)}), 9, false);
+
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).Times(0);
+
+    EXPECT_FALSE(mutations->canPaste());
+    mutations->paste();
+    flush();
+}
+
 TEST_F(FileMutationControllerTest, MoveEntriesToWithholdsUndoWhenTheSourceIsNotAFolder)
 {
     // The favourites screen's shape: one nameless segment, handle 0, not a root,

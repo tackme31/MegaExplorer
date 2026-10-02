@@ -127,9 +127,12 @@ Item {
         const entries = root.navController.fileListModel.selectedEntries();
         if (entries.length === 0)
             return;
+        // A search listing names no one source folder (see
+        // FileMutationController::moveEntriesTo).
+        const fromSearch = root.navController.searchActive;
         if (cut)
-            root.clipboard.cut(entries, root.navController.currentHandle,
-                               root.navController.atRoot);
+            root.clipboard.cut(entries, fromSearch ? 0 : root.navController.currentHandle,
+                               !fromSearch && root.navController.atRoot);
         else
             root.clipboard.copy(entries, root.navController.currentHandle,
                                 root.navController.atRoot);

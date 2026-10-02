@@ -571,12 +571,15 @@ void FileMutationController::moveEntriesTo(const QVariantList& entries,
                                            bool targetIsRoot)
 {
     // A drag started in this tab, so this tab is where the nodes came from --
-    // read *now*, because a refresh mid-batch could in principle move it.
+    // read *now*, because a refresh mid-batch could in principle move it. A search
+    // listing's rows come from many folders, so it names none, as favourites do:
+    // otherwise the move's Undo would send them all to the searched folder.
+    const bool fromSearch = mNavigation->searchActive();
     moveEntriesFrom(ClipboardController::toNodeRefs(entries),
                     target,
                     targetIsRoot,
-                    mNavigation->currentHandle(),
-                    mNavigation->atRoot(),
+                    fromSearch ? 0 : mNavigation->currentHandle(),
+                    fromSearch ? false : mNavigation->atRoot(),
                     MoveConflict::Ask);
 }
 
@@ -865,7 +868,9 @@ void FileMutationController::moveSkippingExisting(const QVariantList& entries,
 
 bool FileMutationController::canPaste() const
 {
-    if (!mNavigation->isLoaded())
+    // A search listing holds matches from many folders, so "here" is not where the
+    // user sees the pasted nodes land: it is the searched folder.
+    if (!mNavigation->isLoaded() || mNavigation->searchActive())
         return false;
     const quint64 here = mNavigation->currentHandle();
     const bool hereIsRoot = mNavigation->atRoot();
@@ -894,7 +899,7 @@ void FileMutationController::paste()
 {
     // Ctrl+V is reachable before the first listing has loaded, and canPaste() greys
     // out both clipboard cases -- nothing to report in any of them.
-    if (!mNavigation->isLoaded() || !mClipboard->hasContent())
+    if (!mNavigation->isLoaded() || !mClipboard->hasContent() || mNavigation->searchActive())
         return;
 
     const quint64 target = mNavigation->currentHandle();
