@@ -499,6 +499,13 @@ public:
     // Fails on anything that is not a well-formed node handle.
     virtual Result<std::uint64_t> base64ToHandle(const std::string& base64) const = 0;
 
+    // --- Server-side changes --------------------------------------------------
+
+    // Called with the files whose thumbnail or preview the server replaced, on an
+    // SDK thread. One handler; setting another replaces it, an empty one clears it.
+    virtual void setFileAttributesChangedHandler(
+        std::function<void(std::vector<std::uint64_t>)> handler) = 0;
+
     // --- Account-level reads -------------------------------------------------
 
     // MegaApi::getMyEmail + getMyUserHandle + getUserAvatarColor in one read.

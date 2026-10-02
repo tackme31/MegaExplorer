@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 // The callback adapters MegaSdkClient hands to MegaApi: each turns one shape of SDK
 // completion into the std::function the port declares. Only MegaSdkClient.cpp
@@ -480,6 +481,36 @@ private:
     std::uint64_t mReceived = 0;
     bool mOutOfStep = false;
     bool mRefused = false;
+};
+
+// Unlike every listener above, long-lived: MegaSdkClient owns it and registers it
+// once as a global listener, so the self-deleting rule does not apply.
+class NodeChangeListener : public mega::MegaGlobalListener
+{
+public:
+    explicit NodeChangeListener(std::function<void(std::vector<std::uint64_t>)> onFileAttributesChanged)
+        : mOnFileAttributesChanged(std::move(onFileAttributesChanged))
+    {}
+
+    void onNodesUpdate(mega::MegaApi*, mega::MegaNodeList* nodes) override
+    {
+        // The SDK passes null for a full reload or a large burst, naming no node; those
+        // changes are missed, and the settings page's cache Clear is the way out.
+        if (!nodes)
+            return;
+        std::vector<std::uint64_t> handles;
+        for (int i = 0; i < nodes->size(); ++i)
+        {
+            mega::MegaNode* node = nodes->get(i);
+            if (node->isFile() && node->hasChanged(mega::MegaNode::CHANGE_TYPE_FILE_ATTRIBUTES))
+                handles.push_back(node->getHandle());
+        }
+        if (!handles.empty())
+            mOnFileAttributesChanged(std::move(handles));
+    }
+
+private:
+    std::function<void(std::vector<std::uint64_t>)> mOnFileAttributesChanged;
 };
 
 } // namespace megasdk

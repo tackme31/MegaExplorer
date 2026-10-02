@@ -23,8 +23,9 @@
 //
 // The cache outlives the process: the file a previous run left at the handle's path
 // is served as a hit, so a handle is fetched once and never again. That is sound
-// without any invalidation because MEGA gives changed content a new handle
-// (STUDY_THUMBNAIL_CACHE.md 3-3).
+// because MEGA gives changed content a new handle (STUDY_THUMBNAIL_CACHE.md 3-3);
+// a thumbnail replaced on the same node is dropped through discard() when the
+// server reports it.
 //
 // Same cross-thread caveat as DownloadService: mMutex guards every member, and
 // getThumbnail() is called with no lock held, since its onDone can run before it
@@ -49,6 +50,10 @@ public:
     // refetches them. A handle whose fetch is still running is left alone: the SDK is
     // writing that very file, and what it brings back is fresh by definition.
     void discard(const std::vector<std::uint64_t>& handles);
+
+    // How many times discard() has dropped this handle. A refetch lands at the same
+    // path, so a viewer that caches by path keys on this as well.
+    unsigned revision(std::uint64_t handle) const;
 
     // Bytes the signed-in account's thumbnails occupy on disk, 0 when nothing has
     // been fetched under it yet. Enumerates the directory, so the cost grows with the
@@ -94,6 +99,7 @@ private:
     // Handles whose file discard() could not remove. Only these bypass the disk hit,
     // which would otherwise keep serving the very file the refresh meant to replace.
     std::unordered_set<std::uint64_t> mUndeletable;
+    std::unordered_map<std::uint64_t, unsigned> mRevisions;
     std::unordered_map<std::uint64_t, Job> mJobs; // handle -> active or queued job
     std::deque<std::uint64_t> mQueue;             // handles waiting for capacity
     std::size_t mActiveCount = 0;

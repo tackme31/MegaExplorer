@@ -33,28 +33,19 @@ void ThumbnailController::requestThumbnail(quint64 handle)
                                                 QString::fromStdString(result.errorMessage));
                     return;
                 }
-                mModel->setThumbnailPath(handle, modelPathFor(result.value()));
+                mModel->setThumbnailPath(handle, modelPathFor(handle, result.value()));
             });
         });
 }
 
-void ThumbnailController::discardVisibleThumbnails()
-{
-    const std::vector<std::uint64_t> handles = mModel->thumbnailHandles();
-    if (handles.empty())
-        return;
-    mService->discard(handles);
-    ++mDiscardGeneration;
-}
-
-QString ThumbnailController::modelPathFor(const std::string& path) const
+QString ThumbnailController::modelPathFor(quint64 handle, const std::string& path) const
 {
     QString result = QString::fromStdString(path);
-    if (mDiscardGeneration != 0)
+    if (const unsigned revision = mService->revision(handle))
     {
         // A query, so QUrl::toLocalFile() still yields the file itself -- it is only
         // the pixmap cache, keyed on the whole URL, that has to see a difference.
-        result += QStringLiteral("?v=%1").arg(mDiscardGeneration);
+        result += QStringLiteral("?v=%1").arg(revision);
     }
     return result;
 }

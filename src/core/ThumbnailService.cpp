@@ -202,6 +202,7 @@ void ThumbnailService::discard(const std::vector<std::uint64_t>& handles)
             if (mJobs.count(handle) != 0)
                 continue;
             mCache.erase(handle);
+            ++mRevisions[handle];
             discarded.push_back(handle);
             paths.push_back(filePathIn(resolved.value(), handle));
         }
@@ -221,6 +222,13 @@ void ThumbnailService::discard(const std::vector<std::uint64_t>& handles)
     // overwrite it either. Remembered so the next request fetches over it instead.
     std::lock_guard<std::mutex> lock(mMutex);
     mUndeletable.insert(undeletable.begin(), undeletable.end());
+}
+
+unsigned ThumbnailService::revision(std::uint64_t handle) const
+{
+    std::lock_guard<std::mutex> lock(mMutex);
+    const auto it = mRevisions.find(handle);
+    return it == mRevisions.end() ? 0 : it->second;
 }
 
 Result<std::uint64_t> ThumbnailService::cachedBytes() const

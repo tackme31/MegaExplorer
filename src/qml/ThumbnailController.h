@@ -34,22 +34,12 @@ public:
     // this method does not re-check (see the .cpp for why).
     Q_INVOKABLE void requestThumbnail(quint64 handle);
 
-    // Throws away the cached thumbnails of the rows this tab is showing, so the
-    // re-listing behind a toolbar refresh fetches them again. Only these rows --
-    // folders below them keep theirs. Public, not Q_INVOKABLE: the trigger is
-    // FolderNavigationController::refresh(), so no QML has to remember to call it.
-    void discardVisibleThumbnails();
-
 private:
-    // Appends the cache-busting suffix below, so QML sees a new URL for a refetched
-    // file.
-    QString modelPathFor(const std::string& path) const;
+    // QML's Image keeps one decoded pixmap per source URL, and a refetch lands back
+    // at the same path, so the handle's revision goes in the URL.
+    QString modelPathFor(quint64 handle, const std::string& path) const;
 
     std::shared_ptr<ThumbnailService> mService;
     std::shared_ptr<FileListModel> mModel;
     NotificationController* mNotifications;
-    // QML's Image keeps one decoded pixmap per source URL, so a refetch that lands
-    // back at the same path would redraw the picture it replaced. Bumped per discard
-    // rather than per handle: a refresh recreates every delegate anyway.
-    unsigned mDiscardGeneration = 0;
 };

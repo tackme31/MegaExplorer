@@ -535,6 +535,33 @@ TEST(ThumbnailServiceTest, DiscardLeavesAHandleWhoseFetchIsStillRunningAlone)
     pending(Result<std::string>::ok(cachePath(7)));
 }
 
+TEST(ThumbnailServiceTest, DiscardBumpsTheRevisionOfOnlyTheHandlesItDropped)
+{
+    // A refetch lands at the same path, so the revision is what tells a viewer's
+    // per-URL cache the picture changed.
+    auto mockClient = makeClient();
+    auto fileSystem = std::make_shared<FakeLocalFileSystem>();
+    std::function<void(Result<std::string>)> pending;
+    EXPECT_CALL(*mockClient, getThumbnail(8, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke([&pending](std::uint64_t,
+                                               const std::string&,
+                                               std::function<void(Result<std::string>)> onDone) {
+            pending = std::move(onDone);
+        }));
+    ThumbnailService service(mockClient, fileSystem, kCacheRoot);
+    service.request(8, [](Result<std::string>) {});
+
+    // Act
+    service.discard({7, 8});
+    service.discard({7});
+
+    // Assert
+    EXPECT_EQ(service.revision(7), 2u);
+    EXPECT_EQ(service.revision(8), 0u); // its fetch was running, so it was not dropped
+    EXPECT_EQ(service.revision(9), 0u);
+    pending(Result<std::string>::ok(cachePath(8)));
+}
+
 TEST(ThumbnailServiceTest, DiscardWithNobodySignedInRemovesNothing)
 {
     auto mockClient = makeClient();

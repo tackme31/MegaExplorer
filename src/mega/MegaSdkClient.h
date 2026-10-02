@@ -11,6 +11,7 @@
 namespace mega
 {
 class MegaApi;
+class MegaGlobalListener;
 class MegaCancelToken;
 class MegaNode;
 } // namespace mega
@@ -230,6 +231,9 @@ public:
     std::string handleToBase64(std::uint64_t handle) const override;
     Result<std::uint64_t> base64ToHandle(const std::string& base64) const override;
 
+    void setFileAttributesChangedHandler(
+        std::function<void(std::vector<std::uint64_t>)> handler) override;
+
     Result<AccountIdentity> currentAccountIdentity() const override;
 
     void getMyAvatar(const std::string& destinationPath,
@@ -276,7 +280,15 @@ private:
     // teardown lines reach the log. It does not help at startup: registration happens
     // in the constructor body, after MegaApiImpl::init has already logged.
     std::unique_ptr<MegaSdkLogger> mLogger;
+    // Declared before mApi for the same reason: ~MegaApi joins the SDK thread, so
+    // this cannot be called once it is gone.
+    std::unique_ptr<mega::MegaGlobalListener> mNodeListener;
     std::unique_ptr<mega::MegaApi> mApi;
+
+    // A leaf lock, like mCancelTokenMutex: the handler is copied out under it and
+    // called outside, so nothing under it re-enters the SDK.
+    std::mutex mFileAttributesHandlerMutex;
+    std::function<void(std::vector<std::uint64_t>)> mFileAttributesHandler;
 
     // Set before mApi is destroyed, so teardown callbacks on the SDK thread bail out
     // instead of dereferencing null. A mutex is *not usable* here: the SDK delivers

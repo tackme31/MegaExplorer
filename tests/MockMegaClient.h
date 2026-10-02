@@ -220,4 +220,8 @@ public:
                 (override));
     MOCK_METHOD(void, getFileVersioningEnabled, (std::function<void(Result<bool>)>), (override));
     MOCK_METHOD(void, getAccountInfo, (std::function<void(Result<AccountInfo>)>), (override));
+    MOCK_METHOD(void,
+                setFileAttributesChangedHandler,
+                (std::function<void(std::vector<std::uint64_t>)>),
+                (override));
 };

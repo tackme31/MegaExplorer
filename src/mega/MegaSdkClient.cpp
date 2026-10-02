@@ -332,6 +332,27 @@ MegaSdkClient::MegaSdkClient(std::string basePath, std::string userAgent)
     // per-MegaApi-instance. Fine here since the app only ever constructs one
     // MegaSdkClient.
     mega::MegaApi::addLoggerObject(mLogger.get());
+
+    mNodeListener = std::make_unique<megasdk::NodeChangeListener>(
+        [this](std::vector<std::uint64_t> handles) {
+            if (mShuttingDown)
+                return;
+            std::function<void(std::vector<std::uint64_t>)> handler;
+            {
+                std::lock_guard<std::mutex> lock(mFileAttributesHandlerMutex);
+                handler = mFileAttributesHandler;
+            }
+            if (handler)
+                handler(std::move(handles));
+        });
+    mApi->addGlobalListener(mNodeListener.get());
+}
+
+void MegaSdkClient::setFileAttributesChangedHandler(
+    std::function<void(std::vector<std::uint64_t>)> handler)
+{
+    std::lock_guard<std::mutex> lock(mFileAttributesHandlerMutex);
+    mFileAttributesHandler = std::move(handler);
 }
 
 MegaSdkClient::~MegaSdkClient()

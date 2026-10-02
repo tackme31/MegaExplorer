@@ -163,6 +163,16 @@ int main(int argc, char* argv[])
         QDir::toNativeSeparators(QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
                                  "/thumbnails")
             .toStdString());
+    // Only these are dropped, so a refresh re-reads every other thumbnail from the
+    // cache. Hopped to the GUI thread: discard() deletes files.
+    client->setFileAttributesChangedHandler(
+        [weakService = std::weak_ptr<ThumbnailService>(thumbnailService),
+         app = &app](std::vector<std::uint64_t> handles) {
+            invokeOnGuiThread(app, [weakService, handles = std::move(handles)] {
+                if (const std::shared_ptr<ThumbnailService> service = weakService.lock())
+                    service->discard(handles);
+            });
+        });
     // Shared too, but for the opposite reason: one preview shows at a time for the
     // whole window, so there is nothing per-tab to keep.
     auto previewService = std::make_shared<PreviewService>(client);
@@ -238,15 +248,6 @@ int main(int argc, char* argv[])
             navigation, navigationService, fileOperationService, busy, &notifications, &clipboard);
         auto thumbnails = makeGuiOwned<ThumbnailController>(
             thumbnailService, navigation->fileListModelForThumbnails(), &notifications);
-        // Wired here rather than by handing one controller to the other: the thumbnail
-        // side needs the model the navigation side owns, so the dependency only runs
-        // this way round.
-        QObject::connect(navigation.get(),
-                         &FolderNavigationController::serverRefreshRequested,
-                         thumbnails.get(),
-                         [thumbnails = thumbnails.get()] {
-                             thumbnails->discardVisibleThumbnails();
-                         });
         return TabContext{std::move(navigationService),
                           std::move(searchService),
                           std::move(navigation),

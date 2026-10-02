@@ -80,6 +80,10 @@ add_executable(MegaExplorerTests
 # anything src/qml already depends on without this file growing a Qt component
 # list of its own. No extra DLLs: Qt6Quick/Qt6Gui sit in the same Qt bin
 # directory that Qt6Core/Qt6Qml already had to be on PATH from.
+# MockMegaClient's gmock methods push the larger test files past MSVC's default
+# section limit (C1128).
+target_compile_options(MegaExplorerTests PRIVATE /bigobj)
+
 target_link_libraries(MegaExplorerTests PRIVATE
     MegaExplorerCore
     MegaExplorerQml
