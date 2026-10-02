@@ -104,7 +104,7 @@ PluginRun::PluginRun(PluginManifest manifest,
                      const PluginHostApi* hostApi,
                      QObject* parent)
     : QObject(parent), mManifest(std::move(manifest)), mCommandId(std::move(commandId)),
-      mContext(std::move(context)), mHostState{std::move(tempDir), {}}, mHostApi(hostApi), mKillTimer(new QTimer(this)), mInitTimer(new QTimer(this)),
+      mContext(std::move(context)), mHostState{std::move(tempDir)}, mHostApi(hostApi), mKillTimer(new QTimer(this)), mInitTimer(new QTimer(this)),
       mCancelTimer(new QTimer(this))
 {
     mCancelTimer->setSingleShot(true);

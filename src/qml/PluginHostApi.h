@@ -65,6 +65,7 @@ public:
         QString tempDir;
         // items.descendants listings, fixed at their first page; a cursor indexes one.
         // Shared so a subtree walk that ends after the run is gone has nothing to write to.
+        // Leave it out of a RunState{...} initializer: a {} there would make it null.
         std::shared_ptr<std::vector<std::vector<std::uint64_t>>> listings =
             std::make_shared<std::vector<std::vector<std::uint64_t>>>();
         std::shared_ptr<TransferQueue> transfers;
