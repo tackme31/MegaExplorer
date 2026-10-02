@@ -168,6 +168,23 @@ That target also carries two suppressions, both about *Qt's* headers rather than
   and none in `src/`. These only appear on a *full* rebuild — incremental builds don't recompile
   the generated sources, which is why the sweep looked clean before R4-9.
 
+## How `loop_verify.sh` runs the tests
+
+It does not run plain `ctest`. `gtest_discover_tests` gives each of the ~1000 GoogleTest cases its
+own process, and loading Qt that many times took ~100 s for a suite that runs in 7 s as one binary.
+So the script runs `MegaExplorerTests.exe` once, and calls `ctest -R '^QmlTest\.' -j <cores>` for
+the 21 QML files only. Measured 2026-10-03: 189 s → 50 s for the whole script. Plain `ctest`
+still lists every case, for IDEs and by-hand runs.
+
+**Running the QML tests in parallel has not been proven safe.** The only evidence is reading the
+code (offscreen platform, settings passed in as properties, no shared files found) and two clean
+runs. If a QML test ever fails in a way that does not reproduce when run alone, suspect this
+first. Removing `-j` from that line restores the old serial behaviour, at about +45 s.
+
+The script also refuses to start while another `loop_verify.sh` holds `build/msvc-debug`. Two runs
+in one tree relink each other's test exes mid-run (most tests then die with `0xc0000142`), and
+both write to the same log.
+
 ## The distribution zip (`scripts/package.ps1`)
 
 A build that runs here does not run anywhere else: outside Qt Creator the binary needs Qt's `bin`

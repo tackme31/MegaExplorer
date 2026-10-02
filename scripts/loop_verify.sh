@@ -186,6 +186,7 @@ if [ "$run_tests" -eq 1 ]; then
     grep -E '^\[  PASSED  \]' "$LOG" | tail -n 1
 
     SECONDS=0
+    # -j is not proven safe for the QML tests: docs/BUILD.md, "How loop_verify.sh runs the tests".
     "$CTEST" --preset msvc-debug -R '^QmlTest\.' --no-tests=error -j "$(nproc)" >"$LOG" 2>&1
     test_status=$?
     if [ "$test_status" -ne 0 ]; then
