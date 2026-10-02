@@ -7,11 +7,11 @@ the section you need; plugin.json says how each command is declared
 - Basics: the selection (ctx.items), a toast, an error, the result dialog,
   print() going to the app's log
 - Reading items: items.get, items.children, items.descendants
-- Previews: items.fetchPreview
+- File contents: items.fetchPreview, items.readRange, items.fetchFile
 - Changing items: items.update (tags, favourites)
 - Transfers: transfers.download, items.upload, items.createFolder
 - Asking the user: ui.confirm
-- Progress and cancel: ui.progress, $/cancel, Force quit
+- Progress and cancel: ui.progress, $/cancel
 """
 
 import os
@@ -40,89 +40,83 @@ def folder_of(ctx):
 
 
 # --- Basics -------------------------------------------------------------------
-# A returned string is shown as a toast (first 3 lines). Raising CommandError
-# shows "<plugin>: <message>" as an error. With "result": "dialog" the whole
-# text goes to a dialog instead. print() lands in MegaExplorer.log, prefixed
-# [plugin:<id>].
+# A returned string is shown as a toast (first 3 lines); None shows nothing.
+# Raising CommandError shows "<plugin>: <message>" as an error. With
+# "result": "dialog" the whole text goes to a dialog instead, errors included.
+# print() lands in MegaExplorer.log, prefixed [plugin:<id>].
 
 
-@plugin.command("show-toast")
-def show_toast(ctx):
-    print(f"{ctx.command_id}: {len(ctx.items)} item(s)")
+@plugin.command("show-selection")
+def show_selection(ctx):
+    print(f"{ctx.command_id}: {len(ctx.items)} item(s) selected")
     if not ctx.items:
         return "Nothing is selected"
     rest = f" and {len(ctx.items) - 1} more" if len(ctx.items) > 1 else ""
     return f"Selected: {ctx.items[0].name}{rest}"
 
 
-@plugin.command("show-error")
-def show_error(ctx):
+@plugin.command("fail")
+def fail(ctx):
     raise CommandError("Failed on purpose")
 
 
-@plugin.command("show-result-dialog")
-def show_result_dialog(ctx):
+@plugin.command("show-long-result")
+def show_long_result(ctx):
     lines = [f"{item.type}: {item.path}" for item in ctx.items]
     return "\n".join([f"{len(ctx.items)} item(s) selected", ""] + lines)
 
 
-@plugin.command("show-error-dialog")
-def show_error_dialog(ctx):
-    raise CommandError("Failed on purpose\n\nThe first line is the summary; the rest\n"
-                       "is shown only in the dialog.")
-
-
 # --- Reading items --------------------------------------------------------------
 # ctx.items already carries path, size, tags, favourite... as they were when the
-# menu was clicked. ctx.get(x) reads any item now (here: the parent folder);
-# children/descendants fetch page by page as the loop asks.
+# menu was clicked; ctx.get(x) reads an item as it is now. children and
+# descendants fetch page by page as the loop asks, so a large folder costs
+# nothing until it is walked. All of these read the app's in-memory copy of the
+# account: they do not reach MEGA's servers.
 
 
-@plugin.command("read-details")
-def read_details(ctx):
-    if not ctx.items:
-        return "Nothing is selected"
-    item = ctx.get(ctx.items[0])
-    parts = [item.path]
+def describe(item):
+    parts = [f"{item.path} ({item.type})"]
     if item.is_file:
         parts.append(human_size(item.size))
     if item.tags:
         parts.append("tags: " + ", ".join(item.tags))
     if item.favourite:
         parts.append("favourite")
+    if item.description:
+        parts.append(f"description: {item.description}")
     return " | ".join(parts)
 
 
-@plugin.command("count-folder")
-def count_folder(ctx):
-    folder = folder_of(ctx)
-    files = folders = 0
-    for child in ctx.children(folder):
-        if child.is_folder:
-            folders += 1
-        else:
-            files += 1
-    return f"{ctx.get(folder).path}: {files} files, {folders} folders"
+@plugin.command("inspect")
+def inspect(ctx):
+    lines = []
+    for item in ctx.get_many(ctx.items):
+        lines.append(describe(item))
+        if not item.is_folder:
+            continue
+        files = folders = 0
+        for child in ctx.children(item):
+            files += child.is_file
+            folders += child.is_folder
+        lines.append(f"    directly inside: {files} file(s), {folders} folder(s)")
+        count = size = 0
+        for below in ctx.descendants(item, type="file"):
+            ctx.check_cancelled()
+            count += 1
+            size += below.size
+            if count % 500 == 0:
+                ctx.progress(message=f"{item.name}: {count} files so far")
+        lines.append(f"    everything below: {count} file(s), {human_size(size)}")
+    return "\n".join(lines)
 
 
-@plugin.command("count-tree")
-def count_tree(ctx):
-    folder = folder_of(ctx)
-    files = 0
-    size = 0
-    for item in ctx.descendants(folder, type="file"):
-        files += 1
-        size += item.size
-    return f"{ctx.get(folder).path}: {files} files below, {human_size(size)}"
-
-
-# --- Previews -------------------------------------------------------------------
-# fetch_preview returns the Path of a JPEG of up to 1000 px. Only uploads from
-# clients that made a preview have one (most images, videos and PDFs; not mp3 or
-# zip): NoPreview otherwise. The file is the plugin's, so it is deleted once read
-# -- closed first, since Windows cannot delete an open file. Anything left is
-# removed by the app when the plugin exits.
-# plugin.json's "when": {"targets": "files"} greys the row out for folders.
+# --- File contents ----------------------------------------------------------------
+# fetch_preview saves a JPEG of up to 1000 px, if the uploader's client made one
+# (most images, videos and PDFs): NoPreview otherwise. read_range returns up to
+# 1 MiB of a file as bytes; fetch_file saves a whole file, or a range of it. The
+# saved files are the plugin's: delete them once read (close them first on
+# Windows). Anything left is removed when the plugin exits.
+# These download from MEGA, one at a time; Cancel stops the one running.
 
 
 @plugin.command("fetch-previews")
@@ -130,61 +124,93 @@ def fetch_previews(ctx):
     fetched = []
     missing = 0
     for item in ctx.items:
+        ctx.check_cancelled()
         try:
             path = ctx.fetch_preview(item)
         except NoPreview:
             missing += 1
             continue
-        with path.open("rb") as f:
-            is_jpeg = f.read(2) == bytes([0xFF, 0xD8])
         size = path.stat().st_size
-        print(f"preview of {item.name}: {path} ({size} bytes, jpeg={is_jpeg})")
+        print(f"preview of {item.name}: {path} ({size} bytes)")
         fetched.append(size)
         path.unlink()
-    return f"Fetched {len(fetched)} preview(s), {sum(fetched) // 1024} KB; {missing} without one"
+    return f"Fetched {len(fetched)} preview(s), {human_size(sum(fetched))}; {missing} without one"
+
+
+SIGNATURES = [
+    (b"\xff\xd8\xff", "JPEG image"),
+    (b"\x89PNG", "PNG image"),
+    (b"GIF8", "GIF image"),
+    (b"%PDF", "PDF document"),
+    (b"PK\x03\x04", "ZIP archive (or docx/xlsx/...)"),
+    (b"RIFF", "RIFF (WebP, WAV, AVI)"),
+]
+# Files this size or smaller are also fetched whole, to show fetch_file.
+FETCH_WHOLE_LIMIT = 20 * 1024 * 1024
+
+
+def kind_of(head):
+    for signature, kind in SIGNATURES:
+        if head.startswith(signature):
+            return kind
+    if head[4:8] == b"ftyp":
+        return "MP4/MOV video"
+    return "unknown, starts with " + head[:8].hex(" ")
+
+
+@plugin.command("read-file")
+def read_file(ctx):
+    lines = []
+    for i, item in enumerate(ctx.items):
+        ctx.progress(i, len(ctx.items), item.name)
+        head = ctx.read_range(item, 0, 16)
+        line = f"{item.name}: {kind_of(head)}"
+        if item.size <= FETCH_WHOLE_LIMIT:
+            path = ctx.fetch_file(item)
+            fetched = path.stat().st_size
+            path.unlink()
+            line += f"; fetched {human_size(fetched)}, " + ("size matches" if fetched == item.size else "SIZE DIFFERS")
+        else:
+            line += f"; {human_size(item.size)}, too large to fetch whole here"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 # --- Changing items -------------------------------------------------------------
-# Only what is passed to ctx.update is changed, and adding a tag the item already
-# has is a no-op. After a command that changed something, the app re-reads the
-# folder on screen. tag-extension's "when" limits it to a few image extensions.
+# Only what is passed to ctx.update is changed. Tags match ignoring case, as MEGA
+# compares them, and adding a tag the item has (or removing one it lacks) is a
+# no-op. After a command that changed something, the app re-reads the folder on
+# screen. There is no undo, which is why this command undoes itself when run
+# again.
+
+TAG = "sample"
 
 
-@plugin.command("tag-extension")
-def tag_extension(ctx):
+@plugin.command("toggle-tag")
+def toggle_tag(ctx):
+    added = removed = 0
     for item in ctx.items:
-        ctx.update(item, tags_add=[item.name.rsplit(".", 1)[1].lower()])
-    return f"Tagged {len(ctx.items)} file(s) with their extension"
-
-
-@plugin.command("clear-tags")
-def clear_tags(ctx):
-    tagged = [item for item in ctx.items if item.tags]
-    for item in tagged:
-        ctx.update(item, tags_remove=item.tags)
-    return f"Cleared tags on {len(tagged)} item(s)"
-
-
-@plugin.command("add-favourite")
-def add_favourite(ctx):
-    for item in ctx.items:
-        ctx.update(item, favourite=True)
-    return f"Added {len(ctx.items)} item(s) to favourites"
+        if any(tag.lower() == TAG for tag in item.tags or []):
+            ctx.update(item, tags_remove=[TAG], favourite=False)
+            removed += 1
+        else:
+            ctx.update(item, tags_add=[TAG], favourite=True)
+            added += 1
+    return f'Tagged "{TAG}" and favourited {added}; untagged and unfavourited {removed}'
 
 
 # --- Transfers -------------------------------------------------------------------
 # ctx.download hands files to the app's own downloads: they appear in its transfer
 # list, land in the user's Downloads folder (here in a "MegaExplorer Sample"
 # folder below it) and carry on after the plugin exits. ctx.upload and
-# ctx.create_folder wait for the result and return the new Item. Both upload-text
-# and create-folder work in the selected folder, or the one holding the selected
-# file. A name already taken gets " (2)" ("rename"), so neither ever collides.
+# ctx.create_folder wait for the result and return the new Item. Both work in the
+# selected folder, or the one holding the selected file. A name already taken
+# gets " (2)" ("rename"), so neither ever collides.
 
 
-@plugin.command("download-selected")
-def download_selected(ctx):
-    files = [item for item in ctx.items if item.is_file]
-    result = ctx.download(files, sub_path="MegaExplorer Sample")
+@plugin.command("download")
+def download(ctx):
+    result = ctx.download(ctx.items, sub_path="MegaExplorer Sample")
     return f"Queued {result['queued']} download(s), skipped {result['skipped']}"
 
 
@@ -199,7 +225,7 @@ def upload_text(ctx):
         item = ctx.upload(folder, path, name=f"sample-{stamp:%Y%m%d-%H%M%S}.txt")
     finally:
         os.remove(path)
-    return f"Uploaded {item.name} to {item.path}"
+    return f"Uploaded {item.path}"
 
 
 @plugin.command("create-folder")
@@ -212,80 +238,46 @@ def create_folder(ctx):
 
 # --- Asking the user ------------------------------------------------------------
 # ctx.confirm waits until the user answers: True for OK. danger=True makes OK red
-# and focuses Cancel. Returning None on Cancel ends the run without a toast.
+# and focuses Cancel; title and ok_label replace the plugin's name and "OK".
+# Returning None on Cancel ends the run without a toast.
 
 
-@plugin.command("show-confirm")
-def show_confirm(ctx):
-    if not ctx.confirm(f"Count the {len(ctx.items)} selected item(s)?"):
-        return None
-    return f"{len(ctx.items)} item(s)"
-
-
-@plugin.command("show-confirm-danger")
-def show_confirm_danger(ctx):
+@plugin.command("ask-first")
+def ask_first(ctx):
     names = ", ".join(item.name for item in ctx.items[:3])
+    if len(ctx.items) > 3:
+        names += f" and {len(ctx.items) - 3} more"
     if not ctx.confirm(f"Pretend to delete {names}? Nothing is changed.",
-                       title="Delete for real?", ok_label="Delete", danger=True):
+                       title="Delete?", ok_label="Delete", danger=True):
         return None
     return "Pretended to delete them (nothing was changed)"
 
 
 # --- Progress and cancel --------------------------------------------------------
-# "progress": true opens a progress dialog once the command has run for 300 ms
-# (so finish-quickly never shows one). ctx.progress(current, total, message)
-# draws "12 / 40"; without a total the bar just moves. ctx.check_cancelled()
-# raises once the user pressed Cancel, and the helper reports the command as
-# cancelled (no toast). ignore-cancel never checks: after 10 s the dialog offers
-# Force quit, which kills it. With "result": "dialog" as well, the progress dialog's
-# row turns into the result when the command ends, instead of a toast.
+# "progress": true opens a progress dialog once the command has run for 300 ms, so
+# a quick command never flashes one. ctx.progress(message=...) alone keeps the bar
+# moving without a count; with current and total it draws "12 / 20". Send it as
+# often as you like. ctx.check_cancelled() raises once the user pressed Cancel,
+# and the helper reports the command as cancelled (no toast). With
+# "result": "dialog" as well, the dialog's row turns into the result at the end.
 
 
-@plugin.command("show-progress")
-def show_progress(ctx):
-    total = 40
-    for i in range(total):
+@plugin.command("long-task")
+def long_task(ctx):
+    for second in range(3, 0, -1):
         ctx.check_cancelled()
-        ctx.progress(i, total, f"step {i + 1}")
-        time.sleep(0.25)
-    ctx.progress(total, total)
-    return f"Counted to {total}"
-
-
-@plugin.command("show-progress-then-result")
-def show_progress_then_result(ctx):
-    total = 12
+        ctx.progress(message=f"Preparing, {second} s left (no total yet)")
+        time.sleep(1)
+    total = 20
     lines = []
     for i in range(total):
         ctx.check_cancelled()
         ctx.progress(i, total, f"step {i + 1}")
         time.sleep(0.25)
-        lines.append(f"step {i + 1}: {'ok' if i % 5 else 'skipped'}")
+        lines.append(f"step {i + 1}: {'skipped' if i % 5 == 0 else 'ok'}")
     ctx.progress(total, total)
     skipped = sum(line.endswith("skipped") for line in lines)
     return "\n".join([f"Done {total - skipped} of {total} steps ({skipped} skipped)", ""] + lines)
-
-
-@plugin.command("show-progress-no-total")
-def show_progress_no_total(ctx):
-    for i in range(6):
-        ctx.check_cancelled()
-        ctx.progress(message=f"{6 - i} second(s) left")
-        time.sleep(1)
-    return "Done without a total"
-
-
-@plugin.command("finish-quickly")
-def finish_quickly(ctx):
-    return "Finished at once"
-
-
-@plugin.command("ignore-cancel")
-def ignore_cancel(ctx):
-    for i in range(60):
-        ctx.progress(i, 60, "ignoring Cancel on purpose")
-        time.sleep(1)
-    return "Finished, cancel or not"
 
 
 plugin.run()

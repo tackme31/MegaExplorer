@@ -7,29 +7,20 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 
 | Menu row | Demonstrates |
 | --- | --- |
-| Show a toast | The selection the app hands over (`ctx.items`), a returned string as a toast, `print()` going to the app's log |
-| Show an error | `CommandError` as an error toast |
-| Show a result dialog | `"result": "dialog"`: a long, multi-line result in a dialog |
-| Show an error in the result dialog | The same for an error: first line as the summary, the rest only in the dialog |
-| Read details (items.get) | `ctx.get`: an item's current state |
-| Count the folder (items.children) | `ctx.children`: a folder's children, page by page |
-| Count everything below (items.descendants) | `ctx.descendants`: everything below a folder |
-| Fetch previews (items.fetchPreview, files only) | `ctx.fetch_preview`, `NoPreview`, deleting the file once read; `"when": {"targets": "files"}` |
-| Tag with the extension (items.update, images only) | `ctx.update(tags_add=...)`; `"when"` with `extensions` |
-| Clear tags (items.update) | `ctx.update(tags_remove=...)` |
-| Add to favourites (items.update) | `ctx.update(favourite=True)`; the view re-reads after a change |
-| Download (transfers.download, files only) | `ctx.download`: the app's own downloads, into `Downloads\MegaExplorer Sample` |
+| Show the selection | The selection the app hands over (`ctx.items`), a returned string as a toast, `print()` going to the app's log |
+| Fail with an error | `CommandError` as an error toast |
+| Show a long result | `"result": "dialog"`: a long, multi-line result in a dialog |
+| Inspect (items.get / children / descendants) | `ctx.get_many`, `ctx.children` and `ctx.descendants` page by page; a folder's counts |
+| Fetch previews (items.fetchPreview, images and videos) | `ctx.fetch_preview`, `NoPreview`, deleting the file once read; `"when"` with `extensions` |
+| Read a file (items.readRange / fetchFile) | `ctx.read_range` to sniff the file type from its first bytes, `ctx.fetch_file` for the whole file; `"when": {"targets": "files"}` |
+| Toggle the "sample" tag (items.update) | `ctx.update` adding or removing a tag and the favourite flag; running it again undoes it |
+| Download (transfers.download) | `ctx.download`: the app's own downloads, into `Downloads\MegaExplorer Sample` |
 | Upload a text file here (items.upload) | `ctx.upload`: a generated text file into the selected folder (or the file's folder) |
 | Create a folder here (items.createFolder) | `ctx.create_folder` with a dated name and `on_conflict="rename"` |
-| Show confirm | `ctx.confirm`: asking first, stopping quietly on Cancel |
-| Show confirm (danger) | `danger=True`, `title`, `ok_label` |
-| Show progress | `"progress": true`, `ctx.progress` with a total, Cancel (`ctx.check_cancelled`) |
-| Show progress, then the result in the dialog | `"progress": true` with `"result": "dialog"`: the progress row turns into the result |
-| Show progress without a total | `ctx.progress` with only a message |
-| Finish before the progress dialog | A quick command never flashes the dialog |
-| Ignore Cancel (Force quit) | A plugin that ignores Cancel: Force quit after 10 s |
+| Ask first (ui.confirm) | `ctx.confirm` with `danger`, `title` and `ok_label`; stopping quietly on Cancel |
+| Long task (ui.progress, Cancel) | `"progress": true`: a bar without a total, then `n / total`; Cancel (`ctx.check_cancelled`); the row turning into the result (`"result": "dialog"`) |
 
-The "items.update", upload and folder rows change the real account (there is no undo): try them on a test
+The "Toggle", upload and folder rows change the real account (there is no undo): try them on a test
 folder.
 
 ## Trying it
