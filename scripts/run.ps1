@@ -105,7 +105,9 @@ Write-Host "preset $buildPreset ($configuration) -> build/$configurePreset" -For
 # --------------------------------------------------------------- close the app
 # A running MegaExplorer.exe holds its own .exe open; the link dies LNK1104.
 if (-not $NoBuild) {
-    $running = Get-Process -Name MegaExplorer -ErrorAction SilentlyContinue
+    # Only the exe this script builds: a released copy the user is working in shares the name.
+    $running = Get-Process -Name MegaExplorer -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and ($_.Path -eq (Resolve-Path -LiteralPath $exePath -ErrorAction SilentlyContinue).Path) }
     if ($running) {
         $running | Stop-Process -Force
         $running | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue

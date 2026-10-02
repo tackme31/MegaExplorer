@@ -49,24 +49,30 @@ step() { printf '[ok] %-12s %ss\n' "$1" "$2"; }
 # ------------------------------------------------------------- 1. close ours
 # A running MegaExplorer.exe or megatool.exe holds its own .exe open and the
 # link dies with LNK1104, which would stall an unattended cycle.
-# No `tasklist | grep`: under `set -o pipefail` a SIGPIPE'd tasklist makes the
-# pipeline non-zero even when grep matched, which would read as "not running".
-# MSYS grep also aborts on a here-string, so the match is done in bash itself.
-running() {
-    local out
-    out=$(tasklist //FI "IMAGENAME eq $1" 2>/dev/null) || return 1
-    [[ ${out,,} == *"${1,,}"* ]]
+# Matched by full path under the Debug output this script builds, never by
+# image name: `taskkill /IM` also killed a released copy the user was working
+# in, and the plugin run inside it.
+OUR_EXE_DIR=$(cygpath -w "$PWD/$BUILD_DIR/Debug")
+
+our_pids() {
+    powershell.exe -NoProfile -NonInteractive -Command \
+        "Get-Process -Name '${1%.exe}' -ErrorAction SilentlyContinue |
+         Where-Object { \$_.Path -and \$_.Path.StartsWith('$OUR_EXE_DIR\', [StringComparison]::OrdinalIgnoreCase) } |
+         ForEach-Object { \$_.Id }" 2>/dev/null | tr -d '\r'
 }
 
 close_exe() {
-    local name=$1
-    running "$name" || return 0
-    taskkill //IM "$name" //F >/dev/null 2>&1
+    local name=$1 pids pid
+    pids=$(our_pids "$name")
+    [ -n "$pids" ] || return 0
+    for pid in $pids; do
+        taskkill //PID "$pid" //F >/dev/null 2>&1
+    done
     for _ in 1 2 3 4 5 6 7 8 9 10; do
-        running "$name" || break
+        [ -n "$(our_pids "$name")" ] || break
         sleep 1
     done
-    if running "$name"; then
+    if [ -n "$(our_pids "$name")" ]; then
         fail "$name is still running and could not be killed; the link would hit LNK1104. Report this and stop the cycle."
     fi
     echo "[ok] closed running $name"
