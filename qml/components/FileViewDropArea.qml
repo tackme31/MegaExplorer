@@ -96,6 +96,10 @@ DropArea {
     // typed QObject, so every field access through it is an unchecked dynamic
     // lookup.
     function updateNodeDropTarget() {
+        if (root.navController.searchActive) {
+            root.clearDropTarget();
+            return;
+        }
         const row = root.rowAtPos(root.lastDragPos);
         const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 
@@ -116,6 +120,14 @@ DropArea {
 
     function updateDropTarget(drag) {
         root.lastDragPos = Qt.point(drag.x, drag.y);
+        // A search listing takes no drop at all: its rows come from many folders, and
+        // the background fell back to the searched folder, which is not where the
+        // dragged rows were seen to be.
+        if (root.navController.searchActive) {
+            root.clearDropTarget();
+            drag.accepted = false;
+            return;
+        }
         const row = root.rowAtPos(Qt.point(drag.x, drag.y));
         const entry = row < 0 ? ({}) : root.navController.fileListModel.entryAt(row);
 

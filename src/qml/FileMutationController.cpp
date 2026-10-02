@@ -571,12 +571,15 @@ void FileMutationController::moveEntriesTo(const QVariantList& entries,
                                            bool targetIsRoot)
 {
     // A drag started in this tab, so this tab is where the nodes came from --
-    // read *now*, because a refresh mid-batch could in principle move it.
+    // read *now*, because a refresh mid-batch could in principle move it. A search
+    // listing's rows come from many folders, so it names none, as favourites do:
+    // otherwise the move's Undo would send them all to the searched folder.
+    const bool fromSearch = mNavigation->searchActive();
     moveEntriesFrom(ClipboardController::toNodeRefs(entries),
                     target,
                     targetIsRoot,
-                    mNavigation->currentHandle(),
-                    mNavigation->atRoot(),
+                    fromSearch ? 0 : mNavigation->currentHandle(),
+                    fromSearch ? false : mNavigation->atRoot(),
                     MoveConflict::Ask);
 }
 
@@ -753,8 +756,15 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
     // locations (favourites, recents, the bin's own top), which carry handle 0 and
     // are not somewhere a node can be moved back to. A Rename answer is not undone:
     // the name it picked stays, only the folder goes back.
+    //
+    // The Cloud Drive root carries handle 0 too, with isRoot set, and can be moved
+    // back to. The bin's top reports itself the same way, so it is told apart by this
+    // tab's view: only a drag starts there (Cut is Cloud Drive only), and a drag's
+    // batch runs on the tab it started from.
+    const bool sourceIsBinTop = source == 0 && sourceIsRoot && mNavigation->atRoot() &&
+                                mNavigation->viewKind() == static_cast<int>(ViewKind::Rubbish);
     QVariantMap undo;
-    if (source != 0)
+    if (source != 0 || (sourceIsRoot && !sourceIsBinTop))
     {
         undo.insert(QStringLiteral("action"), QStringLiteral("move"));
         undo.insert(QStringLiteral("entries"), ClipboardController::toVariantList(issued));
@@ -858,7 +868,9 @@ void FileMutationController::moveSkippingExisting(const QVariantList& entries,
 
 bool FileMutationController::canPaste() const
 {
-    if (!mNavigation->isLoaded())
+    // A search listing holds matches from many folders, so "here" is not where the
+    // user sees the pasted nodes land: it is the searched folder.
+    if (!mNavigation->isLoaded() || mNavigation->searchActive())
         return false;
     const quint64 here = mNavigation->currentHandle();
     const bool hereIsRoot = mNavigation->atRoot();
@@ -887,7 +899,7 @@ void FileMutationController::paste()
 {
     // Ctrl+V is reachable before the first listing has loaded, and canPaste() greys
     // out both clipboard cases -- nothing to report in any of them.
-    if (!mNavigation->isLoaded() || !mClipboard->hasContent())
+    if (!mNavigation->isLoaded() || !mClipboard->hasContent() || mNavigation->searchActive())
         return;
 
     const quint64 target = mNavigation->currentHandle();
