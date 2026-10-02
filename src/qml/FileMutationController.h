@@ -119,6 +119,11 @@ public:
     // user to find it (IMegaClient::getRestoreTarget).
     Q_INVOKABLE void restoreHandles(const QVariantList& handles);
 
+    // A moveHandlesToRubbish toast's Undo: restoreHandles, reported under
+    // "undoRestore" so a full success says nothing. A fallback to the Cloud Drive
+    // root still reports as "restoreToRoot", since the nodes are not where they were.
+    Q_INVOKABLE void undoMoveToRubbish(const QVariantList& handles);
+
     // Destroys the nodes outright, for the Rubbish bin screen. Irreversible, so the
     // caller confirms first; same handles-not-selection contract as
     // moveHandlesToRubbish above, and for the same reason.
@@ -228,8 +233,8 @@ public:
 
     // A move toast's Undo: groups is the payload's list of {target, targetIsRoot,
     // toRubbish, entries}, one per folder the nodes came from, issued as one batch
-    // so it reports as one operation. No name check -- each node goes back to the
-    // folder it left, like the moveIgnoringExisting this replaced.
+    // under "undoMove", which offers no Undo of its own and says nothing on full
+    // success. No name check -- each node goes back to the folder it left.
     Q_INVOKABLE void undoMove(const QVariantList& groups);
 
 signals:
@@ -442,10 +447,12 @@ private:
         std::string newName;
     };
 
-    // Issues plan as one batch. Each node's current folder is read first and
-    // becomes the batch's Undo, grouped by folder; it is withheld if any of them
-    // cannot be read, since that node would have nowhere to go back to.
-    void issueMoveBatch(const std::vector<PlannedMove>& plan);
+    // Issues plan as one batch. Each node's current folder is read first and,
+    // unless asUndo, becomes the batch's Undo, grouped by folder; it is withheld if
+    // any of them cannot be read, since that node would have nowhere to go back to.
+    void issueMoveBatch(const std::vector<PlannedMove>& plan, bool asUndo);
+
+    void restore(const QVariantList& handles, bool asUndo);
 
     // One planned move, settling the batch exactly once. newName empty keeps the
     // node's name, which is every case but the dialog's Rename answer.

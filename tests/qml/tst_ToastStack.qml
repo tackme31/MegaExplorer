@@ -228,6 +228,41 @@ TestCase {
     function test_describeOperation_data() {
         return [
                     {
+                        tag: "undoMove/all",
+                        context: "undoMove",
+                        ok: 3,
+                        failed: 0,
+                        expected: ""
+                    },
+                    {
+                        tag: "undoMove/none",
+                        context: "undoMove",
+                        ok: 0,
+                        failed: 3,
+                        expected: "Failed to move back 3 item(s)"
+                    },
+                    {
+                        tag: "undoMove/partial",
+                        context: "undoMove",
+                        ok: 2,
+                        failed: 1,
+                        expected: "Moved back 2 item(s), 1 failed"
+                    },
+                    {
+                        tag: "undoRestore/all",
+                        context: "undoRestore",
+                        ok: 3,
+                        failed: 0,
+                        expected: ""
+                    },
+                    {
+                        tag: "undoRestore/partial",
+                        context: "undoRestore",
+                        ok: 2,
+                        failed: 1,
+                        expected: "Restored 2 item(s), 1 failed"
+                    },
+                    {
                         tag: "move/all",
                         context: "move",
                         ok: 3,

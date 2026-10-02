@@ -409,6 +409,36 @@ TEST_F(FileMutationControllerTest, RestoreSendsEachNodeToItsRecordedFolder)
     EXPECT_EQ(lastFailed, 0);
 }
 
+TEST_F(FileMutationControllerTest, UndoMoveToRubbishReportsUnderItsOwnContext)
+{
+    // The toast stays silent on "undoRestore" success; a fallback to the root
+    // still says so, since the node is not where it was.
+    givenRootListing({});
+    controller->loadRoot();
+    flush();
+
+    EXPECT_CALL(*client, getRestoreTarget(5u))
+        .WillRepeatedly(Return(Result<RestoreTarget>::ok(RestoreTarget{40, false, false})));
+    EXPECT_CALL(*client, moveNode(5u, 40u, false, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->undoMoveToRubbish(QVariantList{QVariant(quint64(5))});
+    flush();
+
+    EXPECT_EQ(lastContext, QStringLiteral("undoRestore"));
+    EXPECT_EQ(lastSucceeded, 1);
+
+    EXPECT_CALL(*client, getRestoreTarget(6u))
+        .WillRepeatedly(Return(Result<RestoreTarget>::ok(RestoreTarget{0, true, true})));
+    EXPECT_CALL(*client, moveNode(6u, 0u, true, "", _))
+        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+
+    mutations->undoMoveToRubbish(QVariantList{QVariant(quint64(6))});
+    flush();
+
+    EXPECT_EQ(lastContext, QStringLiteral("restoreToRoot"));
+}
+
 TEST_F(FileMutationControllerTest, RestoreFallsBackToTheRootAndSaysSoWhenTheFolderIsGone)
 {
     // The wording is the whole point of carrying fellBackToRoot up: the node lands
@@ -801,14 +831,10 @@ TEST_F(FileMutationControllerTest, UndoMoveIssuesEveryGroupAsOneBatch)
     flush();
 
     EXPECT_EQ(operationCalls, 1);
-    EXPECT_EQ(lastContext, QStringLiteral("move"));
+    EXPECT_EQ(lastContext, QStringLiteral("undoMove"));
     EXPECT_EQ(lastSucceeded, 3);
-    // Undoing the Undo puts them all back where the first move had sent them.
-    const QVariantList redo = lastUndo.value(QStringLiteral("groups")).toList();
-    ASSERT_EQ(static_cast<int>(redo.size()), 1);
-    EXPECT_EQ(redo.first().toMap().value(QStringLiteral("target")).toULongLong(), 99u);
-    EXPECT_EQ(static_cast<int>(redo.first().toMap().value(QStringLiteral("entries")).toList().size()),
-              3);
+    // An Undo is not itself undone.
+    EXPECT_TRUE(lastUndo.isEmpty());
 }
 
 TEST_F(FileMutationControllerTest, PasteIsRefusedInSearchResults)

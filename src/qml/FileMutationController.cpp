@@ -513,6 +513,16 @@ void FileMutationController::emptyRubbishBin()
 
 void FileMutationController::restoreHandles(const QVariantList& handles)
 {
+    restore(handles, false);
+}
+
+void FileMutationController::undoMoveToRubbish(const QVariantList& handles)
+{
+    restore(handles, true);
+}
+
+void FileMutationController::restore(const QVariantList& handles, bool asUndo)
+{
     if (handles.isEmpty())
         return;
 
@@ -538,7 +548,8 @@ void FileMutationController::restoreHandles(const QVariantList& handles)
 
     if (restores.empty())
     {
-        mNotifications->notifyOperation(QStringLiteral("restore"), 0, unresolvable);
+        mNotifications->notifyOperation(
+            asUndo ? QStringLiteral("undoRestore") : QStringLiteral("restore"), 0, unresolvable);
         return;
     }
 
@@ -551,7 +562,9 @@ void FileMutationController::restoreHandles(const QVariantList& handles)
     // resolved are settled as failures below so the tally still adds up to what the
     // user asked for. Only this tab is refreshed -- the destinations are per node
     // and a restore is rare enough not to justify a fan-out to the other tabs.
-    auto batch = mBulk.start(anyFellBackToRoot ? "restoreToRoot" : "restore",
+    auto batch = mBulk.start(anyFellBackToRoot ? "restoreToRoot"
+                             : asUndo          ? "undoRestore"
+                                               : "restore",
                              static_cast<int>(handles.size()));
 
     for (int i = 0; i < unresolvable; ++i)
@@ -719,7 +732,7 @@ void FileMutationController::startMoveBatch(const std::vector<NodeRef>& entries,
         return;
 
     clearClipboardIfSpentBy(entries);
-    issueMoveBatch(plan);
+    issueMoveBatch(plan, false);
 }
 
 void FileMutationController::undoMove(const QVariantList& groups)
@@ -737,10 +750,10 @@ void FileMutationController::undoMove(const QVariantList& groups)
             plan.push_back({entry, to, std::string()});
     }
     if (!plan.empty())
-        issueMoveBatch(plan);
+        issueMoveBatch(plan, true);
 }
 
-void FileMutationController::issueMoveBatch(const std::vector<PlannedMove>& plan)
+void FileMutationController::issueMoveBatch(const std::vector<PlannedMove>& plan, bool asUndo)
 {
     // Every origin is read before the first move is issued, while each node is
     // still where the user picked it from.
@@ -774,7 +787,7 @@ void FileMutationController::issueMoveBatch(const std::vector<PlannedMove>& plan
     }
 
     QVariantMap undo;
-    if (everyOriginKnown)
+    if (everyOriginKnown && !asUndo)
     {
         QVariantList groups;
         for (const Group& group : origins)
@@ -808,7 +821,7 @@ void FileMutationController::issueMoveBatch(const std::vector<PlannedMove>& plan
     }
 
     auto batch = mBulk.start(
-        "move",
+        asUndo ? "undoMove" : "move",
         static_cast<int>(plan.size()),
         {},
         [this, folders](int succeeded, int) {

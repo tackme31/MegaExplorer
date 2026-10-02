@@ -252,6 +252,24 @@ Item {
                 text = qsTr("Moved %1 item(s), %2 failed").arg(succeeded).arg(failed);
             break;
             // A cut-paste reports under "move" above, not here: it *is* a move.
+            // The two Undo contexts stay silent when everything went back: the user
+            // just asked for it and sees the rows return.
+        case "undoMove":
+            if (failed === 0)
+                break;
+            if (succeeded === 0)
+                text = qsTr("Failed to move back %1 item(s)").arg(failed);
+            else
+                text = qsTr("Moved back %1 item(s), %2 failed").arg(succeeded).arg(failed);
+            break;
+        case "undoRestore":
+            if (failed === 0)
+                break;
+            if (succeeded === 0)
+                text = qsTr("Failed to restore %1 item(s)").arg(failed);
+            else
+                text = qsTr("Restored %1 item(s), %2 failed").arg(succeeded).arg(failed);
+            break;
         case "copy":
             if (failed === 0)
                 text = qsTr("Copied %1 item(s)").arg(succeeded);
@@ -363,7 +381,7 @@ Item {
         if (!mutations)
             return;
         if (undo.action === "restore")
-            mutations.restoreHandles(undo.handles);
+            mutations.undoMoveToRubbish(undo.handles);
         else if (undo.action === "move")
             mutations.undoMove(undo.groups);
     }
