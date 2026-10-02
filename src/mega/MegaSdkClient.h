@@ -230,6 +230,8 @@ public:
     Result<std::uint64_t> subtreeSize(std::uint64_t handle, bool isRoot) const override;
     Result<NodeSnapshot> getNodeSnapshot(std::uint64_t handle) const override;
     Result<std::vector<NodeSnapshot>> getChildSnapshots(std::uint64_t handle) const override;
+    void listDescendants(std::uint64_t handle,
+                         std::function<void(Result<std::vector<DescendantNode>>)> onDone) override;
     std::string handleToBase64(std::uint64_t handle) const override;
     Result<std::uint64_t> base64ToHandle(const std::string& base64) const override;
 
@@ -277,6 +279,8 @@ private:
     // out. Idle painting and input do not, which is the case this is for.
     void runOffThread(std::function<Result<std::vector<FileEntry>>()> work,
                       std::function<void(Result<std::vector<FileEntry>>)> onDone);
+    template <typename T>
+    void runOffThreadAs(std::function<Result<T>()> work, std::function<void(Result<T>)> onDone);
 
     // Declared before mApi so it is destroyed last, which is what lets the SDK's own
     // teardown lines reach the log. It does not help at startup: registration happens

@@ -64,7 +64,9 @@ public:
         // The run's own folder for fetched files; created on first use.
         QString tempDir;
         // items.descendants listings, fixed at their first page; a cursor indexes one.
-        std::vector<std::vector<std::uint64_t>> listings;
+        // Shared so a subtree walk that ends after the run is gone has nothing to write to.
+        std::shared_ptr<std::vector<std::vector<std::uint64_t>>> listings =
+            std::make_shared<std::vector<std::vector<std::uint64_t>>>();
         std::shared_ptr<TransferQueue> transfers;
     };
 
@@ -75,7 +77,7 @@ public:
     static void abandonTransfers(RunState& run);
 
     // done always runs on guiContext's thread: in-stack for the in-memory reads,
-    // later for anything that goes to the server. run is only touched before
+    // later for anything that goes to the server or walks a whole subtree. run is only touched before
     // call returns.
     void call(const QString& method, const QJsonObject& params, RunState& run, const Done& done) const;
 
@@ -86,7 +88,7 @@ public:
 private:
     Reply itemsGet(const QJsonObject& params) const;
     Reply itemsChildren(const QJsonObject& params) const;
-    Reply itemsDescendants(const QJsonObject& params, RunState& run) const;
+    void itemsDescendants(const QJsonObject& params, RunState& run, const Done& done) const;
     void itemsUpdate(const QJsonObject& params, const Done& done) const;
     void itemsFetchPreview(const QJsonObject& params, const QString& tempDir, const Done& done) const;
     void itemsFetchFile(const QJsonObject& params, RunState& run, const Done& done) const;

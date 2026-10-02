@@ -33,7 +33,7 @@
 //        getRubbishChildren/getPath/getNodeInfo run it synchronously on the
 //        calling thread, always -- they too are in-memory reads.
 //        FolderNavigationService's lock-free design rests on this.
-//      - search/listFavourites/listRecent are the in-memory reads that do not:
+//      - search/listFavourites/listRecent/listDescendants are the in-memory reads that do not:
 //        each walks a whole subtree, so the work happens on a worker and
 //        onDone arrives back on the thread that constructed the implementation
 //        -- the app's main thread -- in a later turn of its event loop. Same
@@ -505,6 +505,11 @@ public:
     virtual Result<NodeSnapshot> getNodeSnapshot(std::uint64_t handle) const = 0;
     // A folder's direct children in the SDK's default order. Fails on a file.
     virtual Result<std::vector<NodeSnapshot>> getChildSnapshots(std::uint64_t handle) const = 0;
+    // Every node under a folder, depth-first with each folder before its contents,
+    // children in getChildSnapshots' order. Not in-stack: it walks the whole subtree,
+    // so it is delivered as search() is. kENoEnt for a missing node, kEArgs for a file.
+    virtual void listDescendants(std::uint64_t handle,
+                                 std::function<void(Result<std::vector<DescendantNode>>)> onDone) = 0;
     virtual std::string handleToBase64(std::uint64_t handle) const = 0;
     // Fails on anything that is not a well-formed node handle.
     virtual Result<std::uint64_t> base64ToHandle(const std::string& base64) const = 0;

@@ -31,3 +31,11 @@ struct NodeSnapshot
                description == other.description && tags == other.tags;
     }
 };
+
+// What a whole-subtree listing keeps per node: building a full NodeSnapshot costs a
+// path walk to the root each.
+struct DescendantNode
+{
+    std::uint64_t handle = 0;
+    bool isFolder = false;
+};

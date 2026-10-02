@@ -639,18 +639,21 @@ void MegaSdkClient::search(std::uint64_t ancestorHandle,
 void MegaSdkClient::runOffThread(std::function<Result<std::vector<FileEntry>>()> work,
                                  std::function<void(Result<std::vector<FileEntry>>)> onDone)
 {
+    runOffThreadAs<std::vector<FileEntry>>(std::move(work), std::move(onDone));
+}
+
+template <typename T>
+void MegaSdkClient::runOffThreadAs(std::function<Result<T>()> work, std::function<void(Result<T>)> onDone)
+{
     mListingPool->start([this, work = std::move(work), onDone = std::move(onDone)]() mutable {
-        Result<std::vector<FileEntry>> result =
-            mShuttingDown
-                ? Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode)
-                : work();
+        Result<T> result = mShuttingDown ? Result<T>::fail(kShutDownMessage, kClientShutDownCode) : work();
         // Re-checked after work(): a walk cut short by mListingCancelToken hands back a
         // truncated node list through the ordinary return, with no error channel of its
         // own, so without this a cancelled listing is indistinguishable from a complete
         // one. Today nothing drains the queue past shutdown(), but that is a property of
         // main.cpp's ordering, not of this class.
         if (mShuttingDown)
-            result = Result<std::vector<FileEntry>>::fail(kShutDownMessage, kClientShutDownCode);
+            result = Result<T>::fail(kShutDownMessage, kClientShutDownCode);
         // The posted call deliberately captures nothing of `this`: shutdown() waits
         // for the worker but cannot un-post an event already in the queue.
         QMetaObject::invokeMethod(
@@ -1797,6 +1800,48 @@ Result<std::vector<NodeSnapshot>> MegaSdkClient::getChildSnapshots(std::uint64_t
             snapshots.push_back(nodeToSnapshot(*mApi, children->get(i)));
     }
     return Result<std::vector<NodeSnapshot>>::ok(std::move(snapshots));
+}
+
+void MegaSdkClient::listDescendants(std::uint64_t handle,
+                                    std::function<void(Result<std::vector<DescendantNode>>)> onDone)
+{
+    if (mShuttingDown)
+    {
+        onDone(Result<std::vector<DescendantNode>>::fail(kShutDownMessage, kClientShutDownCode));
+        return;
+    }
+    runOffThreadAs<std::vector<DescendantNode>>(
+        [this, handle]() -> Result<std::vector<DescendantNode>> {
+            std::unique_ptr<mega::MegaNode> root = resolveNode(handle, false);
+            if (!root)
+                return Result<std::vector<DescendantNode>>::fail("No node with the given handle",
+                                                          MegaErrorCode::kENoEnt);
+            if (!root->isFolder())
+                return Result<std::vector<DescendantNode>>::fail("Not a folder", MegaErrorCode::kEArgs);
+
+            std::vector<DescendantNode> nodes;
+            // Nodes still to visit, pushed in reverse so they pop in listed order.
+            std::vector<std::unique_ptr<mega::MegaNode>> pending;
+            const auto pushChildren = [this, &pending](mega::MegaNode* folder) {
+                std::unique_ptr<mega::MegaNodeList> children(
+                    mApi->getChildren(folder, mega::MegaApi::ORDER_DEFAULT_ASC));
+                if (!children)
+                    return;
+                for (int i = children->size() - 1; i >= 0; --i)
+                    pending.emplace_back(children->get(i)->copy());
+            };
+            pushChildren(root.get());
+            while (!pending.empty() && !mShuttingDown)
+            {
+                std::unique_ptr<mega::MegaNode> node = std::move(pending.back());
+                pending.pop_back();
+                nodes.push_back(DescendantNode{static_cast<std::uint64_t>(node->getHandle()), node->isFolder()});
+                if (node->isFolder())
+                    pushChildren(node.get());
+            }
+            return Result<std::vector<DescendantNode>>::ok(std::move(nodes));
+        },
+        std::move(onDone));
 }
 
 std::string MegaSdkClient::handleToBase64(std::uint64_t handle) const

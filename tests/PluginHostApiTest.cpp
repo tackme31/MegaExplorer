@@ -166,19 +166,16 @@ TEST_F(PluginHostApiTest, ItemsDescendantsListsDepthFirstFoldersBeforeTheirConte
                                                 {11, node(11, "s", true)},   {12, node(12, "b", false)},
                                                 {13, node(13, "t", true)},   {15, node(15, "c", false)},
                                                 {14, node(14, "z", false)}};
-    std::map<std::uint64_t, std::vector<std::uint64_t>> tree{{1, {10, 11, 14}}, {11, {12, 13}}, {13, {15}}};
     ON_CALL(*mClient, getNodeSnapshot(_)).WillByDefault([&nodes](std::uint64_t h) {
         const auto it = nodes.find(h);
         return it == nodes.end() ? Result<NodeSnapshot>::fail("gone", -9) : Result<NodeSnapshot>::ok(it->second);
     });
-    ON_CALL(*mClient, getChildSnapshots(_)).WillByDefault([&nodes, &tree](std::uint64_t h) {
-        if (!nodes.count(h) || !nodes.at(h).isFolder)
-            return Result<std::vector<NodeSnapshot>>::fail("Not a folder", -2);
-        std::vector<NodeSnapshot> children;
-        for (std::uint64_t child : tree[h])
-            children.push_back(nodes.at(child));
-        return Result<std::vector<NodeSnapshot>>::ok(children);
-    });
+    // The client's own walk order, which the listing keeps.
+    ON_CALL(*mClient, listDescendants(1, _))
+        .WillByDefault([](std::uint64_t, std::function<void(Result<std::vector<DescendantNode>>)> onDone) {
+            onDone(Result<std::vector<DescendantNode>>::ok(
+                {{10, false}, {11, true}, {12, false}, {13, true}, {15, false}, {14, false}}));
+        });
 
     const PluginHostApi::Reply all =
         call(QStringLiteral("items.descendants"), {{QStringLiteral("handle"), QStringLiteral("h1")}});
@@ -194,10 +191,8 @@ TEST_F(PluginHostApiTest, ItemsDescendantsListsDepthFirstFoldersBeforeTheirConte
     const QString cursor = first.result.toObject().value(QStringLiteral("nextCursor")).toString();
     ASSERT_FALSE(cursor.isEmpty());
 
-    // The listing was fixed by the first page: a file added later is not in it, and
-    // one deleted since is skipped, so this page comes up one short.
-    nodes.emplace(16, node(16, "new", false));
-    tree[1].push_back(16);
+    // The listing was fixed by the first page: a node deleted since is skipped, so
+    // this page comes up one short.
     nodes.erase(15);
     QJsonObject nextParams = filesParams;
     nextParams.insert(QStringLiteral("cursor"), cursor);
@@ -209,13 +204,17 @@ TEST_F(PluginHostApiTest, ItemsDescendantsListsDepthFirstFoldersBeforeTheirConte
 
 TEST_F(PluginHostApiTest, ItemsDescendantsRejectsAFileAndAForeignCursor)
 {
-    EXPECT_CALL(*mClient, getNodeSnapshot(7))
-        .WillRepeatedly(Return(Result<NodeSnapshot>::ok(node(7, "cat.jpg", false))));
-    EXPECT_CALL(*mClient, getChildSnapshots(7))
-        .WillRepeatedly(Return(Result<std::vector<NodeSnapshot>>::fail("Not a folder", -2)));
+    ON_CALL(*mClient, listDescendants(_, _))
+        .WillByDefault([](std::uint64_t h, std::function<void(Result<std::vector<DescendantNode>>)> onDone) {
+            onDone(Result<std::vector<DescendantNode>>::fail(
+                "", h == 7 ? MegaErrorCode::kEArgs : MegaErrorCode::kENoEnt));
+        });
     EXPECT_EQ(call(QStringLiteral("items.descendants"), {{QStringLiteral("handle"), QStringLiteral("h7")}})
                   .errorCode,
               -32602);
+    EXPECT_EQ(call(QStringLiteral("items.descendants"), {{QStringLiteral("handle"), QStringLiteral("h8")}})
+                  .errorCode,
+              PluginHostApi::kItemNotFound);
     // No listing was ever started in this run, so no cursor can be valid.
     EXPECT_EQ(call(QStringLiteral("items.descendants"),
                    {{QStringLiteral("handle"), QStringLiteral("h7")}, {QStringLiteral("cursor"), QStringLiteral("0:0")}})
