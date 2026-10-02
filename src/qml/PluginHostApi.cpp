@@ -1147,6 +1147,11 @@ PluginHostApi::Reply PluginHostApi::transfersDownload(const QJsonObject& params)
         const QString name = QString::fromStdString(plan.node.name);
         const QString path = QDir::toNativeSeparators(
             QDir(plan.dir).filePath(QString::fromStdString(DownloadService::safeLocalFileName(plan.node.name))));
+        if (mDownloads.isQueued && mDownloads.isQueued(plan.node.handle))
+        {
+            ++skipped;
+            continue;
+        }
         // "rename" needs nothing here: the download itself suffixes " (1)".
         if (QFileInfo::exists(path))
         {

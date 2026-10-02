@@ -208,7 +208,8 @@ int main(int argc, char* argv[])
             QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
             [&downloadController](std::uint64_t handle, const QString& name, std::uint64_t sizeBytes, const QString& path) {
                 return downloadController.enqueueDownload(handle, name, sizeBytes, path);
-            }});
+            },
+            [&downloadController](std::uint64_t handle) { return downloadController.isDownloadQueued(handle); }});
     PropertiesController propertiesController(nodeDetailsService);
     TransferListModel transferListModel(&downloadController, &uploadController);
 

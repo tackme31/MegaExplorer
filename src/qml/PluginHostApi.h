@@ -46,6 +46,8 @@ public:
         // false when that handle is already queued.
         std::function<bool(std::uint64_t handle, const QString& name, std::uint64_t sizeBytes, const QString& path)>
             enqueue;
+        // Asked before "overwrite" trashes the local file, so a skipped item leaves it alone.
+        std::function<bool(std::uint64_t handle)> isQueued;
     };
 
     // guiContext must live as long as the client can still call back (the app's

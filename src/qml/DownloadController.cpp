@@ -132,6 +132,11 @@ bool DownloadController::enqueueDownload(quint64 handle,
     return true;
 }
 
+bool DownloadController::isDownloadQueued(quint64 handle) const
+{
+    return mService->hasJobForHandle(static_cast<std::uint64_t>(handle));
+}
+
 void DownloadController::extractArchiveEntry(ArchiveBrowser* browser, const QString& name)
 {
     if (!browser || !mClient || !mFileSystem)

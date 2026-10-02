@@ -41,6 +41,7 @@ public:
 
     // downloadFile into an exact path, for plugins; false when the handle is already queued.
     bool enqueueDownload(quint64 handle, const QString& name, quint64 sizeBytes, const QString& destinationPath);
+    bool isDownloadQueued(quint64 handle) const;
 
     // Extracts the file row called name, in the folder browser shows, into the same
     // Downloads folder as a download. Only the leaf name is used: the archive's own

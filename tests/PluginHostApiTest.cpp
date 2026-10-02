@@ -843,3 +843,41 @@ TEST_F(PluginHostApiTest,
             -32602);
   EXPECT_EQ(queuedPaths.size(), 1u);
 }
+
+TEST_F(PluginHostApiTest, TransfersDownloadOverwriteLeavesTheFileAloneForAnAlreadyQueuedItem) {
+  ON_CALL(*mClient, getNodeSnapshot(40))
+      .WillByDefault(Return(Result<NodeSnapshot>::ok(sizedFile(40, "a.txt", 3))));
+  ON_CALL(*mClient, getNodeSnapshot(41))
+      .WillByDefault(Return(Result<NodeSnapshot>::ok(sizedFile(41, "b.txt", 3))));
+  QTemporaryDir downloads;
+  for (const char *name : {"a.txt", "b.txt"}) {
+    QFile file(QDir(downloads.path()).filePath(QString::fromLatin1(name)));
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+    file.write("old");
+  }
+  int enqueued = 0;
+  PluginHostApi api{mClient, &mGuiContext,
+                    PluginHostApi::UserDownloads{
+                        downloads.path(),
+                        [&enqueued](std::uint64_t, const QString &, std::uint64_t,
+                                    const QString &) {
+                          ++enqueued;
+                          return true;
+                        },
+                        [](std::uint64_t handle) { return handle == 40; }}};
+
+  std::optional<PluginHostApi::Reply> reply;
+  api.call(QStringLiteral("transfers.download"),
+           {{QStringLiteral("onConflict"), QStringLiteral("overwrite")},
+            {QStringLiteral("items"),
+             QJsonArray{QJsonObject{{QStringLiteral("handle"), QStringLiteral("h40")}},
+                        QJsonObject{{QStringLiteral("handle"), QStringLiteral("h41")}}}}},
+           mRun, [&reply](const PluginHostApi::Reply &r) { reply = r; });
+
+  ASSERT_TRUE(reply.has_value());
+  ASSERT_FALSE(reply->errorCode.has_value()) << reply->errorMessage.toStdString();
+  EXPECT_EQ(reply->result.toObject().value(QStringLiteral("queued")).toInt(), 1);
+  EXPECT_EQ(reply->result.toObject().value(QStringLiteral("skipped")).toInt(), 1);
+  EXPECT_EQ(enqueued, 1);
+  EXPECT_TRUE(QFile::exists(QDir(downloads.path()).filePath(QStringLiteral("a.txt"))));
+}
