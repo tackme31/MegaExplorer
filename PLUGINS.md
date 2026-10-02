@@ -15,7 +15,7 @@ fetch their previews, report progress and ask the user to confirm — it never t
 SDK, a session or a password itself.
 
 Any language works: the app only knows how to start a program and exchange JSON lines with it.
-The samples in [`plugin_sample/`](plugin_sample/) are written in Python with a small helper
+The sample in [`plugin_sample/`](plugin_sample/) is written in Python with a small helper
 library, which is the quickest way to start.
 
 **Security.** A plugin is an ordinary program running with your Windows user's rights, and through
@@ -42,7 +42,7 @@ no consent prompt: every plugin in the plugins folder is enabled. Only install p
 
 ## Quick start
 
-1. Install [uv](https://docs.astral.sh/uv/) (the samples start with `uv run`).
+1. Install [uv](https://docs.astral.sh/uv/) (the sample starts with `uv run`).
 2. Create a folder in the plugins folder (see [Developing a plugin](#developing-a-plugin) for its
    location), e.g. `plugins\hello\`, holding three files:
 
@@ -76,7 +76,7 @@ no consent prompt: every plugin in the plugins folder is enabled. Only install p
    ```
 
    `megaexplorer_plugin.py` — a copy of
-   [`plugin_sample/_helper/megaexplorer_plugin.py`](plugin_sample/_helper/megaexplorer_plugin.py).
+   [`plugin_sample/megaexplorer_plugin.py`](plugin_sample/megaexplorer_plugin.py).
 
 3. Restart MEGA Explorer, right-click a file, and pick **Hello › Count the selection**.
 
@@ -166,7 +166,7 @@ sequenceDiagram
 
 A command whose `when` rejects any item of the selection is shown **greyed out**, not hidden.
 
-The samples also carry `"manifestVersion": 1`. This version of the app does not read it.
+The sample also carries `"manifestVersion": 1`. This version of the app does not read it.
 
 ### API version
 
@@ -489,7 +489,7 @@ stdout free of anything else.
 
 ## The Python helper
 
-[`plugin_sample/_helper/megaexplorer_plugin.py`](plugin_sample/_helper/megaexplorer_plugin.py) wraps
+[`plugin_sample/megaexplorer_plugin.py`](plugin_sample/megaexplorer_plugin.py) wraps
 the protocol so that a command is a plain function. It is a convenience, not part of the protocol
 — the app does not know it exists — and it uses the standard library only. Copy it next to your
 `main.py`; each plugin carries its own copy.
@@ -543,7 +543,7 @@ plugin.run()
 `x` may be a handle string or an `Item`. `print()` is redirected to stderr, so it cannot corrupt
 the protocol stream.
 
-The samples in [`plugin_sample/`](plugin_sample/) each show one feature; its
+The sample plugin in [`plugin_sample/`](plugin_sample/) has one command per feature; its
 [README](plugin_sample/README.md) lists them.
 
 ## Not in this version

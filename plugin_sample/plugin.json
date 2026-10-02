@@ -1,0 +1,36 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.sample",
+  "name": "Sample",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
+  "commands": [
+    { "id": "show-toast", "title": "Show a toast" },
+    { "id": "show-error", "title": "Show an error" },
+    { "id": "show-result-dialog", "title": "Show a result dialog", "result": "dialog" },
+    { "id": "show-error-dialog", "title": "Show an error in the result dialog", "result": "dialog" },
+
+    { "id": "read-details", "title": "Read details (items.get)" },
+    { "id": "count-folder", "title": "Count the folder (items.children)" },
+    { "id": "count-tree", "title": "Count everything below (items.descendants)" },
+
+    { "id": "fetch-previews", "title": "Fetch previews (items.fetchPreview, files only)",
+      "when": { "targets": "files" } },
+
+    { "id": "tag-extension", "title": "Tag with the extension (items.update, images only)",
+      "when": { "targets": "files", "extensions": ["jpg", "jpeg", "png", "gif", "webp"] } },
+    { "id": "clear-tags", "title": "Clear tags (items.update)" },
+    { "id": "add-favourite", "title": "Add to favourites (items.update)" },
+
+    { "id": "show-confirm", "title": "Show confirm" },
+    { "id": "show-confirm-danger", "title": "Show confirm (danger)" },
+
+    { "id": "show-progress", "title": "Show progress", "progress": true },
+    { "id": "show-progress-then-result", "title": "Show progress, then the result in the dialog",
+      "progress": true, "result": "dialog" },
+    { "id": "show-progress-no-total", "title": "Show progress without a total", "progress": true },
+    { "id": "finish-quickly", "title": "Finish before the progress dialog", "progress": true },
+    { "id": "ignore-cancel", "title": "Ignore Cancel (Force quit)", "progress": true }
+  ]
+}

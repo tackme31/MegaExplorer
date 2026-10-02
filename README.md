@@ -95,7 +95,7 @@ running while they read it.
 Add your own commands to the right-click menu with a plugin: a separate program, in any language,
 that reads and tags your items through a small JSON-RPC API. The plugin API is experimental and
 may change in any release. [PLUGINS.md](PLUGINS.md) covers writing one, and
-[plugin_sample/](plugin_sample/) has working examples in Python.
+[plugin_sample/](plugin_sample/) has a working example in Python.
 
 ## Build
 
