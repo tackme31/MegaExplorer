@@ -293,11 +293,14 @@ when listing a large tree: it keeps every page small.
 ```json
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
   "apiVersion":1,
-  "app":{"version":"0.5.0","locale":"ja-JP"},
+  "app":{"version":"0.5.0","locale":"ja-JP","colorScheme":"dark"},
   "plugin":{"id":"com.example.hello","version":"0.1.0","dir":"C:/Users/.../plugins/hello"}}}
 ```
 
-`apiVersion` is the app's API version, the same number a compatible manifest declares. Reply
+`apiVersion` is the app's API version, the same number a compatible manifest declares.
+`app.colorScheme` is `"light"` or `"dark"`: the scheme the app is drawn in (its own theme
+setting, or the system's when it follows the system), for a plugin that opens a window of its
+own. It is left out when the system does not say. Reply
 with any result (the helper sends `{"apiVersion":1}`; the app does not read it). An error
 response aborts the run and shows its `message`. No answer within **5 minutes** kills the process
 — the limit is long because `uv` may be downloading Python and dependencies on a first run.

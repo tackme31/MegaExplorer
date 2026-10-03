@@ -4,9 +4,11 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QGuiApplication>
 #include <QJsonDocument>
 #include <QLocale>
 #include <QPointer>
+#include <QStyleHints>
 #include <QTimer>
 
 #include <memory>
@@ -226,6 +228,18 @@ void PluginRun::start()
 
     QJsonObject app{{QStringLiteral("version"), QCoreApplication::applicationVersion()},
                     {QStringLiteral("locale"), QLocale().bcp47Name()}};
+    // The scheme in effect: the settings choice or the env override, else the OS's.
+    switch (QGuiApplication::styleHints()->colorScheme())
+    {
+        case Qt::ColorScheme::Light:
+            app.insert(QStringLiteral("colorScheme"), QStringLiteral("light"));
+            break;
+        case Qt::ColorScheme::Dark:
+            app.insert(QStringLiteral("colorScheme"), QStringLiteral("dark"));
+            break;
+        case Qt::ColorScheme::Unknown:
+            break;
+    }
     QJsonObject plugin{{QStringLiteral("id"), mManifest.id},
                        {QStringLiteral("version"), mManifest.version},
                        {QStringLiteral("dir"), mManifest.dir}};
