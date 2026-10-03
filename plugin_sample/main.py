@@ -12,6 +12,7 @@ the section you need; plugin.json says how each command is declared
 - Transfers: transfers.download, items.upload, items.createFolder
 - Asking the user: ui.confirm
 - Showing an item in the app: ui.reveal
+- Searching in the app: ui.search
 - Progress and cancel: ui.progress, $/cancel
 """
 
@@ -307,6 +308,18 @@ def reveal_largest(ctx):
         return "No files in there"
     ctx.reveal(largest)
     return f"Largest: {largest.name} ({human_size(largest.size)})"
+
+
+# --- Searching in the app ---------------------------------------------------------
+# ctx.search runs a search in the app's current tab, as if the user had typed the
+# query and set the filter popup; it replaces whatever search the tab had. It needs
+# no permission. Fixed criteria here: photos tagged "sample" (see toggle-tag).
+
+
+@plugin.command("search-sample-photos")
+def search_sample_photos(ctx):
+    ctx.search("tag:sample", type="files", category="photo")
+    return None
 
 
 # --- Progress and cancel --------------------------------------------------------

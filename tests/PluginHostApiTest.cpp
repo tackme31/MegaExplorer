@@ -272,6 +272,53 @@ TEST_F(PluginHostApiTest,
   EXPECT_EQ(revealed[0].first, 7u);
   EXPECT_EQ(revealed[0].second, QStringLiteral("cat.jpg"));
 }
+
+TEST_F(PluginHostApiTest, UiSearchHandsOverTheWholeCriteriaWithoutAnyPermission) {
+  std::vector<std::pair<QString, SearchFilter>> searched;
+  PluginHostApi api{mClient, &mGuiContext, {}, {},
+                    [&searched](const QString &query, const SearchFilter &filter) {
+                      searched.emplace_back(query, filter);
+                    }};
+  mRun.permissions = {};
+  const auto search = [&](const QJsonObject &params) {
+    std::optional<PluginHostApi::Reply> reply;
+    api.call(QStringLiteral("ui.search"), params, mRun,
+             [&reply](const PluginHostApi::Reply &r) { reply = r; });
+    EXPECT_TRUE(reply.has_value());
+    return reply.value_or(PluginHostApi::Reply{});
+  };
+
+  EXPECT_FALSE(PluginHostApi::requiredPermission(QStringLiteral("ui.search"))
+                   .has_value());
+  EXPECT_FALSE(search({{QStringLiteral("query"), QStringLiteral("tag:\"a b\"")},
+                       {QStringLiteral("type"), QStringLiteral("files")},
+                       {QStringLiteral("category"), QStringLiteral("spreadsheet")},
+                       {QStringLiteral("createdWithin"), QStringLiteral("pastMonth")},
+                       {QStringLiteral("favouritesOnly"), true},
+                       {QStringLiteral("thisFolderOnly"), true}})
+                   .errorCode.has_value());
+  // Left out means the default, not "keep what the tab had".
+  EXPECT_FALSE(search({}).errorCode.has_value());
+
+  for (const QJsonObject &bad :
+       {QJsonObject{{QStringLiteral("type"), QStringLiteral("file")}},
+        QJsonObject{{QStringLiteral("category"), 1}},
+        QJsonObject{{QStringLiteral("createdWithin"), QStringLiteral("today")}},
+        QJsonObject{{QStringLiteral("favouritesOnly"), QStringLiteral("yes")}},
+        QJsonObject{{QStringLiteral("query"), 5}},
+        QJsonObject{{QStringLiteral("query"), QStringLiteral("a\nb")}}})
+    EXPECT_EQ(search(bad).errorCode, -32602);
+
+  ASSERT_EQ(searched.size(), 2u);
+  EXPECT_EQ(searched[0].first, QStringLiteral("tag:\"a b\""));
+  EXPECT_EQ(searched[0].second.nodeType, SearchNodeType::Files);
+  EXPECT_EQ(searched[0].second.category, SearchCategory::Spreadsheet);
+  EXPECT_EQ(searched[0].second.createdWithin, SearchTimeWindow::PastMonth);
+  EXPECT_TRUE(searched[0].second.favouritesOnly);
+  EXPECT_TRUE(searched[0].second.thisFolderOnly);
+  EXPECT_EQ(searched[1].first, QString());
+  EXPECT_TRUE(searched[1].second.isDefault());
+}
 TEST_F(PluginHostApiTest, ItemsChildrenPagesWithACursor)
 {
     EXPECT_CALL(*mClient, getNodeSnapshot(1))

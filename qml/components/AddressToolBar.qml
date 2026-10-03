@@ -192,6 +192,14 @@ ToolBar {
                     searchField.text = "";
                     filterPopup.revertPending();
                 }
+
+                // A plugin's ui.search: whatever was typed or picked but not
+                // submitted gives way to what it set.
+                function onSearchReplaced() {
+                    searchField.text = tabsController.currentNavigation?.searchQuery ?? "";
+                    filterPopup.revertPending();
+                    filterPopup.close();
+                }
             }
 
             // One field serves every tab while the query is per-tab, so a switch has

@@ -63,6 +63,14 @@ PluginController::PluginController(std::shared_ptr<IMegaClient> client,
                std::move(downloads),
                [this](std::uint64_t handle, const QString& name) {
                    emit revealRequested(static_cast<quint64>(handle), name);
+               },
+               [this](const QString& query, const SearchFilter& filter) {
+                   emit searchRequested(query,
+                                        static_cast<int>(filter.nodeType),
+                                        static_cast<int>(filter.category),
+                                        static_cast<int>(filter.createdWithin),
+                                        filter.favouritesOnly,
+                                        filter.thisFolderOnly);
                }),
       mProgressUpdateTimer(new QTimer(this)),
       mPluginsDir(std::move(pluginsDir)),

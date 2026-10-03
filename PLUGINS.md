@@ -215,8 +215,8 @@ Every method the plugin calls on the app needs one permission, declared in `perm
 | `content.read` | `items.fetchPreview`, `items.fetchFile`, `items.readRange` | Reading file contents, into the run's temporary folder |
 | `content.download` | `transfers.download` | Saving files to the user's Downloads folder |
 
-`ui.confirm`, `ui.progress` and the context sent with `command.execute` need none, so a plugin
-that only looks at the selection can leave `permissions` out.
+`ui.confirm`, `ui.reveal`, `ui.search`, `ui.progress` and the context sent with `command.execute`
+need none, so a plugin that only looks at the selection can leave `permissions` out.
 
 - A name not in this table makes the manifest invalid, so the plugin is not loaded (the reason is
   in the log). Duplicates are ignored.
@@ -629,6 +629,34 @@ result:  {}
 - A folder is shown in *its* parent too, selected — not opened.
 - No such item → `-32002`; a root (Cloud Drive, Rubbish Bin) is in no folder → `-32602`.
 
+#### `ui.search`
+
+Runs a search in the current tab, as if the user had typed `query` into the search box and set the
+search filter popup. The window's current tab at the time of the call, whatever screen it shows;
+the app's window is not brought to the front. Answers as soon as the app has been told; it does
+not wait for the results.
+
+```
+params:  {"query": "tag:1girl tag:\"long hair\"", "type": "files", "category": "photo",
+          "createdWithin": "pastWeek", "favouritesOnly": false, "thisFolderOnly": false}
+result:  {}
+```
+
+| Param | Values | Default |
+| --- | --- | --- |
+| `query` | The search box's text, read the same way as typed text (`tag:` words, `tag:"…"` for one with spaces) | `""` |
+| `type` | `"any"`, `"files"`, `"folders"` | `"any"` |
+| `category` | `"any"`, `"photo"`, `"audio"`, `"video"`, `"document"`, `"pdf"`, `"presentation"`, `"spreadsheet"`, `"archive"`, `"program"`, `"other"` | `"any"` |
+| `createdWithin` | `"any"`, `"pastDay"`, `"pastWeek"`, `"pastMonth"`, `"pastYear"` | `"any"` |
+| `favouritesOnly`, `thisFolderOnly` | `true` / `false` | `false` |
+
+- Needs no permission.
+- **The whole search is replaced.** A param left out takes its default, not what the tab had.
+- An empty `query` with every filter at its default clears the search, like the box's clear button.
+- The search box and the filter popup show what was set; text typed but not yet submitted, and a
+  filter picked but not applied, are dropped. Navigating away ends the search as usual.
+- An unknown value, a wrong type, or a control character (a newline) in `query` → `-32602`.
+
 ### Notifications from the plugin
 
 #### `ui.progress`
@@ -779,6 +807,7 @@ plugin.run()
 | `ctx.download(xs, sub_path=, on_conflict=)` → `{"queued", "skipped"}` | `transfers.download`; an entry of `xs` may be an `(x, sub_path)` pair |
 | `ctx.confirm(message, title=, ok_label=, danger=)` → `bool` | `ui.confirm` |
 | `ctx.reveal(x)` | `ui.reveal` |
+| `ctx.search(query="", type=, category=, created_within=, favourites_only=, this_folder_only=)` | `ui.search` |
 | `ctx.progress(current=, total=, message=)` | `ui.progress` |
 | `ctx.cancelled`, `ctx.check_cancelled()` | `$/cancel` seen; the latter raises `Cancelled` → `-32800` |
 | `ctx.call(method, params)` | any method, raw |

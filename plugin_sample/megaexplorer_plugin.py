@@ -332,6 +332,24 @@ class Context:
         """Shows item x selected in its folder in the app's current tab."""
         self.call("ui.reveal", {"handle": _handle(x)})
 
+    def search(self, query="", type=None, category=None, created_within=None,
+               favourites_only=False, this_folder_only=False):
+        """Searches in the app's current tab as if the user had typed query and set the
+        filter: the whole search is replaced, so anything left out means no filter.
+        type: "any", "files", "folders". category: "any", "photo", "audio", "video",
+        "document", "pdf", "presentation", "spreadsheet", "archive", "program", "other".
+        created_within: "any", "pastDay", "pastWeek", "pastMonth", "pastYear".
+        An empty query with no filter clears the search."""
+        params = {"query": query, "favouritesOnly": favourites_only,
+                  "thisFolderOnly": this_folder_only}
+        if type is not None:
+            params["type"] = type
+        if category is not None:
+            params["category"] = category
+        if created_within is not None:
+            params["createdWithin"] = created_within
+        self.call("ui.search", params)
+
     # --- items ------------------------------------------------------------------
 
     def call(self, method, params):

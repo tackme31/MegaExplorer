@@ -357,6 +357,66 @@ TEST_F(FolderNavigationControllerTest, TagWordsReachTheSearchAsTagsAndSurviveThe
     EXPECT_EQ(seen.tags, (std::vector<std::string>{"1girl", "chara:hatsune_miku"}));
 }
 
+TEST_F(FolderNavigationControllerTest, ReplacingTheSearchSetsQueryAndFilterInOneSearch)
+{
+    // A plugin's ui.search: one search with both parts, nothing kept from the
+    // filter set before it, and a signal for the box and popup to re-read.
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+
+    int searches = 0;
+    std::string seenName;
+    SearchFilter seen;
+    EXPECT_CALL(*client, search(_, _, _, _, _, _))
+        .WillRepeatedly(Invoke([&](std::uint64_t,
+                                   bool,
+                                   const std::string& name,
+                                   const SearchFilter& filter,
+                                   SortOrder,
+                                   std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            ++searches;
+            seenName = name;
+            seen = filter;
+            onDone(Result<std::vector<FileEntry>>::ok({entry("b.jpg", 2)}));
+        }));
+    int replaced = 0;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::searchReplaced,
+                     [&replaced]() { ++replaced; });
+
+    controller->setSearchFilter(SearchNodeTypeEnum::Any,
+                                SearchCategoryEnum::Any,
+                                SearchTimeWindowEnum::Any,
+                                true,
+                                false);
+    flush();
+    searches = 0;
+
+    controller->replaceSearch(QStringLiteral("cat tag:solo"),
+                              SearchNodeTypeEnum::Files,
+                              SearchCategoryEnum::Photo,
+                              SearchTimeWindowEnum::Any,
+                              false,
+                              false);
+    flush();
+    EXPECT_EQ(searches, 1);
+    EXPECT_EQ(replaced, 1);
+    EXPECT_EQ(controller->searchQuery(), QStringLiteral("cat tag:solo"));
+    EXPECT_EQ(seenName, "cat");
+    EXPECT_EQ(seen.tags, (std::vector<std::string>{"solo"}));
+    EXPECT_EQ(seen.nodeType, SearchNodeType::Files);
+    EXPECT_EQ(seen.category, SearchCategory::Photo);
+    EXPECT_FALSE(seen.favouritesOnly);
+    EXPECT_EQ(controller->searchFilterFavouritesOnly(), false);
+
+    controller->replaceSearch(QString(), 0, 0, 0, false, false);
+    flush();
+    EXPECT_FALSE(controller->searchActive());
+    EXPECT_EQ(searches, 1);
+    EXPECT_EQ(replaced, 2);
+}
+
 TEST_F(FolderNavigationControllerTest, ScopingToTheOpenFolderReachesTheSearchQuery)
 {
     // The facet the adapter reads to pick getChildren over search, so it has to

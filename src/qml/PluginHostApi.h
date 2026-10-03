@@ -1,4 +1,6 @@
 #pragma once
+#include "core/SearchFilter.h"
+
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QString>
@@ -53,13 +55,16 @@ public:
 
     // ui.reveal: show the node in its folder, selected; name is the row to select.
     using Reveal = std::function<void(std::uint64_t handle, const QString& name)>;
+    // ui.search: run this query and filter in the visible tab, replacing its search.
+    using Search = std::function<void(const QString& query, const SearchFilter& filter)>;
 
     // guiContext must live as long as the client can still call back (the app's
     // lifetime); SDK answers are posted to its thread before done runs.
     PluginHostApi(std::shared_ptr<IMegaClient> client,
                   QObject* guiContext,
                   UserDownloads downloads = {},
-                  Reveal reveal = {});
+                  Reveal reveal = {},
+                  Search search = {});
 
     // One run's fetchFile / readRange / upload, run one at a time.
     struct TransferQueue;
@@ -117,9 +122,11 @@ private:
     void itemsMoveToRubbish(const QJsonObject& params, const Done& done) const;
     Reply transfersDownload(const QJsonObject& params) const;
     Reply uiReveal(const QJsonObject& params) const;
+    Reply uiSearch(const QJsonObject& params) const;
 
     std::shared_ptr<IMegaClient> mClient;
     QObject* mGuiContext;
     UserDownloads mDownloads;
     Reveal mReveal;
+    Search mSearch;
 };

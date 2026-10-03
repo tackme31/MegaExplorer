@@ -192,6 +192,15 @@ public:
     Q_INVOKABLE void setSearchFilter(
         int nodeType, int category, int createdWithin, bool favouritesOnly, bool thisFolderOnly);
 
+    // search() and setSearchFilter() in one, as one search: a plugin's ui.search sets
+    // both at once. Emits searchReplaced so the box and the popup show what it set.
+    Q_INVOKABLE void replaceSearch(QString query,
+                                   int nodeType,
+                                   int category,
+                                   int createdWithin,
+                                   bool favouritesOnly,
+                                   bool thisFolderOnly);
+
     // column: 0=Name, 1=ModificationTime, 2=Size. Also called at startup with the
     // persisted value, before login/loadRoot() have run (see mHasLoadedOnce).
     Q_INVOKABLE void setSortOrder(int column, bool ascending);
@@ -288,6 +297,9 @@ signals:
     // its text and the filter popup its *pending* edit, so both have to be told;
     // nothing else can reach them.
     void searchCleared();
+    // replaceSearch set the query and filter from outside the search box and popup,
+    // which own what they show and so have to re-read both.
+    void searchReplaced();
 
     // Row is already selected in the model when this fires; the views only have
     // to scroll. Both of a tab's views listen -- the hidden one positions itself
@@ -316,8 +328,12 @@ private:
     void beginListing();
     void endListing();
 
-    // Shared tail of search() and setSearchFilter(): publishes searchActive if it
-    // flipped, then either restores the cached listing or runs the search.
+    // Clamps and stores the facets, emitting searchFilterChanged if they changed.
+    void storeSearchFilter(
+        int nodeType, int category, int createdWithin, bool favouritesOnly, bool thisFolderOnly);
+
+    // Shared tail of search(), setSearchFilter() and replaceSearch(): publishes
+    // searchActive if it flipped, then either restores the cached listing or runs the search.
     void applySearchCriteria(bool wasActive);
 
     // Drops the query because the tab is moving somewhere the results do not

@@ -4,13 +4,13 @@
 （87a90de）。続いて権限（dd0aea1、同意ダイアログは保留）、`fields` と `ui.reveal`（3a038b2）、フォルダ背景と
 左ペインのメニュー（954c038・b940881、§C）、`initialize` の `app.colorScheme`（ba24d50、§E）も実装済み。
 推奨順 3（`items.copy` / `items.move` / `items.moveToRubbish`）も §G の仕様で実装済み。
-2026-10-04: `ui.search`（表示中のタブで検索を走らせる）の仕様を §H で決定、未実装。
+2026-10-04: `ui.search`（表示中のタブで検索を走らせる）も §H の仕様で実装済み。
 残りの候補は未決定で、必要になった時点で決める。仕様の正は `PLUGINS.md`。**
 現行 API（`items.get` / `children` / `descendants` / `update` / `fetchPreview`、`ui.confirm`、
 `ui.progress`）は WD Tagger プラグインの必要分しか無いため、汎用プラグインに要りそうなものを
 `STUDY_PLUGIN_V1_DESIGN.md` §6-3 の予定分と `IMegaClient` の既存機能から拾った。
 「下地」はアプリ側に既に実装があり、公開するだけで済むかどうか。
-次の手順: §H の `ui.search` の実装。残りの候補は必要になった時点で。
+次の手順: なし（残りの候補は必要になった時点で）。
 
 ## A. ファイルの中身（転送）
 
@@ -53,7 +53,7 @@
 | --- | --- |
 | `ui.toast` / `ui.input` / `ui.choose` | 設計書 §6-3 で予定済み。`ui.choose` は出力先の選択などに |
 | `ui.reveal {handle}` | **済（3a038b2）**。アプリのウィンドウは前に出さない |
-| `ui.search {query?, type?, ...}` | **仕様決定（§H）、未実装**。表示中のタブで検索欄の文字列とポップアップのフィルタを入れて検索する |
+| `ui.search {query?, type?, ...}` | **済（§H）**。表示中のタブで検索欄の文字列とポップアップのフィルタを入れて検索する |
 | `initialize` で `app.colorScheme` | **済（ba24d50）**。自前のウィンドウを開くプラグイン（MegaDirStat）が、OS ではなくアプリのテーマ設定に合わせるため。値は実際に描いている配色で `"light"` / `"dark"`、不明なら省略 |
 | コンテキストメニュー以外からの起動 | 今のコマンドは右クリックメニュー（選択・フォルダの空き領域・左ペイン）からしか起動できない。選択と関係の無いコマンド（例: WD Tag Query Builder のクエリ作成画面）のために、将来はほかの場所（候補は More メニュー）にも出せるようにする予定。当面はコンテキストメニューのまま。context に項目が無い起動になるので、`site` の値を足すことになる |
 | `log {level, message}` | stderr より構造化できる。優先度低 |
@@ -176,7 +176,7 @@ items.moveToRubbish {handle}                          → {}
 ゴミ箱内の判定のため `NodeSnapshot::inRubbish` を足した（削除済みのノードもハンドルで引けてしまうため）。
 転送キューには入れない単発リクエストで、Cancel では止まらない（`items.update` と同じ）。
 
-## H. 決定: `ui.search` の仕様（2026-10-04、未実装）
+## H. 決定: `ui.search` の仕様（2026-10-04）
 
 表示中のタブで、検索欄の文字列と検索ポップアップのフィルタを指定どおりに入れた状態で検索を走らせる。
 WD Tag Query Builder の Copy（ユーザーが貼り付ける）を置き換えるためだが、「文字列を検索欄に入れる」専用の

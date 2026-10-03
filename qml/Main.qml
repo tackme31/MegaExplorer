@@ -748,6 +748,10 @@ ApplicationWindow {
         function onRevealRequested(handle, name) {
             tabsController.currentNavigation?.goToContainingFolder(handle, name);
         }
+        function onSearchRequested(query, nodeType, category, createdWithin, favouritesOnly, thisFolderOnly) {
+            tabsController.currentNavigation?.replaceSearch(query, nodeType, category, createdWithin,
+                                                           favouritesOnly, thisFolderOnly);
+        }
     }
 
     Connections {

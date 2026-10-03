@@ -22,6 +22,7 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 | Move to the Rubbish bin (items.moveToRubbish) | `ctx.confirm` first, since the app asks nothing; needs the `items.rubbish` permission |
 | Ask first (ui.confirm) | `ctx.confirm` with `danger`, `title` and `ok_label`; stopping quietly on Cancel |
 | Show the largest file below (ui.reveal) | `ctx.reveal`: the app opens the file's folder with it selected; `"when": {"targets": "folders"}` |
+| Search for photos tagged "sample" (ui.search) | `ctx.search("tag:sample", type="files", category="photo")`: the current tab searches as if typed, replacing its query and filter |
 | Long task (ui.progress, Cancel) | `"progress": true`: a bar without a total, then `n / total`; Cancel (`ctx.check_cancelled`); the row turning into the result (`"result": "dialog"`) |
 
 The "Toggle", upload, folder, copy, move and Rubbish bin rows change the real account (there is no

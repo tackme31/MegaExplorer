@@ -138,9 +138,10 @@ std::optional<PluginHostApi::Reply> readFields(const QJsonObject& params, unsign
 PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client,
                              QObject* guiContext,
                              UserDownloads downloads,
-                             Reveal reveal)
+                             Reveal reveal,
+                             Search search)
     : mClient(std::move(client)), mGuiContext(guiContext), mDownloads(std::move(downloads)),
-      mReveal(std::move(reveal))
+      mReveal(std::move(reveal)), mSearch(std::move(search))
 {
 }
 
@@ -211,6 +212,8 @@ void PluginHostApi::call(const QString& method,
         done(transfersDownload(params));
     else if (method == QStringLiteral("ui.reveal"))
         done(uiReveal(params));
+    else if (method == QStringLiteral("ui.search"))
+        done(uiSearch(params));
     else
         done(fail(kMethodNotFound, QStringLiteral("Method not found: %1").arg(method)));
 }
@@ -1537,5 +1540,90 @@ PluginHostApi::Reply PluginHostApi::uiReveal(const QJsonObject& params) const
         return fail(kInvalidParams, QStringLiteral("A root is not in any folder"));
     if (mReveal)
         mReveal(handle, QString::fromStdString(node.value().name));
+    return ok(QJsonObject{});
+}
+
+namespace
+{
+// Names rather than SearchFilter's ints, so reordering an enum cannot break a plugin.
+template<typename E>
+std::optional<PluginHostApi::Reply>
+readSearchFacet(const QJsonObject& params, const QString& key, const QStringList& names, E* value)
+{
+    const QJsonValue raw = params.value(key);
+    if (raw.isUndefined())
+        return std::nullopt;
+    const qsizetype index = raw.isString() ? names.indexOf(raw.toString()) : -1;
+    if (index < 0)
+        return fail(
+            kInvalidParams,
+            QStringLiteral("\"%1\" must be one of: %2").arg(key, names.join(QStringLiteral(", "))));
+    *value = static_cast<E>(index);
+    return std::nullopt;
+}
+
+std::optional<PluginHostApi::Reply>
+readSearchFlag(const QJsonObject& params, const QString& key, bool* value)
+{
+    const QJsonValue raw = params.value(key);
+    if (raw.isUndefined())
+        return std::nullopt;
+    if (!raw.isBool())
+        return fail(kInvalidParams, QStringLiteral("\"%1\" must be true or false").arg(key));
+    *value = raw.toBool();
+    return std::nullopt;
+}
+} // namespace
+
+PluginHostApi::Reply PluginHostApi::uiSearch(const QJsonObject& params) const
+{
+    const QJsonValue rawQuery = params.value(QStringLiteral("query"));
+    if (!rawQuery.isUndefined() && !rawQuery.isString())
+        return fail(kInvalidParams, QStringLiteral("\"query\" must be a string"));
+    const QString query = rawQuery.toString();
+    for (const QChar c : query)
+    {
+        if (c.category() == QChar::Other_Control)
+            return fail(kInvalidParams, QStringLiteral("\"query\" must be a single line"));
+    }
+
+    // Same order as the enums in core/SearchFilter.h.
+    static const QStringList nodeTypes{
+        QStringLiteral("any"), QStringLiteral("files"), QStringLiteral("folders")};
+    static const QStringList categories{QStringLiteral("any"),
+                                        QStringLiteral("photo"),
+                                        QStringLiteral("audio"),
+                                        QStringLiteral("video"),
+                                        QStringLiteral("document"),
+                                        QStringLiteral("pdf"),
+                                        QStringLiteral("presentation"),
+                                        QStringLiteral("spreadsheet"),
+                                        QStringLiteral("archive"),
+                                        QStringLiteral("program"),
+                                        QStringLiteral("other")};
+    static const QStringList timeWindows{QStringLiteral("any"),
+                                         QStringLiteral("pastDay"),
+                                         QStringLiteral("pastWeek"),
+                                         QStringLiteral("pastMonth"),
+                                         QStringLiteral("pastYear")};
+
+    SearchFilter filter;
+    if (auto error = readSearchFacet(params, QStringLiteral("type"), nodeTypes, &filter.nodeType))
+        return *error;
+    if (auto error =
+            readSearchFacet(params, QStringLiteral("category"), categories, &filter.category))
+        return *error;
+    if (auto error = readSearchFacet(
+            params, QStringLiteral("createdWithin"), timeWindows, &filter.createdWithin))
+        return *error;
+    if (auto error =
+            readSearchFlag(params, QStringLiteral("favouritesOnly"), &filter.favouritesOnly))
+        return *error;
+    if (auto error =
+            readSearchFlag(params, QStringLiteral("thisFolderOnly"), &filter.thisFolderOnly))
+        return *error;
+
+    if (mSearch)
+        mSearch(query, filter);
     return ok(QJsonObject{});
 }

@@ -503,6 +503,29 @@ void FolderNavigationController::setSearchFilter(
     int nodeType, int category, int createdWithin, bool favouritesOnly, bool thisFolderOnly)
 {
     const bool wasActive = searchActive();
+    storeSearchFilter(nodeType, category, createdWithin, favouritesOnly, thisFolderOnly);
+    applySearchCriteria(wasActive);
+}
+
+void FolderNavigationController::replaceSearch(QString query,
+                                               int nodeType,
+                                               int category,
+                                               int createdWithin,
+                                               bool favouritesOnly,
+                                               bool thisFolderOnly)
+{
+    const bool wasActive = searchActive();
+    const std::string previous = std::exchange(mLastSearchQuery, query.toStdString());
+    if (mLastSearchQuery != previous)
+        emit searchQueryChanged();
+    storeSearchFilter(nodeType, category, createdWithin, favouritesOnly, thisFolderOnly);
+    emit searchReplaced();
+    applySearchCriteria(wasActive);
+}
+
+void FolderNavigationController::storeSearchFilter(
+    int nodeType, int category, int createdWithin, bool favouritesOnly, bool thisFolderOnly)
+{
     const SearchFilter previous = mSearchFilter;
     mSearchFilter =
         SearchFilter{clampEnum<SearchNodeType>(nodeType, SearchNodeType::Folders),
@@ -512,7 +535,6 @@ void FolderNavigationController::setSearchFilter(
                      thisFolderOnly};
     if (mSearchFilter != previous)
         emit searchFilterChanged();
-    applySearchCriteria(wasActive);
 }
 
 void FolderNavigationController::applySearchCriteria(bool wasActive)

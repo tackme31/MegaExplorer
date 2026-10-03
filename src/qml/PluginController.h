@@ -111,6 +111,14 @@ signals:
     void permissionsDenied(const QString& pluginName, const QStringList& permissions);
     // ui.reveal: open handle's folder in the current tab and select name there.
     void revealRequested(quint64 handle, const QString& name);
+    // ui.search: the facets as SearchFilter's enum values, the form
+    // FolderNavigationController::replaceSearch takes.
+    void searchRequested(const QString& query,
+                         int nodeType,
+                         int category,
+                         int createdWithin,
+                         bool favouritesOnly,
+                         bool thisFolderOnly);
 
 private:
     const PluginManifest* findPlugin(const QString& pluginId) const;
