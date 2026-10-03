@@ -6,7 +6,7 @@
   "description": "Exercises every part of the plugin API, one command each.",
   "apiVersion": 1,
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
-  "permissions": ["items.read", "items.write", "items.edit", "content.read", "content.download"],
+  "permissions": ["items.read", "items.write", "items.edit", "items.rubbish", "content.read", "content.download"],
   "commands": [
     { "id": "show-selection", "title": "Show the selection" },
     { "id": "fail", "title": "Fail with an error" },
@@ -26,6 +26,10 @@
     { "id": "download", "title": "Download (transfers.download)", "when": { "targets": "files" } },
     { "id": "upload-text", "title": "Upload a text file here (items.upload)" },
     { "id": "create-folder", "title": "Create a folder here (items.createFolder)" },
+
+    { "id": "copy-here", "title": "Copy next to itself (items.copy)" },
+    { "id": "move-up", "title": "Move up one folder (items.move)" },
+    { "id": "move-to-rubbish", "title": "Move to the Rubbish bin (items.moveToRubbish)" },
 
     { "id": "ask-first", "title": "Ask first (ui.confirm)" },
     { "id": "reveal-largest", "title": "Show the largest file below (ui.reveal)",

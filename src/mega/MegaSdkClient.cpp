@@ -166,6 +166,7 @@ NodeSnapshot nodeToSnapshot(mega::MegaApi& api, mega::MegaNode* node)
         for (int i = 0; i < tags->size(); ++i)
             snapshot.tags.emplace_back(tags->get(i));
     }
+    snapshot.inRubbish = api.isInRubbish(node);
     return snapshot;
 }
 
@@ -1562,28 +1563,28 @@ void MegaSdkClient::copyNode(std::uint64_t handle,
                              std::uint64_t newParentHandle,
                              bool newParentIsRoot,
                              const std::string& newName,
-                             std::function<void(Result<void>)> onDone)
+                             std::function<void(Result<std::uint64_t>)> onDone)
 {
     if (mShuttingDown)
     {
-        onDone(Result<void>::fail(kShutDownMessage, kClientShutDownCode));
+        onDone(Result<std::uint64_t>::fail(kShutDownMessage, kClientShutDownCode));
         return;
     }
     std::unique_ptr<mega::MegaNode> node = resolveNode(handle, false);
     if (!node)
     {
-        onDone(Result<void>::fail("No node with the given handle (not logged in / nodes not "
-                                  "fetched / node deleted)",
-                                  MegaErrorCode::kENoEnt));
+        onDone(Result<std::uint64_t>::fail("No node with the given handle (not logged in / nodes not "
+                                           "fetched / node deleted)",
+                                           MegaErrorCode::kENoEnt));
         return;
     }
 
     std::unique_ptr<mega::MegaNode> parent = resolveNode(newParentHandle, newParentIsRoot);
     if (!parent)
     {
-        onDone(Result<void>::fail("No destination folder with the given handle (nodes not "
-                                  "fetched / folder deleted)",
-                                  MegaErrorCode::kENoEnt));
+        onDone(Result<std::uint64_t>::fail("No destination folder with the given handle (nodes not "
+                                           "fetched / folder deleted)",
+                                           MegaErrorCode::kENoEnt));
         return;
     }
 
@@ -1592,12 +1593,12 @@ void MegaSdkClient::copyNode(std::uint64_t handle,
     // the unnamed one.
     if (newName.empty())
         mApi->copyNode(
-            node.get(), parent.get(), new megasdk::SimpleResultListener(std::move(onDone)));
+            node.get(), parent.get(), new megasdk::NodeHandleResultListener(std::move(onDone)));
     else
         mApi->copyNode(node.get(),
                        parent.get(),
                        newName.c_str(),
-                       new megasdk::SimpleResultListener(std::move(onDone)));
+                       new megasdk::NodeHandleResultListener(std::move(onDone)));
 }
 
 void MegaSdkClient::createFolder(std::uint64_t parentHandle,

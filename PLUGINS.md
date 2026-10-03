@@ -209,7 +209,8 @@ Every method the plugin calls on the app needs one permission, declared in `perm
 | Permission | Methods | Allows |
 | --- | --- | --- |
 | `items.read` | `items.get`, `items.children`, `items.descendants` | Reading the tree: names and attributes of any item in the account |
-| `items.write` | `items.upload`, `items.createFolder` | Changing the tree: adding files and folders |
+| `items.write` | `items.upload`, `items.createFolder`, `items.copy`, `items.move` | Changing the tree: adding, copying and moving files and folders |
+| `items.rubbish` | `items.moveToRubbish` | Rubbish bin operations: moving items to the Rubbish bin |
 | `items.edit` | `items.update` | Changing an item's name, description, tags and favourite flag |
 | `content.read` | `items.fetchPreview`, `items.fetchFile`, `items.readRange` | Reading file contents, into the run's temporary folder |
 | `content.download` | `transfers.download` | Saving files to the user's Downloads folder |
@@ -518,6 +519,63 @@ result:  {"item": Item, "created": true}
   - `"fail"`: `-32004` with `data.reason: "exists"`.
   - `"rename"`: created as `name (2)`, `name (3)`, ...
 
+#### `items.move`
+
+Moves a file or folder into another folder and returns it. The handle stays the same.
+
+```
+params:  {"handle": "AbCd1234", "to": "XyZw9876", "name": "cat.jpg", "onConflict": "rename"}
+result:  {"item": Item, "moved": true}
+```
+
+- `name`: optional; renames the item on the way. Same rules as in `items.upload`.
+- `onConflict`, for when an item **of the same type** with that name is already in `to` (a file and
+  a folder may share a name, so that is no conflict):
+  - `"rename"` (default): moved as `name (2)`, `name (3)`, ...
+  - `"fail"`: `-32004` with `data.reason: "exists"`, nothing moved.
+  - A move never merges two folders and never makes a version; `"version"` is `-32602`.
+- Moving an item into the folder it is already in does nothing and answers `moved: false`, so a
+  command that sorts items can safely run twice. Passing a different `name` there is `-32602`:
+  renaming is `items.update`.
+- A folder into itself or one of its own subfolders → `-32602` with `data.reason: "circular"`.
+  A folder you may not change (a read-only share) → `-32010` with `data.reason: "access"`.
+- A root cannot be moved (`-32602`). An item or folder that is gone or in the Rubbish bin → `-32002`.
+- The view is refreshed after the run.
+
+#### `items.copy`
+
+Copies a file, or a folder with everything in it, into a folder and returns the copy.
+
+```
+params:  {"handle": "AbCd1234", "to": "XyZw9876", "name": "cat.jpg", "onConflict": "rename"}
+result:  {"item": Item}
+```
+
+- `name` and the errors as in `items.move`. MEGA copies a folder in one request on its side, so a
+  large folder costs no transfer.
+- `onConflict`, for an item of the same type with that name in `to`:
+  - `"rename"` (default): the copy is named `name (2)`, `name (3)`, ... — so copying an item into
+    its own folder gives `name (2)` beside it.
+  - `"fail"`: `-32004` with `data.reason: "exists"`.
+  - `"version"`, files only: the copy becomes the existing file's new version, refused with
+    `data.reason: "versioningDisabled"` as in `items.upload`. For a folder it is `-32602`.
+
+#### `items.moveToRubbish`
+
+Moves a file or folder to the Rubbish bin. The user can restore it from there; nothing is deleted
+for good.
+
+```
+params:  {"handle": "AbCd1234"}
+result:  {}
+```
+
+- The app asks nothing and shows nothing for this: confirming first (`ui.confirm`) and telling
+  the user what was moved are up to the plugin.
+- An item already in the Rubbish bin, or gone → `-32002`. A root → `-32602`. `items.move` and
+  `items.copy` also treat binned items as gone, so a plugin cannot take an item back out.
+- The view is refreshed after the run.
+
 #### `transfers.download`
 
 Hands files to the app's own downloads, for the user to keep, as the menu's Download does.
@@ -715,6 +773,9 @@ plugin.run()
 | `ctx.read_range(x, offset, length)` → `bytes` | `items.readRange` |
 | `ctx.upload(parent, local_path, name=, on_conflict=)` → `Item` | `items.upload`; raises `Conflict` |
 | `ctx.create_folder(parent, name, on_conflict=)` → `(Item, created)` | `items.createFolder`; raises `Conflict` |
+| `ctx.move(x, to, name=, on_conflict=)` → `(Item, moved)` | `items.move`; raises `Conflict` |
+| `ctx.copy(x, to, name=, on_conflict=)` → `Item` | `items.copy`; raises `Conflict` |
+| `ctx.move_to_rubbish(x)` | `items.moveToRubbish` |
 | `ctx.download(xs, sub_path=, on_conflict=)` → `{"queued", "skipped"}` | `transfers.download`; an entry of `xs` may be an `(x, sub_path)` pair |
 | `ctx.confirm(message, title=, ok_label=, danger=)` → `bool` | `ui.confirm` |
 | `ctx.reveal(x)` | `ui.reveal` |
@@ -736,7 +797,7 @@ Planned or considered, but not available yet — don't depend on any of these:
 
 - A consent prompt; enabling or disabling a plugin from the settings page
 - `when` conditions on the view or the number of selected items
-- Copying, moving or deleting items
+- Restoring items from the Rubbish bin, or deleting them for good
 - `ui.toast`, input and choice dialogs; a `log` method
 - Per-plugin settings managed by the app (`plugin.dataDir`)
 - Reading `manifestVersion` from the manifest, and checking `invocationId`

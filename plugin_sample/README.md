@@ -17,12 +17,15 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 | Download (transfers.download) | `ctx.download`: the app's own downloads, into `Downloads\MegaExplorer Sample` |
 | Upload a text file here (items.upload) | `ctx.upload`: a generated text file into the selected folder (or the file's folder) |
 | Create a folder here (items.createFolder) | `ctx.create_folder` with a dated name and `on_conflict="rename"` |
+| Copy next to itself (items.copy) | `ctx.copy` into the item's own folder, where the name clashes with itself and becomes "name (2)" |
+| Move up one folder (items.move) | `ctx.move` to the parent's parent; a name already taken there gets " (2)" |
+| Move to the Rubbish bin (items.moveToRubbish) | `ctx.confirm` first, since the app asks nothing; needs the `items.rubbish` permission |
 | Ask first (ui.confirm) | `ctx.confirm` with `danger`, `title` and `ok_label`; stopping quietly on Cancel |
 | Show the largest file below (ui.reveal) | `ctx.reveal`: the app opens the file's folder with it selected; `"when": {"targets": "folders"}` |
 | Long task (ui.progress, Cancel) | `"progress": true`: a bar without a total, then `n / total`; Cancel (`ctx.check_cancelled`); the row turning into the result (`"result": "dialog"`) |
 
-The "Toggle", upload and folder rows change the real account (there is no undo): try them on a test
-folder.
+The "Toggle", upload, folder, copy, move and Rubbish bin rows change the real account (there is no
+undo): try them on a test folder.
 
 ## Trying it
 

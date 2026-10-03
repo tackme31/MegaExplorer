@@ -455,7 +455,7 @@ TEST(FileOperationServiceTest, CopyPassesAnEmptyNameThroughUnchanged)
     FileOperationService service(client);
     EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
     EXPECT_CALL(*client, copyNode(11u, 22u, false, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     Capture captured;
 
     service.copy(11, 22, false, "", captured.sink());
@@ -469,7 +469,7 @@ TEST(FileOperationServiceTest, CopyPassesAChosenNameStraightThrough)
     FileOperationService service(client);
     EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
     EXPECT_CALL(*client, copyNode(11u, 0u, true, std::string("a - Copy.txt"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     Capture captured;
 
     service.copy(11, 0, true, "a - Copy.txt", captured.sink());
@@ -497,7 +497,7 @@ TEST(FileOperationServiceTest, PropagatesACopyFailureFromTheSdk)
     FileOperationService service(client);
     EXPECT_CALL(*client, checkMove(_, _, _)).WillRepeatedly(Return(Result<void>::ok()));
     EXPECT_CALL(*client, copyNode(_, _, _, _, _))
-        .WillOnce(InvokeArgument<4>(Result<void>::fail("node deleted", MegaErrorCode::kENoEnt)));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::fail("node deleted", MegaErrorCode::kENoEnt)));
     Capture captured;
 
     service.copy(11, 22, false, "", captured.sink());

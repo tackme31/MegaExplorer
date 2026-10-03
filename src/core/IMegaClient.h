@@ -363,11 +363,12 @@ public:
     // byte-identical file outright while still reporting success. "Add a second
     // item" therefore requires an unused name (FileOperationService::uniqueCopyName).
     // Folders are unaffected -- two same-named folders coexist, with no kEExist.
+    // onDone carries the copy's handle (the existing node's, for that byte-identical drop).
     virtual void copyNode(std::uint64_t handle,
                           std::uint64_t newParentHandle,
                           bool newParentIsRoot,
                           const std::string& newName,
-                          std::function<void(Result<void>)> onDone) = 0;
+                          std::function<void(Result<std::uint64_t>)> onDone) = 0;
 
     // Creates an empty folder under parentHandle. The duplicate-name check is the
     // *server's* -- onDone reports MegaErrorCode::kEExist -- and deliberately the

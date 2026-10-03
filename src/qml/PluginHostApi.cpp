@@ -152,6 +152,9 @@ std::optional<QString> PluginHostApi::requiredPermission(const QString& method)
         {QStringLiteral("items.descendants"), QStringLiteral("items.read")},
         {QStringLiteral("items.upload"), QStringLiteral("items.write")},
         {QStringLiteral("items.createFolder"), QStringLiteral("items.write")},
+        {QStringLiteral("items.copy"), QStringLiteral("items.write")},
+        {QStringLiteral("items.move"), QStringLiteral("items.write")},
+        {QStringLiteral("items.moveToRubbish"), QStringLiteral("items.rubbish")},
         {QStringLiteral("items.update"), QStringLiteral("items.edit")},
         {QStringLiteral("items.fetchPreview"), QStringLiteral("content.read")},
         {QStringLiteral("items.fetchFile"), QStringLiteral("content.read")},
@@ -198,6 +201,12 @@ void PluginHostApi::call(const QString& method,
         itemsUpload(params, run, done);
     else if (method == QStringLiteral("items.createFolder"))
         itemsCreateFolder(params, done);
+    else if (method == QStringLiteral("items.move"))
+        itemsMove(params, done);
+    else if (method == QStringLiteral("items.copy"))
+        itemsCopy(params, done);
+    else if (method == QStringLiteral("items.moveToRubbish"))
+        itemsMoveToRubbish(params, done);
     else if (method == QStringLiteral("transfers.download"))
         done(transfersDownload(params));
     else if (method == QStringLiteral("ui.reveal"))
@@ -758,6 +767,96 @@ readName(const QJsonValue& value, QString* out)
     return std::nullopt;
 }
 
+// A file or folder outside the Rubbish bin.
+std::optional<PluginHostApi::Reply> readLiveNode(const IMegaClient& client, const QJsonValue& value, NodeSnapshot* out)
+{
+    std::uint64_t handle = 0;
+    if (std::optional<PluginHostApi::Reply> error = decodeHandle(client, value, &handle))
+        return error;
+    const Result<NodeSnapshot> node = client.getNodeSnapshot(handle);
+    if (!node.success || node.value().inRubbish)
+        return fail(PluginHostApi::kItemNotFound, QStringLiteral("No such item: %1").arg(value.toString()));
+    *out = node.value();
+    return std::nullopt;
+}
+
+std::optional<PluginHostApi::Reply>
+readDestination(const IMegaClient& client, const QJsonValue& value, NodeSnapshot* out)
+{
+    if (std::optional<PluginHostApi::Reply> error = readNode(client, value, true, out))
+        return error;
+    if (out->inRubbish)
+        return fail(PluginHostApi::kItemNotFound, QStringLiteral("No such item: %1").arg(value.toString()));
+    return std::nullopt;
+}
+
+// Leaves *out alone when the param is absent.
+std::optional<PluginHostApi::Reply> readOptionalName(const QJsonObject& params, QString* out)
+{
+    const QJsonValue value = params.value(QStringLiteral("name"));
+    if (value.isUndefined() || value.isNull())
+        return std::nullopt;
+    return readName(value, out);
+}
+
+// What checkMove / checkUpload refusing a destination means to a plugin.
+PluginHostApi::Reply refusedPlacement(const Result<void>& refusal)
+{
+    if (refusal.errorCode == MegaErrorCode::kENoEnt)
+        return fail(PluginHostApi::kItemNotFound, QStringLiteral("The item or the folder no longer exists"));
+    PluginHostApi::Reply reply = refusal.errorCode == MegaErrorCode::kECircular
+                                     ? fail(kInvalidParams, QStringLiteral("A folder cannot go inside itself"))
+                                     : megaFail(refusal.errorMessage);
+    if (refusal.errorCode == MegaErrorCode::kECircular)
+        reply.errorData = QJsonObject{{QStringLiteral("reason"), QStringLiteral("circular")}};
+    else if (refusal.errorCode == MegaErrorCode::kEAccess)
+        reply.errorData = QJsonObject{{QStringLiteral("reason"), QStringLiteral("access")}};
+    return reply;
+}
+
+struct Placement
+{
+    bool clash = false;
+    std::set<std::string> taken;
+};
+
+// Only an item of the same type clashes: MEGA lets a file and a folder share a name.
+Placement placementIn(const IMegaClient& client, std::uint64_t folder, bool isFolder, const QString& name)
+{
+    Placement placement;
+    if (const Result<std::vector<NodeSnapshot>> children = client.getChildSnapshots(folder); children.success)
+    {
+        for (const NodeSnapshot& child : children.value())
+        {
+            placement.taken.insert(child.name);
+            placement.clash = placement.clash || (child.isFolder == isFolder && child.name == name.toStdString());
+        }
+    }
+    return placement;
+}
+
+// Runs start unless versioning is off, when making a version would delete the old
+// file for good instead of keeping it.
+void whenVersioningKeepsTheOldFile(const std::shared_ptr<IMegaClient>& client,
+                                   QObject* guiContext,
+                                   const PluginHostApi::Done& finish,
+                                   std::function<void()> start)
+{
+    client->getFileVersioningEnabled([guiContext, finish, start = std::move(start)](Result<bool> result) {
+        invokeOnGuiThread(guiContext, [finish, start, result = std::move(result)] {
+            // kENoEnt: the account never touched the setting, which means enabled.
+            if (!result.success && result.errorCode != MegaErrorCode::kENoEnt)
+                return finish(megaFail(result.errorMessage));
+            if (result.success && !result.value())
+                return finish(conflict(QStringLiteral("A file with that name already exists"),
+                                       QStringLiteral("versioningDisabled"),
+                                       QStringLiteral("Versioning is off for this account, so replacing would delete the "
+                                                      "existing file permanently.")));
+            start();
+        });
+    });
+}
+
 std::optional<PluginHostApi::Reply>
 readBytes(const QJsonObject& params, const QString& key, bool required, std::optional<std::uint64_t>* out)
 {
@@ -1155,20 +1254,7 @@ void PluginHostApi::itemsUpload(const QJsonObject& params, RunState& run, const 
             };
             if (!checkVersioning)
                 return start();
-            client->getFileVersioningEnabled([guiContext, finish, start](Result<bool> result) {
-                invokeOnGuiThread(guiContext, [finish, start, result = std::move(result)] {
-                    // kENoEnt: the account never touched the setting, which means enabled.
-                    if (!result.success && result.errorCode != MegaErrorCode::kENoEnt)
-                        return finish(megaFail(result.errorMessage));
-                    if (result.success && !result.value())
-                        return finish(conflict(
-                            QStringLiteral("A file with that name already exists"),
-                            QStringLiteral("versioningDisabled"),
-                            QStringLiteral("Versioning is off for this account, so replacing would delete the "
-                                           "existing file permanently.")));
-                    start();
-                });
-            });
+            whenVersioningKeepsTheOldFile(client, guiContext, finish, start);
         },
         done);
 }
@@ -1227,6 +1313,143 @@ void PluginHostApi::itemsCreateFolder(const QJsonObject& params, const Done& don
                 done(reply);
             });
         });
+}
+
+void PluginHostApi::itemsMove(const QJsonObject& params, const Done& done) const
+{
+    NodeSnapshot node;
+    if (std::optional<Reply> error = readLiveNode(*mClient, params.value(QStringLiteral("handle")), &node))
+        return done(*error);
+    if (!node.hasParent)
+        return done(fail(kInvalidParams, QStringLiteral("A root cannot be moved")));
+    NodeSnapshot target;
+    if (std::optional<Reply> error = readDestination(*mClient, params.value(QStringLiteral("to")), &target))
+        return done(*error);
+    QString name = QString::fromStdString(node.name);
+    if (std::optional<Reply> error = readOptionalName(params, &name))
+        return done(*error);
+    QString onConflict;
+    if (std::optional<Reply> error = readChoice(params,
+                                                QStringLiteral("onConflict"),
+                                                {QStringLiteral("rename"), QStringLiteral("fail"), QStringLiteral("version")},
+                                                &onConflict))
+        return done(*error);
+    if (onConflict == QLatin1String("version"))
+        return done(fail(kInvalidParams, QStringLiteral("onConflict \"version\" is for copying a file only")));
+
+    // Already there is a success, so a sorting plugin can be run again.
+    if (node.parentHandle == target.handle)
+    {
+        if (name.toStdString() != node.name)
+            return done(fail(kInvalidParams, QStringLiteral("The item is already in that folder; rename it with items.update")));
+        return done(ok(QJsonObject{{QStringLiteral("item"), toItem(*mClient, node)}, {QStringLiteral("moved"), false}}));
+    }
+    if (const Result<void> allowed = mClient->checkMove(node.handle, target.handle, false); !allowed.success)
+        return done(refusedPlacement(allowed));
+
+    const Placement placement = placementIn(*mClient, target.handle, node.isFolder, name);
+    if (placement.clash)
+    {
+        if (onConflict == QLatin1String("fail"))
+            return done(conflict(QStringLiteral("%1 already exists there").arg(name), QStringLiteral("exists")));
+        name = QString::fromStdString(FileOperationService::uniqueMoveName(name.toStdString(), node.isFolder, placement.taken));
+    }
+
+    const std::string newName = name.toStdString() == node.name ? std::string() : name.toStdString();
+    mClient->moveNode(
+        node.handle,
+        target.handle,
+        false,
+        newName,
+        [client = mClient, guiContext = mGuiContext, done, handle = node.handle](Result<void> result) {
+            invokeOnGuiThread(guiContext, [client, done, handle, result = std::move(result)] {
+                if (!result.success)
+                    return done(result.errorCode == MegaErrorCode::kENoEnt
+                                    ? fail(kItemNotFound, QStringLiteral("The item or the folder no longer exists"))
+                                    : megaFail(result.errorMessage));
+                Reply reply = ok(QJsonObject{{QStringLiteral("item"), createdItem(*client, handle)},
+                                             {QStringLiteral("moved"), true}});
+                reply.mutated = true;
+                done(reply);
+            });
+        });
+}
+
+void PluginHostApi::itemsCopy(const QJsonObject& params, const Done& done) const
+{
+    NodeSnapshot node;
+    if (std::optional<Reply> error = readLiveNode(*mClient, params.value(QStringLiteral("handle")), &node))
+        return done(*error);
+    if (!node.hasParent)
+        return done(fail(kInvalidParams, QStringLiteral("A root cannot be copied")));
+    NodeSnapshot target;
+    if (std::optional<Reply> error = readDestination(*mClient, params.value(QStringLiteral("to")), &target))
+        return done(*error);
+    QString name = QString::fromStdString(node.name);
+    if (std::optional<Reply> error = readOptionalName(params, &name))
+        return done(*error);
+    QString onConflict;
+    if (std::optional<Reply> error = readChoice(params,
+                                                QStringLiteral("onConflict"),
+                                                {QStringLiteral("rename"), QStringLiteral("fail"), QStringLiteral("version")},
+                                                &onConflict))
+        return done(*error);
+    if (onConflict == QLatin1String("version") && node.isFolder)
+        return done(fail(kInvalidParams, QStringLiteral("onConflict \"version\" is for copying a file only")));
+    if (const Result<void> allowed = mClient->checkUpload(target.handle, false); !allowed.success)
+        return done(refusedPlacement(allowed));
+
+    // A copy into its own folder clashes with itself, so it is renamed like any other.
+    const Placement placement = placementIn(*mClient, target.handle, node.isFolder, name);
+    bool makeVersion = false;
+    if (placement.clash)
+    {
+        if (onConflict == QLatin1String("fail"))
+            return done(conflict(QStringLiteral("%1 already exists there").arg(name), QStringLiteral("exists")));
+        if (onConflict == QLatin1String("rename"))
+            name = QString::fromStdString(FileOperationService::uniqueMoveName(name.toStdString(), node.isFolder, placement.taken));
+        else
+            makeVersion = true;
+    }
+
+    // An empty name keeps the source's (IMegaClient::copyNode).
+    const std::string newName = name.toStdString() == node.name ? std::string() : name.toStdString();
+    const auto start = [client = mClient, guiContext = mGuiContext, done, handle = node.handle, to = target.handle, newName] {
+        client->copyNode(handle, to, false, newName, [client, guiContext, done](Result<std::uint64_t> result) {
+            invokeOnGuiThread(guiContext, [client, done, result = std::move(result)] {
+                if (!result.success)
+                    return done(result.errorCode == MegaErrorCode::kENoEnt
+                                    ? fail(kItemNotFound, QStringLiteral("The item or the folder no longer exists"))
+                                    : megaFail(result.errorMessage));
+                Reply reply = ok(QJsonObject{{QStringLiteral("item"), createdItem(*client, result.value())}});
+                reply.mutated = true;
+                done(reply);
+            });
+        });
+    };
+    if (!makeVersion)
+        return start();
+    whenVersioningKeepsTheOldFile(mClient, mGuiContext, done, start);
+}
+
+void PluginHostApi::itemsMoveToRubbish(const QJsonObject& params, const Done& done) const
+{
+    NodeSnapshot node;
+    if (std::optional<Reply> error = readLiveNode(*mClient, params.value(QStringLiteral("handle")), &node))
+        return done(*error);
+    if (!node.hasParent)
+        return done(fail(kInvalidParams, QStringLiteral("A root cannot be moved to the Rubbish bin")));
+    mClient->moveToRubbish(node.handle, [guiContext = mGuiContext, done](Result<void> result) {
+        invokeOnGuiThread(guiContext, [done, result = std::move(result)] {
+            if (!result.success)
+                return done(result.errorCode == MegaErrorCode::kENoEnt
+                                ? fail(kItemNotFound, QStringLiteral("The item no longer exists"))
+                                : megaFail(result.errorMessage));
+            Reply reply = ok(QJsonObject{});
+            reply.mutated = true;
+            done(reply);
+        });
+    });
 }
 
 PluginHostApi::Reply PluginHostApi::transfersDownload(const QJsonObject& params) const

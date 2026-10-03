@@ -1661,9 +1661,9 @@ TEST_F(FileMutationControllerTest, PasteReadsTheDestinationBeforeCopying)
                              std::uint64_t,
                              bool,
                              const std::string&,
-                             std::function<void(Result<void>)> onDone) {
+                             std::function<void(Result<std::uint64_t>)> onDone) {
             fetchesWhenCopied = rootFetches;
-            onDone(Result<void>::ok());
+            onDone(Result<std::uint64_t>::ok(0));
         }));
 
     mutations->paste();
@@ -1682,7 +1682,7 @@ TEST_F(FileMutationControllerTest, PasteCopiesEveryClipboardEntryAndReportsOneTa
 
     EXPECT_CALL(*client, copyNode(_, _, _, _, _))
         .Times(3)
-        .WillRepeatedly(InvokeArgument<4>(Result<void>::ok()));
+        .WillRepeatedly(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->paste();
     flush();
@@ -1701,9 +1701,9 @@ TEST_F(FileMutationControllerTest, PasteSeparatesSucceededFromFailedCopies)
     flush();
     clipboard->copy(clipboardEntries({entry("a", 1), entry("b", 2)}), 7, false);
 
-    EXPECT_CALL(*client, copyNode(1u, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(1u, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     EXPECT_CALL(*client, copyNode(2u, _, _, _, _))
-        .WillOnce(InvokeArgument<4>(Result<void>::fail("gone", MegaErrorCode::kENoEnt)));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::fail("gone", MegaErrorCode::kENoEnt)));
 
     mutations->paste();
     flush();
@@ -1724,7 +1724,7 @@ TEST_F(FileMutationControllerTest, PasteKeepsANonCollidingNameUnchanged)
     // Empty name == "keep the source's", the only way to reach copyNode's
     // unnamed SDK overload.
     EXPECT_CALL(*client, copyNode(5u, _, true, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->paste();
     flush();
@@ -1799,9 +1799,9 @@ TEST_F(FileMutationControllerTest, CopyIgnoringExistingIssuesACollidingFolderToo
     // (SPEC_NAME_CONFLICT_COPY_MOVE 1-2). Dropping the folder here used to make
     // Continue mean Skip for it, silently.
     EXPECT_CALL(*client, copyNode(5u, _, _, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     EXPECT_CALL(*client, copyNode(6u, _, _, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->copyIgnoringExisting(
         lastConflictEntries, lastConflictDestination, lastConflictDestinationIsRoot);
@@ -1822,9 +1822,9 @@ TEST_F(FileMutationControllerTest, PasteIntoTheFolderTheEntriesLiveInDuplicatesW
     clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("shared", 6, true)}), 7, false);
 
     EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     EXPECT_CALL(*client, copyNode(6u, _, _, std::string("shared - Copy"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->paste();
     flush();
@@ -1846,9 +1846,9 @@ TEST_F(FileMutationControllerTest, PasteDoesNotHandOutTheSameGeneratedNameTwice)
     clipboard->copy(clipboardEntries({entry("a.txt", 5), entry("a.txt", 6)}), 7, false);
 
     EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     EXPECT_CALL(*client, copyNode(6u, _, _, std::string("a - Copy (2).txt"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->paste();
     flush();
@@ -1869,7 +1869,7 @@ TEST_F(FileMutationControllerTest, PasteDoesNotAskWhenOnlyAFolderHoldsTheName)
     clipboard->copy(clipboardEntries({entry("Reports", 5)}), 7, false);
 
     EXPECT_CALL(*client, copyNode(5u, _, _, std::string("Reports - Copy"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->paste();
     flush();
@@ -1895,9 +1895,9 @@ TEST_F(FileMutationControllerTest, CopyIgnoringExistingKeepsTheCollidingSourceNa
     ASSERT_EQ(conflictCalls, 1);
 
     EXPECT_CALL(*client, copyNode(5u, _, _, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     EXPECT_CALL(*client, copyNode(6u, _, _, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->copyIgnoringExisting(
         lastConflictEntries, lastConflictDestination, lastConflictDestinationIsRoot);
@@ -1920,9 +1920,9 @@ TEST_F(FileMutationControllerTest, CopyRenamingExistingRenamesOnlyWhatCollided)
     ASSERT_EQ(conflictCalls, 1);
 
     EXPECT_CALL(*client, copyNode(5u, _, _, std::string("a - Copy.txt"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     EXPECT_CALL(*client, copyNode(6u, _, _, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->copyRenamingExisting(
         lastConflictEntries, lastConflictDestination, lastConflictDestinationIsRoot);
@@ -1986,8 +1986,8 @@ TEST_F(FileMutationControllerTest, PasteLetsASharedNameThroughWhenTheKindsDiffer
 
     // Names left open: the folder's is decided by uniqueCopyName, whose set is
     // keyed by name alone, and what it picks is not what this test is about.
-    EXPECT_CALL(*client, copyNode(5u, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
-    EXPECT_CALL(*client, copyNode(6u, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(5u, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
+    EXPECT_CALL(*client, copyNode(6u, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->paste();
     flush();
@@ -2035,7 +2035,7 @@ TEST_F(FileMutationControllerTest, ACopyThatCollidesWithNothingIsNeverPriced)
     EXPECT_CALL(*client, subtreeSize(_, _)).Times(0);
     EXPECT_CALL(*client, copyNode(_, _, _, _, _))
         .Times(2)
-        .WillRepeatedly(InvokeArgument<4>(Result<void>::ok()));
+        .WillRepeatedly(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->paste();
     flush();
@@ -2077,9 +2077,9 @@ TEST_F(FileMutationControllerTest, CopyConflictPreviewsTheNameTheRenameAnswerAct
     EXPECT_EQ(lastConflictRenamedTo, QStringList{QStringLiteral("x - Copy (2).txt")});
 
     EXPECT_CALL(*client, copyNode(5u, _, _, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     EXPECT_CALL(*client, copyNode(6u, _, _, std::string("x - Copy (2).txt"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->copyRenamingExisting(
         lastConflictEntries, lastConflictDestination, lastConflictDestinationIsRoot);
@@ -2103,7 +2103,7 @@ TEST_F(FileMutationControllerTest, CopySkippingExistingLeavesOutOnlyTheColliding
 
     EXPECT_CALL(*client, copyNode(5u, _, _, _, _)).Times(0);
     EXPECT_CALL(*client, copyNode(6u, _, _, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->copySkippingExisting(
         lastConflictEntries, lastConflictDestination, lastConflictDestinationIsRoot);
@@ -2256,8 +2256,8 @@ TEST_F(FileMutationControllerTest, PasteEmitsNodesCopiedOnlyWhenSomethingSucceed
         });
 
     EXPECT_CALL(*client, copyNode(_, _, _, _, _))
-        .WillOnce(InvokeArgument<4>(Result<void>::fail("gone", MegaErrorCode::kENoEnt)))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::fail("gone", MegaErrorCode::kENoEnt)))
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->paste();
     flush();
@@ -2276,7 +2276,7 @@ TEST_F(FileMutationControllerTest, PasteClearsTheClipboardAfterACutButNotAfterAC
     controller->loadRoot();
     flush();
 
-    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     clipboard->copy(clipboardEntries({entry("a", 1)}), 7, false);
     mutations->paste();
     flush();
@@ -2405,7 +2405,7 @@ TEST_F(FileMutationControllerTest, CopyEntriesToReadsTheDropTargetNotTheCurrentF
             onDone(Result<std::vector<FileEntry>>::ok({}));
         }));
     EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string(), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);
     flush();
@@ -2449,7 +2449,7 @@ TEST_F(FileMutationControllerTest, CopyEntriesToOntoTheirOwnFolderDuplicatesWith
             Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("a.txt", 1)})));
 
     EXPECT_CALL(*client, copyNode(1u, 7u, false, std::string("a - Copy.txt"), _))
-        .WillOnce(InvokeArgument<4>(Result<void>::ok()));
+        .WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     mutations->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);
     flush();
@@ -2508,7 +2508,7 @@ TEST_F(FileMutationControllerTest, CopyEntriesToEmitsNodesCopiedForTheDropTarget
 
     EXPECT_CALL(*client, getChildren(7u, _, _))
         .WillOnce(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok({})));
-    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
 
     quint64 destination = 0;
     bool destinationIsRoot = true;
@@ -2536,7 +2536,7 @@ TEST_F(FileMutationControllerTest, CopyEntriesToDoesNotRefetchAListingItDidNotCh
 
     EXPECT_CALL(*client, getChildren(7u, _, _))
         .WillOnce(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok({})));
-    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<void>::ok()));
+    EXPECT_CALL(*client, copyNode(_, _, _, _, _)).WillOnce(InvokeArgument<4>(Result<std::uint64_t>::ok(0)));
     const int fetchesBefore = rootFetches;
 
     mutations->copyEntriesTo(clipboardEntries({entry("a.txt", 1)}), 7, false);

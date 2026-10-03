@@ -3,6 +3,7 @@
 **状態（2026-10-03）: 推奨順 1（ダウンロード・範囲読み・アップロード・フォルダ作成）は §F の仕様で実装済み
 （87a90de）。続いて権限（dd0aea1、同意ダイアログは保留）、`fields` と `ui.reveal`（3a038b2）、フォルダ背景と
 左ペインのメニュー（954c038・b940881、§C）、`initialize` の `app.colorScheme`（ba24d50、§E）も実装済み。
+推奨順 3（`items.copy` / `items.move` / `items.moveToRubbish`）も §G の仕様で実装済み。
 残りの候補は未決定で、必要になった時点で決める。仕様の正は `PLUGINS.md`。**
 現行 API（`items.get` / `children` / `descendants` / `update` / `fetchPreview`、`ui.confirm`、
 `ui.progress`）は WD Tagger プラグインの必要分しか無いため、汎用プラグインに要りそうなものを
@@ -68,7 +69,7 @@
    一時フォルダの仕組みもそのまま使える。
 2. context の `folder` とフォルダ背景の右クリック（**済**、§C）、`hasPreview` フィールド（未） — 小さく、
    WD Tagger もすぐ恩恵を受ける。
-3. `copy` / `move` / `trash` と権限表示 — 一緒に。
+3. `copy` / `move` / `trash` と権限表示 — 一緒に。（**済**、§G。`trash` は `items.moveToRubbish` になった）
 4. 残り（`search`、リンク、`account.info`、`ui.*`）は必要になった時点で。
 
 ## F. 決定: 推奨順 1 の仕様（2026-10-03）
@@ -141,3 +142,33 @@
   （`"rename"` でやり直すか `ui.confirm`）も同じだから。
 - upload / createFolder で変更があれば既存の `changed` で実行後に表示を更新。
 - `PLUGINS.md` のリファレンスとヘルパ（`megaexplorer_plugin.py`）を同時に更新する。
+
+## G. 決定: copy / move / moveToRubbish の仕様（2026-10-03）
+
+正は `PLUGINS.md`。ここには決めた理由だけを残す。
+
+```
+items.move          {handle, to, name?, onConflict?}  → {item, moved}
+items.copy          {handle, to, name?, onConflict?}  → {item}
+items.moveToRubbish {handle}                          → {}
+```
+
+- **名前**: `items.trash` ではなく `items.moveToRubbish`。MEGA・SDK・`IMegaClient` の用語に合わせた。
+- **権限**: `copy` / `move` は既存の `items.write`（説明を「追加・コピー・移動」に広げた）。
+  権限を細かく増やしたくないので既存に寄せたが、ゴミ箱だけは戻せない削除に繋がりうるので
+  **`items.rubbish`** を新設した。これは「ゴミ箱に関わる操作の権限」で、復元や完全削除を将来足すなら
+  ここに入れるかをその時に決める（完全削除は必要になるまで検討しない）。
+- **`onConflict`**: `"rename"`（既定）/ `"fail"` / `"version"`（コピー×ファイルのみ）。衝突は同名かつ同種別だけ
+  （`SPEC_NAME_CONFLICT_COPY_MOVE.md` §3-6、`createFolder` と同じ）。同名の兄弟を作る選択肢（アプリの
+  「このまま実行」）は出さない。プラグインが意図して欲しがる場面がない。フォルダのマージは SDK に無い。
+- **今いるフォルダへの move**: 何もせず成功（`moved: false`）。アプリでも同じフォルダへの移動はエラーに
+  しないのと揃え、振り分けの再実行を安全にする。`name` 付きは `-32602`（名前変更は `items.update`）。
+- **今いるフォルダへの copy**: 自分自身と衝突する通常の衝突として扱い、`"rename"` なら `name (2)`。
+  アプリの貼り付けの「- Copy」は使わない。
+- **確認と通知**: アプリは出さない。同意ダイアログも引き続き保留。確認（`ui.confirm`）と結果の通知は
+  プラグイン開発者に任せる。
+- **ゴミ箱の中の項目**: 3 つとも `-32002`。`move` でゴミ箱から出す（復元）は将来の `items.rubbish` 側の話。
+
+実装メモ: `IMegaClient::copyNode` はコピーのハンドルを返すようにした（F-7 の `createFolder` と同じ変更）。
+ゴミ箱内の判定のため `NodeSnapshot::inRubbish` を足した（削除済みのノードもハンドルで引けてしまうため）。
+転送キューには入れない単発リクエストで、Cancel では止まらない（`items.update` と同じ）。

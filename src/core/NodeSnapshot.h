@@ -21,6 +21,8 @@ struct NodeSnapshot
     bool isFavourite = false;
     std::string description;
     std::vector<std::string> tags;
+    // A binned node still resolves by handle, so lookups alone cannot tell it apart.
+    bool inRubbish = false;
 
     bool operator==(const NodeSnapshot& other) const
     {
@@ -28,7 +30,8 @@ struct NodeSnapshot
                sizeBytes == other.sizeBytes && modificationTime == other.modificationTime &&
                hasParent == other.hasParent && parentHandle == other.parentHandle &&
                path == other.path && isFavourite == other.isFavourite &&
-               description == other.description && tags == other.tags;
+               description == other.description && tags == other.tags &&
+               inRubbish == other.inRubbish;
     }
 };
 

@@ -1722,7 +1722,7 @@ TestCase {
     }
 
     function test_settings_everyPermissionHasWording_data() {
-        return ["items.read", "items.write", "items.edit", "content.read", "content.download"].map(
+        return ["items.read", "items.write", "items.edit", "items.rubbish", "content.read", "content.download"].map(
                     p => ({
                         "tag": p,
                         "permission": p

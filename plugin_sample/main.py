@@ -238,6 +238,42 @@ def create_folder(ctx):
     return f"Created {item.path}"
 
 
+# --- Copying, moving and the Rubbish bin -----------------------------------------
+# ctx.copy and ctx.move wait for MEGA and return the item where it now is; a name
+# already taken there gets " (2)" ("rename"). Moving into the folder an item is
+# already in is a no-op (moved is False).
+# ctx.move_to_rubbish needs the "items.rubbish" permission, and the app asks
+# nothing first: confirming is the plugin's job.
+
+@plugin.command("copy-here")
+def copy_here(ctx):
+    copies = [ctx.copy(item, item.parent) for item in ctx.items]
+    return "Copied to " + ", ".join(copy.name for copy in copies)
+
+
+@plugin.command("move-up")
+def move_up(ctx):
+    for item in ctx.items:
+        parent = ctx.get(item.parent)
+        if parent.parent is None:
+            raise CommandError(f"{item.name} is already at the top")
+        ctx.move(item, parent.parent)
+    return f"Moved {len(ctx.items)} up one folder"
+
+
+@plugin.command("move-to-rubbish")
+def move_to_rubbish(ctx):
+    names = ", ".join(item.name for item in ctx.items[:3])
+    if len(ctx.items) > 3:
+        names += f" and {len(ctx.items) - 3} more"
+    if not ctx.confirm(f"Move {names} to the Rubbish bin?",
+                       title="Move to Rubbish bin?", ok_label="Move", danger=True):
+        return None
+    for item in ctx.items:
+        ctx.move_to_rubbish(item)
+    return f"Moved {len(ctx.items)} to the Rubbish bin"
+
+
 # --- Asking the user ------------------------------------------------------------
 # ctx.confirm waits until the user answers: True for OK. danger=True makes OK red
 # and focuses Cancel; title and ok_label replace the plugin's name and "OK".

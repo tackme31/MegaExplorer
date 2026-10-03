@@ -174,7 +174,7 @@ public:
                   std::uint64_t newParentHandle,
                   bool newParentIsRoot,
                   const std::string& newName,
-                  std::function<void(Result<void>)> onDone) override;
+                  std::function<void(Result<std::uint64_t>)> onDone) override;
 
     void createFolder(std::uint64_t parentHandle,
                       bool parentIsRoot,

@@ -115,7 +115,15 @@ void FileOperationService::copy(std::uint64_t handle,
         return;
     }
 
-    mClient->copyNode(handle, newParentHandle, newParentIsRoot, newName, std::move(onDone));
+    mClient->copyNode(handle,
+                      newParentHandle,
+                      newParentIsRoot,
+                      newName,
+                      [onDone = std::move(onDone)](Result<std::uint64_t> result) {
+                          onDone(result.success ? Result<void>::ok()
+                                                : Result<void>::fail(std::move(result.errorMessage),
+                                                                     result.errorCode));
+                      });
 }
 
 void FileOperationService::createFolder(std::uint64_t parentHandle,

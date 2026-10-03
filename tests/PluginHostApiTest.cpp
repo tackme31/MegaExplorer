@@ -1090,3 +1090,163 @@ TEST_F(PluginHostApiTest, ItemsUploadChecksForAClashWhenItsTurnComesNotWhenQueue
   ASSERT_TRUE(second.has_value());
   EXPECT_EQ(second->errorCode, PluginHostApi::kConflict);
 }
+
+namespace
+{
+// root(1) holds Dest(2), a.txt(5) and Photos(6); Dest holds a.txt(20).
+class PluginHostApiOrganiseTest : public PluginHostApiTest
+{
+protected:
+    void SetUp() override
+    {
+        PluginHostApiTest::SetUp();
+        mRun.permissions << QStringLiteral("items.rubbish");
+        NodeSnapshot root = node(1, "root", true);
+        root.hasParent = false;
+        root.path = "/";
+        for (const NodeSnapshot& n : {root, node(2, "Dest", true), node(5, "a.txt", false), node(6, "Photos", true)})
+            ON_CALL(*mClient, getNodeSnapshot(n.handle)).WillByDefault(Return(Result<NodeSnapshot>::ok(n)));
+        ON_CALL(*mClient, getChildSnapshots(1))
+            .WillByDefault(Return(Result<std::vector<NodeSnapshot>>::ok(
+                {node(2, "Dest", true), node(5, "a.txt", false), node(6, "Photos", true)})));
+        NodeSnapshot inDest = node(20, "a.txt", false);
+        inDest.parentHandle = 2;
+        ON_CALL(*mClient, getChildSnapshots(2))
+            .WillByDefault(Return(Result<std::vector<NodeSnapshot>>::ok({inDest})));
+        ON_CALL(*mClient, checkMove(_, _, _)).WillByDefault(Return(Result<void>::ok()));
+        ON_CALL(*mClient, checkUpload(_, _)).WillByDefault(Return(Result<void>::ok()));
+    }
+
+    static QJsonObject params(const char* handle, const char* to)
+    {
+        return {{QStringLiteral("handle"), QString::fromLatin1(handle)}, {QStringLiteral("to"), QString::fromLatin1(to)}};
+    }
+};
+} // namespace
+
+TEST_F(PluginHostApiTest, OrganisingMethodsNeedWriteOrRubbish)
+{
+    EXPECT_EQ(PluginHostApi::requiredPermission(QStringLiteral("items.copy")), QStringLiteral("items.write"));
+    EXPECT_EQ(PluginHostApi::requiredPermission(QStringLiteral("items.move")), QStringLiteral("items.write"));
+    EXPECT_EQ(PluginHostApi::requiredPermission(QStringLiteral("items.moveToRubbish")), QStringLiteral("items.rubbish"));
+    EXPECT_TRUE(isKnownPluginPermission(QStringLiteral("items.rubbish")));
+
+    EXPECT_CALL(*mClient, moveToRubbish(_, _)).Times(0);
+    const PluginHostApi::Reply reply =
+        call(QStringLiteral("items.moveToRubbish"), {{QStringLiteral("handle"), QStringLiteral("h5")}});
+    EXPECT_EQ(reply.errorCode, PluginHostApi::kPermissionDenied);
+}
+
+TEST_F(PluginHostApiOrganiseTest, MoveRenamesOnAClashOfTheSameTypeAndKeepsTheHandle)
+{
+    EXPECT_CALL(*mClient, moveNode(5u, 2u, false, std::string("a (2).txt"), _))
+        .WillOnce(::testing::InvokeArgument<4>(Result<void>::ok()));
+    const PluginHostApi::Reply reply = call(QStringLiteral("items.move"), params("h5", "h2"));
+    ASSERT_FALSE(reply.errorCode.has_value()) << reply.errorMessage.toStdString();
+    EXPECT_TRUE(reply.result.toObject().value(QStringLiteral("moved")).toBool());
+    EXPECT_EQ(reply.result.toObject().value(QStringLiteral("item")).toObject().value(QStringLiteral("handle")).toString(),
+              QStringLiteral("h5"));
+    EXPECT_TRUE(reply.mutated);
+}
+
+TEST_F(PluginHostApiOrganiseTest, MoveWithFailOrVersionChangesNothing)
+{
+    EXPECT_CALL(*mClient, moveNode(_, _, _, _, _)).Times(0);
+    QJsonObject p = params("h5", "h2");
+    p.insert(QStringLiteral("onConflict"), QStringLiteral("fail"));
+    PluginHostApi::Reply reply = call(QStringLiteral("items.move"), p);
+    EXPECT_EQ(reply.errorCode, PluginHostApi::kConflict);
+    EXPECT_EQ(reply.errorData.toObject().value(QStringLiteral("reason")).toString(), QStringLiteral("exists"));
+
+    p.insert(QStringLiteral("onConflict"), QStringLiteral("version"));
+    reply = call(QStringLiteral("items.move"), p);
+    EXPECT_EQ(reply.errorCode, -32602);
+}
+
+TEST_F(PluginHostApiOrganiseTest, MoveIntoItsOwnFolderIsANoOpUnlessItRenames)
+{
+    EXPECT_CALL(*mClient, moveNode(_, _, _, _, _)).Times(0);
+    PluginHostApi::Reply reply = call(QStringLiteral("items.move"), params("h5", "h1"));
+    ASSERT_FALSE(reply.errorCode.has_value());
+    EXPECT_FALSE(reply.result.toObject().value(QStringLiteral("moved")).toBool());
+    EXPECT_FALSE(reply.mutated);
+
+    QJsonObject p = params("h5", "h1");
+    p.insert(QStringLiteral("name"), QStringLiteral("b.txt"));
+    reply = call(QStringLiteral("items.move"), p);
+    EXPECT_EQ(reply.errorCode, -32602);
+}
+
+TEST_F(PluginHostApiOrganiseTest, MoveReportsWhyMegaWouldRefuseIt)
+{
+    EXPECT_CALL(*mClient, moveNode(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(*mClient, checkMove(6u, 2u, false))
+        .WillOnce(Return(Result<void>::fail("circular", MegaErrorCode::kECircular)))
+        .WillOnce(Return(Result<void>::fail("read-only", MegaErrorCode::kEAccess)));
+    PluginHostApi::Reply reply = call(QStringLiteral("items.move"), params("h6", "h2"));
+    EXPECT_EQ(reply.errorCode, -32602);
+    EXPECT_EQ(reply.errorData.toObject().value(QStringLiteral("reason")).toString(), QStringLiteral("circular"));
+    reply = call(QStringLiteral("items.move"), params("h6", "h2"));
+    EXPECT_EQ(reply.errorCode, PluginHostApi::kMegaError);
+    EXPECT_EQ(reply.errorData.toObject().value(QStringLiteral("reason")).toString(), QStringLiteral("access"));
+}
+
+TEST_F(PluginHostApiOrganiseTest, CopyIntoItsOwnFolderClashesWithItselfAndReturnsTheCopy)
+{
+    ON_CALL(*mClient, getNodeSnapshot(50)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(50, "a (2).txt", false))));
+    EXPECT_CALL(*mClient, copyNode(5u, 1u, false, std::string("a (2).txt"), _))
+        .WillOnce(::testing::InvokeArgument<4>(Result<std::uint64_t>::ok(50)));
+    const PluginHostApi::Reply reply = call(QStringLiteral("items.copy"), params("h5", "h1"));
+    ASSERT_FALSE(reply.errorCode.has_value()) << reply.errorMessage.toStdString();
+    EXPECT_EQ(reply.result.toObject().value(QStringLiteral("item")).toObject().value(QStringLiteral("handle")).toString(),
+              QStringLiteral("h50"));
+    EXPECT_TRUE(reply.mutated);
+}
+
+TEST_F(PluginHostApiOrganiseTest, CopyWithoutAClashKeepsTheSourceName)
+{
+    EXPECT_CALL(*mClient, copyNode(6u, 2u, false, std::string(), _))
+        .WillOnce(::testing::InvokeArgument<4>(Result<std::uint64_t>::ok(60)));
+    EXPECT_FALSE(call(QStringLiteral("items.copy"), params("h6", "h2")).errorCode.has_value());
+}
+
+TEST_F(PluginHostApiOrganiseTest, CopyAsAVersionOnlyForAFileAndOnlyWithVersioningOn)
+{
+    QJsonObject p = params("h6", "h2");
+    p.insert(QStringLiteral("onConflict"), QStringLiteral("version"));
+    EXPECT_EQ(call(QStringLiteral("items.copy"), p).errorCode, -32602);
+
+    bool versioning = false;
+    ON_CALL(*mClient, getFileVersioningEnabled(_)).WillByDefault([&versioning](std::function<void(Result<bool>)> onDone) {
+        onDone(Result<bool>::ok(versioning));
+    });
+    p = params("h5", "h2");
+    p.insert(QStringLiteral("onConflict"), QStringLiteral("version"));
+    EXPECT_CALL(*mClient, copyNode(5u, 2u, false, std::string(), _))
+        .WillOnce(::testing::InvokeArgument<4>(Result<std::uint64_t>::ok(21)));
+
+    PluginHostApi::Reply reply = call(QStringLiteral("items.copy"), p);
+    EXPECT_EQ(reply.errorCode, PluginHostApi::kConflict);
+    EXPECT_EQ(reply.errorData.toObject().value(QStringLiteral("reason")).toString(), QStringLiteral("versioningDisabled"));
+
+    versioning = true;
+    reply = call(QStringLiteral("items.copy"), p);
+    EXPECT_FALSE(reply.errorCode.has_value());
+}
+
+TEST_F(PluginHostApiOrganiseTest, MoveToRubbishRefusesARootAndAnItemAlreadyBinned)
+{
+    NodeSnapshot binned = node(7, "old.txt", false);
+    binned.inRubbish = true;
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(binned)));
+    EXPECT_CALL(*mClient, moveToRubbish(5u, _)).WillOnce(::testing::InvokeArgument<1>(Result<void>::ok()));
+
+    EXPECT_EQ(call(QStringLiteral("items.moveToRubbish"), {{QStringLiteral("handle"), QStringLiteral("h1")}}).errorCode,
+              -32602);
+    EXPECT_EQ(call(QStringLiteral("items.moveToRubbish"), {{QStringLiteral("handle"), QStringLiteral("h7")}}).errorCode,
+              PluginHostApi::kItemNotFound);
+    const PluginHostApi::Reply reply =
+        call(QStringLiteral("items.moveToRubbish"), {{QStringLiteral("handle"), QStringLiteral("h5")}});
+    EXPECT_FALSE(reply.errorCode.has_value());
+    EXPECT_TRUE(reply.mutated);
+}

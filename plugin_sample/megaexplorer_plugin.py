@@ -85,7 +85,7 @@ class MegaError(RpcError):
 
 
 class Conflict(RpcError):
-    """upload / create_folder: the name is taken and on_conflict did not resolve it.
+    """upload / create_folder / move / copy: the name is taken and on_conflict did not resolve it.
     Nothing was changed. reason is "exists", or "versioningDisabled" when
     on_conflict="version" would have deleted the old file for good."""
 
@@ -465,6 +465,37 @@ class Context:
             params["onConflict"] = on_conflict
         result = self.call("items.createFolder", params)
         return Item(result["item"]), bool(result["created"])
+
+    def move(self, x, to, name=None, on_conflict=None):
+        """Moves item x into folder to; returns (Item, moved). The handle stays the same.
+
+        name renames it on the way. When an item of the same type and name is already
+        there, on_conflict says what happens: "rename" (the default, "name (2)") or
+        "fail" (raises Conflict). Moving into the folder it is already in does
+        nothing and returns moved=False."""
+        params = {"handle": _handle(x), "to": _handle(to)}
+        if name is not None:
+            params["name"] = name
+        if on_conflict is not None:
+            params["onConflict"] = on_conflict
+        result = self.call("items.move", params)
+        return Item(result["item"]), bool(result["moved"])
+
+    def copy(self, x, to, name=None, on_conflict=None):
+        """Copies item x (a folder with everything in it) into folder to; returns the copy.
+
+        on_conflict as for move, plus "version" for a file: the copy becomes the
+        existing file's new version (raises Conflict if versioning is off)."""
+        params = {"handle": _handle(x), "to": _handle(to)}
+        if name is not None:
+            params["name"] = name
+        if on_conflict is not None:
+            params["onConflict"] = on_conflict
+        return Item(self.call("items.copy", params)["item"])
+
+    def move_to_rubbish(self, x):
+        """Moves item x to the Rubbish bin. Needs the items.rubbish permission."""
+        self.call("items.moveToRubbish", {"handle": _handle(x)})
 
     # --- downloads for the user -----------------------------------------------------
 

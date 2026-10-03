@@ -112,6 +112,9 @@ private:
     void itemsReadRange(const QJsonObject& params, RunState& run, const Done& done) const;
     void itemsUpload(const QJsonObject& params, RunState& run, const Done& done) const;
     void itemsCreateFolder(const QJsonObject& params, const Done& done) const;
+    void itemsMove(const QJsonObject& params, const Done& done) const;
+    void itemsCopy(const QJsonObject& params, const Done& done) const;
+    void itemsMoveToRubbish(const QJsonObject& params, const Done& done) const;
     Reply transfersDownload(const QJsonObject& params) const;
     Reply uiReveal(const QJsonObject& params) const;
 

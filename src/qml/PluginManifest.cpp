@@ -66,6 +66,7 @@ bool isKnownPluginPermission(const QString& permission)
     static const QStringList known{QStringLiteral("items.read"),
                                    QStringLiteral("items.write"),
                                    QStringLiteral("items.edit"),
+                                   QStringLiteral("items.rubbish"),
                                    QStringLiteral("content.read"),
                                    QStringLiteral("content.download")};
     return known.contains(permission);

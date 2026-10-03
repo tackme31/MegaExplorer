@@ -91,7 +91,9 @@ Dialog {
         case "items.read":
             return qsTr("Read the names and details of any file or folder");
         case "items.write":
-            return qsTr("Add files and folders");
+            return qsTr("Add, copy and move files and folders");
+        case "items.rubbish":
+            return qsTr("Move files and folders to the Rubbish bin");
         case "items.edit":
             return qsTr("Change names, descriptions, tags and favourites");
         case "content.read":
