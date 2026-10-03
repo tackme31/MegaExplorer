@@ -133,7 +133,8 @@ class Item:
     """An item in the account.
 
     Every item carries handle, name, type, parent, size, mtime, path, favourite,
-    description and tags. Those in ctx.items are as they were when the menu was
+    description and tags, except those fetched with fields=[...]: the attributes
+    left out are None. Those in ctx.items are as they were when the menu was
     clicked; call get() for the state now.
     """
 
@@ -327,6 +328,10 @@ class Context:
             params["okLabel"] = ok_label
         return bool(self.call("ui.confirm", params)["ok"])
 
+    def reveal(self, x):
+        """Shows item x selected in its folder in the app's current tab."""
+        self.call("ui.reveal", {"handle": _handle(x)})
+
     # --- items ------------------------------------------------------------------
 
     def call(self, method, params):
@@ -335,31 +340,38 @@ class Context:
         params.setdefault("invocationId", self.invocation_id)
         return self._connection.call(method, params)
 
-    def get(self, x):
-        """The current state of one item (handle or Item)."""
-        return self.get_many([x])[0]
+    def get(self, x, fields=None):
+        """The current state of one item (handle or Item).
+        fields: None for every field, or a list such as ["name", "size"]."""
+        return self.get_many([x], fields)[0]
 
-    def get_many(self, xs):
-        result = self.call("items.get", {"handles": [_handle(x) for x in xs]})
+    def get_many(self, xs, fields=None):
+        params = {"handles": [_handle(x) for x in xs]}
+        if fields is not None:
+            params["fields"] = list(fields)
+        result = self.call("items.get", params)
         return [Item(data) for data in result["items"]]
 
-    def children(self, x, type=None):
+    def children(self, x, type=None, fields=None):
         """The items in folder x, fetched page by page as you iterate.
-        type: None for both, "file" or "folder"."""
-        return self._pages("items.children", x, type)
+        type: None for both, "file" or "folder". fields: as get()."""
+        return self._pages("items.children", x, type, fields)
 
-    def descendants(self, x, type=None):
+    def descendants(self, x, type=None, fields=None):
         """Everything under folder x, at any depth, fetched page by page as you
         iterate. A folder comes before its contents (depth-first). The list is
-        fixed when iteration starts; items deleted since are left out."""
-        return self._pages("items.descendants", x, type)
+        fixed when iteration starts; items deleted since are left out.
+        fields: as get(); worth it on a large tree."""
+        return self._pages("items.descendants", x, type, fields)
 
-    def _pages(self, method, x, type):
+    def _pages(self, method, x, type, fields=None):
         cursor = None
         while True:
             params = {"handle": _handle(x), "cursor": cursor}
             if type is not None:
                 params["type"] = type
+            if fields is not None:
+                params["fields"] = list(fields)
             page = self.call(method, params)
             for data in page["items"]:
                 yield Item(data)

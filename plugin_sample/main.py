@@ -11,6 +11,7 @@ the section you need; plugin.json says how each command is declared
 - Changing items: items.update (tags, favourites)
 - Transfers: transfers.download, items.upload, items.createFolder
 - Asking the user: ui.confirm
+- Showing an item in the app: ui.reveal
 - Progress and cancel: ui.progress, $/cancel
 """
 
@@ -70,8 +71,9 @@ def show_long_result(ctx):
 # ctx.items already carries path, size, tags, favourite... as they were when the
 # menu was clicked; ctx.get(x) reads an item as it is now. children and
 # descendants fetch page by page as the loop asks, so a large folder costs
-# nothing until it is walked. All of these read the app's in-memory copy of the
-# account: they do not reach MEGA's servers.
+# nothing until it is walked. fields=[...] asks for only those attributes (the
+# others are None), which keeps the pages of a large tree small. All of these
+# read the app's in-memory copy of the account: they do not reach MEGA's servers.
 
 
 def describe(item):
@@ -95,12 +97,12 @@ def inspect(ctx):
         if not item.is_folder:
             continue
         files = folders = 0
-        for child in ctx.children(item):
+        for child in ctx.children(item, fields=["type"]):
             files += child.is_file
             folders += child.is_folder
         lines.append(f"    directly inside: {files} file(s), {folders} folder(s)")
         count = size = 0
-        for below in ctx.descendants(item, type="file"):
+        for below in ctx.descendants(item, type="file", fields=["size"]):
             ctx.check_cancelled()
             count += 1
             size += below.size
@@ -251,6 +253,24 @@ def ask_first(ctx):
                        title="Delete?", ok_label="Delete", danger=True):
         return None
     return "Pretended to delete them (nothing was changed)"
+
+
+# --- Showing an item in the app ---------------------------------------------------
+# ctx.reveal opens the item's folder in the app's current tab and selects the item.
+# It needs no permission.
+
+
+@plugin.command("reveal-largest")
+def reveal_largest(ctx):
+    largest = None
+    for item in ctx.items:
+        for below in ctx.descendants(item, type="file", fields=["name", "size"]):
+            if largest is None or below.size > largest.size:
+                largest = below
+    if largest is None:
+        return "No files in there"
+    ctx.reveal(largest)
+    return f"Largest: {largest.name} ({human_size(largest.size)})"
 
 
 # --- Progress and cancel --------------------------------------------------------

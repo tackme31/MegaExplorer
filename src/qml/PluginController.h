@@ -8,8 +8,8 @@
 #include <QStringList>
 #include <QVariantList>
 
-#include <QtQml/qqmlregistration.h>
 #include <memory>
+#include <QtQml/qqmlregistration.h>
 #include <vector>
 
 class IMegaClient;
@@ -105,6 +105,8 @@ signals:
     // After commandFinished, once per run that was refused any undeclared permission,
     // however many calls were refused.
     void permissionsDenied(const QString& pluginName, const QStringList& permissions);
+    // ui.reveal: open handle's folder in the current tab and select name there.
+    void revealRequested(quint64 handle, const QString& name);
 
 private:
     const PluginManifest* findPlugin(const QString& pluginId) const;

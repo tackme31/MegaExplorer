@@ -273,6 +273,12 @@ An **Item** — every `items.*` method and the context hand over the same shape:
 All reads come from the app's in-memory copy of the account, so they are fast and do not reach
 MEGA's servers.
 
+**Only the fields you need.** `items.get`, `items.children` and `items.descendants` take an
+optional `fields` list, e.g. `"fields": ["name", "type", "parent", "size"]`, and then return only
+those fields of each Item. `handle` is always included, listed or not, so `"fields": []` returns
+handles only. Leave `fields` out for the whole Item. An unknown field name is `-32602`. Worth it
+when listing a large tree: it keeps every page small.
+
 ### Messages from the app
 
 #### `initialize` (request)
@@ -339,7 +345,7 @@ one sent before it starts or after it is answered gets `-32602`.
 Current state of several items at once.
 
 ```
-params:  {"handles": ["AbCd1234", "EfGh5678"]}
+params:  {"handles": ["AbCd1234", "EfGh5678"], "fields": null}
 result:  {"items": [Item, Item]}
 ```
 
@@ -350,7 +356,7 @@ All or nothing: if any handle does not exist, the whole call fails with `-32002`
 The direct children of a folder, one page at a time.
 
 ```
-params:  {"handle": "XyZw9876", "type": "file", "cursor": null, "limit": 500}
+params:  {"handle": "XyZw9876", "type": "file", "cursor": null, "limit": 500, "fields": null}
 result:  {"items": [Item, ...], "nextCursor": "500"}
 ```
 
@@ -365,7 +371,7 @@ result:  {"items": [Item, ...], "nextCursor": "500"}
 Everything below a folder, at any depth, in the same paged shape as `items.children`.
 
 ```
-params:  {"handle": "XyZw9876", "type": "file", "cursor": null, "limit": 500}
+params:  {"handle": "XyZw9876", "type": "file", "cursor": null, "limit": 500, "fields": null}
 result:  {"items": [Item, ...], "nextCursor": "0:500"}
 ```
 
@@ -537,6 +543,21 @@ result:  {"ok": true}
   the run without any toast.
 - Only one `ui.confirm` may be open at a time (a second is `-32602`).
 
+#### `ui.reveal`
+
+Shows an item in the app: the current tab opens the folder the item is in, with the item
+selected. The app's window is not brought to the front. Answers as soon as the app has been told;
+it does not wait for the folder to load.
+
+```
+params:  {"handle": "AbCd1234"}
+result:  {}
+```
+
+- Needs no permission.
+- A folder is shown in *its* parent too, selected — not opened.
+- No such item → `-32002`; a root (Cloud Drive, Rubbish Bin) is in no folder → `-32602`.
+
 ### Notifications from the plugin
 
 #### `ui.progress`
@@ -672,9 +693,9 @@ plugin.run()
 | any other exception | the same, plus the traceback on stderr |
 | `ctx.items`, `ctx.item` | `context.items` (as `Item` objects); `item` is the only one, or `None` |
 | `ctx.command_id`, `ctx.site`, `ctx.plugin_dir` | `commandId`, `context.site`, `plugin.dir` |
-| `ctx.get(x)`, `ctx.get_many(xs)` | `items.get` |
-| `ctx.children(x, type=None)` | `items.children`, iterated page by page |
-| `ctx.descendants(x, type=None)` | `items.descendants`, iterated page by page |
+| `ctx.get(x, fields=None)`, `ctx.get_many(xs, fields=None)` | `items.get`; with `fields`, the other attributes are `None` |
+| `ctx.children(x, type=None, fields=None)` | `items.children`, iterated page by page |
+| `ctx.descendants(x, type=None, fields=None)` | `items.descendants`, iterated page by page |
 | `ctx.update(x, name=, description=, favourite=, tags_add=, tags_remove=)` | `items.update` |
 | `ctx.fetch_preview(x)` → `Path` | `items.fetchPreview`; raises `NoPreview` |
 | `ctx.fetch_file(x, offset=, length=)` → `Path` | `items.fetchFile` |
@@ -683,6 +704,7 @@ plugin.run()
 | `ctx.create_folder(parent, name, on_conflict=)` → `(Item, created)` | `items.createFolder`; raises `Conflict` |
 | `ctx.download(xs, sub_path=, on_conflict=)` → `{"queued", "skipped"}` | `transfers.download`; an entry of `xs` may be an `(x, sub_path)` pair |
 | `ctx.confirm(message, title=, ok_label=, danger=)` → `bool` | `ui.confirm` |
+| `ctx.reveal(x)` | `ui.reveal` |
 | `ctx.progress(current=, total=, message=)` | `ui.progress` |
 | `ctx.cancelled`, `ctx.check_cancelled()` | `$/cancel` seen; the latter raises `Cancelled` → `-32800` |
 | `ctx.call(method, params)` | any method, raw |

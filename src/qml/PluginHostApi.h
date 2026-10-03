@@ -51,9 +51,15 @@ public:
         std::function<bool(std::uint64_t handle)> isQueued;
     };
 
+    // ui.reveal: show the node in its folder, selected; name is the row to select.
+    using Reveal = std::function<void(std::uint64_t handle, const QString& name)>;
+
     // guiContext must live as long as the client can still call back (the app's
     // lifetime); SDK answers are posted to its thread before done runs.
-    PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiContext, UserDownloads downloads = {});
+    PluginHostApi(std::shared_ptr<IMegaClient> client,
+                  QObject* guiContext,
+                  UserDownloads downloads = {},
+                  Reveal reveal = {});
 
     // One run's fetchFile / readRange / upload, run one at a time.
     struct TransferQueue;
@@ -105,8 +111,10 @@ private:
     void itemsUpload(const QJsonObject& params, RunState& run, const Done& done) const;
     void itemsCreateFolder(const QJsonObject& params, const Done& done) const;
     Reply transfersDownload(const QJsonObject& params) const;
+    Reply uiReveal(const QJsonObject& params) const;
 
     std::shared_ptr<IMegaClient> mClient;
     QObject* mGuiContext;
     UserDownloads mDownloads;
+    Reveal mReveal;
 };

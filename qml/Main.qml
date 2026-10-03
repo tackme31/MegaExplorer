@@ -745,6 +745,9 @@ ApplicationWindow {
         function onPermissionsDenied(pluginName, permissions) {
             toastStack.showPluginPermissionsDenied(pluginName, permissions);
         }
+        function onRevealRequested(handle, name) {
+            tabsController.currentNavigation?.goToContainingFolder(handle, name);
+        }
     }
 
     Connections {

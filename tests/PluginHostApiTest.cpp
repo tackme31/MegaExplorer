@@ -152,6 +152,126 @@ TEST_F(PluginHostApiTest, ItemsGetReportsAMissingNode)
     EXPECT_EQ(reply.errorCode, PluginHostApi::kItemNotFound);
 }
 
+TEST_F(PluginHostApiTest, FieldsTrimTheItemButAlwaysKeepTheHandle) {
+  NodeSnapshot cat = node(7, "cat.jpg", false);
+  cat.sizeBytes = 123;
+  ON_CALL(*mClient, getNodeSnapshot(7))
+      .WillByDefault(Return(Result<NodeSnapshot>::ok(cat)));
+  const auto keysFor = [this](const QJsonArray &fields) {
+    const PluginHostApi::Reply reply =
+        call(QStringLiteral("items.get"),
+             {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h7")}},
+              {QStringLiteral("fields"), fields}});
+    EXPECT_FALSE(reply.errorCode.has_value());
+    QStringList keys = reply.result.toObject()
+                           .value(QStringLiteral("items"))
+                           .toArray()
+                           .at(0)
+                           .toObject()
+                           .keys();
+    keys.sort();
+    return keys;
+  };
+
+  EXPECT_EQ(keysFor({QStringLiteral("size"), QStringLiteral("parent")}),
+            (QStringList{QStringLiteral("handle"), QStringLiteral("parent"),
+                         QStringLiteral("size")}));
+  EXPECT_EQ(keysFor({QStringLiteral("handle")}),
+            QStringList{QStringLiteral("handle")});
+  EXPECT_EQ(keysFor({}), QStringList{QStringLiteral("handle")});
+}
+
+TEST_F(PluginHostApiTest, FieldsApplyToChildrenAndDescendants) {
+  ON_CALL(*mClient, getNodeSnapshot(_)).WillByDefault([](std::uint64_t h) {
+    return Result<NodeSnapshot>::ok(node(h, h == 1 ? "dir" : "a", h == 1));
+  });
+  ON_CALL(*mClient, getChildSnapshots(1))
+      .WillByDefault(Return(
+          Result<std::vector<NodeSnapshot>>::ok({node(10, "a", false)})));
+  ON_CALL(*mClient, listDescendants(1, _))
+      .WillByDefault(
+          [](std::uint64_t,
+             std::function<void(Result<std::vector<DescendantNode>>)> onDone) {
+            onDone(Result<std::vector<DescendantNode>>::ok({{10, false}}));
+          });
+  const QJsonObject params{
+      {QStringLiteral("handle"), QStringLiteral("h1")},
+      {QStringLiteral("fields"), QJsonArray{QStringLiteral("name")}}};
+
+  for (const QString &method : {QStringLiteral("items.children"),
+                                QStringLiteral("items.descendants")}) {
+    const PluginHostApi::Reply reply = call(method, params);
+    ASSERT_FALSE(reply.errorCode.has_value()) << method.toStdString();
+    const QJsonObject item = reply.result.toObject()
+                                 .value(QStringLiteral("items"))
+                                 .toArray()
+                                 .at(0)
+                                 .toObject();
+    EXPECT_EQ(item,
+              (QJsonObject{{QStringLiteral("handle"), QStringLiteral("h10")},
+                           {QStringLiteral("name"), QStringLiteral("a")}}))
+        << method.toStdString();
+  }
+}
+
+TEST_F(PluginHostApiTest, AnUnknownFieldIsRejectedBeforeAnythingIsListed) {
+  EXPECT_CALL(*mClient, listDescendants(_, _)).Times(0);
+  for (const QString &method :
+       {QStringLiteral("items.get"), QStringLiteral("items.children"),
+        QStringLiteral("items.descendants")}) {
+    const PluginHostApi::Reply reply =
+        call(method,
+             {{QStringLiteral("handle"), QStringLiteral("h1")},
+              {QStringLiteral("handles"), QJsonArray{QStringLiteral("h1")}},
+              {QStringLiteral("fields"), QJsonArray{QStringLiteral("sise")}}});
+    EXPECT_EQ(reply.errorCode, -32602) << method.toStdString();
+    EXPECT_TRUE(reply.errorMessage.contains(QStringLiteral("sise")))
+        << method.toStdString();
+  }
+  const PluginHostApi::Reply notAList =
+      call(QStringLiteral("items.children"),
+           {{QStringLiteral("handle"), QStringLiteral("h1")},
+            {QStringLiteral("fields"), QStringLiteral("name")}});
+  EXPECT_EQ(notAList.errorCode, -32602);
+}
+
+TEST_F(PluginHostApiTest,
+       UiRevealHandsOverTheNodeAndItsNameWithoutAnyPermission) {
+  std::vector<std::pair<std::uint64_t, QString>> revealed;
+  PluginHostApi api{mClient,
+                    &mGuiContext,
+                    {},
+                    [&revealed](std::uint64_t handle, const QString &name) {
+                      revealed.emplace_back(handle, name);
+                    }};
+  NodeSnapshot root = node(1, "Cloud Drive", true);
+  root.hasParent = false;
+  ON_CALL(*mClient, getNodeSnapshot(7))
+      .WillByDefault(
+          Return(Result<NodeSnapshot>::ok(node(7, "cat.jpg", false))));
+  ON_CALL(*mClient, getNodeSnapshot(1))
+      .WillByDefault(Return(Result<NodeSnapshot>::ok(root)));
+  mRun.permissions = {};
+  const auto reveal = [&](const QString &handle) {
+    std::optional<PluginHostApi::Reply> reply;
+    api.call(QStringLiteral("ui.reveal"), {{QStringLiteral("handle"), handle}},
+             mRun, [&reply](const PluginHostApi::Reply &r) { reply = r; });
+    EXPECT_TRUE(reply.has_value());
+    return reply.value_or(PluginHostApi::Reply{});
+  };
+
+  EXPECT_FALSE(PluginHostApi::requiredPermission(QStringLiteral("ui.reveal"))
+                   .has_value());
+  EXPECT_FALSE(reveal(QStringLiteral("h7")).errorCode.has_value());
+  EXPECT_EQ(reveal(QStringLiteral("h9")).errorCode,
+            PluginHostApi::kItemNotFound);
+  EXPECT_EQ(reveal(QStringLiteral("h1")).errorCode, -32602);
+  EXPECT_EQ(reveal(QStringLiteral("zz")).errorCode, -32602);
+
+  ASSERT_EQ(revealed.size(), 1u);
+  EXPECT_EQ(revealed[0].first, 7u);
+  EXPECT_EQ(revealed[0].second, QStringLiteral("cat.jpg"));
+}
 TEST_F(PluginHostApiTest, ItemsChildrenPagesWithACursor)
 {
     EXPECT_CALL(*mClient, getNodeSnapshot(1))

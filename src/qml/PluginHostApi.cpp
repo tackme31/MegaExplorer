@@ -49,29 +49,98 @@ QString typeOf(const NodeSnapshot& node)
     return node.isFolder ? QStringLiteral("folder") : QStringLiteral("file");
 }
 
-QJsonObject toItem(const IMegaClient& client, const NodeSnapshot& n)
+// An Item's fields besides handle, which is always sent.
+enum ItemField : unsigned
 {
-    QJsonArray tags;
-    for (const std::string& tag : n.tags)
-        tags.append(QString::fromStdString(tag));
-    return QJsonObject{
-        {QStringLiteral("handle"), QString::fromStdString(client.handleToBase64(n.handle))},
-        {QStringLiteral("name"), QString::fromStdString(n.name)},
-        {QStringLiteral("type"), typeOf(n)},
-        {QStringLiteral("parent"),
-         n.hasParent ? QJsonValue(QString::fromStdString(client.handleToBase64(n.parentHandle)))
-                     : QJsonValue(QJsonValue::Null)},
-        {QStringLiteral("size"), static_cast<double>(n.sizeBytes)},
-        {QStringLiteral("mtime"), static_cast<double>(n.modificationTime)},
-        {QStringLiteral("path"), QString::fromStdString(n.path)},
-        {QStringLiteral("favourite"), n.isFavourite},
-        {QStringLiteral("description"), QString::fromStdString(n.description)},
-        {QStringLiteral("tags"), tags}};
+    kFieldName = 1u << 0,
+    kFieldType = 1u << 1,
+    kFieldParent = 1u << 2,
+    kFieldSize = 1u << 3,
+    kFieldMtime = 1u << 4,
+    kFieldPath = 1u << 5,
+    kFieldFavourite = 1u << 6,
+    kFieldDescription = 1u << 7,
+    kFieldTags = 1u << 8,
+    kAllItemFields = (1u << 9) - 1,
+};
+
+constexpr std::pair<const char*, unsigned> kItemFieldNames[] = {
+    {"name", kFieldName},
+    {"type", kFieldType},
+    {"parent", kFieldParent},
+    {"size", kFieldSize},
+    {"mtime", kFieldMtime},
+    {"path", kFieldPath},
+    {"favourite", kFieldFavourite},
+    {"description", kFieldDescription},
+    {"tags", kFieldTags},
+};
+
+QJsonObject toItem(const IMegaClient& client, const NodeSnapshot& n, unsigned fields = kAllItemFields)
+{
+    QJsonObject item{{QStringLiteral("handle"), QString::fromStdString(client.handleToBase64(n.handle))}};
+    if (fields & kFieldName)
+        item.insert(QStringLiteral("name"), QString::fromStdString(n.name));
+    if (fields & kFieldType)
+        item.insert(QStringLiteral("type"), typeOf(n));
+    if (fields & kFieldParent)
+        item.insert(QStringLiteral("parent"),
+                    n.hasParent ? QJsonValue(QString::fromStdString(client.handleToBase64(n.parentHandle)))
+                                : QJsonValue(QJsonValue::Null));
+    if (fields & kFieldSize)
+        item.insert(QStringLiteral("size"), static_cast<double>(n.sizeBytes));
+    if (fields & kFieldMtime)
+        item.insert(QStringLiteral("mtime"), static_cast<double>(n.modificationTime));
+    if (fields & kFieldPath)
+        item.insert(QStringLiteral("path"), QString::fromStdString(n.path));
+    if (fields & kFieldFavourite)
+        item.insert(QStringLiteral("favourite"), n.isFavourite);
+    if (fields & kFieldDescription)
+        item.insert(QStringLiteral("description"), QString::fromStdString(n.description));
+    if (fields & kFieldTags)
+    {
+        QJsonArray tags;
+        for (const std::string& tag : n.tags)
+            tags.append(QString::fromStdString(tag));
+        item.insert(QStringLiteral("tags"), tags);
+    }
+    return item;
+}
+
+// params.fields as a mask of ItemField, or the error reply to send instead. No
+// "fields" means all of them; "handle" is accepted and always sent anyway.
+std::optional<PluginHostApi::Reply> readFields(const QJsonObject& params, unsigned* fields)
+{
+    const QJsonValue value = params.value(QStringLiteral("fields"));
+    *fields = kAllItemFields;
+    if (value.isUndefined() || value.isNull())
+        return std::nullopt;
+    if (!value.isArray())
+        return fail(kInvalidParams, QStringLiteral("\"fields\" must be an array of field names"));
+    *fields = 0;
+    for (const QJsonValue entry : value.toArray())
+    {
+        const QString name = entry.toString();
+        if (name == QLatin1String("handle"))
+            continue;
+        const auto known = std::find_if(std::begin(kItemFieldNames),
+                                        std::end(kItemFieldNames),
+                                        [&name](const auto& field) { return name == QLatin1String(field.first); });
+        if (!entry.isString() || known == std::end(kItemFieldNames))
+            return fail(kInvalidParams, QStringLiteral("Unknown field in \"fields\": %1")
+                                            .arg(entry.isString() ? name : QStringLiteral("(not a string)")));
+        *fields |= known->second;
+    }
+    return std::nullopt;
 }
 } // namespace
 
-PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiContext, UserDownloads downloads)
-    : mClient(std::move(client)), mGuiContext(guiContext), mDownloads(std::move(downloads))
+PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client,
+                             QObject* guiContext,
+                             UserDownloads downloads,
+                             Reveal reveal)
+    : mClient(std::move(client)), mGuiContext(guiContext), mDownloads(std::move(downloads)),
+      mReveal(std::move(reveal))
 {
 }
 
@@ -131,6 +200,8 @@ void PluginHostApi::call(const QString& method,
         itemsCreateFolder(params, done);
     else if (method == QStringLiteral("transfers.download"))
         done(transfersDownload(params));
+    else if (method == QStringLiteral("ui.reveal"))
+        done(uiReveal(params));
     else
         done(fail(kMethodNotFound, QStringLiteral("Method not found: %1").arg(method)));
 }
@@ -199,6 +270,9 @@ PluginHostApi::Reply PluginHostApi::itemsGet(const QJsonObject& params) const
     const QJsonValue handles = params.value(QStringLiteral("handles"));
     if (!handles.isArray())
         return fail(kInvalidParams, QStringLiteral("\"handles\" must be an array"));
+    unsigned fields = 0;
+    if (std::optional<Reply> error = readFields(params, &fields))
+        return *error;
     // All or nothing: one missing node fails the call, naming it.
     QJsonArray items;
     for (const QJsonValue value : handles.toArray())
@@ -209,7 +283,7 @@ PluginHostApi::Reply PluginHostApi::itemsGet(const QJsonObject& params) const
         const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle);
         if (!node.success)
             return fail(kItemNotFound, QStringLiteral("No such item: %1").arg(value.toString()));
-        items.append(toItem(*mClient, node.value()));
+        items.append(toItem(*mClient, node.value(), fields));
     }
     return ok(QJsonObject{{QStringLiteral("items"), items}});
 }
@@ -222,6 +296,9 @@ PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) con
 
     TypeFilter filter;
     if (std::optional<Reply> error = readType(params, &filter))
+        return *error;
+    unsigned fields = 0;
+    if (std::optional<Reply> error = readFields(params, &fields))
         return *error;
 
     // The cursor is an offset into the (type-filtered) children, opaque to the plugin.
@@ -256,7 +333,7 @@ PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) con
     const std::size_t end = std::min(begin + static_cast<std::size_t>(limit), matching.size());
     QJsonArray items;
     for (std::size_t i = begin; i < end; ++i)
-        items.append(toItem(*mClient, *matching[i]));
+        items.append(toItem(*mClient, *matching[i], fields));
     return page(items, end < matching.size() ? QJsonValue(QString::number(end)) : QJsonValue(QJsonValue::Null));
 }
 
@@ -267,7 +344,8 @@ PluginHostApi::Reply descendantsPage(const IMegaClient& client,
                                      const std::vector<std::uint64_t>& handles,
                                      std::size_t listing,
                                      std::size_t offset,
-                                     int limit)
+                                     int limit,
+                                     unsigned fields)
 {
     const std::size_t end = std::min(offset + static_cast<std::size_t>(limit), handles.size());
     QJsonArray items;
@@ -275,7 +353,7 @@ PluginHostApi::Reply descendantsPage(const IMegaClient& client,
     {
         const Result<NodeSnapshot> node = client.getNodeSnapshot(handles[i]);
         if (node.success)
-            items.append(toItem(client, node.value()));
+            items.append(toItem(client, node.value(), fields));
     }
     return page(items,
                 end < handles.size() ? QJsonValue(QStringLiteral("%1:%2").arg(listing).arg(end))
@@ -290,6 +368,9 @@ void PluginHostApi::itemsDescendants(const QJsonObject& params, RunState& run, c
         return done(*error);
     TypeFilter filter;
     if (std::optional<Reply> error = readType(params, &filter))
+        return done(*error);
+    unsigned fields = 0;
+    if (std::optional<Reply> error = readFields(params, &fields))
         return done(*error);
     const int limit = readLimit(params);
 
@@ -310,14 +391,14 @@ void PluginHostApi::itemsDescendants(const QJsonObject& params, RunState& run, c
         if (!listingOk || !offsetOk || listing >= run.listings->size() ||
             offset > (*run.listings)[listing].size())
             return done(fail(kInvalidParams, QStringLiteral("Bad cursor")));
-        return done(descendantsPage(*mClient, (*run.listings)[listing], listing, offset, limit));
+        return done(descendantsPage(*mClient, (*run.listings)[listing], listing, offset, limit, fields));
     }
     if (!cursor.isUndefined() && !cursor.isNull())
         return done(fail(kInvalidParams, QStringLiteral("\"cursor\" must be a string")));
 
     mClient->listDescendants(
         handle,
-        [client = mClient, listings = std::weak_ptr(run.listings), filter, limit, done](
+        [client = mClient, listings = std::weak_ptr(run.listings), filter, limit, fields, done](
             Result<std::vector<DescendantNode>> result) {
             if (!result.success)
                 return done(result.errorCode == MegaErrorCode::kENoEnt
@@ -335,7 +416,7 @@ void PluginHostApi::itemsDescendants(const QJsonObject& params, RunState& run, c
                     handles.push_back(node.handle);
             }
             owned->push_back(std::move(handles));
-            done(descendantsPage(*client, owned->back(), owned->size() - 1, 0, limit));
+            done(descendantsPage(*client, owned->back(), owned->size() - 1, 0, limit, fields));
         });
 }
 
@@ -1211,4 +1292,19 @@ PluginHostApi::Reply PluginHostApi::transfersDownload(const QJsonObject& params)
             ++skipped;
     }
     return ok(QJsonObject{{QStringLiteral("queued"), queued}, {QStringLiteral("skipped"), skipped}});
+}
+
+PluginHostApi::Reply PluginHostApi::uiReveal(const QJsonObject& params) const
+{
+    std::uint64_t handle = 0;
+    if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
+        return *error;
+    const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle);
+    if (!node.success)
+        return fail(kItemNotFound, QStringLiteral("No such item"));
+    if (!node.value().hasParent)
+        return fail(kInvalidParams, QStringLiteral("A root is not in any folder"));
+    if (mReveal)
+        mReveal(handle, QString::fromStdString(node.value().name));
+    return ok(QJsonObject{});
 }

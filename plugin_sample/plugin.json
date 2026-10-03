@@ -28,6 +28,8 @@
     { "id": "create-folder", "title": "Create a folder here (items.createFolder)" },
 
     { "id": "ask-first", "title": "Ask first (ui.confirm)" },
+    { "id": "reveal-largest", "title": "Show the largest file below (ui.reveal)",
+      "when": { "targets": "folders" } },
     { "id": "long-task", "title": "Long task (ui.progress, Cancel)", "progress": true, "result": "dialog" }
   ]
 }

@@ -10,7 +10,7 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 | Show the selection | The selection the app hands over (`ctx.items`), a returned string as a toast, `print()` going to the app's log |
 | Fail with an error | `CommandError` as an error toast |
 | Show a long result | `"result": "dialog"`: a long, multi-line result in a dialog |
-| Inspect (items.get / children / descendants) | `ctx.get_many`, `ctx.children` and `ctx.descendants` page by page; a folder's counts |
+| Inspect (items.get / children / descendants) | `ctx.get_many`, `ctx.children` and `ctx.descendants` page by page, asking only for the `fields` needed; a folder's counts |
 | Fetch previews (items.fetchPreview, images and videos) | `ctx.fetch_preview`, `NoPreview`, deleting the file once read; `"when"` with `extensions` |
 | Read a file (items.readRange / fetchFile) | `ctx.read_range` to sniff the file type from its first bytes, `ctx.fetch_file` for the whole file; `"when": {"targets": "files"}` |
 | Toggle the "sample" tag (items.update) | `ctx.update` adding or removing a tag and the favourite flag; running it again undoes it |
@@ -18,6 +18,7 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 | Upload a text file here (items.upload) | `ctx.upload`: a generated text file into the selected folder (or the file's folder) |
 | Create a folder here (items.createFolder) | `ctx.create_folder` with a dated name and `on_conflict="rename"` |
 | Ask first (ui.confirm) | `ctx.confirm` with `danger`, `title` and `ok_label`; stopping quietly on Cancel |
+| Show the largest file below (ui.reveal) | `ctx.reveal`: the app opens the file's folder with it selected; `"when": {"targets": "folders"}` |
 | Long task (ui.progress, Cancel) | `"progress": true`: a bar without a total, then `n / total`; Cancel (`ctx.check_cancelled`); the row turning into the result (`"result": "dialog"`) |
 
 The "Toggle", upload and folder rows change the real account (there is no undo): try them on a test
