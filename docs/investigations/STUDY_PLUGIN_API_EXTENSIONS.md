@@ -1,12 +1,14 @@
 # プラグイン API の追加候補
 
-**状態（2026-10-03）: 推奨順 1（ダウンロード・範囲読み・アップロード・フォルダ作成）の仕様を決定、
-未実装（§F）。それ以外の候補は未決定。**
+**状態（2026-10-03）: 推奨順 1（ダウンロード・範囲読み・アップロード・フォルダ作成）は §F の仕様で実装済み
+（87a90de）。続いて権限（dd0aea1、同意ダイアログは保留）、`fields` と `ui.reveal`（3a038b2）、フォルダ背景と
+左ペインのメニュー（954c038・b940881、§C）、`initialize` の `app.colorScheme`（ba24d50、§E）も実装済み。
+残りの候補は未決定で、必要になった時点で決める。仕様の正は `PLUGINS.md`。**
 現行 API（`items.get` / `children` / `descendants` / `update` / `fetchPreview`、`ui.confirm`、
 `ui.progress`）は WD Tagger プラグインの必要分しか無いため、汎用プラグインに要りそうなものを
 `STUDY_PLUGIN_V1_DESIGN.md` §6-3 の予定分と `IMegaClient` の既存機能から拾った。
 「下地」はアプリ側に既に実装があり、公開するだけで済むかどうか。
-次の手順: §F を実装する。
+次の手順: なし（残りの候補は必要になった時点で）。
 
 ## A. ファイルの中身（転送）
 
@@ -34,7 +36,7 @@
 | `items.search {handle, query}` | `tag:xxx` で対象を絞る | `search`（アプリの `tag:` 検索） |
 | `items.byPath {path}` → Item | 設定に書いた出力先「/Tagged」などを解決 | `getNodeSnapshot` の組み合わせ |
 | Item にフィールド追加（`hasPreview` / `hasThumbnail`、公開リンク有無など） | `fetchPreview` の空振り（`-32002`）を避ける | NodeSnapshot の拡張 |
-| context に `folder` / `view`、フォルダ背景の右クリック対応 | 「このフォルダ全部」をフォルダ選択なしで | メニュー側の対応が要る |
+| ~~context に `folder` / `view`、フォルダ背景の右クリック対応~~ **済（954c038・b940881）** | 「このフォルダ全部」をフォルダ選択なしで | `folder` 欄は作らず、`context.site: "folder"` と `items` にそのフォルダ 1 件を入れる形にした（`when.targets: "folders"` がそのまま効く）。出す場所はフォルダ背景と左ペインのツリー行・Quick access の行。Cloud Drive ビューの最上位とツリーの「Cloud Drive」行は実ルート（`IMegaClient::getRootSnapshot`）を渡す。Favourites などの最上位はフォルダが無いので灰色。`view` は入れていない |
 
 ## D. 共有リンク・アカウント
 
@@ -48,7 +50,8 @@
 | 候補 | メモ |
 | --- | --- |
 | `ui.toast` / `ui.input` / `ui.choose` | 設計書 §6-3 で予定済み。`ui.choose` は出力先の選択などに |
-| `ui.reveal {handle}` | 結果のフォルダ・項目をタブで開いて選択する |
+| `ui.reveal {handle}` | **済（3a038b2）**。アプリのウィンドウは前に出さない |
+| `initialize` で `app.colorScheme` | **済（ba24d50）**。自前のウィンドウを開くプラグイン（MegaDirStat）が、OS ではなくアプリのテーマ設定に合わせるため。値は実際に描いている配色で `"light"` / `"dark"`、不明なら省略 |
 | `log {level, message}` | stderr より構造化できる。優先度低 |
 | `plugin.dataDir` | 置き場所は開発者任せと決定済みなので、便利機能どまり |
 
@@ -63,8 +66,8 @@
 
 1. `download` / `readRange` / `upload` / `createFolder` — 要望の中心。下地があり、`fetchPreview` の
    一時フォルダの仕組みもそのまま使える。
-2. context の `folder` とフォルダ背景の右クリック、`hasPreview` フィールド — 小さく、WD Tagger も
-   すぐ恩恵を受ける。
+2. context の `folder` とフォルダ背景の右クリック（**済**、§C）、`hasPreview` フィールド（未） — 小さく、
+   WD Tagger もすぐ恩恵を受ける。
 3. `copy` / `move` / `trash` と権限表示 — 一緒に。
 4. 残り（`search`、リンク、`account.info`、`ui.*`）は必要になった時点で。
 
@@ -121,6 +124,8 @@
 
 今回は入れない。F の 5 つは既存のものを消さない追加系が中心（消えうるのはローカルの `overwrite` だけ）。
 **`move` / `trash` を出す前に必ず入れる。**
+→ その後、権限（manifest の `permissions`、未宣言の呼び出しは `-32001`）は実装した（dd0aea1）。
+同意ダイアログは「必要になったら」で保留。
 
 ### F-7. 実装メモ（決定に付随する作業）
 
