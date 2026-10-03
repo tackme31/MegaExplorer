@@ -64,6 +64,12 @@ public:
     // Rescans pluginsDir. Plugins are kept in name order, which is menu order.
     Q_INVOKABLE void reload();
 
+    // One map per loaded plugin, in menu order: id, name, version, description,
+    // repositoryUrl, permissions (a string list) and compatible (apiVersion matches).
+    Q_INVOKABLE QVariantList installedPlugins() const;
+    // pluginId's folder in Explorer; "" opens the plugins folder, creating it first.
+    Q_INVOKABLE void openFolder(const QString& pluginId) const;
+
     Q_INVOKABLE QStringList menuActionIds() const;
     Q_INVOKABLE bool isMenuActionId(const QString& actionId) const;
     // "plugin:<pluginId>": the submenu a command's row is folded into.

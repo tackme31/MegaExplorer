@@ -46,6 +46,8 @@ QtObject {
         // Rows sitting on the clipboard as a cut -- Explorer ghosts them until
         // the paste actually moves them.
         readonly property real cut: 0.5
+        // A listed thing that cannot be used, e.g. a plugin for another API version.
+        readonly property real unavailable: 0.5
     }
 
     readonly property QtObject rowHeight: QtObject {

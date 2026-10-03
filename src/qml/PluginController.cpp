@@ -5,11 +5,13 @@
 
 #include <QDateTime>
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QTimer>
+#include <QUrl>
 #include <QVariantMap>
 
 #include <algorithm>
@@ -98,6 +100,36 @@ void PluginController::reload()
         mPlugins.begin(), mPlugins.end(), [](const PluginManifest& a, const PluginManifest& b) {
             return a.name.localeAwareCompare(b.name) < 0;
         });
+}
+
+QVariantList PluginController::installedPlugins() const
+{
+    QVariantList plugins;
+    for (const PluginManifest& plugin : mPlugins)
+        plugins.append(QVariantMap{{QStringLiteral("id"), plugin.id},
+                                   {QStringLiteral("name"), plugin.name},
+                                   {QStringLiteral("version"), plugin.version},
+                                   {QStringLiteral("description"), plugin.description},
+                                   {QStringLiteral("repositoryUrl"), plugin.repositoryUrl},
+                                   {QStringLiteral("permissions"), plugin.permissions},
+                                   {QStringLiteral("compatible"), plugin.apiVersion == kPluginApiVersion}});
+    return plugins;
+}
+
+void PluginController::openFolder(const QString& pluginId) const
+{
+    QString dir;
+    if (pluginId.isEmpty())
+    {
+        dir = mPluginsDir;
+        QDir().mkpath(dir);
+    }
+    else if (const PluginManifest* plugin = findPlugin(pluginId))
+    {
+        dir = plugin->dir;
+    }
+    if (dir.isEmpty() || !QDesktopServices::openUrl(QUrl::fromLocalFile(dir)))
+        qCWarning(lcPlugin) << "could not open the folder of" << (pluginId.isEmpty() ? QStringLiteral("plugins") : pluginId);
 }
 
 QStringList PluginController::menuActionIds() const

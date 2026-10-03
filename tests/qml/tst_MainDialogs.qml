@@ -1650,36 +1650,29 @@ TestCase {
         compare(dialog.themeSelector.currentIndex, 0);
     }
 
-    // Mirrors OpenWithController's surface the settings page uses. setEntries keeps
-    // what it was handed, unfiltered, so a test can see exactly what was written.
+    // Mirrors PluginController's surface the Plugins page uses.
     Component {
-        id: openWithStubComponent
+        id: pluginsStubComponent
 
         QtObject {
             property var stored: []
-            property var written: []
-            function entries() {
+            property var opened: []
+            function installedPlugins() {
                 return stored;
             }
-            function setEntries(list) {
-                written.push(list);
-            }
-            function commandRunnable(command) {
-                return command.trim() !== "" && command.indexOf("missing") < 0;
-            }
-            function commandWithProgram(command, url) {
-                return "\"C:\\picked.exe\" %U";
+            function openFolder(id) {
+                opened.push(id);
             }
         }
     }
 
-    function makeSettingsWithPrograms(stored) {
-        const stub = createTemporaryObject(openWithStubComponent, testCase, {
+    function makeSettingsWithPlugins(stored) {
+        const stub = createTemporaryObject(pluginsStubComponent, testCase, {
                                                "stored": stored
                                            });
         verify(stub !== null);
         const dialog = makeDialog(settingsComponent, {
-                                      "openWith": stub
+                                      "plugins": stub
                                   });
         dialog.open();
         tryCompare(dialog, "opened", true);
@@ -1689,19 +1682,110 @@ TestCase {
         };
     }
 
-    function test_settings_programsOpenOnTheSavedList() {
+    readonly property var taggerPlugin: ({
+                                             "id": "com.example.tagger",
+                                             "name": "Tagger",
+                                             "version": "1.2.0",
+                                             "description": "Tags images.",
+                                             "repositoryUrl": "https://example.com/tagger",
+                                             "permissions": ["items.read", "content.read"],
+                                             "compatible": true
+                                         })
+
+    function test_settings_pluginsOpenOnTheInstalledList() {
+        const s = makeSettingsWithPlugins([taggerPlugin,
+                                           {
+                                               "id": "old",
+                                               "name": "Old",
+                                               "version": "",
+                                               "description": "",
+                                               "repositoryUrl": "",
+                                               "permissions": [],
+                                               "compatible": false
+                                           }
+                                          ]);
+        compare(s.dialog.pluginList.count, 2);
+        compare(s.dialog.pluginList.currentIndex, 0);
+    }
+
+    function test_settings_pluginDetailsListEveryPermissionInWords() {
+        const s = makeSettingsWithPlugins([taggerPlugin]);
+        s.dialog.showPluginDetails();
+        const details = s.dialog.pluginDetails;
+        tryCompare(details, "opened", true);
+        compare(details.title, "Tagger 1.2.0");
+        compare(details.permissionRepeater.count, 2);
+        compare(details.permissionRepeater.itemAt(1).text, "• Read the contents of files");
+
+        buttonNamed(details, "Open folder").clicked();
+        compare(s.stub.opened, ["com.example.tagger"]);
+    }
+
+    function test_settings_everyPermissionHasWording_data() {
+        return ["items.read", "items.write", "items.edit", "content.read", "content.download"].map(
+                    p => ({
+                        "tag": p,
+                        "permission": p
+                    }));
+    }
+
+        function test_settings_everyPermissionHasWording(data) {
+        const dialog = makeDialog(settingsComponent, {});
+        verify(dialog.permissionText(data.permission) !== data.permission);
+    }
+
+        // Mirrors OpenWithController's surface the settings page uses. setEntries keeps
+        // what it was handed, unfiltered, so a test can see exactly what was written.
+        Component {
+        id: openWithStubComponent
+
+        QtObject {
+        property var stored: []
+        property var written: []
+        function entries() {
+        return stored;
+    }
+        function setEntries(list) {
+        written.push(list);
+    }
+        function commandRunnable(command) {
+        return command.trim() !== "" && command.indexOf("missing") < 0;
+    }
+        function commandWithProgram(command, url) {
+        return "\"C:\\picked.exe\" %U";
+    }
+    }
+    }
+
+        function makeSettingsWithPrograms(stored) {
+        const stub = createTemporaryObject(openWithStubComponent, testCase, {
+        "stored": stored
+    });
+        verify(stub !== null);
+        const dialog = makeDialog(settingsComponent, {
+        "openWith": stub
+    });
+        dialog.open();
+        tryCompare(dialog, "opened", true);
+        return {
+        "dialog": dialog,
+        "stub": stub
+    };
+    }
+
+        function test_settings_programsOpenOnTheSavedList() {
         const s = makeSettingsWithPrograms([
-                                               {
-                                                   "name": "Viewer",
-                                                   "extensions": "jpg, png",
-                                                   "commandLine": "\"C:\\v.exe\" %U"
-                                               },
-                                               {
-                                                   "name": "Player",
-                                                   "extensions": "",
-                                                   "commandLine": "mpv %U"
-                                               }
-                                           ]);
+        {
+        "name": "Viewer",
+        "extensions": "jpg, png",
+        "commandLine": "\"C:\\v.exe\" %U"
+    },
+        {
+        "name": "Player",
+        "extensions": "",
+        "commandLine": "mpv %U"
+    }
+        ]);
 
         compare(s.dialog.programList.count, 2);
         compare(s.dialog.programList.currentIndex, 0);
@@ -1720,7 +1804,7 @@ TestCase {
         compare(s.dialog.programNameField.text, "Player");
     }
 
-    function test_settings_addingAProgramAppendsOnOk() {
+        function test_settings_addingAProgramAppendsOnOk() {
         const s = makeSettingsWithPrograms([]);
 
         s.dialog.addProgram();
@@ -1745,14 +1829,14 @@ TestCase {
         compare(last[0].extensions, "");
     }
 
-    function test_settings_cancellingTheEditorWritesNothing() {
+        function test_settings_cancellingTheEditorWritesNothing() {
         const s = makeSettingsWithPrograms([
-                                               {
-                                                   "name": "A",
-                                                   "extensions": "",
-                                                   "commandLine": "a %U"
-                                               }
-                                           ]);
+        {
+        "name": "A",
+        "extensions": "",
+        "commandLine": "a %U"
+    }
+        ]);
 
         s.dialog.addProgram();
         s.dialog.programNameField.text = "B";
@@ -1767,19 +1851,19 @@ TestCase {
         compare(s.stub.written.length, 0);
     }
 
-    function test_settings_editingAProgramReplacesItsRow() {
+        function test_settings_editingAProgramReplacesItsRow() {
         const s = makeSettingsWithPrograms([
-                                               {
-                                                   "name": "A",
-                                                   "extensions": "",
-                                                   "commandLine": "a %U"
-                                               },
-                                               {
-                                                   "name": "B",
-                                                   "extensions": "",
-                                                   "commandLine": "b %U"
-                                               }
-                                           ]);
+        {
+        "name": "A",
+        "extensions": "",
+        "commandLine": "a %U"
+    },
+        {
+        "name": "B",
+        "extensions": "",
+        "commandLine": "b %U"
+    }
+        ]);
 
         s.dialog.programList.currentIndex = 1;
         s.dialog.editProgram();
@@ -1794,36 +1878,36 @@ TestCase {
         compare(last[1].extensions, "mp4");
     }
 
-    function test_settings_okNeedsANameAndACommand_data() {
+        function test_settings_okNeedsANameAndACommand_data() {
         return [
-                    {
-                        tag: "both",
-                        name: "Player",
-                        command: "mpv %U",
-                        canSave: true
-                    },
-                    {
-                        tag: "blankName",
-                        name: "  ",
-                        command: "mpv %U",
-                        canSave: false
-                    },
-                    {
-                        tag: "noCommand",
-                        name: "Player",
-                        command: "",
-                        canSave: false
-                    },
-                    {
-                        tag: "notFoundStillSaves",
-                        name: "Player",
-                        command: "missing.exe %U",
-                        canSave: true
-                    }
-                ];
+        {
+        tag: "both",
+        name: "Player",
+        command: "mpv %U",
+        canSave: true
+    },
+        {
+        tag: "blankName",
+        name: "  ",
+        command: "mpv %U",
+        canSave: false
+    },
+        {
+        tag: "noCommand",
+        name: "Player",
+        command: "",
+        canSave: false
+    },
+        {
+        tag: "notFoundStillSaves",
+        name: "Player",
+        command: "missing.exe %U",
+        canSave: true
+    }
+        ];
     }
 
-    function test_settings_okNeedsANameAndACommand(data) {
+        function test_settings_okNeedsANameAndACommand(data) {
         const s = makeSettingsWithPrograms([]);
         s.dialog.addProgram();
         s.dialog.programNameField.text = data.name;
@@ -1834,19 +1918,19 @@ TestCase {
         compare(s.dialog.programList.count, data.canSave ? 1 : 0);
     }
 
-    function test_settings_removingAProgramWritesTheRest() {
+        function test_settings_removingAProgramWritesTheRest() {
         const s = makeSettingsWithPrograms([
-                                               {
-                                                   "name": "A",
-                                                   "extensions": "",
-                                                   "commandLine": "a %U"
-                                               },
-                                               {
-                                                   "name": "B",
-                                                   "extensions": "",
-                                                   "commandLine": "b %U"
-                                               }
-                                           ]);
+        {
+        "name": "A",
+        "extensions": "",
+        "commandLine": "a %U"
+    },
+        {
+        "name": "B",
+        "extensions": "",
+        "commandLine": "b %U"
+    }
+        ]);
 
         s.dialog.removeProgram();
 
@@ -1857,57 +1941,57 @@ TestCase {
         compare(last[0].name, "B");
     }
 
-    function test_settings_programWarningWording_data() {
+        function test_settings_programWarningWording_data() {
         return [
-                    {
-                        tag: "fine",
-                        name: "Player",
-                        command: "mpv %U",
-                        shown: ""
-                    },
-                    {
-                        tag: "noCommand",
-                        name: "Player",
-                        command: "",
-                        shown: "Enter the command line that starts the program."
-                    },
-                    {
-                        tag: "notFound",
-                        name: "Player",
-                        command: "missing.exe %U",
-                        shown: "The program in this command line could not be found."
-                    },
-                    {
-                        tag: "noName",
-                        name: "",
-                        command: "mpv %U",
-                        shown: "Give the program a name."
-                    }
-                ];
+        {
+        tag: "fine",
+        name: "Player",
+        command: "mpv %U",
+        shown: ""
+    },
+        {
+        tag: "noCommand",
+        name: "Player",
+        command: "",
+        shown: "Enter the command line that starts the program."
+    },
+        {
+        tag: "notFound",
+        name: "Player",
+        command: "missing.exe %U",
+        shown: "The program in this command line could not be found."
+    },
+        {
+        tag: "noName",
+        name: "",
+        command: "mpv %U",
+        shown: "Give the program a name."
+    }
+        ];
     }
 
-    function test_settings_programWarningWording(data) {
+        function test_settings_programWarningWording(data) {
         const s = makeSettingsWithPrograms([
-                                               {
-                                                   "name": data.name,
-                                                   "extensions": "",
-                                                   "commandLine": data.command
-                                               }
-                                           ]);
+        {
+        "name": data.name,
+        "extensions": "",
+        "commandLine": data.command
+    }
+        ]);
 
         s.dialog.editProgram();
         compare(s.dialog.programProblemLabel.text, data.shown);
     }
 
-    // The check trails typing by a debounce, so a warning must still arrive after it.
-    function test_settings_programWarningFollowsTyping() {
+        // The check trails typing by a debounce, so a warning must still arrive after it.
+        function test_settings_programWarningFollowsTyping() {
         const s = makeSettingsWithPrograms([
-                                               {
-                                                   "name": "Player",
-                                                   "extensions": "",
-                                                   "commandLine": "mpv %U"
-                                               }
-                                           ]);
+        {
+        "name": "Player",
+        "extensions": "",
+        "commandLine": "mpv %U"
+    }
+        ]);
         s.dialog.editProgram();
         compare(s.dialog.programProblemLabel.text, "");
 
@@ -1915,32 +1999,32 @@ TestCase {
         s.dialog.programCommandField.textEdited();
 
         tryCompare(s.dialog.programProblemLabel, "text",
-                   "The program in this command line could not be found.");
+        "The program in this command line could not be found.");
     }
 
-    // ---- StandardButtonLabels ------------------------------------------
+        // ---- StandardButtonLabels ------------------------------------------
 
-    // Dialog.standardButtons words its buttons from Qt's own catalogue, which
-    // follows the OS language, so in an English-locale test run the wording is
-    // already right and asserting it proves nothing. Overwriting the text first
-    // is what makes this a test of pin() rather than of the runner's locale.
-    function test_standardButtons_arePinnedToEnglish() {
+        // Dialog.standardButtons words its buttons from Qt's own catalogue, which
+        // follows the OS language, so in an English-locale test run the wording is
+        // already right and asserting it proves nothing. Overwriting the text first
+        // is what makes this a test of pin() rather than of the runner's locale.
+        function test_standardButtons_arePinnedToEnglish() {
         const nav = makeSelection(["a.txt"]);
         const mut = createTemporaryObject(mutControllerComponent, testCase);
         verify(mut !== null);
         const dialog = makeDialog(confirmRubbishComponent, {
-                                      "navController": nav,
-                                      "mutController": mut
-                                  });
+        "navController": nav,
+        "mutController": mut
+    });
         const box = dialog.footer;
         verify(box !== null);
         compare(box.count, 2);
         for (var i = 0; i < box.count; ++i)
-            box.itemAt(i).text = "translated elsewhere";
+        box.itemAt(i).text = "translated elsewhere";
 
         StandardButtonLabels.pin(box);
 
         verify(buttonNamed(dialog, "Yes") !== null);
         verify(buttonNamed(dialog, "Cancel") !== null);
     }
-}
+    }

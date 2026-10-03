@@ -165,8 +165,8 @@ sequenceDiagram
 | `id` | yes | Unique id, `[a-z0-9][a-z0-9.-]*`. A reverse domain name is a good habit. |
 | `name` | yes | Submenu label, and the name in toasts and dialogs. |
 | `version` | no | Your plugin's version; passed back to you in `initialize`. |
-| `description` | no | A short description of what the plugin does. Not shown anywhere yet. |
-| `repositoryUrl` | no | Where the plugin's source or home page lives. Only an `http://` or `https://` URL is kept; anything else is ignored. Not shown anywhere yet. |
+| `description` | no | A short description of what the plugin does, shown in **Settings › Plugins**. |
+| `repositoryUrl` | no | Where the plugin's source or home page lives. Only an `http://` or `https://` URL is kept; anything else is ignored. Shown as a link in the plugin's details in **Settings › Plugins**. |
 | `apiVersion` | yes | The plugin API version the plugin was written for, a positive integer. See [API version](#api-version). |
 | `run.command` | yes | The program to start. Without a `/` or `\` it is looked up on `PATH`; with one, it is relative to the plugin folder (e.g. `bin/plugin.exe`). |
 | `run.args` | no | Arguments, as an array of strings. No shell is involved, so no quoting or expansion happens. |
@@ -190,7 +190,7 @@ which one a plugin was written for. The number goes up only when the API changes
 breaks existing plugins; additions (a new method, a new optional field) leave it alone.
 
 When the two differ, the plugin still appears in the menu, but its commands are greyed out and
-never started, and the submenu reads `<name> (incompatible)`. The log says which side is behind:
+never started, the submenu reads `<name> (incompatible)`, and **Settings › Plugins** greys it out. The log says which side is behind:
 a plugin written for a lower version needs updating to the current API, one written for a higher
 version needs a newer MEGA Explorer. A manifest without a valid `apiVersion` is rejected like
 any other broken manifest.
@@ -599,6 +599,8 @@ The full result text is always written to the log.
 | Debug (`dev` profile) | `%LOCALAPPDATA%\MegaExplorer\MegaExplorer-dev\plugins\` |
 
 The folder name of a plugin is free; the `id` in `plugin.json` is what identifies it.
+**Settings › Plugins** lists the plugins that loaded (one whose manifest was rejected is only in the
+log), has a button that opens this folder, and shows each plugin's permissions in its details.
 
 **Workflow.**
 
@@ -697,7 +699,7 @@ The sample plugin in [`plugin_sample/`](plugin_sample/) has one command per feat
 
 Planned or considered, but not available yet — don't depend on any of these:
 
-- A consent prompt, and a settings page listing installed plugins
+- A consent prompt; enabling or disabling a plugin from the settings page
 - Commands on the folder background or the current folder (`context.site` other than `"selection"`)
 - `when` conditions on the view or the number of selected items
 - Copying, moving or deleting items

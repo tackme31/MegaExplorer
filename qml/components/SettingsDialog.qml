@@ -65,6 +65,46 @@ Dialog {
     property alias programCommandField: programCommandField
     property alias programProblemLabel: programProblemLabel
 
+    // PluginController, or a stand-in with its installedPlugins/openFolder surface in tests.
+    property var plugins: null
+
+    // Read on open rather than bound: plugins are only discovered at startup.
+    property var pluginEntries: []
+
+    // Exposed for tst_MainDialogs.qml.
+    property alias pluginList: pluginList
+    property alias pluginDetails: pluginDetails
+
+    function loadPlugins() {
+        root.pluginEntries = root.plugins ? root.plugins.installedPlugins() : [];
+        pluginList.currentIndex = root.pluginEntries.length > 0 ? 0 : -1;
+    }
+
+    function showPluginDetails() {
+        if (pluginList.currentIndex >= 0)
+            pluginDetails.show(root.pluginEntries[pluginList.currentIndex]);
+    }
+
+    // The manifest's names are for plugin authors; PLUGINS.md maps them back.
+    function permissionText(permission: string): string {
+        switch (permission) {
+        case "items.read":
+            return qsTr("Read the names and details of any file or folder");
+        case "items.write":
+            return qsTr("Add files and folders");
+        case "items.edit":
+            return qsTr("Change names, descriptions, tags and favourites");
+        case "content.read":
+            return qsTr("Read the contents of files");
+        case "content.download":
+            return qsTr("Save files to your Downloads folder");
+        }
+        return permission;
+    }
+
+    readonly property string pluginIncompatibleNotice: qsTr(
+        "This plugin was written for a different version of MegaExplorer and can't run in this one.")
+
     // The command the inline warning was last computed for. Trails the field by a
     // debounce: the check stats every PATH directory, and a network drive on PATH
     // would make that stall per keystroke.
@@ -216,6 +256,7 @@ Dialog {
         themeSelector.currentIndex = root.indexOfScheme(root.colorScheme);
         root.cacheSizeRequested();
         root.loadPrograms();
+        root.loadPlugins();
     }
 
     RowLayout {
@@ -232,7 +273,7 @@ Dialog {
             Layout.preferredWidth: 150
             Layout.fillHeight: true
             clip: true
-            model: [qsTr("General"), qsTr("File management"), qsTr("Open with")]
+            model: [qsTr("General"), qsTr("File management"), qsTr("Open with"), qsTr("Plugins")]
             currentIndex: 0
             ScrollBar.vertical: ScrollBar {}
 
@@ -519,6 +560,272 @@ Dialog {
                         text: qsTr("Remove")
                         enabled: programList.currentIndex >= 0
                         onClicked: root.removeProgram()
+                    }
+                }
+            }
+
+            ColumnLayout {
+                spacing: Theme.spacing.md
+
+                // Same framed list as the Open with page; details go in a dialog, so a
+                // plugin with many permissions does not stretch its row.
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 96
+                    color: Theme.color.surfaceAlt
+                    border.color: Theme.color.stroke
+                    border.width: Theme.border.thin
+                    radius: Theme.radius.md
+                    clip: true
+
+                    ListView {
+                        id: pluginList
+
+                        anchors.fill: parent
+                        anchors.margins: Theme.border.thin
+                        clip: true
+                        model: root.pluginEntries
+                        currentIndex: -1
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar {}
+
+                        delegate: Rectangle {
+                            id: pluginRow
+
+                            required property int index
+                            required property var modelData
+
+                            width: ListView.view.width
+                            implicitHeight: pluginText.implicitHeight + Theme.spacing.sm * 2
+                            color: ListView.isCurrentItem ? Theme.color.selection :
+                                                            pluginHover.hovered
+                                                            ? Theme.color.subtleHover :
+                                                              "transparent"
+                            ToolTip.delay: 500
+                            ToolTip.visible: !pluginRow.modelData.compatible && pluginHover.hovered
+                            ToolTip.text: root.pluginIncompatibleNotice
+
+                            HoverHandler {
+                                id: pluginHover
+                            }
+
+                            // Exclusive grab, as on the Open with page.
+                            TapHandler {
+                                gesturePolicy: TapHandler.ReleaseWithinBounds
+                                onTapped: pluginList.currentIndex = pluginRow.index
+                                onDoubleTapped: root.showPluginDetails()
+                            }
+
+                            ColumnLayout {
+                                id: pluginText
+
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.leftMargin: Theme.spacing.lg
+                                anchors.rightMargin: Theme.spacing.lg
+                                spacing: Theme.spacing.sm
+                                opacity: pluginRow.modelData.compatible ? 1 :
+                                                                          Theme.opacity.unavailable
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Theme.spacing.md
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        Layout.maximumWidth: implicitWidth
+                                        elide: Text.ElideRight
+                                        font.pixelSize: Theme.font.body
+                                        font.bold: true
+                                        color: Theme.color.text
+                                        text: pluginRow.modelData.name
+                                    }
+
+                                    Label {
+                                        visible: text !== ""
+                                        font.pixelSize: Theme.font.caption
+                                        color: Theme.color.textSecondary
+                                        text: pluginRow.modelData.version
+                                    }
+
+                                    Label {
+                                        visible: !pluginRow.modelData.compatible
+                                        font.pixelSize: Theme.font.caption
+                                        color: Theme.color.textSecondary
+                                        text: qsTr("(⚠ Incompatible)")
+                                    }
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                    }
+                                }
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    visible: text !== ""
+                                    elide: Text.ElideRight
+                                    font.pixelSize: Theme.font.caption
+                                    color: Theme.color.textSecondary
+                                    text: pluginRow.modelData.description
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: Theme.border.thin
+                                color: Theme.color.stroke
+                                visible: pluginRow.index < pluginList.count - 1
+                            }
+                        }
+                    }
+
+                    Label {
+                        anchors.centerIn: parent
+                        visible: pluginList.count === 0
+                        color: Theme.color.textSecondary
+                        text: qsTr("No plugins installed")
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.sm
+
+                    Item {
+                        Layout.fillWidth: true
+                    }
+
+                    Button {
+                        text: qsTr("Open plugins folder")
+                        enabled: root.plugins !== null
+                        onClicked: root.plugins.openFolder("")
+                    }
+
+                    Button {
+                        text: qsTr("Details")
+                        enabled: pluginList.currentIndex >= 0
+                        onClicked: root.showPluginDetails()
+                    }
+                }
+            }
+        }
+    }
+
+    // Read-only, like a file's Properties: nothing here changes the plugin.
+    Dialog {
+        id: pluginDetails
+
+        property var entry: ({})
+        // Exposed for tst_MainDialogs.qml.
+        property alias permissionRepeater: permissionRepeater
+
+        function show(plugin) {
+            entry = plugin;
+            open();
+        }
+
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        title: entry.version ? qsTr("%1 %2").arg(entry.name).arg(entry.version) : (entry.name ?? "")
+        width: parent ? Math.min(parent.width * 0.9, 480) : 480
+
+        footer: DialogButtonBox {
+            Button {
+                text: qsTr("Open folder")
+                enabled: root.plugins !== null
+                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+                onClicked: root.plugins.openFolder(pluginDetails.entry.id)
+            }
+            Button {
+                text: qsTr("Close")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                onClicked: pluginDetails.close()
+            }
+        }
+
+        ColumnLayout {
+            width: parent.width
+            spacing: Theme.spacing.md
+
+            Label {
+                Layout.fillWidth: true
+                visible: pluginDetails.entry.compatible === false
+                wrapMode: Text.Wrap
+                color: Theme.color.danger
+                text: root.pluginIncompatibleNotice
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: text !== ""
+                wrapMode: Text.Wrap
+                text: pluginDetails.entry.description ?? ""
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacing.sm
+
+                Label {
+                    font.bold: true
+                    text: qsTr("Permissions")
+                }
+
+                Repeater {
+                    id: permissionRepeater
+                    model: pluginDetails.entry.permissions ?? []
+
+                    Label {
+                        required property string modelData
+
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.spacing.lg
+                        wrapMode: Text.Wrap
+                        text: "• " + root.permissionText(modelData)
+                    }
+                }
+
+                Label {
+                    Layout.leftMargin: Theme.spacing.lg
+                    visible: permissionRepeater.count === 0
+                    color: Theme.color.textSecondary
+                    text: qsTr("None")
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: (pluginDetails.entry.repositoryUrl ?? "") !== ""
+                spacing: Theme.spacing.md
+
+                Label {
+                    text: qsTr("Repository")
+                }
+
+                // Plain text with a tap, not a StyledText <a>: the URL comes from the
+                // plugin, and would otherwise be markup.
+                Label {
+                    id: repositoryLink
+
+                    Layout.fillWidth: true
+                    elide: Text.ElideMiddle
+                    color: Theme.color.accent
+                    font.underline: repositoryHover.hovered
+                    text: pluginDetails.entry.repositoryUrl ?? ""
+
+                    HoverHandler {
+                        id: repositoryHover
+                        cursorShape: Qt.PointingHandCursor
+                    }
+
+                    TapHandler {
+                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                        onTapped: Qt.openUrlExternally(repositoryLink.text)
                     }
                 }
             }

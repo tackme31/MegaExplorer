@@ -285,6 +285,7 @@ ApplicationWindow {
         onCacheSizeRequested: cacheController.refresh()
         onCacheClearRequested: cacheController.clear()
         openWith: openWithController
+        plugins: pluginController
     }
 
     MissingPinDialog {
