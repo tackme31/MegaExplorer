@@ -600,7 +600,7 @@ The full result text is always written to the log.
 
 The folder name of a plugin is free; the `id` in `plugin.json` is what identifies it.
 **Settings › Plugins** lists the plugins that loaded (one whose manifest was rejected is only in the
-log), has a button that opens this folder, and shows each plugin's permissions in its details.
+log) and shows each plugin's permissions and folder in its details.
 
 **Workflow.**
 

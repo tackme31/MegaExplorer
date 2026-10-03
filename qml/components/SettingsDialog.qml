@@ -700,12 +700,6 @@ Dialog {
                     }
 
                     Button {
-                        text: qsTr("Open plugins folder")
-                        enabled: root.plugins !== null
-                        onClicked: root.plugins.openFolder("")
-                    }
-
-                    Button {
                         text: qsTr("Details")
                         enabled: pluginList.currentIndex >= 0
                         onClicked: root.showPluginDetails()

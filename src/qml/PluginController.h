@@ -67,7 +67,7 @@ public:
     // One map per loaded plugin, in menu order: id, name, version, description,
     // repositoryUrl, permissions (a string list) and compatible (apiVersion matches).
     Q_INVOKABLE QVariantList installedPlugins() const;
-    // pluginId's folder in Explorer; "" opens the plugins folder, creating it first.
+    // pluginId's folder in Explorer.
     Q_INVOKABLE void openFolder(const QString& pluginId) const;
 
     Q_INVOKABLE QStringList menuActionIds() const;

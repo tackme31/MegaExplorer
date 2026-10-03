@@ -118,18 +118,9 @@ QVariantList PluginController::installedPlugins() const
 
 void PluginController::openFolder(const QString& pluginId) const
 {
-    QString dir;
-    if (pluginId.isEmpty())
-    {
-        dir = mPluginsDir;
-        QDir().mkpath(dir);
-    }
-    else if (const PluginManifest* plugin = findPlugin(pluginId))
-    {
-        dir = plugin->dir;
-    }
-    if (dir.isEmpty() || !QDesktopServices::openUrl(QUrl::fromLocalFile(dir)))
-        qCWarning(lcPlugin) << "could not open the folder of" << (pluginId.isEmpty() ? QStringLiteral("plugins") : pluginId);
+    const PluginManifest* plugin = findPlugin(pluginId);
+    if (!plugin || !QDesktopServices::openUrl(QUrl::fromLocalFile(plugin->dir)))
+        qCWarning(lcPlugin) << "could not open the folder of" << pluginId;
 }
 
 QStringList PluginController::menuActionIds() const
