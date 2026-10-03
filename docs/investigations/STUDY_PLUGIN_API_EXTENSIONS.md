@@ -4,12 +4,13 @@
 （87a90de）。続いて権限（dd0aea1、同意ダイアログは保留）、`fields` と `ui.reveal`（3a038b2）、フォルダ背景と
 左ペインのメニュー（954c038・b940881、§C）、`initialize` の `app.colorScheme`（ba24d50、§E）も実装済み。
 推奨順 3（`items.copy` / `items.move` / `items.moveToRubbish`）も §G の仕様で実装済み。
+2026-10-04: `ui.search`（表示中のタブで検索を走らせる）の仕様を §H で決定、未実装。
 残りの候補は未決定で、必要になった時点で決める。仕様の正は `PLUGINS.md`。**
 現行 API（`items.get` / `children` / `descendants` / `update` / `fetchPreview`、`ui.confirm`、
 `ui.progress`）は WD Tagger プラグインの必要分しか無いため、汎用プラグインに要りそうなものを
 `STUDY_PLUGIN_V1_DESIGN.md` §6-3 の予定分と `IMegaClient` の既存機能から拾った。
 「下地」はアプリ側に既に実装があり、公開するだけで済むかどうか。
-次の手順: なし（残りの候補は必要になった時点で）。
+次の手順: §H の `ui.search` の実装。残りの候補は必要になった時点で。
 
 ## A. ファイルの中身（転送）
 
@@ -52,6 +53,7 @@
 | --- | --- |
 | `ui.toast` / `ui.input` / `ui.choose` | 設計書 §6-3 で予定済み。`ui.choose` は出力先の選択などに |
 | `ui.reveal {handle}` | **済（3a038b2）**。アプリのウィンドウは前に出さない |
+| `ui.search {query?, type?, ...}` | **仕様決定（§H）、未実装**。表示中のタブで検索欄の文字列とポップアップのフィルタを入れて検索する |
 | `initialize` で `app.colorScheme` | **済（ba24d50）**。自前のウィンドウを開くプラグイン（MegaDirStat）が、OS ではなくアプリのテーマ設定に合わせるため。値は実際に描いている配色で `"light"` / `"dark"`、不明なら省略 |
 | コンテキストメニュー以外からの起動 | 今のコマンドは右クリックメニュー（選択・フォルダの空き領域・左ペイン）からしか起動できない。選択と関係の無いコマンド（例: WD Tag Query Builder のクエリ作成画面）のために、将来はほかの場所（候補は More メニュー）にも出せるようにする予定。当面はコンテキストメニューのまま。context に項目が無い起動になるので、`site` の値を足すことになる |
 | `log {level, message}` | stderr より構造化できる。優先度低 |
@@ -173,3 +175,52 @@ items.moveToRubbish {handle}                          → {}
 実装メモ: `IMegaClient::copyNode` はコピーのハンドルを返すようにした（F-7 の `createFolder` と同じ変更）。
 ゴミ箱内の判定のため `NodeSnapshot::inRubbish` を足した（削除済みのノードもハンドルで引けてしまうため）。
 転送キューには入れない単発リクエストで、Cancel では止まらない（`items.update` と同じ）。
+
+## H. 決定: `ui.search` の仕様（2026-10-04、未実装）
+
+表示中のタブで、検索欄の文字列と検索ポップアップのフィルタを指定どおりに入れた状態で検索を走らせる。
+WD Tag Query Builder の Copy（ユーザーが貼り付ける）を置き換えるためだが、「文字列を検索欄に入れる」専用の
+口にはせず、ユーザーが入力して Enter を押したのと同じ検索として定義した。フォルダ・タブ・既存フィルタの
+扱いまで持たせようとして見送った前回の案（`wdtagquerybuilder_plugin/docs/SPEC.md` §6）の論点は、
+起点を「今のタブ・今の場所」に限ることでほぼ消える。
+
+```
+ui.search {query?, type?, category?, createdWithin?, favouritesOnly?, thisFolderOnly?}  → {}
+```
+
+| 引数 | 値 | 既定 |
+| --- | --- | --- |
+| `query` | 検索欄の文字列そのまま（`tag:` も手入力と同じ解釈） | `""` |
+| `type` | `"any"` / `"files"` / `"folders"` | `"any"` |
+| `category` | `"any"` / `"photo"` / `"audio"` / `"video"` / `"document"` / `"pdf"` / `"presentation"` / `"spreadsheet"` / `"archive"` / `"program"` / `"other"` | `"any"` |
+| `createdWithin` | `"any"` / `"pastDay"` / `"pastWeek"` / `"pastMonth"` / `"pastYear"` | `"any"` |
+| `favouritesOnly` / `thisFolderOnly` | bool | `false` |
+
+- **条件はまるごと指定**: 省略した引数は既定値（絞り込みなし）になり、直前の状態は残さない。呼び出す前に
+  ユーザーが何を設定していても結果が同じになるため（部分更新案は不採用）。
+- **対象は呼び出し時点の表示中のタブ**: メニューを押したときのタブではない。開いたまま使うプラグインの間に
+  ユーザーがタブを切り替えても、見えていないタブで検索が走らない。プラグインからタブを指定する手段は
+  持たせない。アプリは 1 プロセス 1 ウィンドウで `PluginController` もプロセスごとなので、届くのは常に
+  起動元のウィンドウ。
+- **どの画面でも走らせる**: クラウドドライブ・ゴミ箱・お気に入り・最近使ったもの・共有リンクとも、手で
+  検索したときと同じ。`thisFolderOnly` がお気に入り・最近使ったもので効かないのも手検索と同じ。一覧の
+  読み込み中も Enter と同じ扱い。
+- **空の条件**: `query` が空でフィルタがすべて既定なら検索解除（クリアボタンと同じ）。エラーにはしない。
+- **不正な値は `-32602`**: 知らない値の文字列、型違い、`query` 内の改行などの制御文字。QML 側の
+  `setSearchFilter` は範囲外の int を丸めるが、プラグインの値は黙って直さない。値を int ではなく
+  名前にしたのは、`SearchCategory` などの並びが変わってもプラグインが壊れないようにするため。
+- **表示を合わせる**: 検索欄に `query` を表示し、ポップアップの適用済み表示（フィルタ中のバッジ）も揃える。
+  入力途中の未確定の文字列とポップアップの未適用の編集は上書きして捨てる。ポップアップが開いていれば閉じる。
+- **それ以外は手検索と同じ**: 結果の画面に「プラグインから実行した」印は付けない。移動すれば普段どおり消える。
+- **権限なし・すぐ返す・前面に出さない**: `ui.reveal` と揃えた。アカウントを変えない操作なので権限は不要。
+  指示が届いた時点で `{}` を返し、検索の完了は待たない（件数はプラグイン側で数えられる）。ウィンドウは
+  前に出さない。
+- **構造化した `tags` 引数は持たない**: 書き方は検索欄の構文の 1 つだけ。空白入りの語を `tag:"..."` で
+  囲むのはプラグインの責任。
+
+実装メモ: 検索欄の文字列（`AddressToolBar.qml` の `searchField`）とポップアップの選択は QML 側が持っていて、
+C++ から書き換える経路が無い。`FolderNavigationController` に query と filter を一度に設定して 1 回だけ
+検索する入口を足し、QML には `searchQueryChanged` / `searchFilterChanged` で表示を読み直させる（タブ切り替え時に
+`searchQuery` を読み直しているのと同じ経路）。`PluginController` は `ui.reveal` の `revealRequested` と同様に
+シグナルで `Main.qml` に渡し、表示中のタブ（`tabsController.currentNavigation`）に届ける。Python ヘルパーに
+`ctx.search(query="", type=None, ...)`、サンプルプラグインに 1 コマンド、`PLUGINS.md` に節を足す。
