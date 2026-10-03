@@ -561,6 +561,13 @@ TestCase {
         compare(ActionCatalog.expand([]), []);
     }
 
+    // Without a plugin host (as here) the plugins' placeholder expands to nothing
+    // rather than throwing, so a menu that lists it still builds.
+    function test_expand_dropsThePluginPlaceholderWithoutAPluginHost() {
+        compare(ActionCatalog.expand(["refresh", "pluginCommands", "properties"]),
+                ["refresh", "properties"]);
+    }
+
     function test_group_openWith() {
         compare(ActionCatalog.groupLabel("openWith"), "Open with");
         const icon = ActionCatalog.groupIcon("openWith");

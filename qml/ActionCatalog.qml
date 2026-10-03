@@ -439,7 +439,9 @@ QtObject {
         const result = [];
         for (const id of actionIds) {
             if (id === "pluginCommands") {
-                result.push(...pluginController.menuActionIds());
+                // Absent in the QML tests, which build menus without a plugin host.
+                if (typeof pluginController !== "undefined")
+                    result.push(...pluginController.menuActionIds());
                 continue;
             }
             if (id !== "openWithCustom") {

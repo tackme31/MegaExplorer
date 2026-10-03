@@ -52,7 +52,7 @@ ActionMenu {
         // Refresh on a pin row -- would otherwise still be listed. Same
         // context-then-actionIds ordering as FileContextMenu.qml, for the reason
         // given there.
-        root.actionIds = root.siteActionIds.filter(actionId => ActionCatalog.isAvailable(actionId,
+        root.actionIds = ActionCatalog.expand(root.siteActionIds).filter(actionId => ActionCatalog.isAvailable(actionId,
                                                                                          root.context));
         root.popup();
     }
