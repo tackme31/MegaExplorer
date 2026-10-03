@@ -96,6 +96,9 @@ signals:
                          const QString& message,
                          bool changed,
                          bool inDialog);
+    // After commandFinished, once per run that was refused any undeclared permission,
+    // however many calls were refused.
+    void permissionsDenied(const QString& pluginName, const QStringList& permissions);
 
 private:
     const PluginManifest* findPlugin(const QString& pluginId) const;

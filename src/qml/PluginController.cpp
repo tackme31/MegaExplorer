@@ -210,7 +210,7 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
             &PluginRun::finished,
             this,
             [this, runId, pluginId, pluginName, commandTitle, startedAt, resultInDialog](
-                const QString& outcome, const QString& message, bool changed) {
+                const QString& outcome, const QString& message, bool changed, const QStringList& deniedPermissions) {
                 mRuns.remove(pluginId);
                 removeConfirm(pluginId);
                 ProgressState* state = findProgress(pluginId);
@@ -241,6 +241,8 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
                 ++mRunningRevision;
                 emit runningChanged();
                 emit commandFinished(pluginName, outcome, message, changed, inDialog);
+                if (!deniedPermissions.isEmpty())
+                    emit permissionsDenied(pluginName, deniedPermissions);
             });
     connect(run,
             &PluginRun::confirmRequested,

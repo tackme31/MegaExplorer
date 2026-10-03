@@ -283,6 +283,11 @@ QML の `ActionCatalog.expand()` がそれを `plugin:<pluginId>/<commandId>` �
 
 ## 5. 権限
 
+> **実装（2026-10-03）: 下の表とは語彙を変えた。** `items.read`（get/children/descendants）、
+> `items.write`（upload/createFolder、後で move/copy/trash）、`items.edit`（update）、`content.read`
+> （fetchPreview/fetchFile/readRange）、`content.download`（transfers.download）。権限はメソッド実装時に足し、
+> 未知の名前はマニフェストエラー。同意は入れず、拒否は 1 実行につきトースト 1 枚。正は `PLUGINS.md` の Permissions。
+
 | 権限 | 許す RPC | 表示文言（案） |
 | --- | --- | --- |
 | （不要） | メニュー宣言、`ui.*` | — |

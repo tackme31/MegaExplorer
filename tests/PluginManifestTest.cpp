@@ -68,6 +68,34 @@ TEST(PluginManifestTest, DropsARepositoryUrlThatIsNotHttp)
     }
 }
 
+TEST(PluginManifestTest, ReadsPermissionsWithoutDuplicates)
+{
+    const auto manifest = parsePluginManifest(R"({
+      "id": "x", "name": "X", "apiVersion": 1, "run": { "command": "x" },
+      "permissions": ["items.read", "content.read", "items.read"],
+      "commands": [ { "id": "a", "title": "A" } ]
+    })", QStringLiteral("C:/p"));
+    ASSERT_TRUE(manifest.has_value());
+    EXPECT_EQ(manifest->permissions, (QStringList{QStringLiteral("items.read"), QStringLiteral("content.read")}));
+
+    const auto bare = parsePluginManifest(kValid, QStringLiteral("C:/p"));
+    ASSERT_TRUE(bare.has_value());
+    EXPECT_TRUE(bare->permissions.isEmpty());
+}
+
+TEST(PluginManifestTest, RejectsAnUnknownOrMalformedPermission)
+{
+    for (const char* permissions : {R"(["items.read", "items.trash"])", R"(["network"])", R"("items.read")",
+                                    R"([1])", R"([""])"})
+    {
+        const QByteArray json = QByteArray(R"({
+          "id": "x", "name": "X", "apiVersion": 1, "run": { "command": "x" },
+          "permissions": )") + permissions + R"(, "commands": [ { "id": "a", "title": "A" } ]
+        })";
+        EXPECT_TRUE(errorFor(json).contains(QStringLiteral("permission"))) << permissions;
+    }
+}
+
 TEST(PluginManifestTest, KeepsAnApiVersionThisAppDoesNotSpeak)
 {
     QByteArray json = kValid;

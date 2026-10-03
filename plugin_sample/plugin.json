@@ -6,6 +6,7 @@
   "description": "Exercises every part of the plugin API, one command each.",
   "apiVersion": 1,
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
+  "permissions": ["items.read", "items.write", "items.edit", "content.read", "content.download"],
   "commands": [
     { "id": "show-selection", "title": "Show the selection" },
     { "id": "fail", "title": "Fail with an error" },

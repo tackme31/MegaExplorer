@@ -107,6 +107,7 @@ PluginRun::PluginRun(PluginManifest manifest,
       mContext(std::move(context)), mHostState{std::move(tempDir)}, mHostApi(hostApi), mKillTimer(new QTimer(this)), mInitTimer(new QTimer(this)),
       mCancelTimer(new QTimer(this))
 {
+    mHostState.permissions = mManifest.permissions;
     mCancelTimer->setSingleShot(true);
     mCancelTimer->setInterval(kCancelGraceMs);
     connect(mCancelTimer, &QTimer::timeout, this, [this] {
@@ -484,7 +485,9 @@ void PluginRun::finish(const QString& outcome, const QString& message)
     mInitTimer->stop();
     mCancelTimer->stop();
     mStage = Stage::Done;
-    emit finished(outcome, message, mChanged);
+    if (!mHostState.denied.isEmpty())
+        qCWarning(lcPlugin) << mManifest.id << "was refused undeclared permissions" << mHostState.denied;
+    emit finished(outcome, message, mChanged, mHostState.denied);
 }
 
 void PluginRun::stopProcess()

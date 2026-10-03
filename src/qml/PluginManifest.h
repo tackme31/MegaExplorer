@@ -44,6 +44,9 @@ bool pluginCommandAccepts(const PluginCommand& command,
 // a plugin declaring any other version is listed but cannot run.
 inline constexpr int kPluginApiVersion = 1;
 
+// Every name "permissions" may hold; anything else rejects the manifest.
+bool isKnownPluginPermission(const QString& permission);
+
 struct PluginManifest
 {
     QString id;
@@ -58,6 +61,8 @@ struct PluginManifest
     QString dir;
     QString command;
     QStringList args;
+    // Declared host-API permissions, without duplicates. Missing means none.
+    QStringList permissions;
     std::vector<PluginCommand> commands;
 };
 

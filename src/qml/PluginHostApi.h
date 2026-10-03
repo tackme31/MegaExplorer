@@ -2,6 +2,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QString>
+#include <QStringList>
 
 #include <cstdint>
 #include <functional>
@@ -19,7 +20,7 @@ class PluginHostApi
 {
 public:
     // Application error codes, JSON-RPC's -32000..-32099 "server error" range.
-    // -32001 is reserved for PermissionDenied (STUDY_PLUGIN_V1_DESIGN.md §6-3).
+    static constexpr int kPermissionDenied = -32001;
     static constexpr int kItemNotFound = -32002;
     static constexpr int kConflict = -32004;
     static constexpr int kMegaError = -32010;
@@ -69,7 +70,14 @@ public:
         std::shared_ptr<std::vector<std::vector<std::uint64_t>>> listings =
             std::make_shared<std::vector<std::vector<std::uint64_t>>>();
         std::shared_ptr<TransferQueue> transfers;
+        // The manifest's permissions; a call needing any other is refused.
+        QStringList permissions;
+        // Permissions refused during the run, in first-refusal order, without duplicates.
+        QStringList denied;
     };
+
+    // The permission method needs; nullopt when it needs none or is not a host method.
+    static std::optional<QString> requiredPermission(const QString& method);
 
     // $/cancel: every queued and running transfer of the run answers -32800, and any
     // later one is refused the same way.

@@ -61,6 +61,16 @@ std::optional<QString> readWhen(const QJsonObject& commandObj, PluginCommand* co
 }
 } // namespace
 
+bool isKnownPluginPermission(const QString& permission)
+{
+    static const QStringList known{QStringLiteral("items.read"),
+                                   QStringLiteral("items.write"),
+                                   QStringLiteral("items.edit"),
+                                   QStringLiteral("content.read"),
+                                   QStringLiteral("content.download")};
+    return known.contains(permission);
+}
+
 std::optional<PluginManifest>
 parsePluginManifest(const QByteArray& json, const QString& dir, QString* error)
 {
@@ -100,6 +110,20 @@ parsePluginManifest(const QByteArray& json, const QString& dir, QString* error)
         if (!arg.isString())
             return fail(error, QStringLiteral("\"run.args\" must be strings"));
         manifest.args << arg.toString();
+    }
+
+    const QJsonValue permissions = root.value(QStringLiteral("permissions"));
+    if (!permissions.isUndefined() && !permissions.isArray())
+        return fail(error, QStringLiteral("\"permissions\" must be a list of strings"));
+    for (const QJsonValue permission : permissions.toArray())
+    {
+        if (!permission.isString())
+            return fail(error, QStringLiteral("\"permissions\" must be a list of strings"));
+        const QString name = permission.toString();
+        if (!isKnownPluginPermission(name))
+            return fail(error, QStringLiteral("unknown permission \"%1\"").arg(name));
+        if (!manifest.permissions.contains(name))
+            manifest.permissions << name;
     }
 
     for (const QJsonValue value : root.value(QStringLiteral("commands")).toArray())

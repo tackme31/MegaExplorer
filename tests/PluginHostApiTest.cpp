@@ -1,4 +1,5 @@
 #include "qml/PluginHostApi.h"
+#include "qml/PluginManifest.h"
 
 #include "MockMegaClient.h"
 #include "core/MegaErrorCodes.h"
@@ -52,6 +53,8 @@ protected:
         });
         ON_CALL(*mClient, getNodeSnapshot(_))
             .WillByDefault(Return(Result<NodeSnapshot>::fail("gone", -9)));
+        mRun.permissions = {QStringLiteral("items.read"), QStringLiteral("items.write"), QStringLiteral("items.edit"),
+                            QStringLiteral("content.read"), QStringLiteral("content.download")};
     }
 
     // Drains the posted SDK answers, as the GUI thread's event loop would.
@@ -73,6 +76,47 @@ protected:
     PluginHostApi::RunState mRun;
 };
 } // namespace
+
+TEST_F(PluginHostApiTest, EveryHostMethodNeedsAKnownPermission)
+{
+    for (const char* method :
+         {"items.get", "items.children", "items.descendants", "items.update", "items.fetchPreview", "items.fetchFile",
+          "items.readRange", "items.upload", "items.createFolder", "transfers.download"})
+    {
+        const std::optional<QString> permission = PluginHostApi::requiredPermission(QString::fromLatin1(method));
+        ASSERT_TRUE(permission.has_value()) << method;
+        EXPECT_TRUE(isKnownPluginPermission(*permission)) << method;
+    }
+    EXPECT_FALSE(PluginHostApi::requiredPermission(QStringLiteral("items.nothing")).has_value());
+}
+
+TEST_F(PluginHostApiTest, AnUndeclaredPermissionIsRefusedAndRecordedOnce)
+{
+    mRun.permissions = {QStringLiteral("items.read")};
+    EXPECT_CALL(*mClient, getNodeSnapshot(_)).Times(0);
+
+    for (int i = 0; i < 3; ++i)
+    {
+        const PluginHostApi::Reply reply =
+            call(QStringLiteral("items.fetchPreview"), {{QStringLiteral("handle"), QStringLiteral("h7")}});
+        ASSERT_EQ(reply.errorCode, PluginHostApi::kPermissionDenied);
+        EXPECT_EQ(reply.errorData.toObject().value(QStringLiteral("permission")).toString(),
+                  QStringLiteral("content.read"));
+    }
+    const PluginHostApi::Reply edit = call(QStringLiteral("items.update"), {{QStringLiteral("handle"), QStringLiteral("h7")}});
+    EXPECT_EQ(edit.errorCode, PluginHostApi::kPermissionDenied);
+    EXPECT_FALSE(edit.mutated);
+
+    EXPECT_EQ(mRun.denied, (QStringList{QStringLiteral("content.read"), QStringLiteral("items.edit")}));
+}
+
+TEST_F(PluginHostApiTest, AnUnknownMethodIsNotFoundRatherThanDenied)
+{
+    mRun.permissions = {};
+    const PluginHostApi::Reply reply = call(QStringLiteral("items.nothing"), {});
+    EXPECT_EQ(reply.errorCode, -32601);
+    EXPECT_TRUE(mRun.denied.isEmpty());
+}
 
 TEST_F(PluginHostApiTest, ItemsGetReturnsTheFullItem)
 {

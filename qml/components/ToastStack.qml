@@ -230,6 +230,13 @@ Item {
             root.push(text, "", "");
     }
 
+    // Permission names stay untranslated: they are what the plugin's author must
+    // write into plugin.json.
+    function showPluginPermissionsDenied(pluginName, permissions) {
+        root.push(qsTr("%1: permission denied (%2)").arg(pluginName).arg(permissions.join(", ")), "",
+                  "");
+    }
+
     function showExternalHandoffNotice(text) {
         if (root.externalHandoffNoticeShown)
             return;

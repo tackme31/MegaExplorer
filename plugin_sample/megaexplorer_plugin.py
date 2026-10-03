@@ -42,6 +42,7 @@ __all__ = [
     "InvalidParams",
     "MegaError",
     "Conflict",
+    "PermissionDenied",
     "Cancelled",
     "CommandError",
 ]
@@ -49,6 +50,7 @@ __all__ = [
 API_VERSION = 1
 _CANCELLED = -32800
 _METHOD_NOT_FOUND = -32601
+_PERMISSION_DENIED = -32001
 _NOT_FOUND = -32002
 _CONFLICT = -32004
 _INVALID_PARAMS = -32602
@@ -92,6 +94,14 @@ class Conflict(RpcError):
         return self.data.get("reason")
 
 
+class PermissionDenied(RpcError):
+    """The call needs a permission plugin.json does not declare; permission names it."""
+
+    @property
+    def permission(self):
+        return self.data.get("permission")
+
+
 class Cancelled(Exception):
     """Raised by Context.check_cancelled() once the user pressed Cancel, and by a
     transfer (fetch_file, read_range, upload) the app stopped for that reason."""
@@ -110,7 +120,13 @@ def _command_failed(text):
     return error
 
 
-_ERRORS = {_NOT_FOUND: NotFound, _CONFLICT: Conflict, _INVALID_PARAMS: InvalidParams, _MEGA_ERROR: MegaError}
+_ERRORS = {
+    _NOT_FOUND: NotFound,
+    _CONFLICT: Conflict,
+    _INVALID_PARAMS: InvalidParams,
+    _MEGA_ERROR: MegaError,
+    _PERMISSION_DENIED: PermissionDenied,
+}
 
 
 class Item:

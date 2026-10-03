@@ -741,6 +741,9 @@ ApplicationWindow {
             if (changed)
                 tabsController.currentNavigation?.refresh();
         }
+        function onPermissionsDenied(pluginName, permissions) {
+            toastStack.showPluginPermissionsDenied(pluginName, permissions);
+        }
     }
 
     Connections {

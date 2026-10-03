@@ -19,8 +19,10 @@ The sample in [`plugin_sample/`](plugin_sample/) is written in Python with a sma
 library, which is the quickest way to start.
 
 **Security.** A plugin is an ordinary program running with your Windows user's rights, and through
-the API it can modify any item in the signed-in account. This version has no permission system and
-no consent prompt: every plugin in the plugins folder is enabled. Only install plugins you trust.
+the API it can modify any item in the signed-in account. The manifest's [permissions](#permissions)
+limit which API methods the app will serve it, but they are not a sandbox: the process itself can
+do anything your Windows user can. There is no consent prompt: every plugin in the plugins folder is
+enabled. Only install plugins you trust.
 
 ## Contents
 
@@ -28,6 +30,7 @@ no consent prompt: every plugin in the plugins folder is enabled. Only install p
 - [How a plugin runs](#how-a-plugin-runs)
 - [The manifest (`plugin.json`)](#the-manifest-pluginjson)
   - [API version](#api-version)
+  - [Permissions](#permissions)
 - [Protocol](#protocol)
   - [Transport](#transport)
   - [Items and handles](#items-and-handles)
@@ -144,6 +147,7 @@ sequenceDiagram
   "repositoryUrl": "https://github.com/example/tagger",
   "apiVersion": 1,
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
+  "permissions": ["items.read", "items.edit", "content.read"],
   "commands": [
     {
       "id": "tag-selected",
@@ -166,6 +170,7 @@ sequenceDiagram
 | `apiVersion` | yes | The plugin API version the plugin was written for, a positive integer. See [API version](#api-version). |
 | `run.command` | yes | The program to start. Without a `/` or `\` it is looked up on `PATH`; with one, it is relative to the plugin folder (e.g. `bin/plugin.exe`). |
 | `run.args` | no | Arguments, as an array of strings. No shell is involved, so no quoting or expansion happens. |
+| `permissions` | no | The API permissions the plugin uses, as an array of strings. See [Permissions](#permissions). Default: none. |
 | `commands` | yes | At least one command. |
 | `commands[].id` | yes | Unique within the plugin, no `/`. Sent as `commandId`. |
 | `commands[].title` | yes | Menu row label. |
@@ -189,6 +194,29 @@ never started, and the submenu reads `<name> (incompatible)`. The log says which
 a plugin written for a lower version needs updating to the current API, one written for a higher
 version needs a newer MEGA Explorer. A manifest without a valid `apiVersion` is rejected like
 any other broken manifest.
+
+### Permissions
+
+Every method the plugin calls on the app needs one permission, declared in `permissions`:
+
+| Permission | Methods | Allows |
+| --- | --- | --- |
+| `items.read` | `items.get`, `items.children`, `items.descendants` | Reading the tree: names and attributes of any item in the account |
+| `items.write` | `items.upload`, `items.createFolder` | Changing the tree: adding files and folders |
+| `items.edit` | `items.update` | Changing an item's name, description, tags and favourite flag |
+| `content.read` | `items.fetchPreview`, `items.fetchFile`, `items.readRange` | Reading file contents, into the run's temporary folder |
+| `content.download` | `transfers.download` | Saving files to the user's Downloads folder |
+
+`ui.confirm`, `ui.progress` and the context sent with `command.execute` need none, so a plugin
+that only looks at the selection can leave `permissions` out.
+
+- A name not in this table makes the manifest invalid, so the plugin is not loaded (the reason is
+  in the log). Duplicates are ignored.
+- A call needing an undeclared permission is answered with `-32001` and
+  `data: {"permission": "<name>"}`; nothing is done. Each new method arrives with the permission it
+  needs, added to this table.
+- When a run ends after any such refusal, the app shows one toast for the whole run,
+  `<name>: permission denied (<permissions>)`, however many calls were refused, and logs it.
 
 Because `run.command` is a program, Windows `.cmd`/`.bat` files are not supported; start an `.exe`.
 The app sets no environment variables of its own (no `PYTHONUTF8` etc.): the plugin inherits the
@@ -537,7 +565,7 @@ Other notifications are logged and ignored.
 | `-32002` | Not found | The item does not exist (any more), or has no preview. |
 | `-32004` | Conflict | The name is taken and `onConflict` did not resolve it; nothing changed. `data.reason` says why: `"exists"`, or `"versioningDisabled"` (see `items.upload`). |
 | `-32010` | MEGA error | MEGA rejected or failed a change. Part of an `items.update` may already be applied. |
-| `-32001` | — | Reserved for a future permission check. |
+| `-32001` | Permission denied | The method needs a permission `plugin.json` does not declare. `data.permission` names it. |
 | `-32800` | Cancelled | Sent **by the plugin** to answer `command.execute` after `$/cancel`; sent **by the app** for a transfer it stopped on Cancel. |
 | `-32000` | — | What the Python helper uses for a failed command. Any non-`-32800` code works there. |
 
@@ -553,6 +581,7 @@ Other notifications are logged and ignored.
 | Failed to start | `<name> couldn't be started` | — |
 | No `initialize` answer in 5 min | `<name> didn't start in time and was stopped` | — |
 | Exited before answering | `<name> stopped unexpectedly` | — |
+| Any call refused for a missing permission | an extra `<name>: permission denied (<permissions>)` | the same extra toast |
 
 The progress dialog of a `"progress": true` command is modal: the window cannot be used until the
 command ends or is cancelled, so the user cannot change the items it is working on behind it. A
@@ -655,7 +684,7 @@ plugin.run()
 | `ctx.progress(current=, total=, message=)` | `ui.progress` |
 | `ctx.cancelled`, `ctx.check_cancelled()` | `$/cancel` seen; the latter raises `Cancelled` → `-32800` |
 | `ctx.call(method, params)` | any method, raw |
-| `RpcError`, `NotFound`, `NoPreview`, `InvalidParams`, `MegaError`, `Conflict` (`.reason`) | error responses to a call; `.data` holds `error.data` |
+| `RpcError`, `NotFound`, `NoPreview`, `InvalidParams`, `MegaError`, `Conflict` (`.reason`), `PermissionDenied` (`.permission`) | error responses to a call; `.data` holds `error.data` |
 | `Cancelled` from a transfer call | `-32800`: the app stopped it on Cancel; let it propagate |
 
 `x` may be a handle string or an `Item`. `print()` is redirected to stderr, so it cannot corrupt
@@ -668,7 +697,7 @@ The sample plugin in [`plugin_sample/`](plugin_sample/) has one command per feat
 
 Planned or considered, but not available yet — don't depend on any of these:
 
-- A permission system, a consent prompt, and a settings page listing installed plugins
+- A consent prompt, and a settings page listing installed plugins
 - Commands on the folder background or the current folder (`context.site` other than `"selection"`)
 - `when` conditions on the view or the number of selected items
 - Copying, moving or deleting items

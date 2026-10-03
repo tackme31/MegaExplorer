@@ -45,7 +45,8 @@ public:
 
 signals:
     // changed: whether any write reached the account, so the view is worth re-reading.
-    void finished(const QString& outcome, const QString& message, bool changed);
+    // deniedPermissions: those the plugin called for without declaring them.
+    void finished(const QString& outcome, const QString& message, bool changed, const QStringList& deniedPermissions);
     // initialize was answered and command.execute sent.
     void executionStarted();
     // From ui.progress; current and total are -1 when the plugin left them out.

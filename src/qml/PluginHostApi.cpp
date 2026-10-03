@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QRegularExpression>
 #include <QStringList>
@@ -74,11 +75,42 @@ PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client, QObject* guiCo
 {
 }
 
+std::optional<QString> PluginHostApi::requiredPermission(const QString& method)
+{
+    static const QHash<QString, QString> permissions{
+        {QStringLiteral("items.get"), QStringLiteral("items.read")},
+        {QStringLiteral("items.children"), QStringLiteral("items.read")},
+        {QStringLiteral("items.descendants"), QStringLiteral("items.read")},
+        {QStringLiteral("items.upload"), QStringLiteral("items.write")},
+        {QStringLiteral("items.createFolder"), QStringLiteral("items.write")},
+        {QStringLiteral("items.update"), QStringLiteral("items.edit")},
+        {QStringLiteral("items.fetchPreview"), QStringLiteral("content.read")},
+        {QStringLiteral("items.fetchFile"), QStringLiteral("content.read")},
+        {QStringLiteral("items.readRange"), QStringLiteral("content.read")},
+        {QStringLiteral("transfers.download"), QStringLiteral("content.download")}};
+    const auto it = permissions.constFind(method);
+    if (it == permissions.constEnd())
+        return std::nullopt;
+    return *it;
+}
+
 void PluginHostApi::call(const QString& method,
                          const QJsonObject& params,
                          RunState& run,
                          const Done& done) const
 {
+    if (const std::optional<QString> permission = requiredPermission(method);
+        permission && !run.permissions.contains(*permission))
+    {
+        if (!run.denied.contains(*permission))
+            run.denied << *permission;
+        Reply reply = fail(kPermissionDenied,
+                           QStringLiteral("%1 needs the \"%2\" permission, which plugin.json does not declare")
+                               .arg(method, *permission));
+        reply.errorData = QJsonObject{{QStringLiteral("permission"), *permission}};
+        done(reply);
+        return;
+    }
     if (method == QStringLiteral("items.get"))
         done(itemsGet(params));
     else if (method == QStringLiteral("items.children"))
