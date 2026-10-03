@@ -99,6 +99,8 @@ public:
     // The Item form items.get returns, also used for the context's items. nullopt
     // when the node no longer exists.
     std::optional<QJsonObject> item(std::uint64_t handle) const;
+    // The same for the Cloud Drive root, which the UI names by the isRoot sentinel.
+    std::optional<QJsonObject> rootItem() const;
 
 private:
     Reply itemsGet(const QJsonObject& params) const;

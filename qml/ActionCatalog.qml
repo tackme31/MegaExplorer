@@ -22,7 +22,10 @@ import QtQuick
 //   pinned                whether that target is already in Quick access
 //   favourited, exported  whether that target is hearted / has a public link
 //   entries               every target, as {handle, name, sizeBytes, isFolder,
-//                         isFavourite, isExported, modificationTime}
+//                         isFavourite, isExported, modificationTime}; the one
+//                         folder of a background/row menu also carries isRoot
+//   site                  "folder" on the background and folder-row menus, absent
+//                         on the selection menu (plugins' context.site)
 //   request*()            callbacks into the view/tab that opened the menu,
 //                         for actions driving an Item no singleton can reach
 //                         (the inline rename field, ConfirmRubbishDialog,
@@ -398,7 +401,7 @@ QtObject {
         };
     }
 
-    // ctx: entries. Greyed while the plugin is busy (one run at a time) or when the
+    // ctx: entries, site. Greyed while the plugin is busy (one run at a time) or when the
     // selection fails the command's `when`.
     function pluginCommandEntry(actionId) {
         return {
@@ -407,7 +410,8 @@ QtObject {
             "group": pluginController.groupOf(actionId),
             "enabled": ctx => pluginController.runningRevision >= 0 && pluginController.canRun(
                                   actionId) && pluginController.accepts(actionId, ctx.entries),
-            "trigger": ctx => pluginController.execute(actionId, ctx.entries)
+            "trigger": ctx => pluginController.execute(actionId, ctx.entries,
+                                                       ctx.site ?? "selection")
         };
     }
 

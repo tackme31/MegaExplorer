@@ -214,6 +214,14 @@ std::optional<QJsonObject> PluginHostApi::item(std::uint64_t handle) const
     return toItem(*mClient, node.value());
 }
 
+std::optional<QJsonObject> PluginHostApi::rootItem() const
+{
+    const Result<NodeSnapshot> node = mClient->getRootSnapshot();
+    if (!node.success)
+        return std::nullopt;
+    return toItem(*mClient, node.value());
+}
+
 namespace
 {
 // value as a node handle, or the error reply to send instead.

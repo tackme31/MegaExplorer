@@ -81,8 +81,12 @@ public:
     // The command's `when` against the selection; entries as for execute().
     Q_INVOKABLE bool accepts(const QString& actionId, const QVariantList& entries) const;
 
-    // entries are FileListModel::selectedEntries() maps (handle, name, isFolder).
-    Q_INVOKABLE void execute(const QString& actionId, const QVariantList& entries);
+    // entries are FileListModel::selectedEntries() maps (handle, name, isFolder), or
+    // the one folder of a background/folder-row menu, whose isRoot names the Cloud
+    // Drive root. site becomes context.site: "selection" or "folder".
+    Q_INVOKABLE void execute(const QString& actionId,
+                             const QVariantList& entries,
+                             const QString& site = QStringLiteral("selection"));
     Q_INVOKABLE void cancel(const QString& pluginId);
     Q_INVOKABLE void forceStop(const QString& pluginId);
     // Kills every run at once, without $/cancel: called on logout, after which a

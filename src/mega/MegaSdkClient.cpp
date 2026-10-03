@@ -1779,6 +1779,16 @@ Result<NodeSnapshot> MegaSdkClient::getNodeSnapshot(std::uint64_t handle) const
     return Result<NodeSnapshot>::ok(nodeToSnapshot(*mApi, node.get()));
 }
 
+Result<NodeSnapshot> MegaSdkClient::getRootSnapshot() const
+{
+    if (mShuttingDown)
+        return Result<NodeSnapshot>::fail(kShutDownMessage, kClientShutDownCode);
+    std::unique_ptr<mega::MegaNode> node = resolveNode(0, true);
+    if (!node)
+        return Result<NodeSnapshot>::fail("No Cloud Drive root", MegaErrorCode::kENoEnt);
+    return Result<NodeSnapshot>::ok(nodeToSnapshot(*mApi, node.get()));
+}
+
 Result<std::vector<NodeSnapshot>> MegaSdkClient::getChildSnapshots(std::uint64_t handle) const
 {
     if (mShuttingDown)

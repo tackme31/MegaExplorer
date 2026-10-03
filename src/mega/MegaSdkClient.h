@@ -229,6 +229,7 @@ public:
     Result<bool> hasSubfolders(std::uint64_t handle, bool isRoot) const override;
     Result<std::uint64_t> subtreeSize(std::uint64_t handle, bool isRoot) const override;
     Result<NodeSnapshot> getNodeSnapshot(std::uint64_t handle) const override;
+    Result<NodeSnapshot> getRootSnapshot() const override;
     Result<std::vector<NodeSnapshot>> getChildSnapshots(std::uint64_t handle) const override;
     void listDescendants(std::uint64_t handle,
                          std::function<void(Result<std::vector<DescendantNode>>)> onDone) override;

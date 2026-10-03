@@ -195,13 +195,19 @@ bool PluginController::accepts(const QString& actionId, const QVariantList& entr
     for (const QVariant& value : entries)
     {
         const QVariantMap entry = value.toMap();
+        // The top of Favourites/Recents/Shared links: a listing, not a folder.
+        if (entry.value(QStringLiteral("handle")).toULongLong() == 0 &&
+            !entry.value(QStringLiteral("isRoot")).toBool())
+            return false;
         selection.push_back({entry.value(QStringLiteral("name")).toString(),
                              entry.value(QStringLiteral("isFolder")).toBool()});
     }
     return pluginCommandAccepts(*command, selection);
 }
 
-void PluginController::execute(const QString& actionId, const QVariantList& entries)
+void PluginController::execute(const QString& actionId,
+                               const QVariantList& entries,
+                               const QString& site)
 {
     QString pluginId;
     QString commandId;
@@ -216,11 +222,15 @@ void PluginController::execute(const QString& actionId, const QVariantList& entr
     QJsonArray items;
     for (const QVariant& value : entries)
     {
-        const quint64 handle = value.toMap().value(QStringLiteral("handle")).toULongLong();
-        if (std::optional<QJsonObject> item = mHostApi.item(handle))
+        const QVariantMap entry = value.toMap();
+        const std::optional<QJsonObject> item =
+            entry.value(QStringLiteral("isRoot")).toBool()
+                ? mHostApi.rootItem()
+                : mHostApi.item(entry.value(QStringLiteral("handle")).toULongLong());
+        if (item)
             items.append(*item);
     }
-    const QJsonObject context{{QStringLiteral("site"), QStringLiteral("selection")},
+    const QJsonObject context{{QStringLiteral("site"), site},
                               {QStringLiteral("items"), items}};
 
     const auto command =

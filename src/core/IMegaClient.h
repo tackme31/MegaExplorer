@@ -503,6 +503,8 @@ public:
     // MEGA's 8-character base64 handle, the form a public link carries.
 
     virtual Result<NodeSnapshot> getNodeSnapshot(std::uint64_t handle) const = 0;
+    // The Cloud Drive root with its real handle: what the isRoot sentinel stands for.
+    virtual Result<NodeSnapshot> getRootSnapshot() const = 0;
     // A folder's direct children in the SDK's default order. Fails on a file.
     virtual Result<std::vector<NodeSnapshot>> getChildSnapshots(std::uint64_t handle) const = 0;
     // Every node under a folder, depth-first with each folder before its contents,

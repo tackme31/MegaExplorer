@@ -38,6 +38,10 @@ ActionMenu {
             "name": ViewLabels.label(root.navController.viewKind, root.navController.atRoot,
                                      root.navController.currentFolderName),
             "isFolder": true,
+            // Only the Cloud Drive's top is a folder; Favourites and the like are
+            // listings there, with no node behind them.
+            "isRoot": root.navController.atRoot && root.navController.viewKind
+                      === ViewKind.CloudDrive,
             "sizeBytes": 0,
             "modificationTime": 0
         };
@@ -47,6 +51,7 @@ ActionMenu {
             "name": folder.name,
             "pinned": false,
             "entries": [folder],
+            "site": "folder",
             "navController": root.navController,
             "mutations": root.mutController,
             // Sampled, not bound: a menu must not grey or un-grey a row while

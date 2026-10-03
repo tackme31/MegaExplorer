@@ -208,6 +208,7 @@ public:
     MOCK_METHOD(Result<bool>, hasSubfolders, (std::uint64_t, bool), (const, override));
     MOCK_METHOD(Result<std::uint64_t>, subtreeSize, (std::uint64_t, bool), (const, override));
     MOCK_METHOD(Result<NodeSnapshot>, getNodeSnapshot, (std::uint64_t), (const, override));
+    MOCK_METHOD(Result<NodeSnapshot>, getRootSnapshot, (), (const, override));
     MOCK_METHOD(Result<std::vector<NodeSnapshot>>, getChildSnapshots, (std::uint64_t), (const, override));
     MOCK_METHOD(void,
                 listDescendants,

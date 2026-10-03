@@ -272,8 +272,10 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
+        // FolderBackground/FolderRow hand the plugin that one folder; at the top of a
+        // Favourites-like view there is none, and PluginController::accepts greys it.
         {MenuAction::PluginCommands,
-         {MenuSite::FileSelection},
+         {MenuSite::FileSelection, MenuSite::FolderBackground, MenuSite::FolderRow},
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::Any},

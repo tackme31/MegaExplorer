@@ -88,8 +88,15 @@ enabled. Only install plugins you trust.
 - **Discovery.** At startup the app reads `<plugins folder>/<any folder>/plugin.json`. A manifest
   that fails to parse is skipped with a line in the log; so is a second plugin with an `id`
   already taken. Plugins are listed by `name`.
-- **Menu.** Each plugin gets a submenu in the context menu of selected items (Cloud Drive,
-  Favourites, Recents and Shared links views), holding one row per command.
+- **Menu.** Each plugin gets a submenu, holding one row per command, in three context menus:
+  - of selected items (Cloud Drive, Favourites, Recents and Shared links views),
+  - of a view's empty space, for the folder the view is showing,
+  - of a row in the side panel's folder tree or Quick access, for that folder.
+
+  The last two hand over one folder, so a command with `"when": {"targets": "folders"}` runs
+  there too — including on **Cloud Drive** itself, the one folder no selection can reach. At the
+  top of Favourites, Recents or Shared links the empty space stands for no folder, and the rows
+  are greyed out.
 - **One process per click.** Every click starts a fresh process, which handles exactly one
   command and then exits. Nothing is kept between runs; a plugin that needs state stores it itself
   (where is up to the plugin: its own folder, `%APPDATA%`, …).
@@ -304,8 +311,11 @@ response aborts the run and shows its `message`. No answer within **5 minutes** 
   "context":{"site":"selection","items":[ /* Item, ... */ ]}}}
 ```
 
-- `context.site` is always `"selection"` in this version.
-- `context.items` are the selected items as they were when the menu was clicked (items deleted in
+- `context.site` says which menu the command came from: `"selection"` for selected items,
+  `"folder"` for a view's empty space or a folder-tree / Quick access row. With `"folder"`,
+  `context.items` holds exactly that one folder, which may be the Cloud Drive root (`parent` is
+  `null`).
+- `context.items` are the items as they were when the menu was clicked (items deleted in
   the meantime are left out). Call `items.get` for their state now.
 
 Reply when the command is done:
@@ -722,7 +732,6 @@ The sample plugin in [`plugin_sample/`](plugin_sample/) has one command per feat
 Planned or considered, but not available yet — don't depend on any of these:
 
 - A consent prompt; enabling or disabling a plugin from the settings page
-- Commands on the folder background or the current folder (`context.site` other than `"selection"`)
 - `when` conditions on the view or the number of selected items
 - Copying, moving or deleting items
 - `ui.toast`, input and choice dialogs; a `log` method

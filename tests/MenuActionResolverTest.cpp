@@ -688,15 +688,16 @@ TEST(MenuActionResolverTest, DefaultTableNeverOffersRenameOrMoveToRubbishForAnEm
     EXPECT_TRUE(resolveMenuActions(fileSelection(0, 0)).empty());
 }
 
-TEST(MenuActionResolverTest, DefaultTableOffersTheFiveBackgroundActionsInMenuOrder)
+TEST(MenuActionResolverTest, DefaultTableOffersTheSixBackgroundActionsInMenuOrder)
 {
     std::vector<MenuAction> result = resolveMenuActions(folderTarget(MenuSite::FolderBackground));
-    ASSERT_EQ(result.size(), 5u);
+    ASSERT_EQ(result.size(), 6u);
     EXPECT_EQ(result[0], MenuAction::NewFolder);
     EXPECT_EQ(result[1], MenuAction::Paste);
     EXPECT_EQ(result[2], MenuAction::SelectAll);
     EXPECT_EQ(result[3], MenuAction::Refresh);
-    EXPECT_EQ(result[4], MenuAction::Properties);
+    EXPECT_EQ(result[4], MenuAction::PluginCommands);
+    EXPECT_EQ(result[5], MenuAction::Properties);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersCutAndCopyForEveryNonEmptySelection)
@@ -737,15 +738,16 @@ TEST(MenuActionResolverTest, ClipboardActionIdsAreStable)
     EXPECT_STREQ(menuActionId(MenuAction::Refresh), "refresh");
 }
 
-TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabTogglePinAndRefreshOnAFolderRow)
+TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabTogglePinRefreshAndPluginsOnAFolderRow)
 {
     std::vector<MenuAction> result = resolveMenuActions(folderTarget(MenuSite::FolderRow));
-    ASSERT_EQ(result.size(), 3u);
+    ASSERT_EQ(result.size(), 4u);
     EXPECT_EQ(result[0], MenuAction::OpenInNewTab);
     EXPECT_EQ(result[1], MenuAction::TogglePin);
     // Reaches every FolderRow, including a Quick access pin that has no subtree to
     // re-read -- hiding it there is QML's job, not the resolver's.
     EXPECT_EQ(result[2], MenuAction::Refresh);
+    EXPECT_EQ(result[3], MenuAction::PluginCommands);
 }
 
 TEST(MenuActionResolverTest, DefaultTableNeverOffersNewFolderAtTheOtherSites)
@@ -822,15 +824,16 @@ TEST(MenuActionResolverTest, DefaultTableStillOffersOpenInNewTabAndTogglePinInFa
     EXPECT_TRUE(contains(result, MenuAction::TogglePin));
 }
 
-TEST(MenuActionResolverTest, DefaultTableOffersOnlySelectAllAndRefreshOnAFavouritesBackground)
+TEST(MenuActionResolverTest, DefaultTableOffersOnlySelectAllRefreshAndPluginsOnAFavouritesBackground)
 {
     // New folder and paste both need a destination folder, which a flat
     // cross-drive listing doesn't have.
     const std::vector<MenuAction> result =
         resolveMenuActions(folderTarget(MenuSite::FolderBackground, ViewKind::Favourites));
-    ASSERT_EQ(result.size(), 2u);
+    ASSERT_EQ(result.size(), 3u);
     EXPECT_EQ(result[0], MenuAction::SelectAll);
     EXPECT_EQ(result[1], MenuAction::Refresh);
+    EXPECT_EQ(result[2], MenuAction::PluginCommands);
 }
 
 TEST(MenuActionResolverTest, DefaultTableTreatsRecentsExactlyAsFavourites)

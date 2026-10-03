@@ -32,6 +32,7 @@ ActionMenu {
             "isRoot": isRoot,
             "name": name,
             "treeRow": root.treeRow,
+            "site": "folder",
             // Sampled at open time, not bound: quickAccessModel emits no
             // per-handle change signal, so a binding would never re-evaluate
             // anyway -- and the menu is closed whenever the answer could change.
@@ -39,6 +40,7 @@ ActionMenu {
             "entries": [
                 {
                     "handle": handle,
+                    "isRoot": isRoot,
                     "name": name,
                     "sizeBytes": 0,
                     "isFolder": true
