@@ -621,6 +621,32 @@ TEST_F(PluginHostApiTest, ItemsUpdateRejectsBadParamsBeforeSendingAnything)
     EXPECT_FALSE(comma.mutated);
 }
 
+TEST_F(PluginHostApiTest, ItemsUpdateRenamesOnlyToAValidNameNotTakenBesideIt)
+{
+    EXPECT_CALL(*mClient, getNodeSnapshot(7))
+        .WillRepeatedly(Return(Result<NodeSnapshot>::ok(node(7, "a.jpg", false))));
+    ON_CALL(*mClient, siblingNameTaken(7, "taken.jpg")).WillByDefault(Return(Result<bool>::ok(true)));
+    EXPECT_CALL(*mClient, renameNode(_, _, _)).Times(0);
+    EXPECT_CALL(*mClient, setNodeDescription(_, _, _)).Times(0);
+
+    for (const QString& bad : {QStringLiteral("a/b.jpg"), QStringLiteral("a\\b.jpg"), QStringLiteral("  ")})
+    {
+        const PluginHostApi::Reply reply = call(QStringLiteral("items.update"),
+                                                {{QStringLiteral("handle"), QStringLiteral("h7")},
+                                                 {QStringLiteral("name"), bad},
+                                                 {QStringLiteral("description"), QStringLiteral("d")}});
+        EXPECT_EQ(reply.errorCode, -32602) << bad.toStdString();
+    }
+
+    const PluginHostApi::Reply taken = call(QStringLiteral("items.update"),
+                                            {{QStringLiteral("handle"), QStringLiteral("h7")},
+                                             {QStringLiteral("name"), QStringLiteral("taken.jpg")},
+                                             {QStringLiteral("description"), QStringLiteral("d")}});
+    EXPECT_EQ(taken.errorCode, PluginHostApi::kConflict);
+    EXPECT_EQ(taken.errorData.toObject().value(QStringLiteral("reason")).toString(), QStringLiteral("exists"));
+    EXPECT_FALSE(taken.mutated);
+}
+
 TEST_F(PluginHostApiTest, ItemsUpdateKeepsATagThatIsBothRemovedAndAdded)
 {
     // A retag: drop every old plugin tag, add every new one; only the difference is sent.

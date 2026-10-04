@@ -38,6 +38,9 @@ Dialog {
 
     parent: Overlay.overlay
     anchors.centerIn: Overlay.overlay
+    // Above PluginProgressDialog, which can open after the question does and is
+    // modal too: under it the question could not be answered.
+    z: 1
     modal: true
     closePolicy: Popup.CloseOnEscape
     title: root.request ? (root.request.title !== "" ? root.request.title :

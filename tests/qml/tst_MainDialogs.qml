@@ -1663,6 +1663,10 @@ TestCase {
             function openFolder(id) {
                 opened.push(id);
             }
+            property int pluginsFolderOpened: 0
+            function openPluginsFolder() {
+                ++pluginsFolderOpened;
+            }
         }
     }
 
@@ -1706,6 +1710,15 @@ TestCase {
                                           ]);
         compare(s.dialog.pluginList.count, 2);
         compare(s.dialog.pluginList.currentIndex, 0);
+    }
+
+    // Where to put a plugin has to be reachable before there is any plugin.
+    function test_settings_pluginsFolderOpensWithNothingInstalled() {
+        const s = makeSettingsWithPlugins([]);
+        compare(s.dialog.pluginList.count, 0);
+        verify(s.dialog.openPluginsFolderButton.enabled);
+        s.dialog.openPluginsFolderButton.clicked();
+        compare(s.stub.pluginsFolderOpened, 1);
     }
 
     function test_settings_pluginDetailsListEveryPermissionInWords() {

@@ -65,7 +65,8 @@ Dialog {
     property alias programCommandField: programCommandField
     property alias programProblemLabel: programProblemLabel
 
-    // PluginController, or a stand-in with its installedPlugins/openFolder surface in tests.
+    // PluginController, or a stand-in with its installedPlugins/openFolder/openPluginsFolder
+    // surface in tests.
     property var plugins: null
 
     // Read on open rather than bound: plugins are only discovered at startup.
@@ -74,6 +75,7 @@ Dialog {
     // Exposed for tst_MainDialogs.qml.
     property alias pluginList: pluginList
     property alias pluginDetails: pluginDetails
+    property alias openPluginsFolderButton: openPluginsFolderButton
 
     function loadPlugins() {
         root.pluginEntries = root.plugins ? root.plugins.installedPlugins() : [];
@@ -699,6 +701,14 @@ Dialog {
 
                     Item {
                         Layout.fillWidth: true
+                    }
+
+                    Button {
+                        id: openPluginsFolderButton
+
+                        text: qsTr("Open plugins folder")
+                        enabled: root.plugins !== null
+                        onClicked: root.plugins.openPluginsFolder()
                     }
 
                     Button {

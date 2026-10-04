@@ -69,6 +69,8 @@ public:
     Q_INVOKABLE QVariantList installedPlugins() const;
     // pluginId's folder in Explorer.
     Q_INVOKABLE void openFolder(const QString& pluginId) const;
+    // The folder plugins are discovered in, created first if it is not there yet.
+    Q_INVOKABLE void openPluginsFolder() const;
 
     Q_INVOKABLE QStringList menuActionIds() const;
     Q_INVOKABLE bool isMenuActionId(const QString& actionId) const;

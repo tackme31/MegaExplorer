@@ -6,7 +6,8 @@ import QtQuick.Controls.FluentWinUI3
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// One instance in Main.qml: a row per "progress": true command running, and per
+// One instance in Main.qml: a row per command running (a "progress": true one at
+// once, any other once it has run a few seconds), and per
 // finished "result": "dialog" command until its Close. A row that was showing
 // progress turns into the result in place.
 // Modal: changing items behind a run (tags, logout) can undo or misdirect its work.

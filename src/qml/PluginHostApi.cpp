@@ -493,6 +493,25 @@ struct UpdateChain : std::enable_shared_from_this<UpdateChain>
     }
 };
 
+PluginHostApi::Reply conflict(const QString& message, const QString& reason, const QString& detail = {})
+{
+    PluginHostApi::Reply reply = fail(PluginHostApi::kConflict, message);
+    QJsonObject data{{QStringLiteral("reason"), reason}};
+    if (!detail.isEmpty())
+        data.insert(QStringLiteral("message"), detail);
+    reply.errorData = data;
+    return reply;
+}
+
+std::optional<PluginHostApi::Reply>
+readName(const QJsonValue& value, QString* out)
+{
+    if (!value.isString() || !FileOperationService::isValidName(value.toString().toStdString()))
+        return fail(kInvalidParams, QStringLiteral("name must be a non-blank name without / or \\"));
+    *out = value.toString();
+    return std::nullopt;
+}
+
 // A tag list param as strings, or nullopt when it is not one.
 std::optional<std::vector<std::string>> readTags(const QJsonValue& value)
 {
@@ -539,17 +558,25 @@ void PluginHostApi::itemsUpdate(const QJsonObject& params, const Done& done) con
 
     if (params.contains(QStringLiteral("name")))
     {
-        const QJsonValue name = params.value(QStringLiteral("name"));
-        if (!name.isString() || name.toString().isEmpty())
+        QString name;
+        if (std::optional<Reply> error = readName(params.value(QStringLiteral("name")), &name))
         {
-            done(fail(kInvalidParams, QStringLiteral("\"name\" must be a non-empty string")));
+            done(*error);
             return;
         }
-        const std::string value = name.toString().toStdString();
+        const std::string value = name.toStdString();
         if (value != node.name)
+        {
+            // Refused like the app's own rename: MEGA would take the duplicate.
+            if (const Result<bool> taken = mClient->siblingNameTaken(handle, value); taken.success && taken.value())
+            {
+                done(conflict(QStringLiteral("%1 already exists there").arg(name), QStringLiteral("exists")));
+                return;
+            }
             chain->steps.push_back([client, handle, value](std::function<void(Result<void>)> onDone) {
                 client->renameNode(handle, value, std::move(onDone));
             });
+        }
     }
     if (params.contains(QStringLiteral("description")))
     {
@@ -714,16 +741,6 @@ PluginHostApi::Reply megaFail(const std::string& message)
     return fail(PluginHostApi::kMegaError, QString::fromStdString(message));
 }
 
-PluginHostApi::Reply conflict(const QString& message, const QString& reason, const QString& detail = {})
-{
-    PluginHostApi::Reply reply = fail(PluginHostApi::kConflict, message);
-    QJsonObject data{{QStringLiteral("reason"), reason}};
-    if (!detail.isEmpty())
-        data.insert(QStringLiteral("message"), detail);
-    reply.errorData = data;
-    return reply;
-}
-
 // The new node as an Item, or just its handle if the local tree has not caught up.
 QJsonObject createdItem(const IMegaClient& client, std::uint64_t handle)
 {
@@ -762,15 +779,6 @@ readChoice(const QJsonObject& params, const QString& key, const QStringList& cho
     }
     if (!value.isString() || !choices.contains(value.toString()))
         return fail(kInvalidParams, QStringLiteral("%1 must be one of: %2").arg(key, choices.join(QStringLiteral(", "))));
-    *out = value.toString();
-    return std::nullopt;
-}
-
-std::optional<PluginHostApi::Reply>
-readName(const QJsonValue& value, QString* out)
-{
-    if (!value.isString() || !FileOperationService::isValidName(value.toString().toStdString()))
-        return fail(kInvalidParams, QStringLiteral("name must be a non-blank name without / or \\"));
     *out = value.toString();
     return std::nullopt;
 }

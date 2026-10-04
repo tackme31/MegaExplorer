@@ -183,7 +183,7 @@ sequenceDiagram
 | `commands[].title` | yes | Menu row label. |
 | `commands[].when.targets` | no | `"files"`, `"folders"` or `"any"` (default). |
 | `commands[].when.extensions` | no | File extensions the command accepts, case-insensitive, leading `.` optional. Folders never match. |
-| `commands[].progress` | no | `true` shows a progress dialog with a Cancel button while the command runs. Default `false`. |
+| `commands[].progress` | no | `true` shows a progress dialog with a Cancel button as soon as the command starts. Default `false`: the dialog appears only once the command has run for 3 seconds. |
 | `commands[].result` | no | Where the result goes: `"toast"` (default) or `"dialog"`. See [What the user sees](#what-the-user-sees). |
 
 A command whose `when` rejects any item of the selection is shown **greyed out**, not hidden.
@@ -347,8 +347,8 @@ fine.
 The user pressed Cancel in the progress dialog. Stop at a convenient point and answer
 `command.execute` with `-32800`, or simply exit. If nothing happens within 10 seconds, the dialog
 offers **Force quit**, which kills the process tree. Read stdin on its own thread so a busy command
-still sees this message. Cancel is only reachable from the progress dialog, so only commands with
-`"progress": true` can be cancelled (cancelling during `initialize` kills the process at once).
+still sees this message. Cancel is reached from the progress dialog, which a command without
+`"progress": true` gets after 3 seconds (cancelling during `initialize` kills the process at once).
 
 ### Methods the plugin can call
 
@@ -412,7 +412,10 @@ result:  {"item": Item}
 
 - Every field except `handle` is optional; only the fields passed are touched, and only real
   changes are sent to MEGA (passing the current value is a no-op).
-- `name`: non-empty string. `description`: string (`""` clears it). `favourite`: boolean.
+- `name`: a non-blank name without `/` or `\`. If another item in the same folder already has
+  that name, the call fails with `-32004` and `data.reason: "exists"`, and nothing changes (MEGA
+  itself would allow the duplicate; the app refuses it, as its own Rename does).
+  `description`: string (`""` clears it). `favourite`: boolean.
 - `tags`: the result is *current tags minus `remove`, plus `add`*. A tag in both lists stays.
   Tags are matched the way MEGA matches them: **case-insensitive, accent-sensitive**. Adding a tag
   that is present, or removing one that is absent, is a no-op. To replace a set of tags, pass all
@@ -663,7 +666,8 @@ result:  {}
 
 #### `ui.progress`
 
-Updates the progress dialog of a command declared with `"progress": true` (ignored otherwise).
+Updates the command's progress dialog, whether it was declared with `"progress": true` or appeared
+after 3 seconds.
 
 ```json
 {"jsonrpc":"2.0","method":"ui.progress","params":{"current":12,"total":44,"message":"cat.jpg"}}
@@ -672,8 +676,8 @@ Updates the progress dialog of a command declared with `"progress": true` (ignor
 - All fields optional. With `total`, the dialog shows a bar and `current / total`; without, an
   indeterminate bar.
 - Send as often as you like: the app coalesces updates and redraws a few times a second.
-- The dialog appears only if the command is still running after 300 ms, so a quick command never
-  flashes one. Until `command.execute` is sent it reads "Preparing…".
+- The dialog appears only if the command is still running after 300 ms (3 s without
+  `"progress": true`), so a quick command never flashes one. Until `command.execute` is sent it reads "Preparing…".
 
 Other notifications are logged and ignored.
 
@@ -707,7 +711,10 @@ Other notifications are logged and ignored.
 
 The progress dialog of a `"progress": true` command is modal: the window cannot be used until the
 command ends or is cancelled, so the user cannot change the items it is working on behind it. A
-command without `"progress": true` shows no dialog and leaves the window usable.
+command without `"progress": true` leaves the window usable at first, but once it has run for
+3 seconds the same dialog appears, so that a slow or stuck command can always be cancelled. It
+shows `ui.progress` the same way; declare `"progress": true` for a command that is known to take a
+while. A `ui.confirm` question always stacks above the progress dialog.
 With `"progress": true` and `"result": "dialog"`, the progress row turns into the result in place.
 The full result text is always written to the log.
 
@@ -720,7 +727,8 @@ The full result text is always written to the log.
 | Release (the published zip) | `%LOCALAPPDATA%\MegaExplorer\MegaExplorer\plugins\` |
 | Debug (`dev` profile) | `%LOCALAPPDATA%\MegaExplorer\MegaExplorer-dev\plugins\` |
 
-The folder name of a plugin is free; the `id` in `plugin.json` is what identifies it.
+**Settings › Plugins › Open plugins folder** opens it in Explorer, creating it first if it is not
+there yet. The folder name of a plugin is free; the `id` in `plugin.json` is what identifies it.
 **Settings › Plugins** lists the plugins that loaded (one whose manifest was rejected is only in the
 log) and shows each plugin's permissions and folder in its details.
 

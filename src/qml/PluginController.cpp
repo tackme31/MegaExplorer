@@ -23,6 +23,7 @@ namespace
 const QString kActionPrefix = QStringLiteral("plugin:");
 // A command that finishes sooner never shows the dialog, so quick ones don't flash it.
 constexpr int kProgressShowDelayMs = 300;
+constexpr int kUnrequestedProgressShowDelayMs = 3000;
 constexpr int kProgressUpdateIntervalMs = 100;
 
 bool isProcessRunning(DWORD pid)
@@ -136,6 +137,12 @@ void PluginController::openFolder(const QString& pluginId) const
     const PluginManifest* plugin = findPlugin(pluginId);
     if (!plugin || !QDesktopServices::openUrl(QUrl::fromLocalFile(plugin->dir)))
         qCWarning(lcPlugin) << "could not open the folder of" << pluginId;
+}
+
+void PluginController::openPluginsFolder() const
+{
+    if (!QDir().mkpath(mPluginsDir) || !QDesktopServices::openUrl(QUrl::fromLocalFile(mPluginsDir)))
+        qCWarning(lcPlugin) << "could not open the plugins folder" << mPluginsDir;
 }
 
 QStringList PluginController::menuActionIds() const
@@ -302,43 +309,43 @@ void PluginController::execute(const QString& actionId,
                 mConfirms.push_back({pluginId, pluginName, title, message, okLabel, danger});
                 emit confirmRequestsChanged();
             });
-    if (command->progress)
-    {
-        mProgress.push_back({runId, pluginId, pluginName, commandTitle, startedAt});
-        connect(run, &PluginRun::executionStarted, this, [this, pluginId] {
-            if (ProgressState* state = findProgress(pluginId))
-            {
-                state->preparing = false;
-                scheduleProgressUpdate();
-            }
-        });
-        connect(run,
-                &PluginRun::progressReported,
-                this,
-                [this, pluginId](qint64 current, qint64 total, const QString& message) {
-                    if (ProgressState* state = findProgress(pluginId))
-                    {
-                        state->current = current;
-                        state->total = total;
-                        state->message = message;
-                        scheduleProgressUpdate();
-                    }
-                });
-        connect(run, &PluginRun::cancelIgnored, this, [this, pluginId] {
-            if (ProgressState* state = findProgress(pluginId))
-            {
-                state->forceStoppable = true;
-                emit progressRunsChanged();
-            }
-        });
-        QTimer::singleShot(kProgressShowDelayMs, this, [this, pluginId] {
-            if (ProgressState* state = findProgress(pluginId))
-            {
-                state->shown = true;
-                emit progressRunsChanged();
-            }
-        });
-    }
+    // Every run gets the dialog eventually: it holds the only Cancel, and a command
+    // without "progress" has no time limit either.
+    mProgress.push_back({runId, pluginId, pluginName, commandTitle, startedAt});
+    connect(run, &PluginRun::executionStarted, this, [this, pluginId] {
+        if (ProgressState* state = findProgress(pluginId))
+        {
+            state->preparing = false;
+            scheduleProgressUpdate();
+        }
+    });
+    connect(run,
+            &PluginRun::progressReported,
+            this,
+            [this, pluginId](qint64 current, qint64 total, const QString& message) {
+                if (ProgressState* state = findProgress(pluginId))
+                {
+                    state->current = current;
+                    state->total = total;
+                    state->message = message;
+                    scheduleProgressUpdate();
+                }
+            });
+    connect(run, &PluginRun::cancelIgnored, this, [this, pluginId] {
+        if (ProgressState* state = findProgress(pluginId))
+        {
+            state->forceStoppable = true;
+            emit progressRunsChanged();
+        }
+    });
+    const int showDelayMs = command->progress ? kProgressShowDelayMs : kUnrequestedProgressShowDelayMs;
+    QTimer::singleShot(showDelayMs, this, [this, pluginId] {
+        if (ProgressState* state = findProgress(pluginId))
+        {
+            state->shown = true;
+            emit progressRunsChanged();
+        }
+    });
     mRuns.insert(pluginId, run);
     ++mRunningRevision;
     emit runningChanged();
