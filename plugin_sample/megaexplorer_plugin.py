@@ -135,8 +135,9 @@ class Item:
     Every item carries handle, name, type, parent, size, mtime, path, favourite,
     description, tags and crc, except those fetched with fields=[...]: the
     attributes left out are None. crc is also None for a folder or a file MEGA
-    has no fingerprint for; two files are duplicates when (size, crc) match. Those in ctx.items are as they were when the menu was
-    clicked; call get() for the state now.
+    has no fingerprint for; two files are duplicates when (size, crc) match.
+    Those in ctx.items are as they were when the menu was clicked; call get()
+    for the state now.
     """
 
     def __init__(self, data):
