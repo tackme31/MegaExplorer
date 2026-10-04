@@ -78,25 +78,27 @@ def show_long_result(ctx):
 
 
 def describe(item):
-    parts = [f"{item.path} ({item.type})"]
+    lines = [f"{item.path} ({item.type})"]
     if item.is_file:
-        parts.append(human_size(item.size))
+        lines.append(f"    size: {human_size(item.size)}")
         # Duplicates share size and crc; None when MEGA has no fingerprint for the file.
-        parts.append(f"crc: {item.crc or 'none'}")
+        lines.append(f"    crc: {item.crc or 'none'}")
     if item.tags:
-        parts.append("tags: " + ", ".join(item.tags))
+        lines.append("    tags: " + ", ".join(item.tags))
     if item.favourite:
-        parts.append("favourite")
+        lines.append("    favourite")
     if item.description:
-        parts.append(f"description: {item.description}")
-    return " | ".join(parts)
+        lines.append(f"    description: {item.description}")
+    return lines
 
 
 @plugin.command("inspect")
 def inspect(ctx):
     lines = []
     for item in ctx.get_many(ctx.items):
-        lines.append(describe(item))
+        if lines:
+            lines.append("")
+        lines.extend(describe(item))
         if not item.is_folder:
             continue
         files = folders = 0
