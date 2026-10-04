@@ -97,12 +97,8 @@ that reads and tags your items through a small JSON-RPC API. The plugin API is e
 may change in any release. [PLUGINS.md](PLUGINS.md) covers writing one, and
 [plugin_sample/](plugin_sample/) has a working example in Python.
 **Settings › Plugins** lists the installed plugins and the permissions each one declares.
-
-> [!WARNING]
-> A plugin is an ordinary program running with your Windows user's rights. Its declared
-> permissions only limit what MegaExplorer will do for it; the plugin itself can run any program
-> and read any file on your PC, including your signed-in MEGA session. Every plugin in the
-> plugins folder is enabled. Only install plugins you trust.
+Installing a plugin is like running any other program on your PC, so use only plugins you trust,
+at your own risk.
 
 ## Build
 
