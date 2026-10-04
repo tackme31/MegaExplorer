@@ -166,6 +166,16 @@ NodeSnapshot nodeToSnapshot(mega::MegaApi& api, mega::MegaNode* node)
         for (int i = 0; i < tags->size(); ++i)
             snapshot.tags.emplace_back(tags->get(i));
     }
+    // Not MegaApi::getCRC(MegaNode*): it encodes sizeof(crc.data()) -- a pointer's 8 bytes,
+    // half the CRC -- and takes sdkMutex for a handle lookup on every node.
+    if (const char* fingerprint = node->getFingerprint())
+    {
+        if (char* crc = api.getCRCFromFingerprint(fingerprint))
+        {
+            snapshot.crc = crc;
+            delete[] crc;
+        }
+    }
     snapshot.inRubbish = api.isInRubbish(node);
     return snapshot;
 }

@@ -21,6 +21,8 @@ struct NodeSnapshot
     bool isFavourite = false;
     std::string description;
     std::vector<std::string> tags;
+    // The CRC part of MEGA's file fingerprint, as base64; empty when the node has none.
+    std::string crc;
     // A binned node still resolves by handle, so lookups alone cannot tell it apart.
     bool inRubbish = false;
 
@@ -30,7 +32,7 @@ struct NodeSnapshot
                sizeBytes == other.sizeBytes && modificationTime == other.modificationTime &&
                hasParent == other.hasParent && parentHandle == other.parentHandle &&
                path == other.path && isFavourite == other.isFavourite &&
-               description == other.description && tags == other.tags &&
+               description == other.description && tags == other.tags && crc == other.crc &&
                inRubbish == other.inRubbish;
     }
 };

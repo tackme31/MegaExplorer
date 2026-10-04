@@ -61,7 +61,8 @@ enum ItemField : unsigned
     kFieldFavourite = 1u << 6,
     kFieldDescription = 1u << 7,
     kFieldTags = 1u << 8,
-    kAllItemFields = (1u << 9) - 1,
+    kFieldCrc = 1u << 9,
+    kAllItemFields = (1u << 10) - 1,
 };
 
 constexpr std::pair<const char*, unsigned> kItemFieldNames[] = {
@@ -74,6 +75,7 @@ constexpr std::pair<const char*, unsigned> kItemFieldNames[] = {
     {"favourite", kFieldFavourite},
     {"description", kFieldDescription},
     {"tags", kFieldTags},
+    {"crc", kFieldCrc},
 };
 
 QJsonObject toItem(const IMegaClient& client, const NodeSnapshot& n, unsigned fields = kAllItemFields)
@@ -104,6 +106,9 @@ QJsonObject toItem(const IMegaClient& client, const NodeSnapshot& n, unsigned fi
             tags.append(QString::fromStdString(tag));
         item.insert(QStringLiteral("tags"), tags);
     }
+    if (fields & kFieldCrc)
+        item.insert(QStringLiteral("crc"), n.crc.empty() ? QJsonValue(QJsonValue::Null)
+                                                         : QJsonValue(QString::fromStdString(n.crc)));
     return item;
 }
 

@@ -133,8 +133,9 @@ class Item:
     """An item in the account.
 
     Every item carries handle, name, type, parent, size, mtime, path, favourite,
-    description and tags, except those fetched with fields=[...]: the attributes
-    left out are None. Those in ctx.items are as they were when the menu was
+    description, tags and crc, except those fetched with fields=[...]: the
+    attributes left out are None. crc is also None for a folder or a file MEGA
+    has no fingerprint for; two files are duplicates when (size, crc) match. Those in ctx.items are as they were when the menu was
     clicked; call get() for the state now.
     """
 
@@ -150,6 +151,7 @@ class Item:
         self.favourite = data.get("favourite")
         self.description = data.get("description")
         self.tags = data.get("tags")
+        self.crc = data.get("crc")
 
     @property
     def is_file(self):

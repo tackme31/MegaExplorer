@@ -123,6 +123,7 @@ TEST_F(PluginHostApiTest, ItemsGetReturnsTheFullItem)
     NodeSnapshot cat = node(7, "cat.jpg", false);
     cat.sizeBytes = 123;
     cat.tags = {"pet"};
+    cat.crc = "AAECAwQFBgcICQoLDA0ODw";
     EXPECT_CALL(*mClient, getNodeSnapshot(7)).WillOnce(Return(Result<NodeSnapshot>::ok(cat)));
 
     const PluginHostApi::Reply reply =
@@ -136,6 +137,7 @@ TEST_F(PluginHostApiTest, ItemsGetReturnsTheFullItem)
     EXPECT_EQ(item.value(QStringLiteral("size")).toInt(), 123);
     EXPECT_EQ(item.value(QStringLiteral("path")).toString(), QStringLiteral("/cat.jpg"));
     EXPECT_EQ(item.value(QStringLiteral("tags")).toArray().at(0).toString(), QStringLiteral("pet"));
+    EXPECT_EQ(item.value(QStringLiteral("crc")).toString(), QStringLiteral("AAECAwQFBgcICQoLDA0ODw"));
 }
 
 TEST_F(PluginHostApiTest, ItemsGetRejectsAMalformedHandle)
@@ -179,6 +181,8 @@ TEST_F(PluginHostApiTest, FieldsTrimTheItemButAlwaysKeepTheHandle) {
   EXPECT_EQ(keysFor({QStringLiteral("handle")}),
             QStringList{QStringLiteral("handle")});
   EXPECT_EQ(keysFor({}), QStringList{QStringLiteral("handle")});
+  EXPECT_EQ(keysFor({QStringLiteral("crc")}),
+            (QStringList{QStringLiteral("crc"), QStringLiteral("handle")}));
 }
 
 TEST_F(PluginHostApiTest, FieldsApplyToChildrenAndDescendants) {
@@ -493,6 +497,9 @@ TEST_F(PluginHostApiTest, ContextItemIsAFullItemAndIsNullForAMissingNode)
     const std::optional<QJsonObject> rootItem = mApi.item(1);
     ASSERT_TRUE(rootItem.has_value());
     EXPECT_TRUE(rootItem->value(QStringLiteral("parent")).isNull());
+    // Present but null, not left out: a folder or a file without a fingerprint has no CRC.
+    EXPECT_TRUE(rootItem->contains(QStringLiteral("crc")));
+    EXPECT_TRUE(rootItem->value(QStringLiteral("crc")).isNull());
 
     // The same shape items.get returns, tags and description included.
     const std::optional<QJsonObject> fileItem = mApi.item(2);

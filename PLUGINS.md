@@ -265,7 +265,8 @@ An **Item** — every `items.*` method and the context hand over the same shape:
   "path": "/Photos/cat.jpg",
   "favourite": false,
   "description": "",
-  "tags": ["cat"]
+  "tags": ["cat"],
+  "crc": "AAECAwQFBgcICQoLDA0ODw"
 }
 ```
 
@@ -277,6 +278,7 @@ An **Item** — every `items.*` method and the context hand over the same shape:
 | `mtime` | Modification time, Unix seconds. |
 | `path` | Display path from the root (`/` for the root, no trailing `/` on folders). |
 | `tags` | The item's tags, as stored. |
+| `crc` | A checksum of the file's content, from the fingerprint MEGA keeps with every upload: an opaque string, only for comparing. Two files are duplicates when `size` **and** `crc` match; above 8 KB it covers a spread-out 8 KB sample, so a match is near-certain rather than proof (compare with `items.readRange` before deleting, if that matters). `null` for a folder, and for a file uploaded without a fingerprint. |
 
 All reads come from the app's in-memory copy of the account, so they are fast and do not reach
 MEGA's servers.

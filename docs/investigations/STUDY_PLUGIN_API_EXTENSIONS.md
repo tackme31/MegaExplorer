@@ -5,13 +5,13 @@
 左ペインのメニュー（954c038・b940881、§C）、`initialize` の `app.colorScheme`（ba24d50、§E）も実装済み。
 推奨順 3（`items.copy` / `items.move` / `items.moveToRubbish`）も §G の仕様で実装済み。
 2026-10-04: `ui.search`（表示中のタブで検索を走らせる）も §H の仕様で実装済み。
-同日、Item への `crc`（重複検出用）の仕様を §I で決定（未実装）。
+同日、Item への `crc`（重複検出用）も §I の仕様で実装済み。
 残りの候補は未決定で、必要になった時点で決める。仕様の正は `PLUGINS.md`。**
 現行 API（`items.get` / `children` / `descendants` / `update` / `fetchPreview`、`ui.confirm`、
 `ui.progress`）は WD Tagger プラグインの必要分しか無いため、汎用プラグインに要りそうなものを
 `STUDY_PLUGIN_V1_DESIGN.md` §6-3 の予定分と `IMegaClient` の既存機能から拾った。
 「下地」はアプリ側に既に実装があり、公開するだけで済むかどうか。
-次の手順: §I の `crc` を実装する。残りの候補は必要になった時点で。
+次の手順: なし（残りの候補は必要になった時点で）。
 
 ## A. ファイルの中身（転送）
 
@@ -255,7 +255,7 @@ Item: "crc": "<base64 文字列>" | null
 
 実装メモ: `NodeSnapshot` に `std::string crc`（空を `null` として出す）、`nodeToSnapshot`
 （`MegaSdkClient.cpp`）、`PluginHostApi.cpp` の `kItemFieldNames` / `toItem`、`PLUGINS.md` の Item の表、
-Python ヘルパーの `Item`、テスト。`MegaApi::getCRC(MegaNode*)` はファイルを読まないが `sdkMutex` を取って
-ハンドルを引き直すので、`descendants` で大量に返す経路では `node->getFingerprint()` +
-`getCRCFromFingerprint()` で取る（両者の値が一致することは実装時に確かめる）。`nodeToSnapshot` は
+Python ヘルパーの `Item`、テスト。値は `node->getFingerprint()` + `getCRCFromFingerprint()` で取る。
+`MegaApi::getCRC(MegaNode*)` は使えない: SDK v10.17.0 の実装が `sizeof node->crc.data()`（ポインタの
+8 バイト）を base64 にしていて CRC の半分しか返さず、しかも 1 件ごとに `sdkMutex` を取る。`nodeToSnapshot` は
 `fields` に関係なく全項目を計算するが、この取り方なら 1 件あたりの負担は小さいので現状のままとする。
