@@ -5,12 +5,13 @@
 左ペインのメニュー（954c038・b940881、§C）、`initialize` の `app.colorScheme`（ba24d50、§E）も実装済み。
 推奨順 3（`items.copy` / `items.move` / `items.moveToRubbish`）も §G の仕様で実装済み。
 2026-10-04: `ui.search`（表示中のタブで検索を走らせる）も §H の仕様で実装済み。
+同日、Item への `crc`（重複検出用）の仕様を §I で決定（未実装）。
 残りの候補は未決定で、必要になった時点で決める。仕様の正は `PLUGINS.md`。**
 現行 API（`items.get` / `children` / `descendants` / `update` / `fetchPreview`、`ui.confirm`、
 `ui.progress`）は WD Tagger プラグインの必要分しか無いため、汎用プラグインに要りそうなものを
 `STUDY_PLUGIN_V1_DESIGN.md` §6-3 の予定分と `IMegaClient` の既存機能から拾った。
 「下地」はアプリ側に既に実装があり、公開するだけで済むかどうか。
-次の手順: なし（残りの候補は必要になった時点で）。
+次の手順: §I の `crc` を実装する。残りの候補は必要になった時点で。
 
 ## A. ファイルの中身（転送）
 
@@ -224,3 +225,37 @@ C++ から書き換える経路が無い。`FolderNavigationController` に quer
 `searchQuery` を読み直しているのと同じ経路）。`PluginController` は `ui.reveal` の `revealRequested` と同様に
 シグナルで `Main.qml` に渡し、表示中のタブ（`tabsController.currentNavigation`）に届ける。Python ヘルパーに
 `ctx.search(query="", type=None, ...)`、サンプルプラグインに 1 コマンド、`PLUGINS.md` に節を足す。
+
+## I. 決定: Item の `crc`（2026-10-04）
+
+重複ファイル検出プラグイン（Python + tkinter、WD Tag Search と同じ形）のため。MEGA の各ファイルには
+アップロード時にクライアントが計算した fingerprint がノード属性として既に付いていて、アプリはログイン時に
+それを読み込み済み。新しく書き込むものも MEGA への通信も無く、メモリ上の値を Item に出すだけ。
+
+```
+Item: "crc": "<base64 文字列>" | null
+```
+
+- **名前は `crc`、fingerprint 全体は出さない**: fingerprint には mtime が入り、同じ中身でも日時が違えば
+  別物になる。重複判定に使えるのは CRC 部分だけ。
+- **値は意味を持たない文字列**: SDK の base64 をそのまま出し、一致比較にだけ使う。形式は約束しない。
+- **重複判定のキーは `size` と `crc` の組**（`PLUGINS.md` に明記）: CRC は 16 バイトで、8 KB を超える
+  ファイルは全体から散らばった計 8 KB しか見ていない（SDK `filefingerprint.cpp` の `MAXFULL`）。
+  完全な一致の証明にはならないので、消す前の確認が要るならプラグインが `readRange` で突き合わせる。
+- **無いときは `null`**: フォルダ、fingerprint の無いファイル（古いクライアント・一部ツールでの
+  アップロード）。項目ごと省くのではなく `null`（`parent` と同じ）。fingerprint の無いファイルに後から
+  計算して書く機能は持たない（全体の読み込みが要り、通信なしの前提が崩れる。E2E 暗号化のため
+  サーバー側でも計算できない）。
+- **`fields` 省略時の全項目に含める**。`fields: ["crc"]` でも選べる。
+- **権限は `items.read`、`apiVersion` は 1 のまま**: 項目の追加なので既存プラグインは壊れない。古い
+  アプリに `fields: ["crc"]` を送ると `-32602` になり、プラグインはそれで判別できる。
+- **持たないもの**: `items.duplicates` のような集計メソッド（`descendants` に
+  `fields: ["size","crc","path"]` を付ければプラグイン側で数行）、`originalFingerprint`（モバイルが
+  加工前の値を入れる属性。用途が無い）。
+
+実装メモ: `NodeSnapshot` に `std::string crc`（空を `null` として出す）、`nodeToSnapshot`
+（`MegaSdkClient.cpp`）、`PluginHostApi.cpp` の `kItemFieldNames` / `toItem`、`PLUGINS.md` の Item の表、
+Python ヘルパーの `Item`、テスト。`MegaApi::getCRC(MegaNode*)` はファイルを読まないが `sdkMutex` を取って
+ハンドルを引き直すので、`descendants` で大量に返す経路では `node->getFingerprint()` +
+`getCRCFromFingerprint()` で取る（両者の値が一致することは実装時に確かめる）。`nodeToSnapshot` は
+`fields` に関係なく全項目を計算するが、この取り方なら 1 件あたりの負担は小さいので現状のままとする。
