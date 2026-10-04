@@ -211,6 +211,7 @@ add_library(MegaExplorerQml STATIC
     src/qml/PluginHostApi.cpp
     src/qml/PluginManifest.h
     src/qml/PluginManifest.cpp
+    src/qml/PluginProgressRate.h
     src/qml/PluginRun.h
     src/qml/PluginRun.cpp
     src/qml/PluginController.h

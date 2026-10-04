@@ -59,6 +59,39 @@ std::optional<QString> readWhen(const QJsonObject& commandObj, PluginCommand* co
     }
     return std::nullopt;
 }
+// Fills command's progress/progressShow from "progress"; returns the reason on a bad value.
+std::optional<QString> readProgress(const QJsonObject& commandObj, PluginCommand* command)
+{
+    const QJsonValue progress = commandObj.value(QStringLiteral("progress"));
+    if (progress.isUndefined() || progress.isBool())
+    {
+        command->progress = progress.toBool();
+        return std::nullopt;
+    }
+    const QString bad = QStringLiteral("\"progress\" must be true, false or {\"show\": [%1]}")
+                            .arg(kPluginProgressFigures.join(QStringLiteral(", ")));
+    if (!progress.isObject())
+        return bad;
+    command->progress = true;
+    const QJsonValue show = progress.toObject().value(QStringLiteral("show"));
+    if (show.isUndefined())
+        return std::nullopt;
+    if (!show.isArray())
+        return bad;
+    QStringList listed;
+    for (const QJsonValue figure : show.toArray())
+    {
+        if (!figure.isString() || !kPluginProgressFigures.contains(figure.toString()))
+            return bad;
+        listed << figure.toString();
+    }
+    for (const QString& figure : kPluginProgressFigures)
+    {
+        if (listed.contains(figure))
+            command->progressShow << figure;
+    }
+    return std::nullopt;
+}
 } // namespace
 
 bool isKnownPluginPermission(const QString& permission)
@@ -131,12 +164,13 @@ parsePluginManifest(const QByteArray& json, const QString& dir, QString* error)
     {
         const QJsonObject obj = value.toObject();
         PluginCommand command{obj.value(QStringLiteral("id")).toString(),
-                              obj.value(QStringLiteral("title")).toString(),
-                              obj.value(QStringLiteral("progress")).toBool()};
+                              obj.value(QStringLiteral("title")).toString()};
         if (command.id.isEmpty() || command.id.contains(QLatin1Char('/')) ||
             command.title.isEmpty())
             return fail(error,
                         QStringLiteral("a command needs an \"id\" without '/' and a \"title\""));
+        if (const std::optional<QString> progressError = readProgress(obj, &command))
+            return fail(error, QStringLiteral("command \"%1\": %2").arg(command.id, *progressError));
         const QJsonValue result = obj.value(QStringLiteral("result"));
         if (!result.isUndefined() && result != QStringLiteral("toast") && result != QStringLiteral("dialog"))
             return fail(error,

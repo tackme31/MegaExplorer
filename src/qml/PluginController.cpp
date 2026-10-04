@@ -312,6 +312,7 @@ void PluginController::execute(const QString& actionId,
     // Every run gets the dialog eventually: it holds the only Cancel, and a command
     // without "progress" has no time limit either.
     mProgress.push_back({runId, pluginId, pluginName, commandTitle, startedAt});
+    mProgress.back().show = command->progressShow;
     connect(run, &PluginRun::executionStarted, this, [this, pluginId] {
         if (ProgressState* state = findProgress(pluginId))
         {
@@ -327,6 +328,7 @@ void PluginController::execute(const QString& actionId,
                 {
                     state->current = current;
                     state->total = total;
+                    state->rate.add(QDateTime::currentMSecsSinceEpoch(), current);
                     state->message = message;
                     scheduleProgressUpdate();
                 }
@@ -373,7 +375,11 @@ QVariantList PluginController::progressRuns() const
                                 {QStringLiteral("finished"), state.finished},
                                 {QStringLiteral("outcome"), state.outcome},
                                 {QStringLiteral("result"), state.result},
-                                {QStringLiteral("finishedAt"), state.finishedAt}});
+                                {QStringLiteral("finishedAt"), state.finishedAt},
+                                {QStringLiteral("show"), state.show},
+                                // Items per second, or -1 while it cannot be told yet.
+                                {QStringLiteral("rate"), state.rate.perSecond().value_or(-1.0)},
+                                {QStringLiteral("rateAt"), state.rate.lastIncreaseAt()}});
     }
     return runs;
 }

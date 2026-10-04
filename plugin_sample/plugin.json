@@ -35,6 +35,7 @@
     { "id": "reveal-largest", "title": "Show the largest file below (ui.reveal)",
       "when": { "targets": "folders" } },
     { "id": "search-sample-photos", "title": "Search for photos tagged \"sample\" (ui.search)" },
-    { "id": "long-task", "title": "Long task (ui.progress, Cancel)", "progress": true, "result": "dialog" }
+    { "id": "long-task", "title": "Long task (ui.progress, Cancel)",
+      "progress": { "show": ["count", "rate", "elapsed", "remaining"] }, "result": "dialog" }
   ]
 }

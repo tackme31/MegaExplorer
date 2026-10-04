@@ -1,6 +1,7 @@
 #pragma once
 #include "PluginHostApi.h"
 #include "PluginManifest.h"
+#include "PluginProgressRate.h"
 
 #include <QHash>
 #include <QObject>
@@ -146,6 +147,9 @@ private:
         QString outcome;
         QString result;
         qint64 finishedAt = 0;
+        // PluginCommand::progressShow; empty for a command shown only because it ran long.
+        QStringList show;
+        PluginProgressRate rate;
     };
     // The row of pluginId's run in progress, not a finished one.
     ProgressState* findProgress(const QString& pluginId);

@@ -19,6 +19,9 @@ struct PluginCommand
     QString title;
     // Shows the progress dialog while the command runs.
     bool progress = false;
+    // "progress": {"show": [...]}: the figures under the dialog's bar, in the order of
+    // kPluginProgressFigures whatever order they were listed in. Empty shows none.
+    QStringList progressShow;
     // "result": "dialog": the run's message ends up in a dialog (the progress
     // dialog, when there is one) instead of a toast.
     bool resultInDialog = false;
@@ -43,6 +46,10 @@ bool pluginCommandAccepts(const PluginCommand& command,
 // The plugin protocol version this app speaks. Bump it only on a breaking change:
 // a plugin declaring any other version is listed but cannot run.
 inline constexpr int kPluginApiVersion = 1;
+
+// Every name "progress.show" may hold, in display order; anything else rejects the manifest.
+inline const QStringList kPluginProgressFigures{
+    QStringLiteral("count"), QStringLiteral("rate"), QStringLiteral("elapsed"), QStringLiteral("remaining")};
 
 // Every name "permissions" may hold; anything else rejects the manifest.
 bool isKnownPluginPermission(const QString& permission);

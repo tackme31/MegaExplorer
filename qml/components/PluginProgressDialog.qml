@@ -28,6 +28,40 @@ Dialog {
         return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
     }
 
+    function formatCount(n) {
+        return Number(n).toLocaleString(Qt.locale(), "f", 0);
+    }
+
+    // The line under the bar: the figures the command's plugin.json "progress.show"
+    // asks for, always in this order, e.g. "1,234/2,000 (61%) · 12/s · 10:21 elapsed, ~0:05 left".
+    function statsText(run, now) {
+        const show = run.show ?? [];
+        const running = !run.finished;
+        const parts = [];
+        if (show.includes("count") && !run.preparing && run.current >= 0) {
+            if (run.total > 0) {
+                const percent = Math.floor(Math.min(run.current, run.total) * 100 / run.total);
+                parts.push(qsTr("%1/%2 (%3%)").arg(root.formatCount(run.current))
+                           .arg(root.formatCount(run.total)).arg(percent));
+            } else {
+                parts.push(root.formatCount(run.current));
+            }
+        }
+        if (show.includes("rate") && running && run.rate >= 0)
+            parts.push(qsTr("%1/s").arg(root.formatCount(Math.floor(run.rate))));
+        const times = [];
+        if (show.includes("elapsed"))
+            times.push(qsTr("%1 elapsed").arg(root.formatElapsed((run.finished ? run.finishedAt : now) - run.startedAt)));
+        if (show.includes("remaining") && running && run.rate > 0 && run.total > 0 && run.current < run.total) {
+            // Counted down from the last report, so a slow-reporting run does not look frozen.
+            const left = (run.total - run.current) / run.rate * 1000 - (now - run.rateAt);
+            times.push(qsTr("~%1 left").arg(root.formatElapsed(left)));
+        }
+        if (times.length > 0)
+            parts.push(times.join(qsTr(", ")));
+        return parts.join(" · ");
+    }
+
     // outcome as PluginRun::finished; the same cases as ToastStack.showPluginResult.
     function statusText(run) {
         switch (run.outcome) {
@@ -93,6 +127,18 @@ Dialog {
                                                        row.modelData.commandTitle)
                 }
 
+                Label {
+                    Layout.fillWidth: true
+                    elide: Text.ElideMiddle
+                    color: row.finished && row.modelData.outcome !== "ok" ? Theme.color.danger :
+                                                                            Theme.color.textSecondary
+                    font.pixelSize: Theme.font.caption
+                    text: row.finished ? root.statusText(row.modelData)
+                          : row.modelData.cancelling ? qsTr("Cancelling…")
+                          : row.modelData.preparing ? qsTr("Preparing…")
+                          : row.modelData.message
+                }
+
                 ProgressBar {
                     visible: !row.finished
                     Layout.fillWidth: true
@@ -102,36 +148,14 @@ Dialog {
                     value: row.counted ? Math.min(row.modelData.current, row.modelData.total) : 0
                 }
 
-                RowLayout {
+                Label {
                     Layout.fillWidth: true
-                    spacing: Theme.spacing.md
-
-                    Label {
-                        Layout.fillWidth: true
-                        elide: Text.ElideMiddle
-                        color: row.finished && row.modelData.outcome !== "ok" ? Theme.color.danger :
-                                                                                Theme.color.textSecondary
-                        font.pixelSize: Theme.font.caption
-                        text: row.finished ? root.statusText(row.modelData) : row.modelData.cancelling ? qsTr("Cancelling…") : row.modelData.preparing ? qsTr(
-                                                                                                    "Preparing…") :
-                                                                                                row.modelData.message
-                    }
-
-                    Label {
-                        visible: row.counted
-                        color: Theme.color.textSecondary
-                        font.pixelSize: Theme.font.caption
-                        text: qsTr("%1 / %2").arg(Math.max(0, row.modelData.current)).arg(
-                                  row.modelData.total)
-                    }
-
-                    Label {
-                        color: Theme.color.textSecondary
-                        font.pixelSize: Theme.font.caption
-                        text: qsTr("Elapsed %1").arg(root.formatElapsed((row.finished ? row.modelData.finishedAt :
-                                                                                        root.now)
-                                                                        - row.modelData.startedAt))
-                    }
+                    visible: text !== ""
+                    horizontalAlignment: Text.AlignRight
+                    elide: Text.ElideLeft
+                    color: Theme.color.textSecondary
+                    font.pixelSize: Theme.font.caption
+                    text: root.statsText(row.modelData, root.now)
                 }
 
                 ScrollView {

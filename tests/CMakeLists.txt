@@ -46,6 +46,7 @@ add_executable(MegaExplorerTests
     OpenWithControllerTest.cpp
     PluginHostApiTest.cpp
     PluginManifestTest.cpp
+    PluginProgressRateTest.cpp
     TabsControllerTest.cpp
     FolderTreeModelTest.cpp
     QuickAccessServiceTest.cpp

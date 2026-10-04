@@ -160,7 +160,7 @@ sequenceDiagram
       "id": "tag-selected",
       "title": "Tag selected",
       "when": { "targets": "files", "extensions": ["jpg", "png"] },
-      "progress": true,
+      "progress": { "show": ["count", "rate", "elapsed", "remaining"] },
       "result": "dialog"
     }
   ]
@@ -183,7 +183,8 @@ sequenceDiagram
 | `commands[].title` | yes | Menu row label. |
 | `commands[].when.targets` | no | `"files"`, `"folders"` or `"any"` (default). |
 | `commands[].when.extensions` | no | File extensions the command accepts, case-insensitive, leading `.` optional. Folders never match. |
-| `commands[].progress` | no | `true` shows a progress dialog with a Cancel button as soon as the command starts. Default `false`: the dialog appears only once the command has run for 3 seconds. |
+| `commands[].progress` | no | `true` shows a progress dialog with a Cancel button as soon as the command starts. Default `false`: the dialog appears only once the command has run for 3 seconds. An object instead of `true` does the same and also picks the figures under the bar, see below. |
+| `commands[].progress.show` | no | Which figures the progress dialog shows under its bar, any of `"count"`, `"rate"`, `"elapsed"`, `"remaining"`; see [`ui.progress`](#uiprogress). Default (and with `"progress": true`): none, only the message and the bar. |
 | `commands[].result` | no | Where the result goes: `"toast"` (default) or `"dialog"`. See [What the user sees](#what-the-user-sees). |
 
 A command whose `when` rejects any item of the selection is shown **greyed out**, not hidden.
@@ -673,8 +674,17 @@ after 3 seconds.
 {"jsonrpc":"2.0","method":"ui.progress","params":{"current":12,"total":44,"message":"cat.jpg"}}
 ```
 
-- All fields optional. With `total`, the dialog shows a bar and `current / total`; without, an
-  indeterminate bar.
+- All fields optional. `message` goes above the bar. With `total` the bar fills up; without, it is
+  indeterminate.
+- Under the bar go the figures the command lists in `progress.show`, always in this order whatever
+  order they are listed in, e.g. `1,234/2,000 (61%) · 12/s · 10:21 elapsed, ~0:05 left`:
+  - `count`: `current/total (percent)`, or just `current` without a `total`.
+  - `rate`: items per second, rounded down — `current`'s increase over its last 10 increases,
+    divided by the time they took. So report `current` as it changes, ideally once per item.
+  - `elapsed`: time since the command started.
+  - `remaining`: `total - current` at that rate, counting down between reports. Needs a `total`.
+  - A figure that cannot be worked out yet (no `current`, or fewer than two increases) is left out.
+    A `current` lower than before restarts the rate, for a run with several phases.
 - Send as often as you like: the app coalesces updates and redraws a few times a second.
 - The dialog appears only if the command is still running after 300 ms (3 s without
   `"progress": true`), so a quick command never flashes one. Until `command.execute` is sent it reads "Preparing…".

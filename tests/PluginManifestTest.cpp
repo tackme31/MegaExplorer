@@ -253,3 +253,38 @@ TEST(PluginManifestTest, AcceptsBySelectionTargetsAndExtensions)
     EXPECT_FALSE(pluginCommandAccepts(images, {bare}));
     EXPECT_FALSE(pluginCommandAccepts(images, {folder}));
 }
+
+TEST(PluginManifestTest, ReadsWhichProgressFiguresToShowInDisplayOrder)
+{
+    const auto manifest = parsePluginManifest(R"({
+      "id": "x", "name": "X", "apiVersion": 1, "run": { "command": "x" },
+      "commands": [
+        { "id": "plain", "title": "P", "progress": true },
+        { "id": "none", "title": "N", "progress": { "show": [] } },
+        { "id": "bare", "title": "B", "progress": {} },
+        { "id": "some", "title": "S", "progress": { "show": ["remaining", "count", "elapsed"] } },
+        { "id": "off", "title": "O" }
+      ]
+    })", QStringLiteral("C:/p"));
+    ASSERT_TRUE(manifest.has_value());
+    const std::vector<PluginCommand>& commands = manifest->commands;
+    EXPECT_TRUE(commands[0].progress);
+    EXPECT_TRUE(commands[0].progressShow.isEmpty());
+    EXPECT_TRUE(commands[1].progress);
+    EXPECT_TRUE(commands[1].progressShow.isEmpty());
+    EXPECT_TRUE(commands[2].progress);
+    EXPECT_TRUE(commands[3].progress);
+    EXPECT_EQ(commands[3].progressShow,
+              (QStringList{QStringLiteral("count"), QStringLiteral("elapsed"), QStringLiteral("remaining")}));
+    EXPECT_FALSE(commands[4].progress);
+}
+
+TEST(PluginManifestTest, RejectsABadProgress)
+{
+    for (const char* progress : {R"("yes")", R"({"show": "count"})", R"({"show": ["count", "eta"]})", "1"})
+    {
+        const QByteArray json = QByteArray(R"({"id": "x", "name": "X", "apiVersion": 1, "run": {"command": "x"},
+            "commands": [{"id": "a", "title": "A", "progress": )") + progress + "}]}";
+        EXPECT_TRUE(errorFor(json).contains(QStringLiteral("\"progress\""))) << progress;
+    }
+}

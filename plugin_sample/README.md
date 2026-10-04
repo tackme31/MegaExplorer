@@ -23,7 +23,7 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 | Ask first (ui.confirm) | `ctx.confirm` with `danger`, `title` and `ok_label`; stopping quietly on Cancel |
 | Show the largest file below (ui.reveal) | `ctx.reveal`: the app opens the file's folder with it selected; `"when": {"targets": "folders"}` |
 | Search for photos tagged "sample" (ui.search) | `ctx.search("tag:sample", type="files", category="photo")`: the current tab searches as if typed, replacing its query and filter |
-| Long task (ui.progress, Cancel) | `"progress": true`: a bar without a total, then `n / total`; Cancel (`ctx.check_cancelled`); the row turning into the result (`"result": "dialog"`) |
+| Long task (ui.progress, Cancel) | `"progress": {"show": [...]}`: a bar without a total, then every figure under it (count, rate, elapsed, time left); Cancel (`ctx.check_cancelled`); the row turning into the result (`"result": "dialog"`) |
 
 The "Toggle", upload, folder, copy, move and Rubbish bin rows change the real account (there is no
 undo): try them on a test folder.

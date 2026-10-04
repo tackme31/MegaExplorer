@@ -1712,6 +1712,72 @@ TestCase {
         compare(s.dialog.pluginList.currentIndex, 0);
     }
 
+    // ---- PluginProgressDialog's figures line ------------------------------
+
+    Component {
+        id: pluginProgressComponent
+        PluginProgressDialog {
+            plugins: QtObject {
+                property var progressRuns: []
+            }
+        }
+    }
+
+    function progressRun(fields) {
+        return Object.assign({
+                                 "show": [],
+                                 "preparing": false,
+                                 "finished": false,
+                                 "current": 1234,
+                                 "total": 2000,
+                                 "rate": 12.9,
+                                 "rateAt": 100000,
+                                 "startedAt": 100000 - 621000,
+                                 "finishedAt": 0
+                             }, fields);
+    }
+
+    function test_pluginProgress_showsNothingUnlessAsked() {
+        const dialog = makeDialog(pluginProgressComponent, {});
+        compare(dialog.statsText(progressRun({}), 100000), "");
+    }
+
+    function test_pluginProgress_putsEveryFigureInOneOrder() {
+        const dialog = makeDialog(pluginProgressComponent, {});
+        // 766 left at 12.9/s is 59.4 s from the last report, 4 s ago.
+        const all = progressRun({
+                                    "show": ["count", "rate", "elapsed", "remaining"]
+                                });
+        compare(dialog.statsText(all, 104000), "1,234/2,000 (61%) · 12/s · 10:25 elapsed, ~0:55 left");
+        compare(dialog.statsText(progressRun({
+                                                 "show": ["remaining", "rate"]
+                                             }), 100000), "12/s · ~0:59 left");
+    }
+
+    function test_pluginProgress_leavesOutWhatCannotBeToldYet() {
+        const dialog = makeDialog(pluginProgressComponent, {});
+        const show = ["count", "rate", "elapsed", "remaining"];
+        compare(dialog.statsText(progressRun({
+                                                 "show": show,
+                                                 "total": -1
+                                             }), 100000), "1,234 · 12/s · 10:21 elapsed");
+        compare(dialog.statsText(progressRun({
+                                                 "show": show,
+                                                 "rate": -1
+                                             }), 100000), "1,234/2,000 (61%) · 10:21 elapsed");
+        compare(dialog.statsText(progressRun({
+                                                 "show": show,
+                                                 "preparing": true,
+                                                 "rate": -1
+                                             }), 100000), "10:21 elapsed");
+        compare(dialog.statsText(progressRun({
+                                                 "show": show,
+                                                 "finished": true,
+                                                 "current": 2000,
+                                                 "finishedAt": 100000
+                                             }), 200000), "2,000/2,000 (100%) · 10:21 elapsed");
+    }
+
     // Where to put a plugin has to be reachable before there is any plugin.
     function test_settings_pluginsFolderOpensWithNothingInstalled() {
         const s = makeSettingsWithPlugins([]);
