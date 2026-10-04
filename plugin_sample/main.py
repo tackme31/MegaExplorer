@@ -81,6 +81,8 @@ def describe(item):
     parts = [f"{item.path} ({item.type})"]
     if item.is_file:
         parts.append(human_size(item.size))
+        # Duplicates share size and crc; None when MEGA has no fingerprint for the file.
+        parts.append(f"crc: {item.crc or 'none'}")
     if item.tags:
         parts.append("tags: " + ", ".join(item.tags))
     if item.favourite:
