@@ -263,7 +263,8 @@ TEST(PluginManifestTest, ReadsWhichProgressFiguresToShowInDisplayOrder)
         { "id": "none", "title": "N", "progress": { "show": [] } },
         { "id": "bare", "title": "B", "progress": {} },
         { "id": "some", "title": "S", "progress": { "show": ["remaining", "count", "elapsed"] } },
-        { "id": "off", "title": "O" }
+        { "id": "off", "title": "O" },
+        { "id": "never", "title": "V", "progress": "never" }
       ]
     })", QStringLiteral("C:/p"));
     ASSERT_TRUE(manifest.has_value());
@@ -277,11 +278,14 @@ TEST(PluginManifestTest, ReadsWhichProgressFiguresToShowInDisplayOrder)
     EXPECT_EQ(commands[3].progressShow,
               (QStringList{QStringLiteral("count"), QStringLiteral("elapsed"), QStringLiteral("remaining")}));
     EXPECT_FALSE(commands[4].progress);
+    EXPECT_FALSE(commands[4].progressNever);
+    EXPECT_FALSE(commands[5].progress);
+    EXPECT_TRUE(commands[5].progressNever);
 }
 
 TEST(PluginManifestTest, RejectsABadProgress)
 {
-    for (const char* progress : {R"("yes")", R"({"show": "count"})", R"({"show": ["count", "eta"]})", "1"})
+    for (const char* progress : {R"("yes")", R"({"show": "count"})", R"({"show": ["count", "eta"]})", "1", R"("Never")"})
     {
         const QByteArray json = QByteArray(R"({"id": "x", "name": "X", "apiVersion": 1, "run": {"command": "x"},
             "commands": [{"id": "a", "title": "A", "progress": )") + progress + "}]}";

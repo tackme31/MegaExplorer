@@ -309,8 +309,8 @@ void PluginController::execute(const QString& actionId,
                 mConfirms.push_back({pluginId, pluginName, title, message, okLabel, danger});
                 emit confirmRequestsChanged();
             });
-    // Every run gets the dialog eventually: it holds the only Cancel, and a command
-    // without "progress" has no time limit either.
+    // Every run but a "never" one gets the dialog eventually: it holds the only Cancel,
+    // and a command without "progress" has no time limit either.
     mProgress.push_back({runId, pluginId, pluginName, commandTitle, startedAt});
     mProgress.back().show = command->progressShow;
     connect(run, &PluginRun::executionStarted, this, [this, pluginId] {
@@ -340,14 +340,17 @@ void PluginController::execute(const QString& actionId,
             emit progressRunsChanged();
         }
     });
-    const int showDelayMs = command->progress ? kProgressShowDelayMs : kUnrequestedProgressShowDelayMs;
-    QTimer::singleShot(showDelayMs, this, [this, pluginId] {
-        if (ProgressState* state = findProgress(pluginId))
-        {
-            state->shown = true;
-            emit progressRunsChanged();
-        }
-    });
+    if (!command->progressNever)
+    {
+        const int showDelayMs = command->progress ? kProgressShowDelayMs : kUnrequestedProgressShowDelayMs;
+        QTimer::singleShot(showDelayMs, this, [this, pluginId] {
+            if (ProgressState* state = findProgress(pluginId))
+            {
+                state->shown = true;
+                emit progressRunsChanged();
+            }
+        });
+    }
     mRuns.insert(pluginId, run);
     ++mRunningRevision;
     emit runningChanged();

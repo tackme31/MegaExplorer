@@ -183,7 +183,7 @@ sequenceDiagram
 | `commands[].title` | yes | Menu row label. |
 | `commands[].when.targets` | no | `"files"`, `"folders"` or `"any"` (default). |
 | `commands[].when.extensions` | no | File extensions the command accepts, case-insensitive, leading `.` optional. Folders never match. |
-| `commands[].progress` | no | `true` shows a progress dialog with a Cancel button as soon as the command starts. Default `false`: the dialog appears only once the command has run for 3 seconds. An object instead of `true` does the same and also picks the figures under the bar, see below. |
+| `commands[].progress` | no | `true` shows a progress dialog with a Cancel button as soon as the command starts. Default `false`: the dialog appears only once the command has run for 3 seconds. An object instead of `true` does the same and also picks the figures under the bar, see below. `"never"` shows no progress dialog at all, see [What the user sees](#what-the-user-sees). |
 | `commands[].progress.show` | no | Which figures the progress dialog shows under its bar, any of `"count"`, `"rate"`, `"elapsed"`, `"remaining"`; see [`ui.progress`](#uiprogress). Default (and with `"progress": true`): none, only the message and the bar. |
 | `commands[].result` | no | Where the result goes: `"toast"` (default) or `"dialog"`. See [What the user sees](#what-the-user-sees). |
 
@@ -350,6 +350,7 @@ The user pressed Cancel in the progress dialog. Stop at a convenient point and a
 offers **Force quit**, which kills the process tree. Read stdin on its own thread so a busy command
 still sees this message. Cancel is reached from the progress dialog, which a command without
 `"progress": true` gets after 3 seconds (cancelling during `initialize` kills the process at once).
+A `"progress": "never"` command has no Cancel: it is stopped by ending it from the plugin's own UI.
 
 ### Methods the plugin can call
 
@@ -725,6 +726,11 @@ command without `"progress": true` leaves the window usable at first, but once i
 3 seconds the same dialog appears, so that a slow or stuck command can always be cancelled. It
 shows `ui.progress` the same way; declare `"progress": true` for a command that is known to take a
 while. A `ui.confirm` question always stacks above the progress dialog.
+`"progress": "never"` shows no progress dialog, however long the command runs, and leaves the
+window usable throughout. It is for a command that opens a window of its own and answers
+`command.execute` when the user closes it: without it, the progress dialog would cover the app
+for as long as that window is open. The app offers no way to cancel such a run, so its window
+must be closable, and closing it must end the command.
 With `"progress": true` and `"result": "dialog"`, the progress row turns into the result in place.
 The full result text is always written to the log.
 

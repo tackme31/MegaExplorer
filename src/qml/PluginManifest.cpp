@@ -68,7 +68,12 @@ std::optional<QString> readProgress(const QJsonObject& commandObj, PluginCommand
         command->progress = progress.toBool();
         return std::nullopt;
     }
-    const QString bad = QStringLiteral("\"progress\" must be true, false or {\"show\": [%1]}")
+    if (progress == QJsonValue(QStringLiteral("never")))
+    {
+        command->progressNever = true;
+        return std::nullopt;
+    }
+    const QString bad = QStringLiteral("\"progress\" must be true, false, \"never\" or {\"show\": [%1]}")
                             .arg(kPluginProgressFigures.join(QStringLiteral(", ")));
     if (!progress.isObject())
         return bad;

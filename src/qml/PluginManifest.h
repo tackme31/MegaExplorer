@@ -19,6 +19,9 @@ struct PluginCommand
     QString title;
     // Shows the progress dialog while the command runs.
     bool progress = false;
+    // "progress": "never": no progress dialog at all, not even once a run is slow. For a
+    // command whose plugin shows its own window and runs until the user closes it.
+    bool progressNever = false;
     // "progress": {"show": [...]}: the figures under the dialog's bar, in the order of
     // kPluginProgressFigures whatever order they were listed in. Empty shows none.
     QStringList progressShow;
