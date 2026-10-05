@@ -425,6 +425,11 @@ through that interface, never call `MegaApi`/`std::filesystem` directly. Manual 
 injection against abstract interfaces (ports-and-adapters), no DI framework. Full directory
 breakdown and the DI/testability design rationale: `docs/ARCHITECTURE.md`.
 
+**The Python plugin helper exists twice**, `plugin_sample/megaexplorer_plugin.py` and
+`plugin_recipes/megaexplorer_plugin.py`, because each plugin folder is installed on its own and
+cannot import a shared copy. Keep them identical: a change to one is copied over the other in the
+same commit.
+
 ## Code comments: only what the code can't say
 
 A comment earns its place only if it carries something a later reader **cannot** recover from the

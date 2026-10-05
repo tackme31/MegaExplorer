@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.recipes",
+  "name": "Recipes",
+  "version": "0.1.0",
+  "description": "Small, useful commands that each combine several parts of the plugin API.",
+  "apiVersion": 1,
+  "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
+  "permissions": ["items.read", "items.write"],
+  "commands": [
+    { "id": "export-csv", "title": "Export a CSV of everything inside",
+      "progress": { "show": ["count", "rate", "elapsed"] },
+      "when": { "targets": "folders" } }
+  ]
+}

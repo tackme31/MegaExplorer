@@ -844,7 +844,9 @@ plugin.run()
 the protocol stream.
 
 The sample plugin in [`plugin_sample/`](plugin_sample/) has one command per feature; its
-[README](plugin_sample/README.md) lists them.
+[README](plugin_sample/README.md) lists them. [`plugin_recipes/`](plugin_recipes/) has small,
+useful commands that each string several features together, e.g. walking a folder under a
+progress dialog, asking first, and uploading a CSV of its contents.
 
 ## Not in this version
 

@@ -95,7 +95,8 @@ running while they read it.
 Add your own commands to the right-click menu with a plugin: a separate program, in any language,
 that reads and tags your items through a small JSON-RPC API. The plugin API is experimental and
 may change in any release. [PLUGINS.md](PLUGINS.md) covers writing one, and
-[plugin_sample/](plugin_sample/) has a working example in Python.
+[plugin_sample/](plugin_sample/) has a working example in Python, with
+[plugin_recipes/](plugin_recipes/) showing small, complete commands built from it.
 **Settings › Plugins** lists the installed plugins and the permissions each one declares.
 Installing a plugin is like running any other program on your PC, so use only plugins you trust,
 at your own risk.
