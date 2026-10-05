@@ -751,6 +751,8 @@ ColumnLayout {
             DragHandler {
                 id: dragHandler
                 target: null
+                // See FileGridView.qml's matching grabPermissions.
+                grabPermissions: PointerHandler.ApprovesTakeOverByAnything
 
                 onActiveChanged: {
                     if (!dragHandler.active) {

@@ -87,6 +87,8 @@ Item {
         parent: root.view
         target: null
         acceptedButtons: Qt.LeftButton
+        // See FileGridView.qml's DragHandler: same popup press-through.
+        grabPermissions: PointerHandler.ApprovesTakeOverByAnything
 
         onActiveChanged: {
             if (!bandDrag.active) {

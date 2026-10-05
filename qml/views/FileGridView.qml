@@ -435,6 +435,9 @@ GridView {
             id: dragHandler
             parent: tile
             target: null
+            // No take-over rights: handlers under an open popup get the press too,
+            // and would steal it from a menu row or a dialog's TapHandler mid-drag.
+            grabPermissions: PointerHandler.ApprovesTakeOverByAnything
 
             onActiveChanged: {
                 if (!dragHandler.active) {
