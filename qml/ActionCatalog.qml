@@ -402,14 +402,15 @@ QtObject {
     }
 
     // ctx: entries, site. Greyed while the plugin is busy (one run at a time) or when the
-    // selection fails the command's `when`.
+    // selection fails the command's `when`. `?? []`: rows are built before the menu gets its
+    // ctx (see isEnabled), and undefined cannot convert to accepts()'s QVariantList.
     function pluginCommandEntry(actionId) {
         return {
             "icon": ctx => "",
             "label": ctx => pluginController.commandTitle(actionId),
             "group": pluginController.groupOf(actionId),
             "enabled": ctx => pluginController.runningRevision >= 0 && pluginController.canRun(
-                                  actionId) && pluginController.accepts(actionId, ctx.entries),
+                                  actionId) && pluginController.accepts(actionId, ctx.entries ?? []),
             "trigger": ctx => pluginController.execute(actionId, ctx.entries,
                                                        ctx.site ?? "selection")
         };
