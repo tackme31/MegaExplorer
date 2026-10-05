@@ -11,6 +11,7 @@
 #include <QString>
 #include <Qt>
 #include <QThreadPool>
+#include <QTimer>
 
 #include <algorithm>
 #include <chrono>
@@ -357,6 +358,49 @@ MegaSdkClient::MegaSdkClient(std::string basePath, std::string userAgent)
                 handler(std::move(handles));
         });
     mApi->addGlobalListener(mNodeListener.get());
+
+    auto* retryWaitPoll = new QTimer(mCallbackTarget.get());
+    QObject::connect(retryWaitPoll, &QTimer::timeout, mCallbackTarget.get(), [this] { logRetryWait(); });
+    retryWaitPoll->start(1000);
+}
+
+void MegaSdkClient::logRetryWait()
+{
+    if (mShuttingDown)
+        return;
+    // Only reported once a retry waits over 4 s (MegaApiImpl::notify_retry).
+    const int reason = mApi->isWaiting();
+    if (reason == mRetryWaitReason)
+        return;
+    const auto describe = [](int r) -> const char* {
+        switch (r)
+        {
+        case mega::MegaApi::RETRY_CONNECTIVITY:
+            return "connectivity";
+        case mega::MegaApi::RETRY_SERVERS_BUSY:
+            return "servers busy (HTTP 500)";
+        case mega::MegaApi::RETRY_API_LOCK:
+            return "API lock (-3)";
+        case mega::MegaApi::RETRY_RATE_LIMIT:
+            return "rate limit (-4)";
+        default:
+            return "unknown";
+        }
+    };
+    const auto now = std::chrono::steady_clock::now();
+    if (mRetryWaitReason != mega::MegaApi::RETRY_NONE)
+    {
+        const auto seconds =
+            std::chrono::duration_cast<std::chrono::seconds>(now - mRetryWaitStarted).count();
+        qCInfo(lcSdk).noquote() << "MEGA requests stopped waiting after" << seconds << "s of"
+                                << describe(mRetryWaitReason);
+    }
+    if (reason != mega::MegaApi::RETRY_NONE)
+    {
+        qCWarning(lcSdk).noquote() << "MEGA requests are waiting to be retried:" << describe(reason);
+        mRetryWaitStarted = now;
+    }
+    mRetryWaitReason = reason;
 }
 
 void MegaSdkClient::setFileAttributesChangedHandler(

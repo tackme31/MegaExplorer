@@ -2,6 +2,7 @@
 #include "core/IMegaClient.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -283,6 +284,10 @@ private:
     template <typename T>
     void runOffThreadAs(std::function<Result<T>()> work, std::function<void(Result<T>)> onDone);
 
+    // Polled: the SDK hands the retry reason to a request listener only while exactly
+    // one request is in flight, and its own "Retrying cs request" line omits it.
+    void logRetryWait();
+
     // Declared before mApi so it is destroyed last, which is what lets the SDK's own
     // teardown lines reach the log. It does not help at startup: registration happens
     // in the constructor body, after MegaApiImpl::init has already logged.
@@ -308,6 +313,10 @@ private:
     // constructed this client, never from an SDK callback. httpServerIsRunning() is
     // not usable in its place -- it answers with the port, which is a valid 0 too.
     bool mHttpServerStarted = false;
+
+    // GUI thread only, like the flag above: written by logRetryWait().
+    int mRetryWaitReason = 0;
+    std::chrono::steady_clock::time_point mRetryWaitStarted;
 
     // One token per in-flight transfer, keyed by the caller's transferId, so
     // cancelDownload()/cancelUpload() can name one of several running transfers.
