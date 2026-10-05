@@ -508,16 +508,17 @@ TestCase {
     // The group sits where its first member was and keeps the resolver's order
     // inside it; the rows around it are untouched.
     function test_rows_foldsTheLinkActionsIntoOneShareRow() {
-        compare(ActionCatalog.rows(["download", "linkSettings", "copyLink", "removeLink", "cut"]), [
+        compare(ActionCatalog.rows(["togglePin", "linkSettings", "copyLink", "removeLink",
+                                    "toggleFavourite"]), [
                     {
-                        "id": "download"
+                        "id": "togglePin"
                     },
                     {
                         "group": "share",
                         "ids": ["linkSettings", "copyLink", "removeLink"]
                     },
                     {
-                        "id": "cut"
+                        "id": "toggleFavourite"
                     }
                 ]);
     }
@@ -538,7 +539,7 @@ TestCase {
     // Open as sits straight under Open, the order the resolver hands them over in.
     function test_rows_foldsTheOpenAsActionsIntoOneRowUnderOpen() {
         compare(ActionCatalog.rows(["open", "openAsImage", "openAsVideo", "openAsAudio", "openAsPdf",
-                                    "openAsArchive", "download"]), [
+                                    "openAsArchive", "goToFolder"]), [
                     {
                         "id": "open"
                     },
@@ -548,7 +549,7 @@ TestCase {
                             "openAsArchive"]
                     },
                     {
-                        "id": "download"
+                        "id": "goToFolder"
                     }
                 ]);
     }
@@ -590,18 +591,106 @@ TestCase {
     }
 
     function test_rows_foldsTheLocalPathGroup() {
-        compare(ActionCatalog.rows(["download", "openLocalFile", "openLocalLocation", "cut"]), [
+        compare(ActionCatalog.rows(["openInNewTab", "openLocalFile", "openLocalLocation",
+                                    "goToFolder"]), [
                     {
-                        "id": "download"
+                        "id": "openInNewTab"
                     },
                     {
                         "group": "localPath",
                         "ids": ["openLocalFile", "openLocalLocation"]
                     },
                     {
+                        "id": "goToFolder"
+                    }
+                ]);
+    }
+
+    // ---- rows / sections ---------------------------------------------------
+
+    // One divider per change of section, none at either end.
+    function test_rows_separatesSections() {
+        compare(ActionCatalog.rows(["open", "togglePin", "cut", "copy", "download", "properties"]), [
+                    {
+                        "id": "open"
+                    },
+                    {
+                        "separator": true
+                    },
+                    {
+                        "id": "togglePin"
+                    },
+                    {
+                        "separator": true
+                    },
+                    {
+                        "id": "cut"
+                    },
+                    {
+                        "id": "copy"
+                    },
+                    {
+                        "separator": true
+                    },
+                    {
+                        "id": "download"
+                    },
+                    {
+                        "id": "properties"
+                    }
+                ]);
+    }
+
+    // A group row counts as its members' section, so the divider lands before the
+    // submenu, not inside it.
+    function test_rows_separatesAGroupFromThePreviousSection() {
+        compare(ActionCatalog.rows(["toggleFavourite", "linkSettings", "copyLink", "cut"]), [
+                    {
+                        "id": "toggleFavourite"
+                    },
+                    {
+                        "group": "share",
+                        "ids": ["linkSettings", "copyLink"]
+                    },
+                    {
+                        "separator": true
+                    },
+                    {
                         "id": "cut"
                     }
                 ]);
+    }
+
+    // The "None" row and an unknown ID belong to no section, so they draw no divider.
+    function test_rows_unsectionedIdDrawsNoDivider() {
+        compare(ActionCatalog.rows([""]), [
+                    {
+                        "id": ""
+                    }
+                ]);
+        compare(ActionCatalog.rows(["cut", "nosuch", "copy"]), [
+                    {
+                        "id": "cut"
+                    },
+                    {
+                        "id": "nosuch"
+                    },
+                    {
+                        "id": "copy"
+                    }
+                ]);
+    }
+
+    // A catalog entry without a section would sit in no block and never be divided off.
+    function test_sectionOf_coversEveryCatalogEntry() {
+        for (const id of Object.keys(ActionCatalog.entries))
+            verify(ActionCatalog.sectionOf(id) !== undefined, id);
+    }
+
+    function test_sectionOf_prefixedIds() {
+        compare(ActionCatalog.sectionOf("plugin:sample:hello"), "plugins");
+        compare(ActionCatalog.sectionOf(ActionCatalog.customOpenWithPrefix + "0"), "open");
+        compare(ActionCatalog.sectionOf("nosuch"), undefined);
     }
 
     function test_group_share() {

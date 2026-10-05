@@ -271,18 +271,18 @@ TEST(MenuActionResolverTest, DefaultTableOffersDownloadForSingleFile)
     EXPECT_EQ(result[4], MenuAction::OpenAsPdf);
     EXPECT_EQ(result[5], MenuAction::OpenAsArchive);
     EXPECT_EQ(result[6], MenuAction::OpenWithCustom);
-    EXPECT_EQ(result[7], MenuAction::Download);
-    EXPECT_EQ(result[8], MenuAction::OpenLocalFile);
-    EXPECT_EQ(result[9], MenuAction::OpenLocalLocation);
-    EXPECT_EQ(result[10], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[11], MenuAction::LinkSettings);
-    EXPECT_EQ(result[12], MenuAction::CopyLink);
-    EXPECT_EQ(result[13], MenuAction::RemoveLink);
-    EXPECT_EQ(result[14], MenuAction::Cut);
-    EXPECT_EQ(result[15], MenuAction::Copy);
-    EXPECT_EQ(result[16], MenuAction::Rename);
-    EXPECT_EQ(result[17], MenuAction::MoveToRubbish);
-    EXPECT_EQ(result[18], MenuAction::PluginCommands);
+    EXPECT_EQ(result[7], MenuAction::OpenLocalFile);
+    EXPECT_EQ(result[8], MenuAction::OpenLocalLocation);
+    EXPECT_EQ(result[9], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[10], MenuAction::LinkSettings);
+    EXPECT_EQ(result[11], MenuAction::CopyLink);
+    EXPECT_EQ(result[12], MenuAction::RemoveLink);
+    EXPECT_EQ(result[13], MenuAction::Cut);
+    EXPECT_EQ(result[14], MenuAction::Copy);
+    EXPECT_EQ(result[15], MenuAction::Rename);
+    EXPECT_EQ(result[16], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[17], MenuAction::PluginCommands);
+    EXPECT_EQ(result[18], MenuAction::Download);
     EXPECT_EQ(result[19], MenuAction::Properties);
 }
 
@@ -290,11 +290,11 @@ TEST(MenuActionResolverTest, DefaultTableOffersDownloadForMultipleFiles)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(3, 0));
     ASSERT_EQ(result.size(), 5u);
-    EXPECT_EQ(result[0], MenuAction::Download);
-    EXPECT_EQ(result[1], MenuAction::Cut);
-    EXPECT_EQ(result[2], MenuAction::Copy);
-    EXPECT_EQ(result[3], MenuAction::MoveToRubbish);
-    EXPECT_EQ(result[4], MenuAction::PluginCommands);
+    EXPECT_EQ(result[0], MenuAction::Cut);
+    EXPECT_EQ(result[1], MenuAction::Copy);
+    EXPECT_EQ(result[2], MenuAction::MoveToRubbish);
+    EXPECT_EQ(result[3], MenuAction::PluginCommands);
+    EXPECT_EQ(result[4], MenuAction::Download);
 }
 
 TEST(MenuActionResolverTest, DefaultTableOffersNoDownloadWhenSelectionContainsAFolder)
@@ -509,8 +509,8 @@ TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabForSingleFolder)
 {
     std::vector<MenuAction> result = resolveMenuActions(fileSelection(0, 1));
     ASSERT_EQ(result.size(), 13u);
-    EXPECT_EQ(result[0], MenuAction::OpenLocalLocation);
-    EXPECT_EQ(result[1], MenuAction::OpenInNewTab);
+    EXPECT_EQ(result[0], MenuAction::OpenInNewTab);
+    EXPECT_EQ(result[1], MenuAction::OpenLocalLocation);
     EXPECT_EQ(result[2], MenuAction::TogglePin);
     EXPECT_EQ(result[3], MenuAction::ToggleFavourite);
     EXPECT_EQ(result[4], MenuAction::LinkSettings);
@@ -693,10 +693,10 @@ TEST(MenuActionResolverTest, DefaultTableOffersTheSixBackgroundActionsInMenuOrde
     std::vector<MenuAction> result = resolveMenuActions(folderTarget(MenuSite::FolderBackground));
     ASSERT_EQ(result.size(), 6u);
     EXPECT_EQ(result[0], MenuAction::NewFolder);
-    EXPECT_EQ(result[1], MenuAction::Paste);
-    EXPECT_EQ(result[2], MenuAction::SelectAll);
-    EXPECT_EQ(result[3], MenuAction::Refresh);
-    EXPECT_EQ(result[4], MenuAction::PluginCommands);
+    EXPECT_EQ(result[1], MenuAction::SelectAll);
+    EXPECT_EQ(result[2], MenuAction::Paste);
+    EXPECT_EQ(result[3], MenuAction::PluginCommands);
+    EXPECT_EQ(result[4], MenuAction::Refresh);
     EXPECT_EQ(result[5], MenuAction::Properties);
 }
 
@@ -744,10 +744,10 @@ TEST(MenuActionResolverTest, DefaultTableOffersOpenInNewTabTogglePinRefreshAndPl
     ASSERT_EQ(result.size(), 4u);
     EXPECT_EQ(result[0], MenuAction::OpenInNewTab);
     EXPECT_EQ(result[1], MenuAction::TogglePin);
+    EXPECT_EQ(result[2], MenuAction::PluginCommands);
     // Reaches every FolderRow, including a Quick access pin that has no subtree to
     // re-read -- hiding it there is QML's job, not the resolver's.
-    EXPECT_EQ(result[2], MenuAction::Refresh);
-    EXPECT_EQ(result[3], MenuAction::PluginCommands);
+    EXPECT_EQ(result[3], MenuAction::Refresh);
 }
 
 TEST(MenuActionResolverTest, DefaultTableNeverOffersNewFolderAtTheOtherSites)
@@ -801,16 +801,16 @@ TEST(MenuActionResolverTest, DefaultTableWithholdsCutAndMoveToRubbishInFavourite
     EXPECT_EQ(result[4], MenuAction::OpenAsPdf);
     EXPECT_EQ(result[5], MenuAction::OpenAsArchive);
     EXPECT_EQ(result[6], MenuAction::OpenWithCustom);
-    EXPECT_EQ(result[7], MenuAction::Download);
-    EXPECT_EQ(result[8], MenuAction::OpenLocalFile);
-    EXPECT_EQ(result[9], MenuAction::OpenLocalLocation);
-    EXPECT_EQ(result[10], MenuAction::ToggleFavourite);
-    EXPECT_EQ(result[11], MenuAction::LinkSettings);
-    EXPECT_EQ(result[12], MenuAction::CopyLink);
-    EXPECT_EQ(result[13], MenuAction::RemoveLink);
-    EXPECT_EQ(result[14], MenuAction::Copy);
-    EXPECT_EQ(result[15], MenuAction::Rename);
-    EXPECT_EQ(result[16], MenuAction::PluginCommands);
+    EXPECT_EQ(result[7], MenuAction::OpenLocalFile);
+    EXPECT_EQ(result[8], MenuAction::OpenLocalLocation);
+    EXPECT_EQ(result[9], MenuAction::ToggleFavourite);
+    EXPECT_EQ(result[10], MenuAction::LinkSettings);
+    EXPECT_EQ(result[11], MenuAction::CopyLink);
+    EXPECT_EQ(result[12], MenuAction::RemoveLink);
+    EXPECT_EQ(result[13], MenuAction::Copy);
+    EXPECT_EQ(result[14], MenuAction::Rename);
+    EXPECT_EQ(result[15], MenuAction::PluginCommands);
+    EXPECT_EQ(result[16], MenuAction::Download);
     EXPECT_EQ(result[17], MenuAction::Properties);
 }
 
@@ -832,8 +832,8 @@ TEST(MenuActionResolverTest, DefaultTableOffersOnlySelectAllRefreshAndPluginsOnA
         resolveMenuActions(folderTarget(MenuSite::FolderBackground, ViewKind::Favourites));
     ASSERT_EQ(result.size(), 3u);
     EXPECT_EQ(result[0], MenuAction::SelectAll);
-    EXPECT_EQ(result[1], MenuAction::Refresh);
-    EXPECT_EQ(result[2], MenuAction::PluginCommands);
+    EXPECT_EQ(result[1], MenuAction::PluginCommands);
+    EXPECT_EQ(result[2], MenuAction::Refresh);
 }
 
 TEST(MenuActionResolverTest, DefaultTableTreatsRecentsExactlyAsFavourites)

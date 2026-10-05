@@ -9,7 +9,8 @@ import QtQuick.Controls.FluentWinUI3
 // a context object, and builds the items from ActionCatalog.qml -- so a new
 // action is one C++ table row plus one catalog entry, never a new Menu.
 // Actions the catalog puts in a group (the link actions under "Share") become
-// one submenu row, at the position of the group's first member.
+// one submenu row, at the position of the group's first member, and a
+// divider goes wherever the catalog's `section` changes.
 //
 // One instance per view, never one per delegate (Phase 13b's lesson: a
 // delegate-scoped Menu meant one live Popup per cell, e.g. 3000 for a
@@ -56,6 +57,12 @@ MeasuredMenu {
     }
 
     Component {
+        id: separatorRow
+
+        MenuSeparator {}
+    }
+
+    Component {
         id: groupMenu
 
         MeasuredMenu {}
@@ -78,6 +85,10 @@ MeasuredMenu {
         // covers an action ID the catalog hasn't been updated for yet.
         const rows = ActionCatalog.rows(root.actionIds.length > 0 ? root.actionIds : [""]);
         for (const row of rows) {
+            if (row.separator === true) {
+                root.addItem(separatorRow.createObject(root.contentItem));
+                continue;
+            }
             if (row.group === undefined) {
                 root.addItem(actionRow.createObject(root.contentItem, {
                                                         "actionId": row.id

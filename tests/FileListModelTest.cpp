@@ -274,7 +274,6 @@ TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
                            "openAsPdf",
                            "openAsArchive",
                            "openWithCustom",
-                           "download",
                            "openLocalFile",
                            "openLocalLocation",
                            "toggleFavourite",
@@ -286,6 +285,7 @@ TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
                            "rename",
                            "moveToRubbish",
                            "pluginCommands",
+                           "download",
                            "properties"}));
 
     FileListModel modelMulti;
@@ -293,7 +293,7 @@ TEST(FileListModelTest, AvailableActionsOffersDownloadForFileSelection)
     modelMulti.selectRow(0, 0);
     modelMulti.selectRow(1, kCtrl);
     EXPECT_EQ(modelMulti.availableActions(),
-              (QStringList{"download", "cut", "copy", "moveToRubbish", "pluginCommands"}));
+              (QStringList{"cut", "copy", "moveToRubbish", "pluginCommands", "download"}));
 }
 
 TEST(FileListModelTest, AvailableActionsOffersOnlyMoveToRubbishForAMixedSelection)
@@ -779,7 +779,6 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
                            "openAsPdf",
                            "openAsArchive",
                            "openWithCustom",
-                           "download",
                            "openLocalFile",
                            "openLocalLocation",
                            "toggleFavourite",
@@ -791,6 +790,7 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
                            "rename",
                            "moveToRubbish",
                            "pluginCommands",
+                           "download",
                            "properties"}));
 
     model.setViewKind(ViewKind::Favourites);
@@ -803,7 +803,6 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
                            "openAsPdf",
                            "openAsArchive",
                            "openWithCustom",
-                           "download",
                            "openLocalFile",
                            "openLocalLocation",
                            "toggleFavourite",
@@ -813,6 +812,7 @@ TEST(FileListModelTest, AvailableActionsDropTheMovingOnesInAFavouritesListing)
                            "copy",
                            "rename",
                            "pluginCommands",
+                           "download",
                            "properties"}));
 }
 

@@ -378,6 +378,54 @@ QtObject {
                                        }
                                    })
 
+    // The divided blocks of a menu: rows() puts a separator wherever this changes
+    // between neighbouring rows, so a block with no member at a site leaves no
+    // stray divider. Order still comes from the resolver, which keeps each block
+    // contiguous. Plugin commands and user-registered programs are matched by
+    // prefix in sectionOf().
+    readonly property var sections: ({
+                                         "open": "open",
+                                         "openInNewTab": "open",
+                                         "openAsImage": "open",
+                                         "openAsVideo": "open",
+                                         "openAsAudio": "open",
+                                         "openAsPdf": "open",
+                                         "openAsArchive": "open",
+                                         "openLocalFile": "open",
+                                         "openLocalLocation": "open",
+                                         "goToFolder": "open",
+                                         // What the sidebar lists: Quick access,
+                                         // Favourites, Shared links.
+                                         "togglePin": "sidebar",
+                                         "toggleFavourite": "sidebar",
+                                         "linkSettings": "sidebar",
+                                         "copyLink": "sidebar",
+                                         "removeLink": "sidebar",
+                                         "newFolder": "edit",
+                                         "selectAll": "edit",
+                                         "cut": "edit",
+                                         "copy": "edit",
+                                         "paste": "edit",
+                                         "rename": "edit",
+                                         "moveToRubbish": "edit",
+                                         "restore": "edit",
+                                         "deletePermanently": "edit",
+                                         "emptyRubbish": "edit",
+                                         "download": "item",
+                                         "refresh": "item",
+                                         "properties": "item"
+                                     })
+
+    function sectionOf(actionId) {
+        if (typeof actionId !== "string")
+            return undefined;
+        if (actionId.startsWith("plugin:"))
+            return "plugins";
+        if (actionId.startsWith(root.customOpenWithPrefix))
+            return "open";
+        return root.sections[actionId];
+    }
+
     // The prefix C++ agrees on for a user-registered program (src/core/
     // OpenWithEntry.h). The index after the colon is this file's only way to
     // reach an entry, since the C++ vocabulary has one placeholder for the
@@ -456,12 +504,23 @@ QtObject {
     }
 
     // Folds an ordered ID list into the rows a menu shows: {id} for an action
-    // of its own, {group, ids} for a submenu. A group takes the position of its
-    // first member and keeps its members in the order they arrived.
+    // of its own, {group, ids} for a submenu, {separator: true} between two
+    // sections. A group takes the position of its first member and keeps its
+    // members in the order they arrived. An ID with no section (the "None" row,
+    // an unknown ID) draws no divider either side.
     function rows(actionIds) {
         const result = [];
         const groupRows = {};
+        let lastSection;
         for (const id of actionIds) {
+            const section = root.sectionOf(id);
+            if (section !== undefined) {
+                if (lastSection !== undefined && section !== lastSection)
+                    result.push({
+                                    "separator": true
+                                });
+                lastSection = section;
+            }
             const entry = root.lookup(id);
             const group = entry === undefined ? undefined : entry.group;
             if (group === undefined) {

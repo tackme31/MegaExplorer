@@ -71,6 +71,9 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
     // flat cross-drive listing has none of (FAVOURITES_VIEW_SPEC.md 4.1; Cut is a
     // deferred move, hence its decision 1). Recents and the public-link listing are the
     // same shape of screen and withhold the same four.
+    //
+    // ActionCatalog.qml's `section` draws a divider wherever it changes along this
+    // order, so a new row goes next to the others of its section.
     static const std::vector<MenuActionSpec> actions = {
         // First, as in Explorer. Rubbish included: double-click opens a binned file too.
         {MenuAction::Open,
@@ -81,6 +84,11 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
           ViewKind::SharedLinks,
           ViewKind::Rubbish},
          ActionTarget::FilesOnly,
+         ActionArity::SingleOnly},
+        {MenuAction::OpenInNewTab,
+         {MenuSite::FileSelection, MenuSite::FolderRow},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
+         ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         // Offered on exactly Open's terms, whatever the name: the point is a file whose
         // extension is wrong or missing.
@@ -138,17 +146,7 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
           ViewKind::Rubbish},
          ActionTarget::FilesOnly,
          ActionArity::SingleOnly},
-        {MenuAction::NewFolder,
-         {MenuSite::FolderBackground},
-         {ViewKind::CloudDrive},
-         ActionTarget::FoldersOnly,
-         ActionArity::SingleOnly},
-        {MenuAction::Download,
-         {MenuSite::FileSelection},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
-         ActionTarget::FilesOnly,
-         ActionArity::Any},
-        // SingleOnly, unlike Download above: each handle resolves through its own
+        // SingleOnly, unlike Download: each handle resolves through its own
         // asynchronous getPath, so a multi-selection with no local counterpart would
         // answer with one toast per item.
         {MenuAction::OpenLocalFile,
@@ -164,11 +162,14 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
          ActionArity::SingleOnly},
-        {MenuAction::OpenInNewTab,
-         {MenuSite::FileSelection, MenuSite::FolderRow},
+        // Rubbish is left out on purpose: the bin is flat and its rows' original
+        // parents are gone, which is what Restore exists to answer.
+        {MenuAction::GoToFolder,
+         {MenuSite::FileSelection},
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
-         ActionTarget::FoldersOnly,
-         ActionArity::SingleOnly},
+         ActionTarget::Any,
+         ActionArity::SingleOnly,
+         true},
         {MenuAction::TogglePin,
          {MenuSite::FileSelection, MenuSite::FolderRow},
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
@@ -202,6 +203,16 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {MenuSite::FileSelection},
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
+         ActionArity::SingleOnly},
+        {MenuAction::NewFolder,
+         {MenuSite::FolderBackground},
+         {ViewKind::CloudDrive},
+         ActionTarget::FoldersOnly,
+         ActionArity::SingleOnly},
+        {MenuAction::SelectAll,
+         {MenuSite::FolderBackground},
+         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
+         ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
         // Cut before Copy, Windows' own order.
         {MenuAction::Cut,
@@ -250,19 +261,18 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::Rubbish},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
-        // Rubbish is left out on purpose: the bin is flat and its rows' original
-        // parents are gone, which is what Restore exists to answer.
-        {MenuAction::GoToFolder,
-         {MenuSite::FileSelection},
+        // FolderBackground/FolderRow hand the plugin that one folder; at the top of a
+        // Favourites-like view there is none, and PluginController::accepts greys it.
+        {MenuAction::PluginCommands,
+         {MenuSite::FileSelection, MenuSite::FolderBackground, MenuSite::FolderRow},
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::Any,
-         ActionArity::SingleOnly,
-         true},
-        {MenuAction::SelectAll,
-         {MenuSite::FolderBackground},
+         ActionArity::Any},
+        {MenuAction::Download,
+         {MenuSite::FileSelection},
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
-         ActionTarget::FoldersOnly,
-         ActionArity::SingleOnly},
+         ActionTarget::FilesOnly,
+         ActionArity::Any},
         // FolderRow too, where it re-reads that row's subfolders instead of the
         // listing. Reaches a Quick access pin as well, which has no subtree to
         // re-read; hiding it there is QML's job (ActionCatalog's `available`),
@@ -272,13 +282,6 @@ const std::vector<MenuActionSpec>& defaultMenuActions()
          {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
          ActionTarget::FoldersOnly,
          ActionArity::SingleOnly},
-        // FolderBackground/FolderRow hand the plugin that one folder; at the top of a
-        // Favourites-like view there is none, and PluginController::accepts greys it.
-        {MenuAction::PluginCommands,
-         {MenuSite::FileSelection, MenuSite::FolderBackground, MenuSite::FolderRow},
-         {ViewKind::CloudDrive, ViewKind::Favourites, ViewKind::Recents, ViewKind::SharedLinks},
-         ActionTarget::Any,
-         ActionArity::Any},
         // SingleOnly: the dialog describes one node, and Rubbish is included --
         // unlike the other cross-view actions -- because reading a binned node's
         // size and location is exactly when it is wanted.
