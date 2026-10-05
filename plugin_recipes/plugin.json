@@ -6,10 +6,12 @@
   "description": "Small, useful commands that each combine several parts of the plugin API.",
   "apiVersion": 1,
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
-  "permissions": ["items.read", "items.write"],
+  "permissions": ["items.read", "items.write", "content.read"],
   "commands": [
     { "id": "export-csv", "title": "Export a CSV of everything inside",
       "progress": { "show": ["count", "rate", "elapsed"] },
-      "when": { "targets": "folders" } }
+      "when": { "targets": "folders" } },
+    { "id": "slideshow", "title": "Slideshow of the images inside",
+      "progress": "never", "when": { "targets": "folders" } }
   ]
 }

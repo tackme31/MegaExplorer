@@ -8,6 +8,12 @@ bottom in [`main.py`](main.py). The protocol behind it is in [PLUGINS.md](../PLU
 | Menu row | What it does | Flow |
 | --- | --- | --- |
 | Export a CSV of everything inside | Writes every file and folder inside the folder, at any depth, to a CSV (path, name, type, size, modified, favourite, tags, description, crc, handle, parent) and uploads it into that folder as `items-<date>-<time>.csv`, then shows it selected | `items.descendants` under a progress dialog with Cancel → `ui.confirm` with the counts → the CSV → `items.upload` → `ui.reveal` selects the uploaded file |
+| Slideshow of the images inside | Opens a window that shows a random image from anywhere inside the folder every 5 seconds, with Pause/Play, Next and Show in MEGA Explorer (Space and → work too) | `"progress": "never"` and a Tk window of its own, closed to end the command → `items.descendants` and `items.fetchPreview` on worker threads → `ui.reveal` from a button |
+
+The plugin uses [Pillow](https://python-pillow.org/) to show the JPEG previews. It is declared in
+the inline script metadata at the top of `main.py`, so uv installs it by itself on the first
+click; that first click takes a little longer, and a slideshow's window shows no progress dialog
+meanwhile.
 
 The CSV is UTF-8 with a BOM, so Excel opens names in any language correctly. The export uploads a
 file into the account (there is no undo): try it on a test folder.
