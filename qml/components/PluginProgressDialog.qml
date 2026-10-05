@@ -18,6 +18,16 @@ Dialog {
     required property var plugins
 
     readonly property var runs: root.plugins.progressRuns
+    // What is drawn: the last non-empty runs, so the close fade keeps its rows and
+    // title. That fade can sit on screen while a ui.reveal's folder loads.
+    property var shownRuns: []
+
+    function keepRuns() {
+        if (root.runs.length > 0)
+            root.shownRuns = root.runs;
+    }
+    onRunsChanged: root.keepRuns()
+    Component.onCompleted: root.keepRuns()
     property double now: Date.now()
 
     function formatElapsed(ms) {
@@ -86,7 +96,7 @@ Dialog {
     closePolicy: Popup.NoAutoClose
     visible: root.runs.length > 0
     width: Math.min(520, Overlay.overlay.width - 48)
-    title: root.runs.length === 1 ? root.runs[0].pluginName : qsTr("Plugins")
+    title: root.shownRuns.length === 1 ? root.shownRuns[0].pluginName : qsTr("Plugins")
 
     onVisibleChanged: root.now = Date.now()
 
@@ -102,7 +112,7 @@ Dialog {
         spacing: Theme.spacing.lg
 
         Repeater {
-            model: root.runs
+            model: root.shownRuns
 
             delegate: ColumnLayout {
                 id: row
@@ -122,7 +132,7 @@ Dialog {
                 Label {
                     Layout.fillWidth: true
                     elide: Text.ElideRight
-                    text: root.runs.length === 1 ? row.modelData.commandTitle : qsTr("%1: %2").arg(
+                    text: root.shownRuns.length === 1 ? row.modelData.commandTitle : qsTr("%1: %2").arg(
                                                        row.modelData.pluginName).arg(
                                                        row.modelData.commandTitle)
                 }

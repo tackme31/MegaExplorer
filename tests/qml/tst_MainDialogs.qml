@@ -1737,6 +1737,21 @@ TestCase {
                              }, fields);
     }
 
+    // The close fade must not fall back to an empty frame titled "Plugins".
+    function test_pluginProgress_keepsLastRunsWhileClosing() {
+        const dialog = makeDialog(pluginProgressComponent, {});
+        dialog.plugins.progressRuns = [progressRun({
+                                                       "pluginName": "Recipes",
+                                                       "commandTitle": "Export"
+                                                   })];
+        compare(dialog.title, "Recipes");
+        dialog.plugins.progressRuns = [];
+        compare(dialog.title, "Recipes");
+        tryCompare(dialog, "visible", false);
+        compare(dialog.title, "Recipes");
+        compare(dialog.shownRuns.length, 1);
+    }
+
     function test_pluginProgress_showsNothingUnlessAsked() {
         const dialog = makeDialog(pluginProgressComponent, {});
         compare(dialog.statsText(progressRun({}), 100000), "");
