@@ -10,11 +10,33 @@
 #include <QUrl>
 
 #include <utility>
+#include <windows.h>
+#include <shlobj.h>
 
 namespace
 {
 
-bool revealInExplorer(const QString& nativePath)
+bool selectWithShell(const QString& nativePath)
+{
+    // Qt's GUI thread is normally already an STA; S_FALSE/RPC_E_CHANGED_MODE just mean
+    // COM is usable as it stands, and only a successful call may be balanced.
+    const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    PIDLIST_ABSOLUTE pidl = nullptr;
+    HRESULT hr = SHParseDisplayName(reinterpret_cast<PCWSTR>(nativePath.utf16()), nullptr, &pidl,
+                                    0, nullptr);
+    if (SUCCEEDED(hr))
+    {
+        hr = SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0);
+        ILFree(pidl);
+    }
+    if (SUCCEEDED(init))
+        CoUninitialize();
+    return SUCCEEDED(hr);
+}
+
+// Unlike the shell call, explorer.exe /select always opens a new window and can lose
+// the selection when it lands before the folder has finished enumerating.
+bool selectWithExplorerExe(const QString& nativePath)
 {
     QProcess explorer;
     explorer.setProgram(QStringLiteral("explorer.exe"));
@@ -25,6 +47,15 @@ bool revealInExplorer(const QString& nativePath)
     // instead, which needs no escaping since Windows paths cannot contain '"'.
     explorer.setNativeArguments(QStringLiteral("/select,\"") + nativePath + QStringLiteral("\""));
     return explorer.startDetached();
+}
+
+bool revealInExplorer(const QString& nativePath)
+{
+    if (selectWithShell(nativePath))
+        return true;
+    qCWarning(lcApp) << "SHOpenFolderAndSelectItems failed, falling back to explorer.exe for"
+                     << nativePath;
+    return selectWithExplorerExe(nativePath);
 }
 
 } // namespace
