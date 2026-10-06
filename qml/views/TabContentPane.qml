@@ -82,20 +82,19 @@ ColumnLayout {
         });
     }
 
-    // Relayed to Main.qml, which owns the viewer windows and the decision of whether
-    // that name is one they can show -- this pane knows nothing about viewers. A file
-    // it cannot show stays inert, which is what double-click has done since the
-    // download it used to trigger misfired once too often.
-    signal fileActivated(var handle, string name, var sizeBytes, string kind)
+    // Both relayed to Main.qml, which owns the viewer windows and the double-click
+    // setting -- this pane knows nothing about either. fileActivated is a double-click,
+    // fileOpenRequested the menu's Open / Open as, with kind "" to let the name decide.
+    // sizeBytes is for the archive viewer, which reads a zip from its end.
+    signal fileActivated(var handle, string name, var sizeBytes)
+    signal fileOpenRequested(var handle, string name, var sizeBytes, string kind)
 
     // Single entry point both child views' activateRequested funnels into.
-    // sizeBytes is for the archive viewer, which reads a zip from its end; kind is
-    // the viewer Open as picked, "" to let the name decide.
-    function activate(isFolder, handle, name, sizeBytes, kind) {
+    function activate(isFolder, handle, name, sizeBytes) {
         if (isFolder)
             pane.navController.openFolder(handle);
         else
-            pane.fileActivated(handle, name, sizeBytes, kind);
+            pane.fileActivated(handle, name, sizeBytes);
     }
 
     // Plain Item, not the StackLayout itself: a StackLayout treats every Item
@@ -135,10 +134,13 @@ ColumnLayout {
                                                         Qt.callLater(()
                                                                      => fileTableView.forceActiveFocus(
                                                                             ))
-                onActivateRequested: (isFolder, handle, name, sizeBytes, kind) => pane.activate(
-                                                                                      isFolder, handle,
-                                                                                      name, sizeBytes,
-                                                                                      kind)
+                onActivateRequested: (isFolder, handle, name, sizeBytes) => pane.activate(isFolder,
+                                                                                          handle, name,
+                                                                                          sizeBytes)
+                onOpenRequested: (handle, name, sizeBytes, kind) => pane.fileOpenRequested(handle,
+                                                                                           name,
+                                                                                           sizeBytes,
+                                                                                           kind)
                 onOpenInNewTabRequested: handle => tabsController.addTabAt(handle, false)
                 onNewFolderRequested: newFolderDialog.prompt()
                 onSortOrderChanged: (column, ascending) => pane.sortOrderWriteBack(column,
@@ -158,10 +160,13 @@ ColumnLayout {
                                                         Qt.callLater(()
                                                                      => fileGridView.forceActiveFocus(
                                                                             ))
-                onActivateRequested: (isFolder, handle, name, sizeBytes, kind) => pane.activate(
-                                                                                      isFolder, handle,
-                                                                                      name, sizeBytes,
-                                                                                      kind)
+                onActivateRequested: (isFolder, handle, name, sizeBytes) => pane.activate(isFolder,
+                                                                                          handle, name,
+                                                                                          sizeBytes)
+                onOpenRequested: (handle, name, sizeBytes, kind) => pane.fileOpenRequested(handle,
+                                                                                           name,
+                                                                                           sizeBytes,
+                                                                                           kind)
                 onOpenInNewTabRequested: handle => tabsController.addTabAt(handle, false)
                 onNewFolderRequested: newFolderDialog.prompt()
             }

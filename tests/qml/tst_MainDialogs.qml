@@ -1599,6 +1599,93 @@ TestCase {
         compare(picked[0], Qt.Dark);
     }
 
+    function test_settings_opensOnTheStoredDoubleClickAction_data() {
+        return [
+                    {
+                        tag: "app",
+                        action: "app",
+                        index: 0
+                    },
+                    {
+                        tag: "download",
+                        action: "download",
+                        index: 1
+                    },
+                    {
+                        tag: "localFile",
+                        action: "localFile",
+                        index: 2
+                    },
+                    {
+                        tag: "unrecognized",
+                        action: "bogus",
+                        index: 0
+                    }
+                ];
+    }
+
+    function test_settings_opensOnTheStoredDoubleClickAction(data) {
+        const dialog = makeDialog(settingsComponent, {
+                                      "fileDoubleClickAction": data.action
+                                  });
+        let picked = [];
+        dialog.fileDoubleClickActionSelected.connect(action => picked.push(action));
+
+        dialog.open();
+
+        tryCompare(dialog, "opened", true);
+        compare(dialog.doubleClickSelector.currentIndex, data.index);
+        compare(picked.length, 0);
+    }
+
+    function test_settings_pickingADoubleClickRowReportsThatAction() {
+        const dialog = makeDialog(settingsComponent, {});
+        let picked = [];
+        dialog.fileDoubleClickActionSelected.connect(action => picked.push(action));
+
+        dialog.open();
+        tryCompare(dialog, "opened", true);
+        dialog.doubleClickSelector.activated(2);
+
+        compare(picked.length, 1);
+        compare(picked[0], "localFile");
+    }
+
+    function test_settings_doubleClickFallbackWarning_data() {
+        return [
+                    {
+                        tag: "localFile, unlinked",
+                        action: "localFile",
+                        folder: "",
+                        shown: true
+                    },
+                    {
+                        tag: "localFile, linked",
+                        action: "localFile",
+                        folder: "C:\\MEGA",
+                        shown: false
+                    },
+                    {
+                        tag: "download, unlinked",
+                        action: "download",
+                        folder: "",
+                        shown: false
+                    }
+                ];
+    }
+
+    function test_settings_doubleClickFallbackWarning(data) {
+        const dialog = makeDialog(settingsComponent, {
+                                      "fileDoubleClickAction": data.action,
+                                      "localRootFolder": data.folder
+                                  });
+
+        // visible is the effective one, false for anything inside a closed dialog.
+        dialog.open();
+        tryCompare(dialog, "opened", true);
+        compare(dialog.doubleClickFallbackLabel.visible, data.shown);
+    }
+
     // The cache row words three states from two pushed-in properties, and a
     // screenshot can only ever catch one of them.
     function test_settings_cacheSizeWording_data() {

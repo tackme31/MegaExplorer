@@ -36,6 +36,17 @@ Dialog {
     // Exposed for tst_MainDialogs.qml, like themeSelector above.
     property alias localFolderField: localFolderField
 
+    // Main.qml's stored double-click action; see its declaration for the values.
+    property string fileDoubleClickAction: "app"
+    signal fileDoubleClickActionSelected(string action)
+
+    // The ComboBox's row order.
+    readonly property var doubleClickActionOrder: ["app", "download", "localFile"]
+
+    // Exposed for tst_MainDialogs.qml.
+    property alias doubleClickSelector: doubleClickSelector
+    property alias doubleClickFallbackLabel: doubleClickFallbackLabel
+
     // The thumbnail cache's size as already-formatted text, empty when there is no
     // answer to show. Measured and emptied by Main.qml's controller, so this file
     // stays free of root-context lookups like the properties above.
@@ -258,6 +269,8 @@ Dialog {
     // for the rest of the session.
     onAboutToShow: {
         themeSelector.currentIndex = root.indexOfScheme(root.colorScheme);
+        doubleClickSelector.currentIndex = Math.max(0, root.doubleClickActionOrder.indexOf(
+                                                        root.fileDoubleClickAction));
         root.cacheSizeRequested();
         root.loadPrograms();
         root.loadPlugins();
@@ -322,6 +335,32 @@ Dialog {
                         // write the preference, or the assignment in onAboutToShow
                         // above would echo back as one.
                         onActivated: index => root.colorSchemeSelected(root.schemeOrder[index])
+                    }
+                }
+
+                SettingCard {
+                    name: qsTr("Double-click a file")
+
+                    ComboBox {
+                        id: doubleClickSelector
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: 260
+                        popup.background: FlyoutBackground {}
+                        model: [qsTr("Open in app"), qsTr("Download"), qsTr("Open local file")]
+                        // activated for the theme selector's reason above.
+                        onActivated: index => root.fileDoubleClickActionSelected(
+                                         root.doubleClickActionOrder[index])
+                    }
+
+                    Label {
+                        id: doubleClickFallbackLabel
+                        Layout.fillWidth: true
+                        visible: root.fileDoubleClickAction === "localFile"
+                                 && root.localRootFolder === ""
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: Theme.font.caption
+                        color: Theme.color.danger
+                        text: qsTr("No local folder is linked, so files open in the app instead. Link one under File management.")
                     }
                 }
 

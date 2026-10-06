@@ -139,6 +139,10 @@ ApplicationWindow {
     // place this value can come from.
     property string localRootFolder: ""
 
+    // What double-clicking a file does: "app", "download" or "localFile". Any other
+    // stored value, like "localFile" with no local folder, falls back to "app".
+    property string fileDoubleClickAction: "app"
+
     // What the video and audio viewers play at, on the same 0..1 scale their
     // slider shows. Owned here rather than per viewer for viewMode's reason: a
     // viewer window is created and destroyed per double-click, several stand at
@@ -172,6 +176,7 @@ ApplicationWindow {
         property alias previewPaneWidth: window.previewPaneWidth
         property alias colorSchemePreference: window.colorSchemePreference
         property alias localRootFolder: window.localRootFolder
+        property alias fileDoubleClickAction: window.fileDoubleClickAction
         property alias playbackVolume: window.playbackVolume
         property alias playbackMuted: window.playbackMuted
         property alias playbackLooping: window.playbackLooping
@@ -280,6 +285,8 @@ ApplicationWindow {
         }
         localRootFolder: window.localRootFolder
         onLocalRootFolderSelected: path => window.localRootFolder = path
+        fileDoubleClickAction: window.fileDoubleClickAction
+        onFileDoubleClickActionSelected: action => window.fileDoubleClickAction = action
         cacheSizeText: cacheController.sizeText
         cacheBusy: cacheController.busy
         onCacheSizeRequested: cacheController.refresh()
@@ -415,8 +422,18 @@ ApplicationWindow {
                                                        === "image");
     }
 
-    // chosenKind is the viewer Open as picked, or "" to let the name decide as
-    // double-click does. A chosen viewer waits for the file's first bytes, and no
+    // A double-clicked file. Only the viewer path leaves a file no viewer shows inert;
+    // the other two act on any file, as their menu items do.
+    function activateFile(handle, name, sizeBytes, listModel): void {
+        if (window.fileDoubleClickAction === "download")
+            downloadController.downloadFile(handle, name, sizeBytes);
+        else if (window.fileDoubleClickAction === "localFile" && localFolderController.linked)
+            localFolderController.openFile(handle);
+        else
+            window.showViewer(handle, name, sizeBytes, listModel, "");
+    }
+
+    // chosenKind is the viewer Open as picked, or "" to let the name decide. A chosen viewer waits for the file's first bytes, and no
     // window opens at all when they prove it is something else (STUDY_OPEN_AS §5).
     function openViewer(handle, name, sizeBytes, listModel, chosenKind): void {
     if (chosenKind !== "")
@@ -582,10 +599,12 @@ ApplicationWindow {
                         initialColumnWidthSize: window.columnWidthSize
                         initialPreviewVisible: window.previewVisible
 
-                        onFileActivated: (handle, name, sizeBytes, kind) => window.openViewer(handle,
-                                                                                              name, sizeBytes,
-                                                                                              pane.navController.fileListModel,
-                                                                                              kind)
+                        onFileActivated: (handle, name, sizeBytes) => window.activateFile(handle,
+                                                                                          name, sizeBytes,
+                                                                                          pane.navController.fileListModel)
+                        onFileOpenRequested: (handle, name, sizeBytes, kind) => window.openViewer(
+                                                 handle, name, sizeBytes,
+                                                 pane.navController.fileListModel, kind)
 
                         onViewModeWriteBack: vm => window.viewMode = vm
                         onPreviewVisibleWriteBack: v => window.previewVisible = v
