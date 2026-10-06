@@ -23,6 +23,7 @@ Menu {
     // Measured, not bound: itemAt() is not a notifying property, so a binding
     // over it would never re-evaluate. Re-run on every open below.
     property real measuredContentWidth: 0
+    property real measuredContentHeight: 0
 
     background: FlyoutBackground {
         shadowWithinBounds: true
@@ -30,6 +31,11 @@ Menu {
 
     implicitWidth: Math.max(root.implicitBackgroundWidth + root.leftInset + root.rightInset,
                             root.measuredContentWidth + root.leftPadding + root.rightPadding)
+    // Not the style's ListView contentHeight: that is an estimate over the rows laid out so
+    // far, and with the menu's height bound to it, separators (much shorter than rows) made
+    // it oscillate into a polish() loop that froze the app.
+    implicitHeight: Math.max(root.implicitBackgroundHeight + root.topInset + root.bottomInset,
+                             root.measuredContentHeight + root.topPadding + root.bottomPadding)
 
     // implicitContentWidth + the item's own padding, deliberately not the
     // item's implicitWidth: MenuItem floors that at its 200px background, which
@@ -37,13 +43,20 @@ Menu {
     // that actually overflow.
     function remeasure() {
         let widest = 0;
+        let total = 0;
+        let rows = 0;
         for (let i = 0; i < root.count; ++i) {
             const item = root.itemAt(i);
-            if (item)
-                widest = Math.max(widest, item.implicitContentWidth + item.leftPadding
-                                  + item.rightPadding);
+            if (!item)
+                continue;
+            widest = Math.max(widest, item.implicitContentWidth + item.leftPadding
+                              + item.rightPadding);
+            total += item.implicitHeight;
+            ++rows;
         }
+        const spacing = (root.contentItem as ListView)?.spacing ?? 0;
         root.measuredContentWidth = widest;
+        root.measuredContentHeight = total + spacing * Math.max(0, rows - 1);
     }
 
     // Connections rather than a declarative onAboutToShow: two of ActionMenu's
