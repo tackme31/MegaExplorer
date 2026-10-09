@@ -155,6 +155,39 @@ protected:
                 }));
     }
 
+    // root > photos(1) > trip(2), with a sibling beside each folder so the row to be
+    // selected is not simply the only one. Paths are stubbed so the breadcrumb --
+    // which is what a navigation remembers it came from -- really resolves.
+    void givenNestedFolders()
+    {
+        givenRootListing({entry("a.jpg", 5), entry("photos", 1, true)});
+        EXPECT_CALL(*client, getChildren(1, _, _))
+            .WillRepeatedly(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(
+                std::vector<FileEntry>{entry("x.jpg", 6), entry("trip", 2, true)})));
+        EXPECT_CALL(*client, getChildren(2, _, _))
+            .WillRepeatedly(InvokeArgument<2>(Result<std::vector<FileEntry>>::ok(
+                std::vector<FileEntry>{entry("b.jpg", 3)})));
+        EXPECT_CALL(*client, getPath(_, _, _))
+            .WillRepeatedly(
+                Invoke([](std::uint64_t handle,
+                          bool,
+                          std::function<void(Result<std::vector<PathSegment>>)> onDone) {
+                    std::vector<PathSegment> path{{"", 0, true}};
+                    if (handle == 1 || handle == 2)
+                        path.push_back({"photos", 1, false});
+                    if (handle == 2)
+                        path.push_back({"trip", 2, false});
+                    onDone(Result<std::vector<PathSegment>>::ok(std::move(path)));
+                }));
+    }
+
+    QString selectedName()
+    {
+        const QVariantList selected = model()->selectedEntries();
+        return selected.size() == 1 ? selected.at(0).toMap().value(QStringLiteral("name")).toString()
+                                    : QString();
+    }
+
     // A queued invoke can post another one (the refetch a mutation triggers),
     // so one drain isn't necessarily enough.
     static void flush()
@@ -957,6 +990,77 @@ TEST_F(FolderNavigationControllerTest, GoToContainingFolderOpensTheParentAndReve
     ASSERT_EQ(selected.size(), 1);
     EXPECT_EQ(selected.at(0).toMap().value(QStringLiteral("name")).toString(),
               QStringLiteral("b.jpg"));
+}
+
+TEST_F(FolderNavigationControllerTest, GoingUpSelectsTheFolderItCameOutOf)
+{
+    givenNestedFolders();
+    controller->loadRoot();
+    flush();
+    controller->openFolder(1);
+    flush();
+    controller->openFolder(2);
+    flush();
+
+    int revealedRow = -1;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::revealRowRequested,
+                     controller.get(),
+                     [&revealedRow](int row) {
+                         revealedRow = row;
+                     });
+
+    controller->goUp();
+    flush();
+
+    EXPECT_EQ(revealedRow, model()->rowForHandle(2));
+    EXPECT_EQ(selectedName(), QStringLiteral("trip"));
+}
+
+TEST_F(FolderNavigationControllerTest, JumpingSeveralLevelsUpSelectsTheFolderOnTheWayBack)
+{
+    // As Explorer does: the breadcrumb's root segment, clicked from inside trip, lands
+    // on photos -- the ancestor the user came out of -- rather than on nothing.
+    givenNestedFolders();
+    controller->loadRoot();
+    flush();
+    controller->openFolder(1);
+    flush();
+    controller->openFolder(2);
+    flush();
+
+    controller->navigateTo(0, true);
+    flush();
+
+    EXPECT_EQ(selectedName(), QStringLiteral("photos"));
+}
+
+TEST_F(FolderNavigationControllerTest, GoingBackToTheParentSelectsTheFolderLeft)
+{
+    givenNestedFolders();
+    controller->loadRoot();
+    flush();
+    controller->openFolder(1);
+    flush();
+
+    controller->goBack();
+    flush();
+
+    EXPECT_EQ(selectedName(), QStringLiteral("photos"));
+}
+
+TEST_F(FolderNavigationControllerTest, OpeningASubfolderSelectsNothing)
+{
+    givenNestedFolders();
+    controller->loadRoot();
+    flush();
+    controller->openFolder(1);
+    flush();
+
+    controller->navigateTo(2, false);
+    flush();
+
+    EXPECT_TRUE(model()->selectedEntries().isEmpty());
 }
 
 TEST_F(FolderNavigationControllerTest, GoToFolderStopsBeingOfferedOnceTheListingIsAFolder)

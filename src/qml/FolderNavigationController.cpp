@@ -286,12 +286,14 @@ void FolderNavigationController::goBack()
         return;
     dropSearchForNavigation();
     restoreUserSortOrder();
-    mService->goBack(mSortOrder,
-                     [this, self = shared_from_this()](Result<std::vector<FileEntry>> result) {
-                         invokeOnGuiThread(this, [this, result = std::move(result)]() mutable {
-                             applyResult(std::move(result));
-                         });
-                     });
+    mService->goBack(
+        mSortOrder,
+        [this, self = shared_from_this(), previousPath = breadcrumbHandles()](
+            Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(this, [this, result = std::move(result), previousPath]() mutable {
+                applyResult(std::move(result), QString(), previousPath);
+            });
+        });
 }
 
 void FolderNavigationController::goUp()
@@ -326,10 +328,12 @@ void FolderNavigationController::navigateToKind(quint64 handle,
         isRoot,
         kind,
         mSortOrder,
-        [this, self = shared_from_this(), revealName](Result<std::vector<FileEntry>> result) {
-            invokeOnGuiThread(this, [this, result = std::move(result), revealName]() mutable {
-                applyResult(std::move(result), revealName);
-            });
+        [this, self = shared_from_this(), revealName, previousPath = breadcrumbHandles()](
+            Result<std::vector<FileEntry>> result) {
+            invokeOnGuiThread(
+                this, [this, result = std::move(result), revealName, previousPath]() mutable {
+                    applyResult(std::move(result), revealName, previousPath);
+                });
         });
 }
 
@@ -361,8 +365,18 @@ void FolderNavigationController::goToContainingFolder(quint64 handle, QString na
         });
 }
 
+std::vector<quint64> FolderNavigationController::breadcrumbHandles() const
+{
+    std::vector<quint64> handles;
+    handles.reserve(static_cast<std::size_t>(mBreadcrumb.size()));
+    for (const QVariant& segment : mBreadcrumb)
+        handles.push_back(segment.toMap().value(QStringLiteral("handle")).toULongLong());
+    return handles;
+}
+
 void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> result,
-                                             const QString& revealName)
+                                             const QString& revealName,
+                                             const std::vector<quint64>& previousPath)
 {
     endListing();
     if (!result.success)
@@ -383,16 +397,27 @@ void FolderNavigationController::applyResult(Result<std::vector<FileEntry>> resu
     // that one runs only when the resolved path *changed*, and going to the folder a
     // search hit already lives in leaves the breadcrumb exactly as it was.
     publishCrossFolderListing();
+    // Only against the listing this very request produced -- see
+    // refreshVisibleListing's declaration for why it isn't kept as state.
+    int row = -1;
     if (!revealName.isEmpty())
     {
-        // Only against the listing this very request produced -- see
-        // refreshVisibleListing's declaration for why it isn't kept as state.
-        const int row = mFileListModel->rowForName(revealName);
-        if (row >= 0)
+        row = mFileListModel->rowForName(revealName);
+    }
+    else
+    {
+        // One folder's children hold at most one node of a root-to-folder chain, so the
+        // first hit is the only one.
+        for (const quint64 handle : previousPath)
         {
-            mFileListModel->selectRow(row, Qt::NoModifier);
-            emit revealRowRequested(row);
+            if ((row = mFileListModel->rowForHandle(handle)) >= 0)
+                break;
         }
+    }
+    if (row >= 0)
+    {
+        mFileListModel->selectRow(row, Qt::NoModifier);
+        emit revealRowRequested(row);
     }
     emit canGoBackChanged();
     refreshBreadcrumb();

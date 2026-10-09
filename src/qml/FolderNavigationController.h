@@ -313,7 +313,15 @@ signals:
     void sortOrderReset(int column, bool ascending);
 
 private:
-    void applyResult(Result<std::vector<FileEntry>> result, const QString& revealName = QString());
+    // Selects revealName's row, or failing a name, the row of whichever previousPath
+    // handle the listing holds -- going up lands on the folder the user came out of.
+    void applyResult(Result<std::vector<FileEntry>> result,
+                     const QString& revealName = QString(),
+                     const std::vector<quint64>& previousPath = {});
+
+    // The handles in mBreadcrumb, captured when a navigation starts: openFavourites and
+    // friends move mBreadcrumb before their listing lands.
+    std::vector<quint64> breadcrumbHandles() const;
     // token is the value mSearchGeneration held when the query was issued; a result
     // carrying an older one is dropped whole. SearchService has no generation of its
     // own, unlike FolderNavigationService's listings, so this is that guard.
