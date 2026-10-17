@@ -7,7 +7,8 @@ the section you need; plugin.json says how each command is declared
 - Basics: the selection (ctx.items), a toast, an error, the result dialog,
   print() going to the app's log
 - Reading items: items.get, items.children, items.descendants
-- File contents: items.fetchPreview, items.readRange, items.fetchFile
+- File contents: items.fetchPreview, items.readRange, items.fetchFile,
+  items.streamUrl
 - Changing items: items.update (tags, favourites)
 - Transfers: transfers.download, items.upload, items.createFolder
 - Asking the user: ui.confirm
@@ -19,6 +20,7 @@ the section you need; plugin.json says how each command is declared
 import os
 import tempfile
 import time
+import urllib.request
 from datetime import datetime
 
 from megaexplorer_plugin import CommandError, NoPreview, Plugin
@@ -180,6 +182,27 @@ def read_file(ctx):
         else:
             line += f"; {human_size(item.size)}, too large to fetch whole here"
         lines.append(line)
+    return "\n".join(lines)
+
+
+# items.streamUrl hands out a URL any program can open (a viewer, mpv, ffmpeg),
+# with Range support. The URL is readable by anything on this computer, so it is
+# never printed or returned here: the result dialog's text goes to the app's log.
+@plugin.command("stream-url")
+def stream_url(ctx):
+    lines = []
+    for item, url in zip(ctx.items, ctx.stream_urls(ctx.items)):
+        if url is None or item.size == 0:
+            lines.append(f"{item.name}: " + ("no URL" if url is None else "empty, nothing to read"))
+            continue
+        length = min(item.size, 4096)
+        offset = item.size - length
+        request = urllib.request.Request(url, headers={"Range": f"bytes={offset}-{item.size - 1}"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            status, body = response.status, response.read()
+        same = body == ctx.read_range(item, offset, length)
+        lines.append(f"{item.name}: HTTP {status}, last {len(body)} bytes "
+                     + ("match items.readRange" if same else "DIFFER from items.readRange"))
     return "\n".join(lines)
 
 

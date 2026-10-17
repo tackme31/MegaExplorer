@@ -6,13 +6,13 @@
 推奨順 3（`items.copy` / `items.move` / `items.moveToRubbish`）も §G の仕様で実装済み。
 2026-10-04: `ui.search`（表示中のタブで検索を走らせる）も §H の仕様で実装済み。
 同日、Item への `crc`（重複検出用）も §I の仕様で実装済み。
-2026-10-17: `items.streamUrl`（スライドショー用、権限 `content.stream`）の仕様を §J で決定、未実装。
+2026-10-17: `items.streamUrl`（スライドショー用、権限 `content.stream`）の仕様を §J で決定、実装済み（Sample の `stream-url` で HTTP 206 と内容一致を実機確認）。
 残りの候補は未決定で、必要になった時点で決める。仕様の正は `PLUGINS.md`。**
 現行 API（`items.get` / `children` / `descendants` / `update` / `fetchPreview`、`ui.confirm`、
 `ui.progress`）は WD Tagger プラグインの必要分しか無いため、汎用プラグインに要りそうなものを
 `STUDY_PLUGIN_V1_DESIGN.md` §6-3 の予定分と `IMegaClient` の既存機能から拾った。
 「下地」はアプリ側に既に実装があり、公開するだけで済むかどうか。
-次の手順: §J の `items.streamUrl` を実装する。
+次の手順: なし（残りの候補は必要になった時点で）。
 
 ## A. ファイルの中身（転送）
 

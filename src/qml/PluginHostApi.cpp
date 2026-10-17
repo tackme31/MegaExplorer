@@ -33,6 +33,7 @@ constexpr int kMethodNotFound = -32601;
 constexpr int kInternalError = -32603;
 constexpr int kDefaultPageSize = 500;
 constexpr int kMaxPageSize = 1000;
+constexpr int kMaxStreamUrlHandles = 500;
 
 PluginHostApi::Reply ok(QJsonValue result)
 {
@@ -165,6 +166,7 @@ std::optional<QString> PluginHostApi::requiredPermission(const QString& method)
         {QStringLiteral("items.fetchPreview"), QStringLiteral("content.read")},
         {QStringLiteral("items.fetchFile"), QStringLiteral("content.read")},
         {QStringLiteral("items.readRange"), QStringLiteral("content.read")},
+        {QStringLiteral("items.streamUrl"), QStringLiteral("content.stream")},
         {QStringLiteral("transfers.download"), QStringLiteral("content.download")}};
     const auto it = permissions.constFind(method);
     if (it == permissions.constEnd())
@@ -203,6 +205,8 @@ void PluginHostApi::call(const QString& method,
         itemsFetchFile(params, run, done);
     else if (method == QStringLiteral("items.readRange"))
         itemsReadRange(params, run, done);
+    else if (method == QStringLiteral("items.streamUrl"))
+        done(itemsStreamUrl(params));
     else if (method == QStringLiteral("items.upload"))
         itemsUpload(params, run, done);
     else if (method == QStringLiteral("items.createFolder"))
@@ -311,6 +315,49 @@ PluginHostApi::Reply PluginHostApi::itemsGet(const QJsonObject& params) const
         items.append(toItem(*mClient, node.value(), fields));
     }
     return ok(QJsonObject{{QStringLiteral("items"), items}});
+}
+
+PluginHostApi::Reply PluginHostApi::itemsStreamUrl(const QJsonObject& params) const
+{
+    const QJsonValue handles = params.value(QStringLiteral("handles"));
+    if (!handles.isArray())
+        return fail(kInvalidParams, QStringLiteral("\"handles\" must be an array"));
+    const QJsonArray requested = handles.toArray();
+    if (requested.size() > kMaxStreamUrlHandles)
+        return fail(kInvalidParams,
+                    QStringLiteral("items.streamUrl takes at most %1 handles at a time").arg(kMaxStreamUrlHandles));
+
+    // A missing node or a folder fails only its own entry; a server failure fails the call.
+    QJsonArray urls;
+    for (const QJsonValue value : requested)
+    {
+        std::uint64_t handle = 0;
+        if (std::optional<Reply> error = decodeHandle(*mClient, value, &handle))
+            return *error;
+        const auto entryError = [&urls, &value](int code, const QString& message) {
+            urls.append(QJsonObject{
+                {QStringLiteral("handle"), value},
+                {QStringLiteral("error"),
+                 QJsonObject{{QStringLiteral("code"), code}, {QStringLiteral("message"), message}}}});
+        };
+        const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle);
+        if (!node.success)
+        {
+            entryError(kItemNotFound, QStringLiteral("No such item: %1").arg(value.toString()));
+            continue;
+        }
+        if (node.value().isFolder)
+        {
+            entryError(kInvalidParams, QStringLiteral("%1 is a folder").arg(value.toString()));
+            continue;
+        }
+        const Result<std::string> url = mClient->streamingUrl(handle);
+        if (!url.success)
+            return fail(kInternalError, QString::fromStdString(url.errorMessage));
+        urls.append(QJsonObject{{QStringLiteral("handle"), value},
+                                {QStringLiteral("url"), QString::fromStdString(url.value())}});
+    }
+    return ok(QJsonObject{{QStringLiteral("urls"), urls}});
 }
 
 PluginHostApi::Reply PluginHostApi::itemsChildren(const QJsonObject& params) const

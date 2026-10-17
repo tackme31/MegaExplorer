@@ -214,6 +214,7 @@ Every method the plugin calls on the app needs one permission, declared in `perm
 | `items.rubbish` | `items.moveToRubbish` | Rubbish bin operations: moving items to the Rubbish bin |
 | `items.edit` | `items.update` | Changing an item's name, description, tags and favourite flag |
 | `content.read` | `items.fetchPreview`, `items.fetchFile`, `items.readRange` | Reading file contents, into the run's temporary folder |
+| `content.stream` | `items.streamUrl` | Handing file contents out as local URLs, which any program on this computer can read |
 | `content.download` | `transfers.download` | Saving files to the user's Downloads folder |
 
 `ui.confirm`, `ui.reveal`, `ui.search`, `ui.progress` and the context sent with `command.execute`
@@ -477,6 +478,34 @@ result:  {"data": "<base64>", "length": 65536}
 - `offset` and `length` are required. A `length` past the end of the file is cut there; `length`
   in the result is how many bytes `data` holds. More than 1 MiB (1048576) is `-32602`: read it in
   pieces, or use `items.fetchFile` with `offset`/`length` for a large range.
+
+#### `items.streamUrl`
+
+Local HTTP URLs for files, to hand to something that only takes a URL — an image viewer, a
+WebView, `mpv`, `ffmpeg` — without downloading the file first.
+
+```
+params:  {"handles": ["AbCd1234", "EfGh5678"]}
+result:  {"urls": [{"handle": "AbCd1234", "url": "http://127.0.0.1:52811/..."},
+                   {"handle": "EfGh5678", "error": {"code": -32002, "message": "..."}}]}
+```
+
+- At most 500 handles per call (more is `-32602`); `urls` is in the order of `handles`.
+- An entry that cannot be served fails on its own, with `error` instead of `url`: `-32002` for a
+  missing item, `-32602` for a folder. A malformed handle fails the whole call with `-32602`, and
+  so does `-32603` when the app cannot start its local server.
+- The URL is served from memory, decrypted on the fly, and answers `Range` requests, so seeking
+  works. Asking for a URL sends nothing to MEGA; each request to it does — one read from MEGA per
+  open connection.
+- **Valid only during the run.** Don't store or share it, and don't depend on it still working
+  after the command returns: a later version may revoke it when the run ends.
+- **Anyone on this computer who learns the URL can read the file** — hence its own permission.
+  Don't log it, and pass it only to programs you start.
+- Go easy on MEGA: keep to two or three requests in flight and prefetch only a few files ahead.
+  The app does not limit them for you, and many parallel reads get the account throttled. For a
+  fast image slideshow, show `items.fetchPreview`'s preview (about 1000px on the long side) and
+  open the URL only for the full-size image or a video.
+- Not queued, and not stopped by Cancel: it returns at once.
 
 #### Transfers: one at a time, stopped by Cancel
 
@@ -825,6 +854,7 @@ plugin.run()
 | `ctx.fetch_preview(x)` → `Path` | `items.fetchPreview`; raises `NoPreview` |
 | `ctx.fetch_file(x, offset=, length=)` → `Path` | `items.fetchFile` |
 | `ctx.read_range(x, offset, length)` → `bytes` | `items.readRange` |
+| `ctx.stream_urls(xs)` → `list[str \| None]` | `items.streamUrl`, 500 at a time; `None` for an item that cannot be served |
 | `ctx.upload(parent, local_path, name=, on_conflict=)` → `Item` | `items.upload`; raises `Conflict` |
 | `ctx.create_folder(parent, name, on_conflict=)` → `(Item, created)` | `items.createFolder`; raises `Conflict` |
 | `ctx.move(x, to, name=, on_conflict=)` → `(Item, moved)` | `items.move`; raises `Conflict` |

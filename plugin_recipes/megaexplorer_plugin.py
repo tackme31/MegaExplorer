@@ -460,6 +460,17 @@ class Context:
         result = self.call("items.readRange", {"handle": _handle(x), "offset": offset, "length": length})
         return base64.b64decode(result["data"])
 
+    def stream_urls(self, xs):
+        """Local http:// URLs for files xs, in the same order; None for an item
+        that cannot be served (gone, or a folder). Valid only during this run, and
+        readable by any program on this computer: don't log or store them."""
+        handles = [_handle(x) for x in xs]
+        urls = []
+        for i in range(0, len(handles), 500):
+            result = self.call("items.streamUrl", {"handles": handles[i:i + 500]})
+            urls.extend(entry.get("url") for entry in result["urls"])
+        return urls
+
     def upload(self, parent, local_path, name=None, on_conflict=None):
         """Uploads the file at local_path into folder parent and returns the new Item.
 

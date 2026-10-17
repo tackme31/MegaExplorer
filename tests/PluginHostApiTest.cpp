@@ -81,7 +81,7 @@ TEST_F(PluginHostApiTest, EveryHostMethodNeedsAKnownPermission)
 {
     for (const char* method :
          {"items.get", "items.children", "items.descendants", "items.update", "items.fetchPreview", "items.fetchFile",
-          "items.readRange", "items.upload", "items.createFolder", "transfers.download"})
+          "items.readRange", "items.streamUrl", "items.upload", "items.createFolder", "transfers.download"})
     {
         const std::optional<QString> permission = PluginHostApi::requiredPermission(QString::fromLatin1(method));
         ASSERT_TRUE(permission.has_value()) << method;
@@ -152,6 +152,59 @@ TEST_F(PluginHostApiTest, ItemsGetReportsAMissingNode)
     const PluginHostApi::Reply reply =
         call(QStringLiteral("items.get"), {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h9")}}});
     EXPECT_EQ(reply.errorCode, PluginHostApi::kItemNotFound);
+}
+
+TEST_F(PluginHostApiTest, ItemsStreamUrlFailsOnlyTheEntriesItCannotServe)
+{
+    mRun.permissions << QStringLiteral("content.stream");
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(7, "cat.jpg", false))));
+    ON_CALL(*mClient, getNodeSnapshot(3)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(3, "dir", true))));
+    EXPECT_CALL(*mClient, streamingUrl(7))
+        .WillOnce(Return(Result<std::string>::ok("http://127.0.0.1:5000/h7/cat.jpg")));
+    EXPECT_CALL(*mClient, streamingUrl(3)).Times(0);
+    EXPECT_CALL(*mClient, streamingUrl(9)).Times(0);
+
+    const PluginHostApi::Reply reply =
+        call(QStringLiteral("items.streamUrl"),
+             {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h7"), QStringLiteral("h3"), QStringLiteral("h9")}}});
+
+    ASSERT_FALSE(reply.errorCode.has_value());
+    const QJsonArray urls = reply.result.toObject().value(QStringLiteral("urls")).toArray();
+    ASSERT_EQ(urls.size(), 3);
+    EXPECT_EQ(urls.at(0).toObject().value(QStringLiteral("handle")).toString(), QStringLiteral("h7"));
+    EXPECT_EQ(urls.at(0).toObject().value(QStringLiteral("url")).toString(),
+              QStringLiteral("http://127.0.0.1:5000/h7/cat.jpg"));
+    EXPECT_EQ(urls.at(1).toObject().value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt(),
+              -32602);
+    EXPECT_EQ(urls.at(2).toObject().value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt(),
+              PluginHostApi::kItemNotFound);
+    EXPECT_FALSE(urls.at(2).toObject().contains(QStringLiteral("url")));
+}
+
+TEST_F(PluginHostApiTest, ItemsStreamUrlRejectsTooManyHandlesAndAServerFailure)
+{
+    mRun.permissions << QStringLiteral("content.stream");
+    QJsonArray tooMany;
+    for (int i = 0; i < 501; ++i)
+        tooMany.append(QStringLiteral("h7"));
+    EXPECT_EQ(call(QStringLiteral("items.streamUrl"), {{QStringLiteral("handles"), tooMany}}).errorCode, -32602);
+    EXPECT_EQ(call(QStringLiteral("items.streamUrl"), {}).errorCode, -32602);
+
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(7, "cat.jpg", false))));
+    EXPECT_CALL(*mClient, streamingUrl(7)).WillOnce(Return(Result<std::string>::fail("no server", -1)));
+    EXPECT_EQ(call(QStringLiteral("items.streamUrl"), {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h7")}}})
+                  .errorCode,
+              -32603);
+}
+
+TEST_F(PluginHostApiTest, ItemsStreamUrlNeedsContentStreamNotContentRead)
+{
+    EXPECT_CALL(*mClient, streamingUrl(_)).Times(0);
+    const PluginHostApi::Reply reply =
+        call(QStringLiteral("items.streamUrl"), {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h7")}}});
+    ASSERT_EQ(reply.errorCode, PluginHostApi::kPermissionDenied);
+    EXPECT_EQ(reply.errorData.toObject().value(QStringLiteral("permission")).toString(),
+              QStringLiteral("content.stream"));
 }
 
 TEST_F(PluginHostApiTest, FieldsTrimTheItemButAlwaysKeepTheHandle) {

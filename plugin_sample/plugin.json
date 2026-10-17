@@ -6,7 +6,7 @@
   "description": "Exercises every part of the plugin API, one command each.",
   "apiVersion": 1,
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
-  "permissions": ["items.read", "items.write", "items.edit", "items.rubbish", "content.read", "content.download"],
+  "permissions": ["items.read", "items.write", "items.edit", "items.rubbish", "content.read", "content.stream", "content.download"],
   "commands": [
     { "id": "show-selection", "title": "Show the selection" },
     { "id": "fail", "title": "Fail with an error" },
@@ -20,6 +20,8 @@
       "when": { "targets": "files", "extensions": ["jpg", "jpeg", "png", "gif", "webp", "mp4", "mov"] } },
     { "id": "read-file", "title": "Read a file (items.readRange / fetchFile)",
       "progress": true, "result": "dialog", "when": { "targets": "files" } },
+    { "id": "stream-url", "title": "Read through a local URL (items.streamUrl)",
+      "result": "dialog", "when": { "targets": "files" } },
 
     { "id": "toggle-tag", "title": "Toggle the \"sample\" tag (items.update)" },
 

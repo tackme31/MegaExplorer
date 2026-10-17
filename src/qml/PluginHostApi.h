@@ -115,6 +115,7 @@ private:
     void itemsFetchPreview(const QJsonObject& params, const QString& tempDir, const Done& done) const;
     void itemsFetchFile(const QJsonObject& params, RunState& run, const Done& done) const;
     void itemsReadRange(const QJsonObject& params, RunState& run, const Done& done) const;
+    Reply itemsStreamUrl(const QJsonObject& params) const;
     void itemsUpload(const QJsonObject& params, RunState& run, const Done& done) const;
     void itemsCreateFolder(const QJsonObject& params, const Done& done) const;
     void itemsMove(const QJsonObject& params, const Done& done) const;

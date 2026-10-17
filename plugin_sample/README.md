@@ -13,6 +13,7 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 | Inspect (items.get / children / descendants) | `ctx.get_many`, `ctx.children` and `ctx.descendants` page by page, asking only for the `fields` needed; a folder's counts |
 | Fetch previews (items.fetchPreview, images and videos) | `ctx.fetch_preview`, `NoPreview`, deleting the file once read; `"when"` with `extensions` |
 | Read a file (items.readRange / fetchFile) | `ctx.read_range` to sniff the file type from its first bytes, `ctx.fetch_file` for the whole file; `"when": {"targets": "files"}` |
+| Read through a local URL (items.streamUrl) | `ctx.stream_urls`: a `Range` request to the URL for the file's last 4 KB, compared with `ctx.read_range`; the URL itself is never shown |
 | Toggle the "sample" tag (items.update) | `ctx.update` adding or removing a tag and the favourite flag; running it again undoes it |
 | Download (transfers.download) | `ctx.download`: the app's own downloads, into `Downloads\MegaExplorer Sample` |
 | Upload a text file here (items.upload) | `ctx.upload`: a generated text file into the selected folder (or the file's folder) |
