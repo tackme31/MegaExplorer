@@ -6,7 +6,7 @@
 > form working. Check this page again whenever you update the app, and pin the app version your
 > plugin was tested against.
 >
-> This page describes the app as of version **0.5.0** (protocol `apiVersion` **1**).
+> This page describes the app as of version **0.6.0** (protocol `apiVersion` **1**).
 
 A plugin adds commands to the right-click menu. When the user picks one, the app starts the
 plugin as a separate process, talks to it over JSON-RPC on stdin/stdout, and shows the result.
