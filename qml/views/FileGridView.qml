@@ -192,6 +192,8 @@ GridView {
         onNewFolderRequested: root.newFolderRequested()
         onOpenRequested: (handle, name, sizeBytes, kind) => root.openRequested(handle, name,
                                                                                sizeBytes, kind)
+        onActivateRequested: (isFolder, handle, name, sizeBytes) => root.activateRequested(
+                                 isFolder, handle, name, sizeBytes)
     }
 
     // See FileTableView.qml's copy for why both views listen and why the call is

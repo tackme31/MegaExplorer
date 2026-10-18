@@ -288,6 +288,121 @@ TestCase {
         compare(ev.accepted, true);
     }
 
+    // ---- handleKey: Enter stands in for a double-click ---------------------
+
+    function test_handleKey_enter_data() {
+        const folder = [
+                         {
+                             "handle": 21,
+                             "name": "photos",
+                             "isFolder": true,
+                             "sizeBytes": 0
+                         }
+                     ];
+        const file = [
+                       {
+                           "handle": 22,
+                           "name": "clip.mp4",
+                           "isFolder": false,
+                           "sizeBytes": 1234
+                       }
+                   ];
+        return [
+                    {
+                        "tag": "return on a folder",
+                        "key": Qt.Key_Return,
+                        "modifiers": Qt.NoModifier,
+                        "selected": folder,
+                        "calls": 1,
+                        "accepted": true
+                    },
+                    {
+                        "tag": "return on a file",
+                        "key": Qt.Key_Return,
+                        "modifiers": Qt.NoModifier,
+                        "selected": file,
+                        "calls": 1,
+                        "accepted": true
+                    },
+                    {
+                        "tag": "keypad enter",
+                        "key": Qt.Key_Enter,
+                        "modifiers": Qt.KeypadModifier,
+                        "selected": file,
+                        "calls": 1,
+                        "accepted": true
+                    },
+                    {
+                        "tag": "nothing selected",
+                        "key": Qt.Key_Return,
+                        "modifiers": Qt.NoModifier,
+                        "selected": [],
+                        "calls": 0,
+                        "accepted": true
+                    },
+                    {
+                        "tag": "two selected",
+                        "key": Qt.Key_Return,
+                        "modifiers": Qt.NoModifier,
+                        "selected": testCase.twoEntries,
+                        "calls": 0,
+                        "accepted": true
+                    },
+                    {
+                        "tag": "ctrl+return",
+                        "key": Qt.Key_Return,
+                        "modifiers": Qt.ControlModifier,
+                        "selected": file,
+                        "calls": 0,
+                        "accepted": "untouched"
+                    },
+                    {
+                        "tag": "shift+return",
+                        "key": Qt.Key_Return,
+                        "modifiers": Qt.ShiftModifier,
+                        "selected": file,
+                        "calls": 0,
+                        "accepted": "untouched"
+                    }
+                ];
+    }
+
+    function test_handleKey_enter(data) {
+        const f = makeFixture({
+                                  "selected": data.selected
+                              });
+        const calls = [];
+        f.input.activateRequested.connect((isFolder, handle, name, sizeBytes) => calls.push({
+                                                                                                 "isFolder": isFolder,
+                                                                                                 "handle": handle,
+                                                                                                 "name": name,
+                                                                                                 "sizeBytes": sizeBytes
+                                                                                             }));
+        const ev = testCase.makeKey(data.key, data.modifiers);
+        f.input.handleKey(ev);
+        compare(calls.length, data.calls);
+        compare(ev.accepted, data.accepted);
+        if (data.calls === 1) {
+            compare(calls[0].isFolder, data.selected[0].isFolder);
+            compare(calls[0].handle, data.selected[0].handle);
+            compare(calls[0].name, data.selected[0].name);
+            compare(calls[0].sizeBytes, data.selected[0].sizeBytes);
+        }
+    }
+
+    function test_handleKey_enterStandsDownWhileRenaming() {
+        const f = makeFixture({
+                                  "selected": testCase.oneEntry
+                              });
+        f.input.renamingHandle = 11;
+        let calls = 0;
+        f.input.activateRequested.connect(() => calls += 1);
+        const ev = testCase.makeKey(Qt.Key_Return);
+        f.input.handleKey(ev);
+        compare(calls, 0);
+        compare(ev.accepted, "untouched");
+    }
+
     // ---- handleKey: the clipboard / select-all branches ---------------------
 
     function test_handleKey_standardKeys_data() {

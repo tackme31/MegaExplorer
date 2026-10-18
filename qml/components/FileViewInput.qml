@@ -83,6 +83,9 @@ Item {
     // The file menu's Open and Open as, relayed by the host as the double-click they stand for.
     signal openRequested(var handle, string name, var sizeBytes, string kind)
 
+    // Enter on a single selected row, relayed by the host as the double-click it stands for.
+    signal activateRequested(bool isFolder, var handle, string name, var sizeBytes)
+
     // Shared by F2 and the context menu's renameRequested. Renaming is
     // inherently single-item, so this collapses the selection to the cursor row
     // first -- selectRow(row, Qt.NoModifier) already means "deselect everything
@@ -220,6 +223,17 @@ Item {
 
         if (event.key === Qt.Key_F2) {
             root.beginRename();
+            event.accepted = true;
+            return;
+        }
+
+        // Keypad Enter carries Qt.KeypadModifier, so only the three real modifiers are tested.
+        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                && (event.modifiers & (Qt.ControlModifier | Qt.ShiftModifier | Qt.MetaModifier)) === 0) {
+            const entries = root.navController.fileListModel.selectedEntries();
+            if (entries.length === 1)
+                root.activateRequested(entries[0].isFolder, entries[0].handle, entries[0].name,
+                                       entries[0].sizeBytes);
             event.accepted = true;
             return;
         }
