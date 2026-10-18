@@ -292,10 +292,10 @@ TEST_F(FolderNavigationControllerTest, OpeningAFolderFromResultsDropsTheSearch)
     EXPECT_FALSE(controller->searchActive());
 }
 
-TEST_F(FolderNavigationControllerTest, GoingBackDropsTheSearchToo)
+TEST_F(FolderNavigationControllerTest, GoingBackClearsTheSearchAndStaysInTheFolder)
 {
-    // Back is a navigation like any other: it lands somewhere the hits do not
-    // describe, so the same rule applies.
+    // The search was never pushed on the back stack, so popping it would land on the
+    // folder before the one searched in. Back clears the search instead.
     givenRootListing({entry("photos", 1, true)});
     controller->loadRoot();
     flush();
@@ -307,15 +307,67 @@ TEST_F(FolderNavigationControllerTest, GoingBackDropsTheSearchToo)
 
     EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
         .WillRepeatedly(InvokeArgument<5>(
-            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("b.jpg", 2)})));
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("hit.jpg", 3)})));
     controller->search(QStringLiteral("q"));
     flush();
     ASSERT_TRUE(controller->searchActive());
+    const int fetchesBefore = rootFetches;
+
+    int cleared = 0;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::searchCleared,
+                     controller.get(),
+                     [&cleared]() {
+                         ++cleared;
+                     });
+    controller->goBack();
+    flush();
+
+    EXPECT_FALSE(controller->searchActive());
+    EXPECT_EQ(cleared, 1);
+    EXPECT_TRUE(controller->searchQuery().isEmpty());
+    EXPECT_EQ(rootFetches, fetchesBefore); // did not pop back to the root
+    EXPECT_GE(model()->rowForName(QStringLiteral("b.jpg")), 0);
+    EXPECT_LT(model()->rowForName(QStringLiteral("hit.jpg")), 0);
+
+    // The next Back is an ordinary one again.
+    ASSERT_TRUE(controller->canGoBack());
+    controller->goBack();
+    flush();
+    EXPECT_EQ(rootFetches, fetchesBefore + 1);
+    EXPECT_GE(model()->rowForName(QStringLiteral("photos")), 0);
+}
+
+TEST_F(FolderNavigationControllerTest, BackIsAvailableWhileSearchingAtTheFirstScreen)
+{
+    // Nothing on the back stack yet, but an active search is still something Back
+    // can undo.
+    givenRootListing({entry("a.txt", 1)});
+    controller->loadRoot();
+    flush();
+    ASSERT_FALSE(controller->canGoBack());
+
+    int backChanges = 0;
+    QObject::connect(controller.get(),
+                     &FolderNavigationController::canGoBackChanged,
+                     controller.get(),
+                     [&backChanges]() {
+                         ++backChanges;
+                     });
+    EXPECT_CALL(*client, search(_, _, std::string("q"), _, _, _))
+        .WillRepeatedly(InvokeArgument<5>(
+            Result<std::vector<FileEntry>>::ok(std::vector<FileEntry>{entry("hit.jpg", 3)})));
+    controller->search(QStringLiteral("q"));
+    flush();
+    EXPECT_TRUE(controller->canGoBack());
+    EXPECT_GE(backChanges, 1);
 
     controller->goBack();
     flush();
 
     EXPECT_FALSE(controller->searchActive());
+    EXPECT_FALSE(controller->canGoBack());
+    EXPECT_GE(model()->rowForName(QStringLiteral("a.txt")), 0);
 }
 
 TEST_F(FolderNavigationControllerTest, AFilterWithNoQueryIsAnActiveSearch)

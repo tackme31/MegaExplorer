@@ -68,6 +68,10 @@ FolderNavigationController::FolderNavigationController(
       mFileListModel(std::make_shared<FileListModel>()), mBusy(std::move(busy))
 {
     connect(mBusy.get(), &BusyState::changed, this, &FolderNavigationController::busyChanged);
+    connect(this,
+            &FolderNavigationController::searchActiveChanged,
+            this,
+            &FolderNavigationController::canGoBackChanged);
 }
 
 QObject* FolderNavigationController::fileListModel()
@@ -82,7 +86,7 @@ std::shared_ptr<FileListModel> FolderNavigationController::fileListModelForThumb
 
 bool FolderNavigationController::canGoBack() const
 {
-    return mService->canGoBack();
+    return mService->canGoBack() || searchActive();
 }
 
 bool FolderNavigationController::busy() const
@@ -282,9 +286,19 @@ void FolderNavigationController::openSharedLinks()
 
 void FolderNavigationController::goBack()
 {
-    if (!canGoBack())
+    // Back out of the search first, onto the folder it was run in: the search was
+    // never pushed on the back stack, so popping would skip past that folder.
+    if (searchActive())
+    {
+        dropSearchForNavigation();
+        endListing();
+        mListingFromSearch = false;
+        mFileListModel->setEntries(mLastFolderEntries);
+        publishCrossFolderListing();
         return;
-    dropSearchForNavigation();
+    }
+    if (!mService->canGoBack())
+        return;
     restoreUserSortOrder();
     mService->goBack(
         mSortOrder,

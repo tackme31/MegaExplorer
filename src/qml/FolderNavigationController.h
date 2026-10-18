@@ -103,6 +103,8 @@ public:
     // queued setThumbnailPath() writing into a freed model.
     std::shared_ptr<FileListModel> fileListModelForThumbnails();
 
+    // Also true while a search is active, since goBack() then clears the search
+    // instead of popping the back stack.
     bool canGoBack() const;
 
     bool busy() const;
