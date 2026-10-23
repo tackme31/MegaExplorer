@@ -1,4 +1,5 @@
 #pragma once
+#include "core/Result.h"
 #include "core/SearchFilter.h"
 
 #include <QJsonObject>
@@ -59,6 +60,10 @@ public:
     using Search = std::function<void(const QString& query, const SearchFilter& filter)>;
     // ui.selection: the visible tab's selected nodes, in row order.
     using Selection = std::function<std::vector<std::uint64_t>()>;
+    // items.fetchThumbnail: the app's own cached fetch; onDone gets the cached file's
+    // path, which the plugin must never be handed (it may delete its copy).
+    using Thumbnails =
+        std::function<void(std::uint64_t handle, std::function<void(Result<std::string>)> onDone)>;
 
     // guiContext must live as long as the client can still call back (the app's
     // lifetime); SDK answers are posted to its thread before done runs.
@@ -70,6 +75,8 @@ public:
 
     // Set after construction: the tabs it reads are built after the plugin host.
     void setSelection(Selection selection);
+    // Without it, items.fetchThumbnail goes to MEGA every time.
+    void setThumbnails(Thumbnails thumbnails);
 
     // One run's fetchFile / readRange / upload, run one at a time.
     struct TransferQueue;
@@ -139,4 +146,5 @@ private:
     Reveal mReveal;
     Search mSearch;
     Selection mSelection;
+    Thumbnails mThumbnails;
 };

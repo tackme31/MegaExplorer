@@ -465,8 +465,9 @@ result:  {"path": "C:\\Users\\...\\plugin-tmp\\...\\1a2b3c4d.thumb.jpg"}
 - Only a file whose Item has `hasThumbnail: true` has one; any other file is `-32002`, answered
   without asking MEGA. A folder → `-32602`.
 - The file is yours, and what is left is removed when the run ends, as with `items.fetchPreview`.
-- This downloads from MEGA, though a thumbnail is only a few KB. Fetch the ones on screen, not the
-  whole list ahead.
+- It comes from the app's own thumbnail cache when the app has shown that file before, and what
+  it downloads is kept there too, so asking again for the same file reaches MEGA once at most.
+  Still fetch the ones on screen rather than the whole list ahead: a first fetch is a download.
 
 #### `items.fetchFile`
 

@@ -160,6 +160,11 @@ void PluginHostApi::setSelection(Selection selection)
     mSelection = std::move(selection);
 }
 
+void PluginHostApi::setThumbnails(Thumbnails thumbnails)
+{
+    mThumbnails = std::move(thumbnails);
+}
+
 std::optional<QString> PluginHostApi::requiredPermission(const QString& method)
 {
     static const QHash<QString, QString> permissions{
@@ -784,7 +789,26 @@ void PluginHostApi::fetchFileAttribute(const QJsonObject& params,
                          : fail(kItemNotFound, QStringLiteral("This item has no %1").arg(kind)));
         });
     };
-    if (thumbnail)
+    if (thumbnail && mThumbnails)
+    {
+        mThumbnails(handle, [guiContext, done, path](Result<std::string> cached) {
+            invokeOnGuiThread(guiContext, [done, path, cached] {
+                if (!cached.success)
+                {
+                    done(fail(kItemNotFound, QStringLiteral("This item has no thumbnail")));
+                    return;
+                }
+                QFile::remove(path);
+                if (!QFile::copy(QString::fromStdString(cached.value()), path))
+                {
+                    done(fail(kInternalError, QStringLiteral("Could not copy the thumbnail to %1").arg(path)));
+                    return;
+                }
+                done(ok(QJsonObject{{QStringLiteral("path"), path}}));
+            });
+        });
+    }
+    else if (thumbnail)
         mClient->getThumbnail(handle, path.toStdString(), std::move(onDone));
     else
         mClient->getPreview(handle, path.toStdString(), std::move(onDone));

@@ -910,6 +910,57 @@ TEST_F(PluginHostApiTest, ItemsFetchThumbnailRefusesWithoutAskingTheServerWhenTh
               PluginHostApi::kItemNotFound);
 }
 
+TEST_F(PluginHostApiTest, ItemsFetchThumbnailHandsOverACopyOfTheAppsCachedFile)
+{
+    NodeSnapshot cat = node(26, "cat.jpg", false);
+    cat.hasThumbnail = true;
+    ON_CALL(*mClient, getNodeSnapshot(26)).WillByDefault(Return(Result<NodeSnapshot>::ok(cat)));
+    EXPECT_CALL(*mClient, getThumbnail(_, _, _)).Times(0);
+    QTemporaryDir cacheDir;
+    const QString cached = cacheDir.filePath(QStringLiteral("cached.jpg"));
+    {
+        QFile file(cached);
+        ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+        file.write("jpeg");
+    }
+    std::uint64_t asked = 0;
+    mApi.setThumbnails([&](std::uint64_t handle, std::function<void(Result<std::string>)> onDone) {
+        asked = handle;
+        onDone(Result<std::string>::ok(cached.toStdString()));
+    });
+
+    for (int i = 0; i < 2; ++i)
+    {
+        const PluginHostApi::Reply reply =
+            call(QStringLiteral("items.fetchThumbnail"), {{QStringLiteral("handle"), QStringLiteral("h26")}});
+        ASSERT_FALSE(reply.errorCode.has_value());
+        const QString path = reply.result.toObject().value(QStringLiteral("path")).toString();
+        EXPECT_EQ(QDir::fromNativeSeparators(path), QDir(mTempDir.path()).filePath(QStringLiteral("1a.thumb.jpg")));
+        QFile copy(path);
+        ASSERT_TRUE(copy.open(QIODevice::ReadOnly));
+        EXPECT_EQ(copy.readAll(), QByteArray("jpeg"));
+        copy.close();
+        // The plugin owns its copy; deleting it must leave the app's cache alone.
+        EXPECT_TRUE(QFile::remove(path));
+    }
+    EXPECT_EQ(asked, 26u);
+    EXPECT_TRUE(QFile::exists(cached));
+}
+
+TEST_F(PluginHostApiTest, ItemsFetchThumbnailReportsAFailedCachedFetchAsNotFound)
+{
+    NodeSnapshot cat = node(7, "cat.jpg", false);
+    cat.hasThumbnail = true;
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(cat)));
+    mApi.setThumbnails([](std::uint64_t, std::function<void(Result<std::string>)> onDone) {
+        onDone(Result<std::string>::fail("gone", -9));
+    });
+
+    EXPECT_EQ(call(QStringLiteral("items.fetchThumbnail"), {{QStringLiteral("handle"), QStringLiteral("h7")}})
+                  .errorCode,
+              PluginHostApi::kItemNotFound);
+}
+
 TEST_F(PluginHostApiTest, ItemsFetchThumbnailReportsAFailedFetchAsNotFound)
 {
     NodeSnapshot cat = node(7, "cat.jpg", false);

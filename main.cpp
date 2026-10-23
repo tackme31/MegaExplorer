@@ -210,6 +210,11 @@ int main(int argc, char* argv[])
                 return downloadController.enqueueDownload(handle, name, sizeBytes, path);
             },
             [&downloadController](std::uint64_t handle) { return downloadController.isDownloadQueued(handle); }});
+    // Shares the grid's on-disk cache, so a thumbnail fetched by either is not fetched again.
+    pluginController.setThumbnails(
+        [thumbnailService](std::uint64_t handle, std::function<void(Result<std::string>)> onDone) {
+            thumbnailService->request(handle, std::move(onDone));
+        });
     PropertiesController propertiesController(nodeDetailsService);
     TransferListModel transferListModel(&downloadController, &uploadController);
 

@@ -68,6 +68,11 @@ public:
         mHostApi.setSelection(std::move(selection));
     }
 
+    void setThumbnails(PluginHostApi::Thumbnails thumbnails)
+    {
+        mHostApi.setThumbnails(std::move(thumbnails));
+    }
+
     // Rescans pluginsDir. Plugins are kept in name order, which is menu order.
     Q_INVOKABLE void reload();
 
