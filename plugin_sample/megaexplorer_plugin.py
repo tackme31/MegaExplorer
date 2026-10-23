@@ -397,10 +397,25 @@ class Context:
         fields: as get(); worth it on a large tree."""
         return self._pages("items.descendants", x, type, fields)
 
-    def _pages(self, method, x, type, fields=None):
+    def find(self, x, name=None, tags=None, type=None, category=None, fields=None):
+        """The items under folder x, at any depth, matching every criterion given,
+        fetched page by page as you iterate. Each of tags must appear, ignoring case,
+        inside one of an item's tags. category: as search(). Keeps the app's memory down
+        where descendants() would read most of a large tree, but is much slower on a
+        large account: PLUGINS.md says which to use."""
+        criteria = {}
+        if name is not None:
+            criteria["name"] = name
+        if tags is not None:
+            criteria["tags"] = list(tags)
+        if category is not None:
+            criteria["category"] = category
+        return self._pages("items.search", x, type, fields, criteria)
+
+    def _pages(self, method, x, type, fields=None, criteria=None):
         cursor = None
         while True:
-            params = {"handle": _handle(x), "cursor": cursor}
+            params = {"handle": _handle(x), "cursor": cursor, **(criteria or {})}
             if type is not None:
                 params["type"] = type
             if fields is not None:

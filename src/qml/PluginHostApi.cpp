@@ -177,6 +177,7 @@ std::optional<QString> PluginHostApi::requiredPermission(const QString& method)
         {QStringLiteral("items.move"), QStringLiteral("items.write")},
         {QStringLiteral("items.moveToRubbish"), QStringLiteral("items.rubbish")},
         {QStringLiteral("items.update"), QStringLiteral("items.edit")},
+        {QStringLiteral("items.search"), QStringLiteral("items.read")},
         {QStringLiteral("ui.selection"), QStringLiteral("items.read")},
         {QStringLiteral("items.fetchPreview"), QStringLiteral("content.read")},
         {QStringLiteral("items.fetchThumbnail"), QStringLiteral("content.read")},
@@ -243,6 +244,8 @@ void PluginHostApi::call(const QString& method,
         done(uiSearch(params));
     else if (method == QStringLiteral("ui.selection"))
         done(uiSelection(params));
+    else if (method == QStringLiteral("items.search"))
+        itemsSearch(params, run, done);
     else
         done(fail(kMethodNotFound, QStringLiteral("Method not found: %1").arg(method)));
 }
@@ -451,6 +454,35 @@ PluginHostApi::Reply descendantsPage(const IMegaClient& client,
                 end < handles.size() ? QJsonValue(QStringLiteral("%1:%2").arg(listing).arg(end))
                                      : QJsonValue(QJsonValue::Null));
 }
+
+// A later page of a listing items.descendants or items.search fixed; nullopt when
+// params carry no cursor, so the caller starts a new listing. The cursor is
+// "<listing>:<offset>".
+std::optional<PluginHostApi::Reply> cursorPage(const IMegaClient& client,
+                                               const QJsonObject& params,
+                                               const std::vector<std::vector<std::uint64_t>>& listings,
+                                               int limit,
+                                               unsigned fields)
+{
+    const QJsonValue cursor = params.value(QStringLiteral("cursor"));
+    if (cursor.isUndefined() || cursor.isNull())
+        return std::nullopt;
+    if (!cursor.isString())
+        return fail(kInvalidParams, QStringLiteral("\"cursor\" must be a string"));
+    const QStringList parts = cursor.toString().split(QLatin1Char(':'));
+    bool listingOk = false;
+    bool offsetOk = false;
+    std::size_t listing = 0;
+    std::size_t offset = 0;
+    if (parts.size() == 2)
+    {
+        listing = parts[0].toULongLong(&listingOk);
+        offset = parts[1].toULongLong(&offsetOk);
+    }
+    if (!listingOk || !offsetOk || listing >= listings.size() || offset > listings[listing].size())
+        return fail(kInvalidParams, QStringLiteral("Bad cursor"));
+    return descendantsPage(client, listings[listing], listing, offset, limit, fields);
+}
 } // namespace
 
 void PluginHostApi::itemsDescendants(const QJsonObject& params, RunState& run, const Done& done) const
@@ -465,28 +497,8 @@ void PluginHostApi::itemsDescendants(const QJsonObject& params, RunState& run, c
     if (std::optional<Reply> error = readFields(params, &fields))
         return done(*error);
     const int limit = readLimit(params);
-
-    // The cursor is "<listing>:<offset>"; no cursor starts a new listing.
-    const QJsonValue cursor = params.value(QStringLiteral("cursor"));
-    if (cursor.isString())
-    {
-        const QStringList parts = cursor.toString().split(QLatin1Char(':'));
-        bool listingOk = false;
-        bool offsetOk = false;
-        std::size_t listing = 0;
-        std::size_t offset = 0;
-        if (parts.size() == 2)
-        {
-            listing = parts[0].toULongLong(&listingOk);
-            offset = parts[1].toULongLong(&offsetOk);
-        }
-        if (!listingOk || !offsetOk || listing >= run.listings->size() ||
-            offset > (*run.listings)[listing].size())
-            return done(fail(kInvalidParams, QStringLiteral("Bad cursor")));
-        return done(descendantsPage(*mClient, (*run.listings)[listing], listing, offset, limit, fields));
-    }
-    if (!cursor.isUndefined() && !cursor.isNull())
-        return done(fail(kInvalidParams, QStringLiteral("\"cursor\" must be a string")));
+    if (std::optional<Reply> reply = cursorPage(*mClient, params, *run.listings, limit, fields))
+        return done(*reply);
 
     mClient->listDescendants(
         handle,
@@ -1698,6 +1710,23 @@ readSearchFlag(const QJsonObject& params, const QString& key, bool* value)
     *value = raw.toBool();
     return std::nullopt;
 }
+
+// Same order as SearchCategory in core/SearchFilter.h.
+const QStringList& searchCategoryNames()
+{
+    static const QStringList names{QStringLiteral("any"),
+                                   QStringLiteral("photo"),
+                                   QStringLiteral("audio"),
+                                   QStringLiteral("video"),
+                                   QStringLiteral("document"),
+                                   QStringLiteral("pdf"),
+                                   QStringLiteral("presentation"),
+                                   QStringLiteral("spreadsheet"),
+                                   QStringLiteral("archive"),
+                                   QStringLiteral("program"),
+                                   QStringLiteral("other")};
+    return names;
+}
 } // namespace
 
 PluginHostApi::Reply PluginHostApi::uiSearch(const QJsonObject& params) const
@@ -1715,17 +1744,6 @@ PluginHostApi::Reply PluginHostApi::uiSearch(const QJsonObject& params) const
     // Same order as the enums in core/SearchFilter.h.
     static const QStringList nodeTypes{
         QStringLiteral("any"), QStringLiteral("files"), QStringLiteral("folders")};
-    static const QStringList categories{QStringLiteral("any"),
-                                        QStringLiteral("photo"),
-                                        QStringLiteral("audio"),
-                                        QStringLiteral("video"),
-                                        QStringLiteral("document"),
-                                        QStringLiteral("pdf"),
-                                        QStringLiteral("presentation"),
-                                        QStringLiteral("spreadsheet"),
-                                        QStringLiteral("archive"),
-                                        QStringLiteral("program"),
-                                        QStringLiteral("other")};
     static const QStringList timeWindows{QStringLiteral("any"),
                                          QStringLiteral("pastDay"),
                                          QStringLiteral("pastWeek"),
@@ -1736,7 +1754,7 @@ PluginHostApi::Reply PluginHostApi::uiSearch(const QJsonObject& params) const
     if (auto error = readSearchFacet(params, QStringLiteral("type"), nodeTypes, &filter.nodeType))
         return *error;
     if (auto error =
-            readSearchFacet(params, QStringLiteral("category"), categories, &filter.category))
+            readSearchFacet(params, QStringLiteral("category"), searchCategoryNames(), &filter.category))
         return *error;
     if (auto error = readSearchFacet(
             params, QStringLiteral("createdWithin"), timeWindows, &filter.createdWithin))
@@ -1769,4 +1787,73 @@ PluginHostApi::Reply PluginHostApi::uiSelection(const QJsonObject& params) const
         }
     }
     return ok(QJsonObject{{QStringLiteral("items"), items}});
+}
+
+void PluginHostApi::itemsSearch(const QJsonObject& params, RunState& run, const Done& done) const
+{
+    std::uint64_t handle = 0;
+    if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
+        return done(*error);
+    unsigned fields = 0;
+    if (std::optional<Reply> error = readFields(params, &fields))
+        return done(*error);
+    const int limit = readLimit(params);
+    if (std::optional<Reply> reply = cursorPage(*mClient, params, *run.listings, limit, fields))
+        return done(*reply);
+
+    SearchFilter filter;
+    TypeFilter type;
+    if (std::optional<Reply> error = readType(params, &type))
+        return done(*error);
+    if (!type.any)
+        filter.nodeType = type.folders ? SearchNodeType::Folders : SearchNodeType::Files;
+    if (std::optional<Reply> error =
+            readSearchFacet(params, QStringLiteral("category"), searchCategoryNames(), &filter.category))
+        return done(*error);
+
+    const QJsonValue name = params.value(QStringLiteral("name"));
+    if (!name.isUndefined() && !name.isNull() && !name.isString())
+        return done(fail(kInvalidParams, QStringLiteral("\"name\" must be a string")));
+    const QJsonValue tags = params.value(QStringLiteral("tags"));
+    if (!tags.isUndefined() && !tags.isNull())
+    {
+        if (!tags.isArray())
+            return done(fail(kInvalidParams, QStringLiteral("\"tags\" must be an array of strings")));
+        for (const QJsonValue tag : tags.toArray())
+        {
+            // The SDK answers a tag search containing ',' with nothing at all.
+            if (!tag.isString() || tag.toString().isEmpty() || tag.toString().contains(QLatin1Char(',')))
+                return done(fail(kInvalidParams, QStringLiteral("Each tag must be a non-empty string without \",\"")));
+            filter.tags.push_back(tag.toString().toStdString());
+        }
+    }
+
+    const Result<NodeSnapshot> folder = mClient->getNodeSnapshot(handle);
+    if (!folder.success)
+        return done(fail(kItemNotFound, QStringLiteral("No such item")));
+    if (!folder.value().isFolder)
+        return done(fail(kInvalidParams, QStringLiteral("Not a folder")));
+
+    mClient->search(
+        handle,
+        false,
+        name.toString().toStdString(),
+        filter,
+        SortOrder{},
+        [client = mClient, listings = std::weak_ptr(run.listings), limit, fields, done](
+            Result<std::vector<FileEntry>> result) {
+            if (!result.success)
+                return done(result.errorCode == MegaErrorCode::kENoEnt
+                                ? fail(kItemNotFound, QStringLiteral("No such item"))
+                                : fail(kInternalError, QString::fromStdString(result.errorMessage)));
+            const std::shared_ptr<std::vector<std::vector<std::uint64_t>>> owned = listings.lock();
+            if (!owned)
+                return done(fail(kInternalError, QStringLiteral("The run has ended")));
+            std::vector<std::uint64_t> handles;
+            handles.reserve(result.value().size());
+            for (const FileEntry& entry : result.value())
+                handles.push_back(entry.handle);
+            owned->push_back(std::move(handles));
+            done(descendantsPage(*client, owned->back(), owned->size() - 1, 0, limit, fields));
+        });
 }

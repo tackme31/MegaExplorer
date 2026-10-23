@@ -1547,3 +1547,83 @@ TEST_F(PluginHostApiOrganiseTest, MoveToRubbishRefusesARootAndAnItemAlreadyBinne
     EXPECT_FALSE(reply.errorCode.has_value());
     EXPECT_TRUE(reply.mutated);
 }
+
+TEST_F(PluginHostApiTest, ItemsSearchHandsTheFilterToTheSdkSearchAndPagesTheResult)
+{
+    ON_CALL(*mClient, getNodeSnapshot(_)).WillByDefault([](std::uint64_t h) {
+        return Result<NodeSnapshot>::ok(node(h, h == 1 ? "dir" : "f" + std::to_string(h), h == 1));
+    });
+    std::uint64_t ancestor = 0;
+    SearchFilter seen;
+    std::string seenName;
+    EXPECT_CALL(*mClient, search(_, _, _, _, _, _))
+        .WillOnce([&](std::uint64_t handle, bool isRoot, const std::string& name, const SearchFilter& filter,
+                      SortOrder, std::function<void(Result<std::vector<FileEntry>>)> onDone) {
+            ancestor = handle;
+            EXPECT_FALSE(isRoot);
+            seenName = name;
+            seen = filter;
+            std::vector<FileEntry> entries(3);
+            entries[0].handle = 10;
+            entries[1].handle = 11;
+            entries[2].handle = 12;
+            onDone(Result<std::vector<FileEntry>>::ok(entries));
+        });
+
+    const PluginHostApi::Reply first = call(
+        QStringLiteral("items.search"),
+        {{QStringLiteral("handle"), QStringLiteral("h1")},
+         {QStringLiteral("name"), QStringLiteral("cat")},
+         {QStringLiteral("tags"), QJsonArray{QStringLiteral("wd:"), QStringLiteral("smile")}},
+         {QStringLiteral("type"), QStringLiteral("file")},
+         {QStringLiteral("category"), QStringLiteral("photo")},
+         {QStringLiteral("limit"), 2},
+         {QStringLiteral("fields"), QJsonArray{QStringLiteral("name")}}});
+
+    ASSERT_FALSE(first.errorCode.has_value());
+    EXPECT_EQ(ancestor, 1u);
+    EXPECT_EQ(seenName, "cat");
+    EXPECT_EQ(seen.tags, (std::vector<std::string>{"wd:", "smile"}));
+    EXPECT_EQ(seen.nodeType, SearchNodeType::Files);
+    EXPECT_EQ(seen.category, SearchCategory::Photo);
+    const QJsonObject page1 = first.result.toObject();
+    ASSERT_EQ(page1.value(QStringLiteral("items")).toArray().size(), 2);
+    EXPECT_EQ(page1.value(QStringLiteral("items")).toArray().at(0).toObject(),
+              (QJsonObject{{QStringLiteral("handle"), QStringLiteral("h10")}, {QStringLiteral("name"), QStringLiteral("f10")}}));
+
+    const PluginHostApi::Reply second =
+        call(QStringLiteral("items.search"),
+             {{QStringLiteral("handle"), QStringLiteral("h1")},
+              {QStringLiteral("cursor"), page1.value(QStringLiteral("nextCursor"))},
+              {QStringLiteral("limit"), 2}});
+    ASSERT_FALSE(second.errorCode.has_value());
+    const QJsonArray rest = second.result.toObject().value(QStringLiteral("items")).toArray();
+    ASSERT_EQ(rest.size(), 1);
+    EXPECT_EQ(rest.at(0).toObject().value(QStringLiteral("handle")).toString(), QStringLiteral("h12"));
+    EXPECT_TRUE(second.result.toObject().value(QStringLiteral("nextCursor")).isNull());
+}
+
+TEST_F(PluginHostApiTest, ItemsSearchRejectsBadParamsAndNonFoldersWithoutSearching)
+{
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(7, "a.jpg", false))));
+    ON_CALL(*mClient, getNodeSnapshot(1)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(1, "dir", true))));
+    EXPECT_CALL(*mClient, search(_, _, _, _, _, _)).Times(0);
+
+    auto search = [this](QJsonObject params) { return call(QStringLiteral("items.search"), params).errorCode; };
+    EXPECT_EQ(search({{QStringLiteral("handle"), QStringLiteral("h7")}}), -32602);
+    EXPECT_EQ(search({{QStringLiteral("handle"), QStringLiteral("h9")}}), PluginHostApi::kItemNotFound);
+    EXPECT_EQ(search({{QStringLiteral("handle"), QStringLiteral("h1")}, {QStringLiteral("tags"), QJsonArray{QStringLiteral("a,b")}}}),
+              -32602);
+    EXPECT_EQ(search({{QStringLiteral("handle"), QStringLiteral("h1")}, {QStringLiteral("tags"), QJsonArray{QStringLiteral("")}}}),
+              -32602);
+    EXPECT_EQ(search({{QStringLiteral("handle"), QStringLiteral("h1")}, {QStringLiteral("tags"), QStringLiteral("wd:")}}),
+              -32602);
+    EXPECT_EQ(search({{QStringLiteral("handle"), QStringLiteral("h1")}, {QStringLiteral("category"), QStringLiteral("photos")}}),
+              -32602);
+    EXPECT_EQ(search({{QStringLiteral("handle"), QStringLiteral("h1")}, {QStringLiteral("type"), QStringLiteral("files")}}),
+              -32602);
+    EXPECT_EQ(search({{QStringLiteral("handle"), QStringLiteral("h1")}, {QStringLiteral("cursor"), QStringLiteral("9:0")}}),
+              -32602);
+
+    EXPECT_EQ(PluginHostApi::requiredPermission(QStringLiteral("items.search")), QStringLiteral("items.read"));
+}

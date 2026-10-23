@@ -209,7 +209,7 @@ Every method the plugin calls on the app needs one permission, declared in `perm
 
 | Permission | Methods | Allows |
 | --- | --- | --- |
-| `items.read` | `items.get`, `items.children`, `items.descendants`, `ui.selection` | Reading the tree: names and attributes of any item in the account, and which items are selected |
+| `items.read` | `items.get`, `items.children`, `items.descendants`, `items.search`, `ui.selection` | Reading the tree: names and attributes of any item in the account, and which items are selected |
 | `items.write` | `items.upload`, `items.createFolder`, `items.copy`, `items.move` | Changing the tree: adding, copying and moving files and folders |
 | `items.rubbish` | `items.moveToRubbish` | Rubbish bin operations: moving items to the Rubbish bin |
 | `items.edit` | `items.update` | Changing an item's name, description, tags and favourite flag |
@@ -403,6 +403,32 @@ result:  {"items": [Item, ...], "nextCursor": "0:500"}
   state of those items, skipping any deleted since. A page can therefore come back **shorter than
   `limit`, even empty, with a non-null `nextCursor`** — keep going until `nextCursor` is `null`.
 - A cursor is only valid within the run that produced it.
+
+#### `items.search`
+
+The items below a folder, at any depth, that match a name, tags, a type or a category, in the same
+paged shape as `items.descendants`.
+
+```
+params:  {"handle": "XyZw9876", "name": "cat", "tags": ["wd:", "smile"], "type": "file",
+          "category": "photo", "cursor": null, "limit": 500, "fields": null}
+result:  {"items": [Item, ...], "nextCursor": "0:500"}
+```
+
+- Every criterion is optional and they all have to match. `name` is matched as the app's search
+  box matches it. Each entry of `tags` must be found, ignoring case, inside one of the item's
+  tags: `"wd:"` matches every item with a tag starting `wd:`. A tag must be non-empty and contain
+  no `,`. `type` is `"file"` or `"folder"`; `category` takes `ui.search`'s values.
+- **`items.search` or `items.descendants`?** Both find the same items when you filter
+  `items.descendants`' result yourself; they differ in cost. The app keeps every item it has read
+  in memory until it exits, and `items.descendants` reads every item below the folder, so walking
+  a large drive can add hundreds of MB to the app. `items.search` reads only the items that match,
+  but runs a query over the whole account's database, which on a large account can take a minute
+  or more where `items.descendants` takes seconds. Use `items.search` for a narrow criterion that
+  leaves out most items and when waiting is acceptable; use `items.descendants` when you need
+  most of the tree, its folder structure, or speed.
+- Ordered by name. Paging, `fields`, cursors and the short-page rule are `items.descendants`'.
+- Not a folder → `-32602`; no such item → `-32002`.
 
 #### `items.update`
 
@@ -890,6 +916,7 @@ plugin.run()
 | `ctx.get(x, fields=None)`, `ctx.get_many(xs, fields=None)` | `items.get`; with `fields`, the other attributes are `None` |
 | `ctx.children(x, type=None, fields=None)` | `items.children`, iterated page by page |
 | `ctx.descendants(x, type=None, fields=None)` | `items.descendants`, iterated page by page |
+| `ctx.find(x, name=None, tags=None, type=None, category=None, fields=None)` | `items.search`, iterated page by page |
 | `ctx.update(x, name=, description=, favourite=, tags_add=, tags_remove=)` | `items.update` |
 | `ctx.fetch_preview(x)` → `Path` | `items.fetchPreview`; raises `NoPreview` |
 | `ctx.fetch_thumbnail(x)` → `Path` | `items.fetchThumbnail`; raises `NoThumbnail` |

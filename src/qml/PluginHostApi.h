@@ -123,6 +123,7 @@ private:
     Reply itemsGet(const QJsonObject& params) const;
     Reply itemsChildren(const QJsonObject& params) const;
     void itemsDescendants(const QJsonObject& params, RunState& run, const Done& done) const;
+    void itemsSearch(const QJsonObject& params, RunState& run, const Done& done) const;
     void itemsUpdate(const QJsonObject& params, const Done& done) const;
     void itemsFetchPreview(const QJsonObject& params, const QString& tempDir, const Done& done) const;
     void itemsFetchThumbnail(const QJsonObject& params, const QString& tempDir, const Done& done) const;
