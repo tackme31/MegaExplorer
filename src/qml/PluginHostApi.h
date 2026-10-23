@@ -57,6 +57,8 @@ public:
     using Reveal = std::function<void(std::uint64_t handle, const QString& name)>;
     // ui.search: run this query and filter in the visible tab, replacing its search.
     using Search = std::function<void(const QString& query, const SearchFilter& filter)>;
+    // ui.selection: the visible tab's selected nodes, in row order.
+    using Selection = std::function<std::vector<std::uint64_t>()>;
 
     // guiContext must live as long as the client can still call back (the app's
     // lifetime); SDK answers are posted to its thread before done runs.
@@ -65,6 +67,9 @@ public:
                   UserDownloads downloads = {},
                   Reveal reveal = {},
                   Search search = {});
+
+    // Set after construction: the tabs it reads are built after the plugin host.
+    void setSelection(Selection selection);
 
     // One run's fetchFile / readRange / upload, run one at a time.
     struct TransferQueue;
@@ -113,6 +118,8 @@ private:
     void itemsDescendants(const QJsonObject& params, RunState& run, const Done& done) const;
     void itemsUpdate(const QJsonObject& params, const Done& done) const;
     void itemsFetchPreview(const QJsonObject& params, const QString& tempDir, const Done& done) const;
+    void itemsFetchThumbnail(const QJsonObject& params, const QString& tempDir, const Done& done) const;
+    void fetchFileAttribute(const QJsonObject& params, const QString& tempDir, bool thumbnail, const Done& done) const;
     void itemsFetchFile(const QJsonObject& params, RunState& run, const Done& done) const;
     void itemsReadRange(const QJsonObject& params, RunState& run, const Done& done) const;
     Reply itemsStreamUrl(const QJsonObject& params) const;
@@ -124,10 +131,12 @@ private:
     Reply transfersDownload(const QJsonObject& params) const;
     Reply uiReveal(const QJsonObject& params) const;
     Reply uiSearch(const QJsonObject& params) const;
+    Reply uiSelection(const QJsonObject& params) const;
 
     std::shared_ptr<IMegaClient> mClient;
     QObject* mGuiContext;
     UserDownloads mDownloads;
     Reveal mReveal;
     Search mSearch;
+    Selection mSelection;
 };

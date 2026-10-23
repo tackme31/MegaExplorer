@@ -62,6 +62,12 @@ public:
     QVariantList progressRuns() const;
     QVariantList confirmRequests() const;
 
+    // What ui.selection reads; see PluginHostApi::setSelection.
+    void setSelection(PluginHostApi::Selection selection)
+    {
+        mHostApi.setSelection(std::move(selection));
+    }
+
     // Rescans pluginsDir. Plugins are kept in name order, which is menu order.
     Q_INVOKABLE void reload();
 

@@ -76,6 +76,10 @@ class NoPreview(NotFound):
     """fetch_preview: the item has no server-side preview, or is gone."""
 
 
+class NoThumbnail(NotFound):
+    """fetch_thumbnail: the item has no server-side thumbnail, or is gone."""
+
+
 class InvalidParams(RpcError):
     """The call's arguments were rejected."""
 
@@ -133,9 +137,10 @@ class Item:
     """An item in the account.
 
     Every item carries handle, name, type, parent, size, mtime, path, favourite,
-    description, tags and crc, except those fetched with fields=[...]: the
-    attributes left out are None. crc is also None for a folder or a file MEGA
-    has no fingerprint for; two files are duplicates when (size, crc) match.
+    description, tags, crc and has_thumbnail, except those fetched with
+    fields=[...]: the attributes left out are None. crc is also None for a folder
+    or a file MEGA has no fingerprint for; two files are duplicates when
+    (size, crc) match.
     Those in ctx.items are as they were when the menu was clicked; call get()
     for the state now.
     """
@@ -153,6 +158,7 @@ class Item:
         self.description = data.get("description")
         self.tags = data.get("tags")
         self.crc = data.get("crc")
+        self.has_thumbnail = data.get("hasThumbnail")
 
     @property
     def is_file(self):
@@ -353,6 +359,12 @@ class Context:
             params["createdWithin"] = created_within
         self.call("ui.search", params)
 
+    def selection(self, fields=None):
+        """The items selected in the app's current tab now, in list order; [] when
+        none. Needs items.read. fields: as get()."""
+        params = {} if fields is None else {"fields": list(fields)}
+        return [Item(data) for data in self.call("ui.selection", params)["items"]]
+
     # --- items ------------------------------------------------------------------
 
     def call(self, method, params):
@@ -434,6 +446,15 @@ class Context:
             return Path(self.call("items.fetchPreview", {"handle": _handle(x)})["path"])
         except NotFound as error:
             raise NoPreview(error.code, error.message) from None
+
+    def fetch_thumbnail(self, x):
+        """Saves item x's thumbnail (a 200 px square JPEG) and returns its Path.
+        Only a file with has_thumbnail has one. The file is yours, as with
+        fetch_preview. Raises NoThumbnail when there is none."""
+        try:
+            return Path(self.call("items.fetchThumbnail", {"handle": _handle(x)})["path"])
+        except NotFound as error:
+            raise NoThumbnail(error.code, error.message) from None
 
     # --- file contents ------------------------------------------------------------
     # The app runs fetch_file, read_range and upload one at a time, and stops the

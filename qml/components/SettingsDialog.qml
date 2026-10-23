@@ -102,7 +102,7 @@ Dialog {
     function permissionText(permission: string): string {
         switch (permission) {
         case "items.read":
-            return qsTr("Read the names and details of any file or folder");
+            return qsTr("Read the names and details of any file or folder, and which ones are selected");
         case "items.write":
             return qsTr("Add, copy and move files and folders");
         case "items.rubbish":

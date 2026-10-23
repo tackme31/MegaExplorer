@@ -273,6 +273,18 @@ QVariantList FileListModel::selectedEntries() const
     return result;
 }
 
+std::vector<quint64> FileListModel::selectedHandlesInRowOrder() const
+{
+    std::vector<quint64> handles;
+    handles.reserve(mSelectedHandles.size());
+    for (const FileEntry& entry : mEntries)
+    {
+        if (mSelectedHandles.count(static_cast<quint64>(entry.handle)))
+            handles.push_back(static_cast<quint64>(entry.handle));
+    }
+    return handles;
+}
+
 QVariantMap FileListModel::selectedEntry() const
 {
     QVariantMap map;

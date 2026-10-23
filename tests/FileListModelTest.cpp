@@ -339,6 +339,19 @@ TEST(FileListModelTest, SelectedEntriesAreReturnedInRowOrder)
     EXPECT_EQ(entries[2].toMap()["handle"].toULongLong(), 4u);
 }
 
+TEST(FileListModelTest, SelectedHandlesInRowOrderFollowRowsNotClicks)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(5));
+    EXPECT_TRUE(model.selectedHandlesInRowOrder().empty());
+
+    model.selectRow(4, 0);
+    model.selectRow(2, kCtrl);
+    model.selectRow(0, kCtrl);
+
+    EXPECT_EQ(model.selectedHandlesInRowOrder(), (std::vector<quint64>{0, 2, 4}));
+}
+
 TEST(FileListModelTest, SelectedEntriesCarryNameSizeAndIsFolder)
 {
     FileListModel model;

@@ -261,6 +261,7 @@ int main(int argc, char* argv[])
                           std::move(thumbnails)};
     };
     TabsController tabs(tabFactory, &uploadController);
+    pluginController.setSelection([&tabs] { return tabs.currentSelection(); });
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("tabsController", &tabs);

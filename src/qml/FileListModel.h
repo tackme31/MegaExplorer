@@ -133,6 +133,7 @@ public:
     // unordered mSelectedHandles: callers acting on the selection (bulk download, a
     // drag snapshot) need a stable order.
     Q_INVOKABLE QVariantList selectedEntries() const;
+    std::vector<quint64> selectedHandlesInRowOrder() const;
 
     // The same map as selectedEntries()' elements, but only when exactly one row is
     // selected; empty otherwise. The preview pane runs this on every selection

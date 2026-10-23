@@ -80,8 +80,9 @@ protected:
 TEST_F(PluginHostApiTest, EveryHostMethodNeedsAKnownPermission)
 {
     for (const char* method :
-         {"items.get", "items.children", "items.descendants", "items.update", "items.fetchPreview", "items.fetchFile",
-          "items.readRange", "items.streamUrl", "items.upload", "items.createFolder", "transfers.download"})
+         {"items.get", "items.children", "items.descendants", "items.update", "items.fetchPreview",
+          "items.fetchThumbnail", "items.fetchFile", "items.readRange", "items.streamUrl", "items.upload",
+          "items.createFolder", "transfers.download", "ui.selection"})
     {
         const std::optional<QString> permission = PluginHostApi::requiredPermission(QString::fromLatin1(method));
         ASSERT_TRUE(permission.has_value()) << method;
@@ -138,6 +139,62 @@ TEST_F(PluginHostApiTest, ItemsGetReturnsTheFullItem)
     EXPECT_EQ(item.value(QStringLiteral("path")).toString(), QStringLiteral("/cat.jpg"));
     EXPECT_EQ(item.value(QStringLiteral("tags")).toArray().at(0).toString(), QStringLiteral("pet"));
     EXPECT_EQ(item.value(QStringLiteral("crc")).toString(), QStringLiteral("AAECAwQFBgcICQoLDA0ODw"));
+    EXPECT_FALSE(item.value(QStringLiteral("hasThumbnail")).toBool(true));
+}
+
+TEST_F(PluginHostApiTest, ItemsGetSendsHasThumbnailOnlyWhenAsked)
+{
+    NodeSnapshot cat = node(7, "cat.jpg", false);
+    cat.hasThumbnail = true;
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(cat)));
+
+    const QJsonObject asked =
+        call(QStringLiteral("items.get"),
+             {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h7")}},
+              {QStringLiteral("fields"), QJsonArray{QStringLiteral("hasThumbnail")}}})
+            .result.toObject().value(QStringLiteral("items")).toArray().at(0).toObject();
+    EXPECT_EQ(asked.keys(), (QStringList{QStringLiteral("handle"), QStringLiteral("hasThumbnail")}));
+    EXPECT_TRUE(asked.value(QStringLiteral("hasThumbnail")).toBool());
+
+    const QJsonObject other =
+        call(QStringLiteral("items.get"),
+             {{QStringLiteral("handles"), QJsonArray{QStringLiteral("h7")}},
+              {QStringLiteral("fields"), QJsonArray{QStringLiteral("name")}}})
+            .result.toObject().value(QStringLiteral("items")).toArray().at(0).toObject();
+    EXPECT_FALSE(other.contains(QStringLiteral("hasThumbnail")));
+}
+
+TEST_F(PluginHostApiTest, UiSelectionReturnsTheSelectedItemsInOrderSkippingDeletedOnes)
+{
+    mApi.setSelection([] { return std::vector<std::uint64_t>{8, 9, 7}; });
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(7, "b.jpg", false))));
+    ON_CALL(*mClient, getNodeSnapshot(8)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(8, "a.jpg", false))));
+
+    const PluginHostApi::Reply reply =
+        call(QStringLiteral("ui.selection"), {{QStringLiteral("fields"), QJsonArray{QStringLiteral("name")}}});
+
+    ASSERT_FALSE(reply.errorCode.has_value());
+    const QJsonArray items = reply.result.toObject().value(QStringLiteral("items")).toArray();
+    ASSERT_EQ(items.size(), 2);
+    EXPECT_EQ(items.at(0).toObject().value(QStringLiteral("handle")).toString(), QStringLiteral("h8"));
+    EXPECT_EQ(items.at(1).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("b.jpg"));
+    EXPECT_FALSE(items.at(1).toObject().contains(QStringLiteral("path")));
+}
+
+TEST_F(PluginHostApiTest, UiSelectionIsEmptyWithoutASourceAndNeedsItemsRead)
+{
+    const PluginHostApi::Reply empty = call(QStringLiteral("ui.selection"), {});
+    ASSERT_FALSE(empty.errorCode.has_value());
+    EXPECT_TRUE(empty.result.toObject().value(QStringLiteral("items")).toArray().isEmpty());
+
+    EXPECT_EQ(call(QStringLiteral("ui.selection"), {{QStringLiteral("fields"), QJsonArray{QStringLiteral("nope")}}})
+                  .errorCode,
+              -32602);
+
+    mRun.permissions = {};
+    const PluginHostApi::Reply denied = call(QStringLiteral("ui.selection"), {});
+    EXPECT_EQ(denied.errorCode, PluginHostApi::kPermissionDenied);
+    EXPECT_EQ(denied.errorData.toObject().value(QStringLiteral("permission")).toString(), QStringLiteral("items.read"));
 }
 
 TEST_F(PluginHostApiTest, ItemsGetRejectsAMalformedHandle)
@@ -808,6 +865,62 @@ TEST_F(PluginHostApiTest, ItemsFetchPreviewRejectsFoldersAndMissingItemsWithoutF
                   .errorCode,
               -32602);
     EXPECT_EQ(call(QStringLiteral("items.fetchPreview"), {{QStringLiteral("handle"), QStringLiteral("h4")}})
+                  .errorCode,
+              PluginHostApi::kItemNotFound);
+}
+
+TEST_F(PluginHostApiTest, ItemsFetchThumbnailSavesBesideAPreviewOfTheSameItem)
+{
+    NodeSnapshot cat = node(26, "cat.jpg", false);
+    cat.hasThumbnail = true;
+    EXPECT_CALL(*mClient, getNodeSnapshot(26)).WillOnce(Return(Result<NodeSnapshot>::ok(cat)));
+    std::string requestedPath;
+    EXPECT_CALL(*mClient, getThumbnail(26, _, _))
+        .WillOnce([&requestedPath](std::uint64_t,
+                                   const std::string& path,
+                                   std::function<void(Result<std::string>)> onDone) {
+            requestedPath = path;
+            onDone(Result<std::string>::ok(path));
+        });
+    EXPECT_CALL(*mClient, getPreview(_, _, _)).Times(0);
+
+    const PluginHostApi::Reply reply =
+        call(QStringLiteral("items.fetchThumbnail"), {{QStringLiteral("handle"), QStringLiteral("h26")}});
+
+    ASSERT_FALSE(reply.errorCode.has_value());
+    const QString path = reply.result.toObject().value(QStringLiteral("path")).toString();
+    EXPECT_EQ(path.toStdString(), requestedPath);
+    EXPECT_EQ(QDir::fromNativeSeparators(path), QDir(mTempDir.path()).filePath(QStringLiteral("1a.thumb.jpg")));
+}
+
+TEST_F(PluginHostApiTest, ItemsFetchThumbnailRefusesWithoutAskingTheServerWhenThereIsNone)
+{
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(7, "a.txt", false))));
+    ON_CALL(*mClient, getNodeSnapshot(3)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(3, "dir", true))));
+    EXPECT_CALL(*mClient, getThumbnail(_, _, _)).Times(0);
+
+    EXPECT_EQ(call(QStringLiteral("items.fetchThumbnail"), {{QStringLiteral("handle"), QStringLiteral("h7")}})
+                  .errorCode,
+              PluginHostApi::kItemNotFound);
+    EXPECT_EQ(call(QStringLiteral("items.fetchThumbnail"), {{QStringLiteral("handle"), QStringLiteral("h3")}})
+                  .errorCode,
+              -32602);
+    EXPECT_EQ(call(QStringLiteral("items.fetchThumbnail"), {{QStringLiteral("handle"), QStringLiteral("h4")}})
+                  .errorCode,
+              PluginHostApi::kItemNotFound);
+}
+
+TEST_F(PluginHostApiTest, ItemsFetchThumbnailReportsAFailedFetchAsNotFound)
+{
+    NodeSnapshot cat = node(7, "cat.jpg", false);
+    cat.hasThumbnail = true;
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(cat)));
+    EXPECT_CALL(*mClient, getThumbnail(7, _, _))
+        .WillOnce([](std::uint64_t, const std::string&, std::function<void(Result<std::string>)> onDone) {
+            onDone(Result<std::string>::fail("not found", -9));
+        });
+
+    EXPECT_EQ(call(QStringLiteral("items.fetchThumbnail"), {{QStringLiteral("handle"), QStringLiteral("h7")}})
                   .errorCode,
               PluginHostApi::kItemNotFound);
 }

@@ -209,16 +209,18 @@ Every method the plugin calls on the app needs one permission, declared in `perm
 
 | Permission | Methods | Allows |
 | --- | --- | --- |
-| `items.read` | `items.get`, `items.children`, `items.descendants` | Reading the tree: names and attributes of any item in the account |
+| `items.read` | `items.get`, `items.children`, `items.descendants`, `ui.selection` | Reading the tree: names and attributes of any item in the account, and which items are selected |
 | `items.write` | `items.upload`, `items.createFolder`, `items.copy`, `items.move` | Changing the tree: adding, copying and moving files and folders |
 | `items.rubbish` | `items.moveToRubbish` | Rubbish bin operations: moving items to the Rubbish bin |
 | `items.edit` | `items.update` | Changing an item's name, description, tags and favourite flag |
-| `content.read` | `items.fetchPreview`, `items.fetchFile`, `items.readRange` | Reading file contents, into the run's temporary folder |
+| `content.read` | `items.fetchPreview`, `items.fetchThumbnail`, `items.fetchFile`, `items.readRange` | Reading file contents, into the run's temporary folder |
 | `content.stream` | `items.streamUrl` | Handing file contents out as local URLs, which any program on this computer can read |
 | `content.download` | `transfers.download` | Saving files to the user's Downloads folder |
 
 `ui.confirm`, `ui.reveal`, `ui.search`, `ui.progress` and the context sent with `command.execute`
-need none, so a plugin that only looks at the selection can leave `permissions` out.
+need none, so a plugin that only looks at the items it was started on can leave `permissions` out.
+`ui.selection` is the exception among the `ui.*` methods: it reads what the user is looking at
+without them seeing it happen, so it needs `items.read`.
 
 - A name not in this table makes the manifest invalid, so the plugin is not loaded (the reason is
   in the log). Duplicates are ignored.
@@ -268,7 +270,8 @@ An **Item** — every `items.*` method and the context hand over the same shape:
   "favourite": false,
   "description": "",
   "tags": ["cat"],
-  "crc": "AAECAwQFBgcICQoLDA0ODw"
+  "crc": "AAECAwQFBgcICQoLDA0ODw",
+  "hasThumbnail": true
 }
 ```
 
@@ -281,6 +284,7 @@ An **Item** — every `items.*` method and the context hand over the same shape:
 | `path` | Display path from the root (`/` for the root, no trailing `/` on folders). |
 | `tags` | The item's tags, as stored. |
 | `crc` | A checksum of the file's content, from the fingerprint MEGA keeps with every upload: an opaque string, only for comparing. Two files are duplicates when `size` **and** `crc` match; above 8 KB it covers a spread-out 8 KB sample, so a match is near-certain rather than proof (compare with `items.readRange` before deleting, if that matters). `null` for a folder, and for a file uploaded without a fingerprint. |
+| `hasThumbnail` | Whether MEGA holds a thumbnail for the file, so [`items.fetchThumbnail`](#itemsfetchthumbnail) can succeed. Always `false` for a folder. |
 
 All reads come from the app's in-memory copy of the account, so they are fast and do not reach
 MEGA's servers.
@@ -446,6 +450,23 @@ result:  {"path": "C:\\Users\\...\\plugin-tmp\\...\\1a2b3c4d.jpg"}
   keeps disk use flat (on Windows, close the image first). Whatever is left is removed when the run
   ends, and leftovers of a crashed run on the next app start.
 - This downloads from MEGA. Fetch what you need, one at a time; please don't hammer the servers.
+
+#### `items.fetchThumbnail`
+
+Saves an item's server-side thumbnail (a JPEG, 200 × 200 px, cropped square from near the centre)
+to a file and returns its path. The small image to show next to a file in a list; use
+`items.fetchPreview` for the whole picture.
+
+```
+params:  {"handle": "AbCd1234"}
+result:  {"path": "C:\\Users\\...\\plugin-tmp\\...\\1a2b3c4d.thumb.jpg"}
+```
+
+- Only a file whose Item has `hasThumbnail: true` has one; any other file is `-32002`, answered
+  without asking MEGA. A folder → `-32602`.
+- The file is yours, and what is left is removed when the run ends, as with `items.fetchPreview`.
+- This downloads from MEGA, though a thumbnail is only a few KB. Fetch the ones on screen, not the
+  whole list ahead.
 
 #### `items.fetchFile`
 
@@ -693,6 +714,24 @@ result:  {}
   filter picked but not applied, are dropped. Navigating away ends the search as usual.
 - An unknown value, a wrong type, or a control character (a newline) in `query` → `-32602`.
 
+#### `ui.selection`
+
+The items selected in the app's current tab right now, in the order they are listed there. For a
+plugin with a window of its own that keeps running (`"progress": "never"`): its commands are greyed
+out while it runs, so the user cannot hand it new items through the menu, but it can ask for the
+selection instead.
+
+```
+params:  {"fields": ["name", "tags"]}
+result:  {"items": [Item, ...]}
+```
+
+- Needs `items.read`.
+- `fields` works as in `items.get`; leave it out for whole Items.
+- Nothing selected, or a tab showing no list (the screen before sign-in) → an empty array.
+- Only the current tab of the window the plugin was started from. The app does not tell the
+  plugin when the selection changes: ask when the user asks for it, e.g. on a button.
+
 ### Notifications from the plugin
 
 #### `ui.progress`
@@ -852,6 +891,7 @@ plugin.run()
 | `ctx.descendants(x, type=None, fields=None)` | `items.descendants`, iterated page by page |
 | `ctx.update(x, name=, description=, favourite=, tags_add=, tags_remove=)` | `items.update` |
 | `ctx.fetch_preview(x)` → `Path` | `items.fetchPreview`; raises `NoPreview` |
+| `ctx.fetch_thumbnail(x)` → `Path` | `items.fetchThumbnail`; raises `NoThumbnail` |
 | `ctx.fetch_file(x, offset=, length=)` → `Path` | `items.fetchFile` |
 | `ctx.read_range(x, offset, length)` → `bytes` | `items.readRange` |
 | `ctx.stream_urls(xs)` → `list[str \| None]` | `items.streamUrl`, 500 at a time; `None` for an item that cannot be served |
@@ -863,11 +903,12 @@ plugin.run()
 | `ctx.download(xs, sub_path=, on_conflict=)` → `{"queued", "skipped"}` | `transfers.download`; an entry of `xs` may be an `(x, sub_path)` pair |
 | `ctx.confirm(message, title=, ok_label=, danger=)` → `bool` | `ui.confirm` |
 | `ctx.reveal(x)` | `ui.reveal` |
+| `ctx.selection(fields=None)` → `list[Item]` | `ui.selection` |
 | `ctx.search(query="", type=, category=, created_within=, favourites_only=, this_folder_only=)` | `ui.search` |
 | `ctx.progress(current=, total=, message=)` | `ui.progress` |
 | `ctx.cancelled`, `ctx.check_cancelled()` | `$/cancel` seen; the latter raises `Cancelled` → `-32800` |
 | `ctx.call(method, params)` | any method, raw |
-| `RpcError`, `NotFound`, `NoPreview`, `InvalidParams`, `MegaError`, `Conflict` (`.reason`), `PermissionDenied` (`.permission`) | error responses to a call; `.data` holds `error.data` |
+| `RpcError`, `NotFound`, `NoPreview`, `NoThumbnail`, `InvalidParams`, `MegaError`, `Conflict` (`.reason`), `PermissionDenied` (`.permission`) | error responses to a call; `.data` holds `error.data` |
 | `Cancelled` from a transfer call | `-32800`: the app stopped it on Cancel; let it propagate |
 
 `x` may be a handle string or an `Item`. `print()` is redirected to stderr, so it cannot corrupt

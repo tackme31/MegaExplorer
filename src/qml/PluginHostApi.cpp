@@ -63,7 +63,8 @@ enum ItemField : unsigned
     kFieldDescription = 1u << 7,
     kFieldTags = 1u << 8,
     kFieldCrc = 1u << 9,
-    kAllItemFields = (1u << 10) - 1,
+    kFieldHasThumbnail = 1u << 10,
+    kAllItemFields = (1u << 11) - 1,
 };
 
 constexpr std::pair<const char*, unsigned> kItemFieldNames[] = {
@@ -77,6 +78,7 @@ constexpr std::pair<const char*, unsigned> kItemFieldNames[] = {
     {"description", kFieldDescription},
     {"tags", kFieldTags},
     {"crc", kFieldCrc},
+    {"hasThumbnail", kFieldHasThumbnail},
 };
 
 QJsonObject toItem(const IMegaClient& client, const NodeSnapshot& n, unsigned fields = kAllItemFields)
@@ -110,6 +112,8 @@ QJsonObject toItem(const IMegaClient& client, const NodeSnapshot& n, unsigned fi
     if (fields & kFieldCrc)
         item.insert(QStringLiteral("crc"), n.crc.empty() ? QJsonValue(QJsonValue::Null)
                                                          : QJsonValue(QString::fromStdString(n.crc)));
+    if (fields & kFieldHasThumbnail)
+        item.insert(QStringLiteral("hasThumbnail"), n.hasThumbnail);
     return item;
 }
 
@@ -151,6 +155,11 @@ PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client,
 {
 }
 
+void PluginHostApi::setSelection(Selection selection)
+{
+    mSelection = std::move(selection);
+}
+
 std::optional<QString> PluginHostApi::requiredPermission(const QString& method)
 {
     static const QHash<QString, QString> permissions{
@@ -163,7 +172,9 @@ std::optional<QString> PluginHostApi::requiredPermission(const QString& method)
         {QStringLiteral("items.move"), QStringLiteral("items.write")},
         {QStringLiteral("items.moveToRubbish"), QStringLiteral("items.rubbish")},
         {QStringLiteral("items.update"), QStringLiteral("items.edit")},
+        {QStringLiteral("ui.selection"), QStringLiteral("items.read")},
         {QStringLiteral("items.fetchPreview"), QStringLiteral("content.read")},
+        {QStringLiteral("items.fetchThumbnail"), QStringLiteral("content.read")},
         {QStringLiteral("items.fetchFile"), QStringLiteral("content.read")},
         {QStringLiteral("items.readRange"), QStringLiteral("content.read")},
         {QStringLiteral("items.streamUrl"), QStringLiteral("content.stream")},
@@ -201,6 +212,8 @@ void PluginHostApi::call(const QString& method,
         itemsUpdate(params, done);
     else if (method == QStringLiteral("items.fetchPreview"))
         itemsFetchPreview(params, run.tempDir, done);
+    else if (method == QStringLiteral("items.fetchThumbnail"))
+        itemsFetchThumbnail(params, run.tempDir, done);
     else if (method == QStringLiteral("items.fetchFile"))
         itemsFetchFile(params, run, done);
     else if (method == QStringLiteral("items.readRange"))
@@ -223,6 +236,8 @@ void PluginHostApi::call(const QString& method,
         done(uiReveal(params));
     else if (method == QStringLiteral("ui.search"))
         done(uiSearch(params));
+    else if (method == QStringLiteral("ui.selection"))
+        done(uiSelection(params));
     else
         done(fail(kMethodNotFound, QStringLiteral("Method not found: %1").arg(method)));
 }
@@ -713,6 +728,22 @@ void PluginHostApi::itemsFetchPreview(const QJsonObject& params,
                                       const QString& tempDir,
                                       const Done& done) const
 {
+    fetchFileAttribute(params, tempDir, false, done);
+}
+
+void PluginHostApi::itemsFetchThumbnail(const QJsonObject& params,
+                                        const QString& tempDir,
+                                        const Done& done) const
+{
+    fetchFileAttribute(params, tempDir, true, done);
+}
+
+void PluginHostApi::fetchFileAttribute(const QJsonObject& params,
+                                       const QString& tempDir,
+                                       bool thumbnail,
+                                       const Done& done) const
+{
+    const QString kind = thumbnail ? QStringLiteral("thumbnail") : QStringLiteral("preview");
     std::uint64_t handle = 0;
     if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
     {
@@ -727,7 +758,14 @@ void PluginHostApi::itemsFetchPreview(const QJsonObject& params,
     }
     if (node.value().isFolder)
     {
-        done(fail(kInvalidParams, QStringLiteral("A folder has no preview")));
+        done(fail(kInvalidParams, QStringLiteral("A folder has no %1").arg(kind)));
+        return;
+    }
+    // The node says whether it has a thumbnail, so a missing one costs no request;
+    // there is no such flag for a preview.
+    if (thumbnail && !node.value().hasThumbnail)
+    {
+        done(fail(kItemNotFound, QStringLiteral("This item has no thumbnail")));
         return;
     }
     if (!QDir().mkpath(tempDir))
@@ -736,17 +774,20 @@ void PluginHostApi::itemsFetchPreview(const QJsonObject& params,
         return;
     }
     // Hex, not the base64 handle: NTFS names are case-insensitive and base64 is not.
-    const QString path = QDir::toNativeSeparators(
-        QDir(tempDir).filePath(QString::number(handle, 16) + QStringLiteral(".jpg")));
+    const QString name = QString::number(handle, 16) + (thumbnail ? QStringLiteral(".thumb.jpg") : QStringLiteral(".jpg"));
+    const QString path = QDir::toNativeSeparators(QDir(tempDir).filePath(name));
     QObject* guiContext = mGuiContext;
-    mClient->getPreview(
-        handle, path.toStdString(), [guiContext, done, path](Result<std::string> result) {
-            invokeOnGuiThread(guiContext, [done, path, success = result.success] {
-                // Any failure reads as "no preview": one only exists when the uploader made it.
-                done(success ? ok(QJsonObject{{QStringLiteral("path"), path}})
-                             : fail(kItemNotFound, QStringLiteral("This item has no preview")));
-            });
+    auto onDone = [guiContext, done, path, kind](Result<std::string> result) {
+        invokeOnGuiThread(guiContext, [done, path, kind, success = result.success] {
+            // Any failure reads as "none": one only exists when the uploader made it.
+            done(success ? ok(QJsonObject{{QStringLiteral("path"), path}})
+                         : fail(kItemNotFound, QStringLiteral("This item has no %1").arg(kind)));
         });
+    };
+    if (thumbnail)
+        mClient->getThumbnail(handle, path.toStdString(), std::move(onDone));
+    else
+        mClient->getPreview(handle, path.toStdString(), std::move(onDone));
 }
 
 struct PluginHostApi::TransferQueue
@@ -1686,4 +1727,22 @@ PluginHostApi::Reply PluginHostApi::uiSearch(const QJsonObject& params) const
     if (mSearch)
         mSearch(query, filter);
     return ok(QJsonObject{});
+}
+
+PluginHostApi::Reply PluginHostApi::uiSelection(const QJsonObject& params) const
+{
+    unsigned fields = 0;
+    if (std::optional<Reply> error = readFields(params, &fields))
+        return *error;
+    QJsonArray items;
+    if (mSelection)
+    {
+        for (const std::uint64_t handle : mSelection())
+        {
+            const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle);
+            if (node.success)
+                items.append(toItem(*mClient, node.value(), fields));
+        }
+    }
+    return ok(QJsonObject{{QStringLiteral("items"), items}});
 }

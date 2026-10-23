@@ -1,5 +1,6 @@
 #include "TabsController.h"
 
+#include "FileListModel.h"
 #include "FileMutationController.h"
 #include "FolderNavigationController.h"
 #include "ThumbnailController.h"
@@ -123,6 +124,15 @@ QObject* TabsController::currentMutations() const
     if (mCurrentIndex < 0 || mCurrentIndex >= static_cast<int>(mTabs.size()))
         return nullptr;
     return mTabs[static_cast<std::size_t>(mCurrentIndex)].mutations.get();
+}
+
+std::vector<quint64> TabsController::currentSelection() const
+{
+    if (mCurrentIndex < 0 || mCurrentIndex >= static_cast<int>(mTabs.size()))
+        return {};
+    return mTabs[static_cast<std::size_t>(mCurrentIndex)]
+        .navigation->fileListModelForThumbnails()
+        ->selectedHandlesInRowOrder();
 }
 
 int TabsController::count() const

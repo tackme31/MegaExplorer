@@ -82,6 +82,9 @@ public:
     QObject* currentMutations() const;
     int count() const;
 
+    // The current tab's selected nodes, in row order; empty with no tabs.
+    std::vector<quint64> currentSelection() const;
+
     Q_INVOKABLE void addTab();
 
     // Opens the tab in the background without switching to it -- middle-click and

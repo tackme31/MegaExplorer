@@ -177,6 +177,7 @@ NodeSnapshot nodeToSnapshot(mega::MegaApi& api, mega::MegaNode* node)
             delete[] crc;
         }
     }
+    snapshot.hasThumbnail = node->hasThumbnail();
     snapshot.inRubbish = api.isInRubbish(node);
     return snapshot;
 }
