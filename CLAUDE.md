@@ -2,7 +2,10 @@
 
 **Talk to the user in Japanese** — every reply, question, and end-of-task summary, from the first
 message of a session, even when this file, the docs, or tool output are in English. Code, code
-comments, and commit messages stay in English as before.
+comments, and commit messages stay in English as before. This holds for the **whole** session:
+the short progress notes between tool calls, the status after a background build, and the
+summary that follows a long stretch of English code or commit messages are where the reply has
+slipped into English before — check the language of every message, not only the first.
 
 **In an interactive session, change no code until the user explicitly asks for it to be
 implemented.** A question ("can we…?", "is it possible…?"), a report of a problem, or agreement
