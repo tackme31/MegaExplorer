@@ -234,6 +234,7 @@ public:
     Result<std::vector<NodeSnapshot>> getChildSnapshots(std::uint64_t handle) const override;
     void listDescendants(std::uint64_t handle,
                          std::function<void(Result<std::vector<DescendantNode>>)> onDone) override;
+    void setNodeCacheLimit(std::uint64_t maxNodes) override;
     std::string handleToBase64(std::uint64_t handle) const override;
     Result<std::uint64_t> base64ToHandle(const std::string& base64) const override;
 

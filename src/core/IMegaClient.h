@@ -513,6 +513,10 @@ public:
     // so it is delivered as search() is. kENoEnt for a missing node, kEArgs for a file.
     virtual void listDescendants(std::uint64_t handle,
                                  std::function<void(Result<std::vector<DescendantNode>>)> onDone) = 0;
+
+    // The SDK keeps every node it has read in memory, by default without limit; a node
+    // past the cap is dropped and read again from its local database when next needed.
+    virtual void setNodeCacheLimit(std::uint64_t maxNodes) = 0;
     virtual std::string handleToBase64(std::uint64_t handle) const = 0;
     // Fails on anything that is not a well-formed node handle.
     virtual Result<std::uint64_t> base64ToHandle(const std::string& base64) const = 0;

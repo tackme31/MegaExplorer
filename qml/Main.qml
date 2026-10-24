@@ -143,6 +143,10 @@ ApplicationWindow {
     // stored value, like "localFile" with no local folder, falls back to "app".
     property string fileDoubleClickAction: "app"
 
+    // How many nodes the SDK keeps in memory; 0 means no limit. Pushed into
+    // nodeCacheController below, which applies it at once, as localRootFolder is.
+    property int nodeCacheLimit: 50000
+
     // What the video and audio viewers play at, on the same 0..1 scale their
     // slider shows. Owned here rather than per viewer for viewMode's reason: a
     // viewer window is created and destroyed per double-click, several stand at
@@ -177,6 +181,7 @@ ApplicationWindow {
         property alias colorSchemePreference: window.colorSchemePreference
         property alias localRootFolder: window.localRootFolder
         property alias fileDoubleClickAction: window.fileDoubleClickAction
+        property alias nodeCacheLimit: window.nodeCacheLimit
         property alias playbackVolume: window.playbackVolume
         property alias playbackMuted: window.playbackMuted
         property alias playbackLooping: window.playbackLooping
@@ -189,6 +194,12 @@ ApplicationWindow {
         target: localFolderController
         property: "localRoot"
         value: window.localRootFolder
+    }
+
+    Binding {
+        target: nodeCacheController
+        property: "limit"
+        value: window.nodeCacheLimit
     }
 
     // A window-level Shortcut is fine here, unlike FileTableView's Ctrl+A:
@@ -287,6 +298,8 @@ ApplicationWindow {
         onLocalRootFolderSelected: path => window.localRootFolder = path
         fileDoubleClickAction: window.fileDoubleClickAction
         onFileDoubleClickActionSelected: action => window.fileDoubleClickAction = action
+        nodeCacheLimit: window.nodeCacheLimit
+        onNodeCacheLimitSelected: limit => window.nodeCacheLimit = limit
         cacheSizeText: cacheController.sizeText
         cacheBusy: cacheController.busy
         onCacheSizeRequested: cacheController.refresh()

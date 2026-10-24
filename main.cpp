@@ -29,6 +29,7 @@
 #include "qml/FolderTreeModel.h"
 #include "qml/GuiThread.h"
 #include "qml/LocalFolderController.h"
+#include "qml/NodeCacheController.h"
 #include "qml/NotificationController.h"
 #include "qml/OpenWithController.h"
 #include "qml/PluginController.h"
@@ -199,6 +200,7 @@ int main(int argc, char* argv[])
     ViewerController viewerController(client);
     LocalFolderController localFolderController(localLinkService, &notifications);
     CacheController cacheController(thumbnailService);
+    NodeCacheController nodeCacheController(client);
     OpenWithController openWithController(&viewerController);
     PluginController pluginController(
         client,
@@ -282,6 +284,7 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty("viewerController", &viewerController);
     engine.rootContext()->setContextProperty("localFolderController", &localFolderController);
     engine.rootContext()->setContextProperty("cacheController", &cacheController);
+    engine.rootContext()->setContextProperty("nodeCacheController", &nodeCacheController);
     engine.rootContext()->setContextProperty("openWithController", &openWithController);
     engine.rootContext()->setContextProperty("pluginController", &pluginController);
     engine.rootContext()->setContextProperty("propertiesController", &propertiesController);

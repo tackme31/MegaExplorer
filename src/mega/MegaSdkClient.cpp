@@ -1910,6 +1910,12 @@ void MegaSdkClient::listDescendants(std::uint64_t handle,
         std::move(onDone));
 }
 
+void MegaSdkClient::setNodeCacheLimit(std::uint64_t maxNodes)
+{
+    if (!mShuttingDown)
+        mApi->setLRUCacheSize(maxNodes);
+}
+
 std::string MegaSdkClient::handleToBase64(std::uint64_t handle) const
 {
     char* base64 = mega::MegaApi::handleToBase64(static_cast<mega::MegaHandle>(handle));

@@ -1624,6 +1624,64 @@ TestCase {
                 ];
     }
 
+    function test_settings_opensOnTheStoredNodeCacheLimit_data() {
+        return [
+                    {
+                        tag: "unlimited",
+                        limit: 0,
+                        index: 0
+                    },
+                    {
+                        tag: "200k",
+                        limit: 200000,
+                        index: 1
+                    },
+                    {
+                        tag: "50k",
+                        limit: 50000,
+                        index: 2
+                    },
+                    {
+                        tag: "10k",
+                        limit: 10000,
+                        index: 3
+                    },
+                    // Not offered, so it shows as the default rather than as no row.
+                    {
+                        tag: "unrecognized",
+                        limit: 1234,
+                        index: 2
+                    }
+                ];
+    }
+
+    function test_settings_opensOnTheStoredNodeCacheLimit(data) {
+        const dialog = makeDialog(settingsComponent, {
+                                      "nodeCacheLimit": data.limit
+                                  });
+        let picked = [];
+        dialog.nodeCacheLimitSelected.connect(limit => picked.push(limit));
+
+        dialog.open();
+
+        tryCompare(dialog, "opened", true);
+        compare(dialog.nodeCacheSelector.currentIndex, data.index);
+        compare(picked.length, 0);
+    }
+
+    function test_settings_pickingANodeCacheRowReportsThatLimit() {
+        const dialog = makeDialog(settingsComponent, {});
+        let picked = [];
+        dialog.nodeCacheLimitSelected.connect(limit => picked.push(limit));
+
+        dialog.open();
+        tryCompare(dialog, "opened", true);
+        dialog.nodeCacheSelector.activated(0);
+        dialog.nodeCacheSelector.activated(3);
+
+        compare(picked, [0, 10000]);
+    }
+
     function test_settings_opensOnTheStoredDoubleClickAction(data) {
         const dialog = makeDialog(settingsComponent, {
                                       "fileDoubleClickAction": data.action

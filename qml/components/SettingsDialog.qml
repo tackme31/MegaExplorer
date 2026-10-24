@@ -43,6 +43,16 @@ Dialog {
     // The ComboBox's row order.
     readonly property var doubleClickActionOrder: ["app", "download", "localFile"]
 
+    // Main.qml's stored node-cache cap; 0 means no limit.
+    property int nodeCacheLimit: 50000
+    signal nodeCacheLimitSelected(int limit)
+
+    // The ComboBox's row order.
+    readonly property var nodeCacheLimitOrder: [0, 200000, 50000, 10000]
+
+    // Exposed for tst_MainDialogs.qml.
+    property alias nodeCacheSelector: nodeCacheSelector
+
     // Exposed for tst_MainDialogs.qml.
     property alias doubleClickSelector: doubleClickSelector
     property alias doubleClickFallbackLabel: doubleClickFallbackLabel
@@ -271,6 +281,9 @@ Dialog {
         themeSelector.currentIndex = root.indexOfScheme(root.colorScheme);
         doubleClickSelector.currentIndex = Math.max(0, root.doubleClickActionOrder.indexOf(
                                                         root.fileDoubleClickAction));
+        // A value not offered here, from a hand-edited registry, shows as the default.
+        const cacheIndex = root.nodeCacheLimitOrder.indexOf(root.nodeCacheLimit);
+        nodeCacheSelector.currentIndex = cacheIndex < 0 ? 2 : cacheIndex;
         root.cacheSizeRequested();
         root.loadPrograms();
         root.loadPlugins();
@@ -290,7 +303,8 @@ Dialog {
             Layout.preferredWidth: 150
             Layout.fillHeight: true
             clip: true
-            model: [qsTr("General"), qsTr("File management"), qsTr("Open with"), qsTr("Plugins")]
+            model: [qsTr("General"), qsTr("File management"), qsTr("Open with"), qsTr("Plugins"),
+                qsTr("Advanced")]
             currentIndex: 0
             ScrollBar.vertical: ScrollBar {}
 
@@ -755,6 +769,38 @@ Dialog {
                         enabled: pluginList.currentIndex >= 0
                         onClicked: root.showPluginDetails()
                     }
+                }
+            }
+
+            ColumnLayout {
+                spacing: Theme.spacing.md
+
+                SettingCard {
+                    name: qsTr("Folder items kept in memory")
+
+                    ComboBox {
+                        id: nodeCacheSelector
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: 260
+                        popup.background: FlyoutBackground {}
+                        model: [qsTr("Unlimited"), qsTr("200,000"), qsTr("50,000 (default)"),
+                            qsTr("10,000")]
+                        // activated for the theme selector's reason above.
+                        onActivated: index => root.nodeCacheLimitSelected(
+                                         root.nodeCacheLimitOrder[index])
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: Theme.font.caption
+                        color: Theme.color.textSecondary
+                        text: qsTr("Files and folders already read are kept in memory, so revisiting a folder is faster. A lower limit uses less memory after browsing or searching a large drive; takes effect immediately.")
+                    }
+                }
+
+                Item {
+                    Layout.fillHeight: true
                 }
             }
         }

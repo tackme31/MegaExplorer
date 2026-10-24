@@ -205,6 +205,8 @@ add_library(MegaExplorerQml STATIC
     src/qml/LocalFolderController.cpp
     src/qml/CacheController.h
     src/qml/CacheController.cpp
+    src/qml/NodeCacheController.h
+    src/qml/NodeCacheController.cpp
     src/qml/OpenWithController.h
     src/qml/OpenWithController.cpp
     src/qml/PluginHostApi.h

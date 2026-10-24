@@ -31,6 +31,7 @@ add_executable(MegaExplorerTests
     ZipEntryExtractionTest.cpp
     FolderTreeServiceTest.cpp
     LocalLinkServiceTest.cpp
+    NodeCacheControllerTest.cpp
     NodeDetailsServiceTest.cpp
     PropertiesControllerTest.cpp
     FileOperationServiceTest.cpp
