@@ -220,7 +220,7 @@ Every method the plugin calls on the app needs one permission, declared in `perm
 | `content.download` | `transfers.download` | Saving files to the user's Downloads folder |
 
 The dialog methods (`ui.showProgress`, `ui.updateProgress`, `ui.hideProgress`, `ui.alert`,
-`ui.confirm`, `ui.showResult`, `ui.toast`), `ui.reveal`, `ui.search` and the context sent with
+`ui.confirm`, `ui.showResult`, `ui.toast`), `ui.reveal`, `ui.open`, `ui.navigate`, `ui.search` and the context sent with
 `command.execute` need none, so a plugin that only looks at the items it was started on can leave `permissions` out.
 `ui.selection` is the exception among the `ui.*` methods: it reads what the user is looking at
 without them seeing it happen, so it needs `items.read`.
@@ -808,6 +808,37 @@ result:  {}
 - A folder is shown in *its* parent too, selected — not opened.
 - No such item → `-32002`; a root (Cloud Drive, Rubbish Bin) is in no folder → `-32602`.
 
+#### `ui.open`
+
+Opens a file in the app's own viewer (image, video, audio, PDF, zip), as double-click does when
+it is set to the in-app viewer — whatever the user has actually set it to. Answers as soon as the
+app has been told; it does not wait for the viewer to load.
+
+```
+params:  {"handle": "AbCd1234"}
+result:  {}
+```
+
+- Needs no permission: the file is shown to the user, nothing is handed to the plugin.
+- An image steps through its neighbours only when it is in the current tab's listing.
+- A folder → `-32602` with `data.reason` `"folder"` (use `ui.navigate`); a file no viewer opens
+  → `-32602` with `data.reason` `"unsupported"`, and nothing happens. No such item → `-32002`.
+
+#### `ui.navigate`
+
+Lists a folder, as double-clicking it does: in the current tab, replacing its search, or with
+`newTab` in a new tab opened in the background, as "Open in new tab" does.
+
+```
+params:  {"handle": "XyZw9876", "newTab": false}
+result:  {}
+```
+
+- Needs no permission. `newTab` is optional, `false` when left out.
+- Only Cloud Drive folders, its root included. A file → `-32602` with `data.reason` `"file"`
+  (use `ui.open` or `ui.reveal`); a folder in the Rubbish Bin, or another root → `-32602` with
+  `data.reason` `"notInCloudDrive"`. No such item → `-32002`.
+
 #### `ui.search`
 
 Runs a search in the current tab, as if the user had typed `query` into the search box and set the
@@ -1026,6 +1057,8 @@ plugin.run()
 | `ctx.toast(message, kind=)` | `ui.toast` |
 | `ctx.started_at`, `ctx.elapsed()`, `ctx.elapsed_text()`, `ctx.remaining_text(done, total)`, `format_duration(seconds)` | `startedAt` in seconds, and helpers for `detail` (`m:ss`) |
 | `ctx.reveal(x)` | `ui.reveal` |
+| `ctx.open(x)` | `ui.open` |
+| `ctx.navigate(x, new_tab=False)` | `ui.navigate` |
 | `ctx.selection(fields=None)` → `list[Item]` | `ui.selection` |
 | `ctx.search(query="", type=, category=, created_within=, favourites_only=, this_folder_only=)` | `ui.search` |
 | `ctx.cancelled`, `ctx.check_cancelled()` | `$/cancel` seen; the latter raises `Cancelled` → `-32800`. A dialog call refused after Cancel raises `Cancelled` too |

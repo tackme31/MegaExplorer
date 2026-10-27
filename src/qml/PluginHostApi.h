@@ -60,6 +60,11 @@ public:
     using Search = std::function<void(const QString& query, const SearchFilter& filter)>;
     // ui.selection: the visible tab's selected nodes, in row order.
     using Selection = std::function<std::vector<std::uint64_t>()>;
+    // ui.open: show the file in its in-app viewer, whatever double-click is set to do.
+    using Open = std::function<void(std::uint64_t handle, const QString& name, std::uint64_t sizeBytes)>;
+    // ui.navigate: list the Cloud Drive folder in the current tab, or in a new background
+    // one; isRoot follows IMegaClient's sentinel convention.
+    using Navigate = std::function<void(std::uint64_t handle, bool isRoot, bool newTab)>;
     // items.fetchThumbnail: the app's own cached fetch; onDone gets the cached file's
     // path, which the plugin must never be handed (it may delete its copy).
     using Thumbnails =
@@ -71,7 +76,9 @@ public:
                   QObject* guiContext,
                   UserDownloads downloads = {},
                   Reveal reveal = {},
-                  Search search = {});
+                  Search search = {},
+                  Open open = {},
+                  Navigate navigate = {});
 
     // Set after construction: the tabs it reads are built after the plugin host.
     void setSelection(Selection selection);
@@ -140,6 +147,8 @@ private:
     Reply uiReveal(const QJsonObject& params) const;
     Reply uiSearch(const QJsonObject& params) const;
     Reply uiSelection(const QJsonObject& params) const;
+    Reply uiOpen(const QJsonObject& params) const;
+    Reply uiNavigate(const QJsonObject& params) const;
 
     std::shared_ptr<IMegaClient> mClient;
     QObject* mGuiContext;
@@ -147,5 +156,7 @@ private:
     Reveal mReveal;
     Search mSearch;
     Selection mSelection;
+    Open mOpen;
+    Navigate mNavigate;
     Thumbnails mThumbnails;
 };

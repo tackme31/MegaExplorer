@@ -6,6 +6,7 @@
 #include "core/DownloadService.h"
 #include "core/FileOperationService.h"
 #include "core/MegaErrorCodes.h"
+#include "core/PreviewKind.h"
 
 #include <QDir>
 #include <QFile>
@@ -149,9 +150,12 @@ PluginHostApi::PluginHostApi(std::shared_ptr<IMegaClient> client,
                              QObject* guiContext,
                              UserDownloads downloads,
                              Reveal reveal,
-                             Search search)
+                             Search search,
+                             Open open,
+                             Navigate navigate)
     : mClient(std::move(client)), mGuiContext(guiContext), mDownloads(std::move(downloads)),
-      mReveal(std::move(reveal)), mSearch(std::move(search))
+      mReveal(std::move(reveal)), mSearch(std::move(search)), mOpen(std::move(open)),
+      mNavigate(std::move(navigate))
 {
 }
 
@@ -244,6 +248,10 @@ void PluginHostApi::call(const QString& method,
         done(uiSearch(params));
     else if (method == QStringLiteral("ui.selection"))
         done(uiSelection(params));
+    else if (method == QStringLiteral("ui.open"))
+        done(uiOpen(params));
+    else if (method == QStringLiteral("ui.navigate"))
+        done(uiNavigate(params));
     else if (method == QStringLiteral("items.search"))
         itemsSearch(params, run, done);
     else
@@ -1787,6 +1795,77 @@ PluginHostApi::Reply PluginHostApi::uiSelection(const QJsonObject& params) const
         }
     }
     return ok(QJsonObject{{QStringLiteral("items"), items}});
+}
+
+namespace
+{
+PluginHostApi::Reply failWithReason(const QString& reason, const QString& message)
+{
+    PluginHostApi::Reply reply = fail(kInvalidParams, message);
+    reply.errorData = QJsonObject{{QStringLiteral("reason"), reason}};
+    return reply;
+}
+
+// The kinds Main.qml's showViewer has a window for; Text only ever gets the preview pane.
+bool hasInAppViewer(const std::string& name)
+{
+    switch (previewKindForName(name))
+    {
+        case PreviewKind::Image:
+        case PreviewKind::Video:
+        case PreviewKind::Pdf:
+        case PreviewKind::Audio:
+        case PreviewKind::Archive:
+            return true;
+        case PreviewKind::Text:
+        case PreviewKind::None:
+            break;
+    }
+    return false;
+}
+} // namespace
+
+PluginHostApi::Reply PluginHostApi::uiOpen(const QJsonObject& params) const
+{
+    std::uint64_t handle = 0;
+    if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
+        return *error;
+    const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle);
+    if (!node.success)
+        return fail(kItemNotFound, QStringLiteral("No such item"));
+    const QString name = QString::fromStdString(node.value().name);
+    if (node.value().isFolder)
+        return failWithReason(QStringLiteral("folder"), QStringLiteral("A folder is opened with ui.navigate"));
+    if (!hasInAppViewer(node.value().name))
+        return failWithReason(QStringLiteral("unsupported"), QStringLiteral("No in-app viewer opens \"%1\"").arg(name));
+    if (mOpen)
+        mOpen(handle, name, node.value().sizeBytes);
+    return ok(QJsonObject{});
+}
+
+PluginHostApi::Reply PluginHostApi::uiNavigate(const QJsonObject& params) const
+{
+    std::uint64_t handle = 0;
+    if (std::optional<Reply> error = readHandle(*mClient, params, &handle))
+        return *error;
+    const QJsonValue newTab = params.value(QStringLiteral("newTab"));
+    if (!newTab.isUndefined() && !newTab.isBool())
+        return fail(kInvalidParams, QStringLiteral("\"newTab\" must be true or false"));
+    const Result<NodeSnapshot> node = mClient->getNodeSnapshot(handle);
+    if (!node.success)
+        return fail(kItemNotFound, QStringLiteral("No such item"));
+    if (!node.value().isFolder)
+        return failWithReason(QStringLiteral("file"),
+                              QStringLiteral("A file is opened with ui.open, or shown in its folder with ui.reveal"));
+    const Result<NodeSnapshot> root = mClient->getRootSnapshot();
+    const bool isRoot = root.success && root.value().handle == handle;
+    // The tab's folder listing is the Cloud Drive's; the bin and the Vault are other screens.
+    if (node.value().inRubbish || (!isRoot && !node.value().hasParent))
+        return failWithReason(QStringLiteral("notInCloudDrive"),
+                              QStringLiteral("Only a folder in the Cloud Drive can be navigated to"));
+    if (mNavigate)
+        mNavigate(handle, isRoot, newTab.toBool(false));
+    return ok(QJsonObject{});
 }
 
 void PluginHostApi::itemsSearch(const QJsonObject& params, RunState& run, const Done& done) const

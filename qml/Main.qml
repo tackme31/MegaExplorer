@@ -785,6 +785,15 @@ ApplicationWindow {
             tabsController.currentNavigation?.replaceSearch(query, nodeType, category, createdWithin,
                                                            favouritesOnly, thisFolderOnly);
         }
+        function onOpenRequested(handle, name, sizeBytes) {
+            window.showViewer(handle, name, sizeBytes, tabsController.currentNavigation?.fileListModel ?? null, "");
+        }
+        function onNavigateRequested(handle, isRoot, newTab) {
+            if (newTab)
+                tabsController.addTabAt(handle, isRoot);
+            else
+                tabsController.currentNavigation?.navigateTo(handle, isRoot);
+        }
     }
 
     Connections {

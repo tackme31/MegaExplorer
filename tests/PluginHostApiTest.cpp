@@ -387,6 +387,111 @@ TEST_F(PluginHostApiTest,
   EXPECT_EQ(revealed[0].second, QStringLiteral("cat.jpg"));
 }
 
+TEST_F(PluginHostApiTest, UiOpenHandsOverOnlyAFileTheViewerShowsWithoutAnyPermission)
+{
+    struct Opened
+    {
+        std::uint64_t handle;
+        QString name;
+        std::uint64_t sizeBytes;
+    };
+    std::vector<Opened> opened;
+    PluginHostApi api{mClient, &mGuiContext, {}, {}, {},
+                      [&opened](std::uint64_t handle, const QString& name, std::uint64_t sizeBytes) {
+                          opened.push_back({handle, name, sizeBytes});
+                      }};
+    NodeSnapshot image = node(7, "cat.jpg", false);
+    image.sizeBytes = 1234;
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(image)));
+    ON_CALL(*mClient, getNodeSnapshot(8)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(8, "notes.txt", false))));
+    ON_CALL(*mClient, getNodeSnapshot(2)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(2, "Photos", true))));
+    mRun.permissions = {};
+    const auto open = [&](const QString& handle) {
+        std::optional<PluginHostApi::Reply> reply;
+        api.call(QStringLiteral("ui.open"), {{QStringLiteral("handle"), handle}}, mRun,
+                 [&reply](const PluginHostApi::Reply& r) { reply = r; });
+        EXPECT_TRUE(reply.has_value());
+        return reply.value_or(PluginHostApi::Reply{});
+    };
+    const auto reason = [](const PluginHostApi::Reply& reply) {
+        return reply.errorData.toObject().value(QStringLiteral("reason")).toString();
+    };
+
+    EXPECT_FALSE(PluginHostApi::requiredPermission(QStringLiteral("ui.open")).has_value());
+    EXPECT_FALSE(open(QStringLiteral("h7")).errorCode.has_value());
+    // Text has a preview pane but no viewer window.
+    const PluginHostApi::Reply text = open(QStringLiteral("h8"));
+    EXPECT_EQ(text.errorCode, -32602);
+    EXPECT_EQ(reason(text), QStringLiteral("unsupported"));
+    const PluginHostApi::Reply folder = open(QStringLiteral("h2"));
+    EXPECT_EQ(folder.errorCode, -32602);
+    EXPECT_EQ(reason(folder), QStringLiteral("folder"));
+    EXPECT_EQ(open(QStringLiteral("h9")).errorCode, PluginHostApi::kItemNotFound);
+    EXPECT_EQ(open(QStringLiteral("zz")).errorCode, -32602);
+
+    ASSERT_EQ(opened.size(), 1u);
+    EXPECT_EQ(opened[0].handle, 7u);
+    EXPECT_EQ(opened[0].name, QStringLiteral("cat.jpg"));
+    EXPECT_EQ(opened[0].sizeBytes, 1234u);
+}
+
+TEST_F(PluginHostApiTest, UiNavigateHandsOverOnlyACloudDriveFolderWithoutAnyPermission)
+{
+    struct Navigated
+    {
+        std::uint64_t handle;
+        bool isRoot;
+        bool newTab;
+    };
+    std::vector<Navigated> navigated;
+    PluginHostApi api{mClient, &mGuiContext, {}, {}, {}, {},
+                      [&navigated](std::uint64_t handle, bool isRoot, bool newTab) {
+                          navigated.push_back({handle, isRoot, newTab});
+                      }};
+    NodeSnapshot root = node(1, "Cloud Drive", true);
+    root.hasParent = false;
+    NodeSnapshot bin = node(3, "Rubbish Bin", true);
+    bin.hasParent = false;
+    NodeSnapshot binned = node(4, "Old", true);
+    binned.inRubbish = true;
+    ON_CALL(*mClient, getRootSnapshot()).WillByDefault(Return(Result<NodeSnapshot>::ok(root)));
+    ON_CALL(*mClient, getNodeSnapshot(1)).WillByDefault(Return(Result<NodeSnapshot>::ok(root)));
+    ON_CALL(*mClient, getNodeSnapshot(2)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(2, "Photos", true))));
+    ON_CALL(*mClient, getNodeSnapshot(3)).WillByDefault(Return(Result<NodeSnapshot>::ok(bin)));
+    ON_CALL(*mClient, getNodeSnapshot(4)).WillByDefault(Return(Result<NodeSnapshot>::ok(binned)));
+    ON_CALL(*mClient, getNodeSnapshot(7)).WillByDefault(Return(Result<NodeSnapshot>::ok(node(7, "cat.jpg", false))));
+    mRun.permissions = {};
+    const auto navigate = [&](QJsonObject params) {
+        std::optional<PluginHostApi::Reply> reply;
+        api.call(QStringLiteral("ui.navigate"), params, mRun, [&reply](const PluginHostApi::Reply& r) { reply = r; });
+        EXPECT_TRUE(reply.has_value());
+        return reply.value_or(PluginHostApi::Reply{});
+    };
+    const auto handle = [](const QString& h) { return QJsonObject{{QStringLiteral("handle"), h}}; };
+    const auto reason = [](const PluginHostApi::Reply& reply) {
+        return reply.errorData.toObject().value(QStringLiteral("reason")).toString();
+    };
+
+    EXPECT_FALSE(PluginHostApi::requiredPermission(QStringLiteral("ui.navigate")).has_value());
+    EXPECT_FALSE(navigate(handle(QStringLiteral("h2"))).errorCode.has_value());
+    EXPECT_FALSE(navigate({{QStringLiteral("handle"), QStringLiteral("h1")}, {QStringLiteral("newTab"), true}})
+                     .errorCode.has_value());
+    EXPECT_EQ(reason(navigate(handle(QStringLiteral("h7")))), QStringLiteral("file"));
+    EXPECT_EQ(reason(navigate(handle(QStringLiteral("h3")))), QStringLiteral("notInCloudDrive"));
+    EXPECT_EQ(reason(navigate(handle(QStringLiteral("h4")))), QStringLiteral("notInCloudDrive"));
+    EXPECT_EQ(navigate({{QStringLiteral("handle"), QStringLiteral("h2")}, {QStringLiteral("newTab"), 1}}).errorCode,
+              -32602);
+    EXPECT_EQ(navigate(handle(QStringLiteral("h9"))).errorCode, PluginHostApi::kItemNotFound);
+
+    ASSERT_EQ(navigated.size(), 2u);
+    EXPECT_EQ(navigated[0].handle, 2u);
+    EXPECT_FALSE(navigated[0].isRoot);
+    EXPECT_FALSE(navigated[0].newTab);
+    EXPECT_EQ(navigated[1].handle, 1u);
+    EXPECT_TRUE(navigated[1].isRoot);
+    EXPECT_TRUE(navigated[1].newTab);
+}
+
 TEST_F(PluginHostApiTest, UiSearchHandsOverTheWholeCriteriaWithoutAnyPermission) {
   std::vector<std::pair<QString, SearchFilter>> searched;
   PluginHostApi api{mClient, &mGuiContext, {}, {},

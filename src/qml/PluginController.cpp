@@ -69,6 +69,12 @@ PluginController::PluginController(std::shared_ptr<IMegaClient> client,
                                         static_cast<int>(filter.createdWithin),
                                         filter.favouritesOnly,
                                         filter.thisFolderOnly);
+               },
+               [this](std::uint64_t handle, const QString& name, std::uint64_t sizeBytes) {
+                   emit openRequested(static_cast<quint64>(handle), name, static_cast<qulonglong>(sizeBytes));
+               },
+               [this](std::uint64_t handle, bool isRoot, bool newTab) {
+                   emit navigateRequested(static_cast<quint64>(handle), isRoot, newTab);
                }),
       mProgressUpdateTimer(new QTimer(this)),
       mPluginsDir(std::move(pluginsDir)),

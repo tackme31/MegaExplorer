@@ -419,6 +419,16 @@ class Context:
         """Shows item x selected in its folder in the app's current tab."""
         self.call("ui.reveal", {"handle": _handle(x)})
 
+    def open(self, x):
+        """Opens file x in the app's in-app viewer, whatever double-click is set to do.
+        Raises InvalidParams (.data["reason"]: "folder" or "unsupported") otherwise."""
+        self.call("ui.open", {"handle": _handle(x)})
+
+    def navigate(self, x, new_tab=False):
+        """Lists Cloud Drive folder x in the app's current tab, or in a new background
+        tab. Raises InvalidParams (.data["reason"]: "file" or "notInCloudDrive") otherwise."""
+        self.call("ui.navigate", {"handle": _handle(x), "newTab": bool(new_tab)})
+
     def search(self, query="", type=None, category=None, created_within=None,
                favourites_only=False, this_folder_only=False):
         """Searches in the app's current tab as if the user had typed query and set the

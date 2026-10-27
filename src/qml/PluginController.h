@@ -128,6 +128,10 @@ signals:
                          int createdWithin,
                          bool favouritesOnly,
                          bool thisFolderOnly);
+    // ui.open: a file the in-app viewer can show.
+    void openRequested(quint64 handle, const QString& name, qulonglong sizeBytes);
+    // ui.navigate: a Cloud Drive folder; a new tab opens in the background, as "Open in new tab" does.
+    void navigateRequested(quint64 handle, bool isRoot, bool newTab);
 
 private:
     const PluginManifest* findPlugin(const QString& pluginId) const;
