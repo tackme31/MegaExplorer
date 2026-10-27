@@ -7,10 +7,10 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 
 | Menu row | Demonstrates |
 | --- | --- |
-| Show the selection | The selection the app hands over (`ctx.items`), a returned string as a toast, `print()` going to the app's log |
+| Show the selection | The selection the app hands over (`ctx.items`), a returned string as a toast, `print()` going to the app's log; `"progressDialog": false`, as on every quick command here |
 | Fail with an error | `CommandError` as an error toast |
-| Show a long result | `"result": "dialog"`: a long, multi-line result in a dialog |
-| Inspect (items.get / children / descendants) | `ctx.get_many`, `ctx.children` and `ctx.descendants` page by page, asking only for the `fields` needed; a folder's counts |
+| Show a long result (ui.showResult) | `ctx.show_result`: a long, multi-line result in a dialog, which stays after the run ends |
+| Inspect (items.get / children / descendants) | `ctx.get_many`, `ctx.children` and `ctx.descendants` page by page, asking only for the `fields` needed; a folder's counts, under the progress dialog the run starts with |
 | Fetch previews (items.fetchPreview, images and videos) | `ctx.fetch_preview`, `NoPreview`, deleting the file once read; `"when"` with `extensions` |
 | Read a file (items.readRange / fetchFile) | `ctx.read_range` to sniff the file type from its first bytes, `ctx.fetch_file` for the whole file; `"when": {"targets": "files"}` |
 | Read through a local URL (items.streamUrl) | `ctx.stream_urls`: a `Range` request to the URL for the file's last 4 KB, compared with `ctx.read_range`; the URL itself is never shown |
@@ -24,7 +24,9 @@ The protocol behind it is in [PLUGINS.md](../PLUGINS.md).
 | Ask first (ui.confirm) | `ctx.confirm` with `danger`, `title` and `ok_label`; stopping quietly on Cancel |
 | Show the largest file below (ui.reveal) | `ctx.reveal`: the app opens the file's folder with it selected; `"when": {"targets": "folders"}` |
 | Search for photos tagged "sample" (ui.search) | `ctx.search("tag:sample", type="files", category="photo")`: the current tab searches as if typed, replacing its query and filter |
-| Long task (ui.progress, Cancel) | `"progress": {"show": [...]}`: a bar without a total, then every figure under it (count, rate, elapsed, time left); Cancel (`ctx.check_cancelled`); the row turning into the result (`"result": "dialog"`) |
+| Long task in stages (progress, ui.alert, ui.showResult, Cancel) | One run changing what it shows: a bar without a count, an alert, a counted bar with `detail` (count and elapsed time), a count-less stage again, then the progress dialog closed and a result shown; Cancel (`ctx.check_cancelled`) |
+| Report with toasts, no dialog (ui.toast) | `"progressDialog": false`: nothing on screen but `ctx.toast` as the run goes, then the returned message |
+| Several results (ui.showResult twice) | Two `ctx.show_result` calls are two dialogs, shown one after the other |
 
 The "Toggle", upload, folder, copy, move and Rubbish bin rows change the real account (there is no
 undo): try them on a test folder.

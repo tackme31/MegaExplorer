@@ -230,6 +230,11 @@ Item {
             root.push(text, "", "");
     }
 
+    // ui.toast. Every card looks the same, so level does not show yet.
+    function showPluginToast(pluginName, message, level) {
+        root.push(message, "", "");
+    }
+
     // Permission names stay untranslated: they are what the plugin's author must
     // write into plugin.json.
     function showPluginPermissionsDenied(pluginName, permissions) {

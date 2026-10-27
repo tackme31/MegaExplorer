@@ -4,14 +4,13 @@
   "name": "Recipes",
   "version": "0.1.0",
   "description": "Small, useful commands that each combine several parts of the plugin API.",
-  "apiVersion": 1,
+  "apiVersion": 2,
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
   "permissions": ["items.read", "items.write", "content.read"],
   "commands": [
     { "id": "export-csv", "title": "Export a CSV of everything inside",
-      "progress": { "show": ["count", "rate", "elapsed"] },
       "when": { "targets": "folders" } },
     { "id": "slideshow", "title": "Slideshow of the images inside",
-      "progress": "never", "when": { "targets": "folders" } }
+      "progressDialog": false, "when": { "targets": "folders" } }
   ]
 }

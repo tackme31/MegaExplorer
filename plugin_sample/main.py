@@ -2,19 +2,20 @@
 
 Each section below is one feature. Its commands are independent, so read only
 the section you need; plugin.json says how each command is declared
-("progress", "result", "when").
+("progressDialog", "when").
 
-- Basics: the selection (ctx.items), a toast, an error, the result dialog,
-  print() going to the app's log
+- Basics: the selection (ctx.items), a toast, an error, the result dialog
+  (ui.showResult), print() going to the app's log
 - Reading items: items.get, items.children, items.descendants
 - File contents: items.fetchPreview, items.readRange, items.fetchFile,
   items.streamUrl
 - Changing items: items.update (tags, favourites)
 - Transfers: transfers.download, items.upload, items.createFolder
-- Asking the user: ui.confirm
+- Asking the user: ui.confirm, ui.alert
 - Showing an item in the app: ui.reveal
 - Searching in the app: ui.search
-- Progress and cancel: ui.progress, $/cancel
+- Dialogs and cancel: ui.showProgress, ui.updateProgress, ui.hideProgress,
+  ui.alert, ui.showResult, ui.toast, $/cancel
 """
 
 import os
@@ -64,10 +65,14 @@ def fail(ctx):
     raise CommandError("Failed on purpose")
 
 
+# A returned message is a toast, which shows only its first lines. A whole report
+# goes in ctx.show_result: a dialog the user closes, which stays after the run ends.
 @plugin.command("show-long-result")
 def show_long_result(ctx):
     lines = [f"{item.type}: {item.path}" for item in ctx.items]
-    return "\n".join([f"{len(ctx.items)} item(s) selected", ""] + lines)
+    ctx.show_result("\n".join([f"{len(ctx.items)} item(s) selected", ""] + lines),
+                    title="Selection")
+    return None
 
 
 # --- Reading items --------------------------------------------------------------
@@ -114,9 +119,10 @@ def inspect(ctx):
             count += 1
             size += below.size
             if count % 500 == 0:
-                ctx.progress(message=f"{item.name}: {count} files so far")
+                ctx.update_progress(message=f"{item.name}: {count} files so far")
         lines.append(f"    everything below: {count} file(s), {human_size(size)}")
-    return "\n".join(lines)
+    ctx.show_result("\n".join(lines), title="Inspect")
+    return None
 
 
 # --- File contents ----------------------------------------------------------------
@@ -170,8 +176,9 @@ def kind_of(head):
 @plugin.command("read-file")
 def read_file(ctx):
     lines = []
+    total = len(ctx.items)
     for i, item in enumerate(ctx.items):
-        ctx.progress(i, len(ctx.items), item.name)
+        ctx.update_progress(message=item.name, value=i / total, detail=f"{i} / {total}")
         head = ctx.read_range(item, 0, 16)
         line = f"{item.name}: {kind_of(head)}"
         if item.size <= FETCH_WHOLE_LIMIT:
@@ -182,12 +189,13 @@ def read_file(ctx):
         else:
             line += f"; {human_size(item.size)}, too large to fetch whole here"
         lines.append(line)
-    return "\n".join(lines)
+    ctx.show_result("\n".join(lines), title="Read a file")
+    return None
 
 
 # items.streamUrl hands out a URL any program can open (a viewer, mpv, ffmpeg),
 # with Range support. The URL is readable by anything on this computer, so it is
-# never printed or returned here: the result dialog's text goes to the app's log.
+# never printed or shown here: a result dialog's text goes to the app's log.
 @plugin.command("stream-url")
 def stream_url(ctx):
     lines = []
@@ -203,7 +211,8 @@ def stream_url(ctx):
         same = body == ctx.read_range(item, offset, length)
         lines.append(f"{item.name}: HTTP {status}, last {len(body)} bytes "
                      + ("match items.readRange" if same else "DIFFER from items.readRange"))
-    return "\n".join(lines)
+    ctx.show_result("\n".join(lines), title="Read through a local URL")
+    return None
 
 
 # --- Changing items -------------------------------------------------------------
@@ -305,7 +314,7 @@ def move_to_rubbish(ctx):
 # --- Asking the user ------------------------------------------------------------
 # ctx.confirm waits until the user answers: True for OK. danger=True makes OK red
 # and focuses Cancel; title and ok_label replace the plugin's name and "OK".
-# Returning None on Cancel ends the run without a toast.
+# ctx.alert has only OK and waits for it. Returning None ends the run without a toast.
 
 
 @plugin.command("ask-first")
@@ -349,31 +358,61 @@ def search_sample_photos(ctx):
     return None
 
 
-# --- Progress and cancel --------------------------------------------------------
-# "progress": true opens a progress dialog once the command has run for 300 ms, so
-# a quick command never flashes one. ctx.progress(message=...) alone keeps the bar
-# moving without a count; with current and total it draws "12 / 20". Send it as
-# often as you like. ctx.check_cancelled() raises once the user pressed Cancel,
-# and the helper reports the command as cancelled (no toast). With
-# "result": "dialog" as well, the dialog's row turns into the result at the end.
+# --- Dialogs and cancel -----------------------------------------------------------
+# Every dialog is the plugin's to open. "progressDialog": true (the default) starts
+# the run with a count-less progress dialog already open; from then on
+# ctx.update_progress replaces what it shows -- pass everything each time, a field
+# left out is cleared -- including when a new stage begins. ctx.hide_progress closes
+# it and ctx.show_progress opens it again (it fails if one is open). value is 0..1;
+# without it the bar has no count. The counts, rate and times in detail are yours
+# to write: ctx.elapsed_text() and ctx.remaining_text() are helpers.
+# ctx.check_cancelled() raises once the user pressed Cancel, and the helper reports
+# the command as cancelled (no toast). Cancel lives only on the progress dialog.
 
 
 @plugin.command("long-task")
 def long_task(ctx):
     for second in range(3, 0, -1):
         ctx.check_cancelled()
-        ctx.progress(message=f"Preparing, {second} s left (no total yet)")
+        ctx.update_progress(title="Preparing", message=f"{second} s left (no count yet)")
         time.sleep(1)
     total = 20
+    ctx.alert(f"Found {total} steps to run.", title="Ready")
     lines = []
     for i in range(total):
         ctx.check_cancelled()
-        ctx.progress(i, total, f"step {i + 1}")
+        ctx.update_progress(title="Running", message=f"step {i + 1}", value=i / total,
+                            detail=f"{i} / {total}  {ctx.elapsed_text()} elapsed")
         time.sleep(0.25)
         lines.append(f"step {i + 1}: {'skipped' if i % 5 == 0 else 'ok'}")
-    ctx.progress(total, total)
     skipped = sum(line.endswith("skipped") for line in lines)
-    return "\n".join([f"Done {total - skipped} of {total} steps ({skipped} skipped)", ""] + lines)
+    ctx.update_progress(title="Tidying up")
+    time.sleep(1)
+    ctx.hide_progress()
+    ctx.show_result("\n".join(lines), title=f"Done {total - skipped} of {total} steps",
+                    kind="warning" if skipped else "info")
+    return None
+
+
+# "progressDialog": false: nothing is shown unless the plugin asks, and there is no
+# Cancel. ctx.toast reports while the run goes on; the returned message is a toast too.
+@plugin.command("toast-steps")
+def toast_steps(ctx):
+    for step in ("first", "second"):
+        time.sleep(1)
+        ctx.toast(f"Finished the {step} step")
+    time.sleep(1)
+    return "Finished all three steps"
+
+
+# Each ctx.show_result is a dialog of its own, shown in turn as the user closes them.
+@plugin.command("several-results")
+def several_results(ctx):
+    files = [item for item in ctx.items if item.is_file]
+    folders = [item for item in ctx.items if item.is_folder]
+    ctx.show_result("\n".join(item.name for item in files) or "none", title=f"{len(files)} file(s)")
+    ctx.show_result("\n".join(item.name for item in folders) or "none", title=f"{len(folders)} folder(s)")
+    return None
 
 
 plugin.run()

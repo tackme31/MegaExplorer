@@ -7,7 +7,36 @@
 #include <QObject>
 #include <QProcess>
 
+#include <map>
+
 class QTimer;
+
+// What the progress dialog shows for one run (ui.showProgress / ui.updateProgress).
+// Every call carries all of it: a field left out is not shown.
+struct PluginProgressContent
+{
+    // Empty shows the command's title.
+    QString title;
+    QString message;
+    // 0..1, or negative for an indeterminate bar.
+    double value = -1;
+    QString detail;
+};
+
+// A ui.alert, ui.confirm or ui.showResult for the dialog queue.
+struct PluginDialogRequest
+{
+    // What answerDialog() takes; 0 for a result, which nobody waits on.
+    int token = 0;
+    // "alert", "confirm" or "result".
+    QString kind;
+    QString title;
+    QString message;
+    QString okLabel;
+    bool danger = false;
+    // A result's "info", "warning" or "error".
+    QString level;
+};
 
 // One command execution: starts the plugin's process, runs initialize ->
 // command.execute -> shutdown over NDJSON JSON-RPC on stdio, and reports once.
@@ -35,8 +64,8 @@ public:
     // Kills the process, also one still in its shutdown grace after the result;
     // for a plugin that ignores cancel(), and on sign-out.
     void forceStop();
-    // The user's answer to the open ui.confirm; ignored when none is open.
-    void answerConfirm(bool ok);
+    // The user's answer to an open ui.alert / ui.confirm; ignored once it is gone.
+    void answerDialog(int token, bool ok);
 
     const PluginManifest& manifest() const
     {
@@ -49,13 +78,14 @@ signals:
     void finished(const QString& outcome, const QString& message, bool changed, const QStringList& deniedPermissions);
     // initialize was answered and command.execute sent.
     void executionStarted();
-    // From ui.progress; current and total are -1 when the plugin left them out.
-    void progressReported(qint64 current, qint64 total, const QString& message);
+    // The progress dialog opened, closed or changed its content; content is empty when closed.
+    void progressChanged(bool open, const PluginProgressContent& content);
     // Still running a while after cancel(); forceStop() is the way out.
     void cancelIgnored();
-    // From ui.confirm; the plugin waits until answerConfirm(). title and okLabel are
-    // empty when the plugin left them out.
-    void confirmRequested(const QString& title, const QString& message, const QString& okLabel, bool danger);
+    // An alert or confirm waits for answerDialog(); a result is already answered.
+    void dialogRequested(const PluginDialogRequest& request);
+    // level is "info", "warning" or "error".
+    void toastRequested(const QString& message, const QString& level);
 
 private:
     enum class Stage
@@ -72,7 +102,9 @@ private:
     void readStderr();
     void handleMessage(const QJsonObject& message);
     void handleResponse(const QJsonObject& message);
-    void handleConfirm(const QJsonValue& id, const QJsonObject& params);
+    // ui.showProgress / hideProgress / alert / confirm / showResult / toast.
+    void handleDialogRequest(const QJsonValue& id, const QString& method, const QJsonObject& params);
+    void handleProgressUpdate(const QJsonObject& params);
     void writeReply(const QJsonValue& id, const QString& method, const PluginHostApi::Reply& result);
     void finish(const QString& outcome, const QString& message);
     void stopProcess();
@@ -98,7 +130,10 @@ private:
     Stage mStage = Stage::Initializing;
     bool mChanged = false;
     bool mCancelRequested = false;
-    // The id of the ui.confirm awaiting the user; undefined when none is.
-    // Not the default: a default QJsonValue is Null, which is a valid id.
-    QJsonValue mConfirmId{QJsonValue::Undefined};
+    bool mProgressOpen = false;
+    // Alerts and confirms awaiting the user, by token: the request's id and method.
+    std::map<int, std::pair<QJsonValue, QString>> mOpenDialogs;
+    int mNextDialogToken = 1;
+    // When start() ran, sent to the plugin as command.execute's startedAt.
+    qint64 mStartedAt = 0;
 };

@@ -6,12 +6,12 @@
 > form working. Check this page again whenever you update the app, and pin the app version your
 > plugin was tested against.
 >
-> This page describes the app as of version **0.6.0** (protocol `apiVersion` **1**).
+> This page describes the app as of version **0.8.0** (protocol `apiVersion` **2**).
 
 A plugin adds commands to the right-click menu. When the user picks one, the app starts the
 plugin as a separate process, talks to it over JSON-RPC on stdin/stdout, and shows the result.
 The plugin can read the items in the account, change their name, description, favourite and tags,
-fetch their previews, report progress and ask the user to confirm — it never touches the MEGA
+fetch their previews, and show progress, questions and results — it never touches the MEGA
 SDK, a session or a password itself.
 
 Any language works: the app only knows how to start a program and exchange JSON lines with it.
@@ -56,10 +56,10 @@ enabled. Only install plugins you trust.
      "id": "com.example.hello",
      "name": "Hello",
      "version": "0.1.0",
-     "apiVersion": 1,
+     "apiVersion": 2,
      "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
      "commands": [
-       { "id": "count", "title": "Count the selection" }
+       { "id": "count", "title": "Count the selection", "progressDialog": false }
      ]
    }
    ```
@@ -126,9 +126,9 @@ sequenceDiagram
 
     App->>P: command.execute (id 2)
     loop any number, any order
-        P->>App: items.* / ui.confirm request
+        P->>App: items.* / ui.* request
         App-->>P: response
-        P--)App: ui.progress notification
+        P--)App: ui.updateProgress notification
     end
     opt the user presses Cancel
         App--)P: $/cancel
@@ -152,7 +152,7 @@ sequenceDiagram
   "version": "1.2.0",
   "description": "Tags images with what is in them.",
   "repositoryUrl": "https://github.com/example/tagger",
-  "apiVersion": 1,
+  "apiVersion": 2,
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
   "permissions": ["items.read", "items.edit", "content.read"],
   "commands": [
@@ -160,8 +160,7 @@ sequenceDiagram
       "id": "tag-selected",
       "title": "Tag selected",
       "when": { "targets": "files", "extensions": ["jpg", "png"] },
-      "progress": { "show": ["count", "rate", "elapsed", "remaining"] },
-      "result": "dialog"
+      "progressDialog": true
     }
   ]
 }
@@ -183,9 +182,7 @@ sequenceDiagram
 | `commands[].title` | yes | Menu row label. |
 | `commands[].when.targets` | no | `"files"`, `"folders"` or `"any"` (default). |
 | `commands[].when.extensions` | no | File extensions the command accepts, case-insensitive, leading `.` optional. Folders never match. |
-| `commands[].progress` | no | `true` shows a progress dialog with a Cancel button as soon as the command starts. Default `false`: the dialog appears only once the command has run for 3 seconds. An object instead of `true` does the same and also picks the figures under the bar, see below. `"never"` shows no progress dialog at all, see [What the user sees](#what-the-user-sees). |
-| `commands[].progress.show` | no | Which figures the progress dialog shows under its bar, any of `"count"`, `"rate"`, `"elapsed"`, `"remaining"`; see [`ui.progress`](#uiprogress). Default (and with `"progress": true`): none, only the message and the bar. |
-| `commands[].result` | no | Where the result goes: `"toast"` (default) or `"dialog"`. See [What the user sees](#what-the-user-sees). |
+| `commands[].progressDialog` | no | `true` (default): the run starts with a progress dialog already open — a bar with no count, a Cancel button, modal — as if the plugin had called [`ui.showProgress`](#uishowprogress) with nothing. From then on it is the plugin's to change or close. `false`: nothing is shown until the plugin asks. See [Dialogs](#dialogs). |
 
 A command whose `when` rejects any item of the selection is shown **greyed out**, not hidden.
 
@@ -193,7 +190,7 @@ The sample also carries `"manifestVersion": 1`. This version of the app does not
 
 ### API version
 
-The app speaks exactly one version of the plugin API, currently **1**, and `apiVersion` declares
+The app speaks exactly one version of the plugin API, currently **2**, and `apiVersion` declares
 which one a plugin was written for. The number goes up only when the API changes in a way that
 breaks existing plugins; additions (a new method, a new optional field) leave it alone.
 
@@ -202,6 +199,11 @@ never started, the submenu reads `<name> (incompatible)`, and **Settings › Plu
 a plugin written for a lower version needs updating to the current API, one written for a higher
 version needs a newer MEGA Explorer. A manifest without a valid `apiVersion` is rejected like
 any other broken manifest.
+
+Version 2 replaced the manifest's `progress` and `result` with `progressDialog`, and made every
+dialog the plugin's to open (`ui.showProgress`, `ui.alert`, `ui.showResult`, `ui.toast`, …);
+`ui.progress` became `ui.updateProgress`, which carries the whole content each time. A version 1
+plugin is listed but cannot run until it is updated.
 
 ### Permissions
 
@@ -217,8 +219,9 @@ Every method the plugin calls on the app needs one permission, declared in `perm
 | `content.stream` | `items.streamUrl` | Handing file contents out as local URLs, which any program on this computer can read |
 | `content.download` | `transfers.download` | Saving files to the user's Downloads folder |
 
-`ui.confirm`, `ui.reveal`, `ui.search`, `ui.progress` and the context sent with `command.execute`
-need none, so a plugin that only looks at the items it was started on can leave `permissions` out.
+The dialog methods (`ui.showProgress`, `ui.updateProgress`, `ui.hideProgress`, `ui.alert`,
+`ui.confirm`, `ui.showResult`, `ui.toast`), `ui.reveal`, `ui.search` and the context sent with
+`command.execute` need none, so a plugin that only looks at the items it was started on can leave `permissions` out.
 `ui.selection` is the exception among the `ui.*` methods: it reads what the user is looking at
 without them seeing it happen, so it needs `items.read`.
 
@@ -301,8 +304,8 @@ when listing a large tree: it keeps every page small.
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-  "apiVersion":1,
-  "app":{"version":"0.5.0","locale":"ja-JP","colorScheme":"dark"},
+  "apiVersion":2,
+  "app":{"version":"0.8.0","locale":"ja-JP","colorScheme":"dark"},
   "plugin":{"id":"com.example.hello","version":"0.1.0","dir":"C:/Users/.../plugins/hello"}}}
 ```
 
@@ -310,7 +313,7 @@ when listing a large tree: it keeps every page small.
 `app.colorScheme` is `"light"` or `"dark"`: the scheme the app is drawn in (its own theme
 setting, or the system's when it follows the system), for a plugin that opens a window of its
 own. It is left out when the system does not say. Reply
-with any result (the helper sends `{"apiVersion":1}`; the app does not read it). An error
+with any result (the helper sends `{"apiVersion":2}`; the app does not read it). An error
 response aborts the run and shows its `message`. No answer within **5 minutes** kills the process
 — the limit is long because `uv` may be downloading Python and dependencies on a first run.
 
@@ -320,8 +323,13 @@ response aborts the run and shows its `message`. No answer within **5 minutes** 
 {"jsonrpc":"2.0","id":2,"method":"command.execute","params":{
   "invocationId":1,
   "commandId":"count",
-  "context":{"site":"selection","items":[ /* Item, ... */ ]}}}
+  "context":{"site":"selection","items":[ /* Item, ... */ ]},
+  "startedAt":1761552000000}}
 ```
+
+- `startedAt` is when the app started the run, in milliseconds since the Unix epoch. It counts
+  the process start and `uv`'s setup too, so "elapsed" figures worked out from it match what the
+  user waited.
 
 - `context.site` says which menu the command came from: `"selection"` for selected items,
   `"folder"` for a view's empty space or a folder-tree / Quick access row. With `"folder"`,
@@ -334,9 +342,9 @@ Reply when the command is done:
 
 | Response | Meaning |
 | --- | --- |
-| `{"result":{"message":"..."}}` | Success. `message` is shown to the user; omit it (`{}`) to show nothing. It may span several lines. |
+| `{"result":{"message":"..."}}` | Success. `message` is shown as a toast (its first lines); omit it (`{}`) to show nothing. For a long report call `ui.showResult` before answering. |
 | `{"error":{"code":-32800,"message":"Cancelled"}}` | Stopped because of `$/cancel`. Nothing is shown. |
-| `{"error":{"code":-32000,"message":"...","data":{"message":"..."}}}` | Failure. Any code other than `-32800` counts. `message` should be one sentence (JSON-RPC's rule); put the full, multi-line text in `data.message` and the app shows that instead. |
+| `{"error":{"code":-32000,"message":"...","data":{"message":"..."}}}` | Failure. Any code other than `-32800` counts. Shown as a toast. `message` should be one sentence (JSON-RPC's rule); put the full, multi-line text in `data.message` and the app shows that instead. A failure the plugin expects is better shown its own way (`ui.showResult` with `"kind": "error"`) and answered as a success. |
 
 #### `shutdown` (request)
 
@@ -353,9 +361,11 @@ fine.
 The user pressed Cancel in the progress dialog. Stop at a convenient point and answer
 `command.execute` with `-32800`, or simply exit. If nothing happens within 10 seconds, the dialog
 offers **Force quit**, which kills the process tree. Read stdin on its own thread so a busy command
-still sees this message. Cancel is reached from the progress dialog, which a command without
-`"progress": true` gets after 3 seconds (cancelling during `initialize` kills the process at once).
-A `"progress": "never"` command has no Cancel: it is stopped by ending it from the plugin's own UI.
+still sees this message (cancelling during `initialize` kills the process at once).
+Cancel is only on the progress dialog: **while the plugin keeps it closed, the user has no way to
+stop the run**, so give a long stretch without it a way of its own (a window's Close button, say).
+After `$/cancel` every dialog request is refused with `-32005`, `ui.updateProgress` is ignored and
+`ui.hideProgress` does nothing: the dialog reads "Cancelling…" until the run ends.
 
 ### Methods the plugin can call
 
@@ -510,8 +520,8 @@ result:  {"path": "C:\\Users\\...\\plugin-tmp\\...\\files\\3\\cat.jpg"}
   `offset` at or past the end is `-32602`. There is no size limit: check the Item's `size` first.
 - Each call gets a folder of its own inside the run's temp folder, so two fetches never collide.
   As with `items.fetchPreview`, the file is yours, and what is left is removed when the run ends.
-- Nothing is shown to the user while it runs. For anything long, declare the command with
-  `"progress": true` and report progress yourself.
+- Nothing is shown to the user while it runs. For anything long, keep the progress dialog open
+  around it, so the user has Cancel.
 - A folder → `-32602`; no such item → `-32002`; MEGA failed → `-32010`.
 
 #### `items.readRange`
@@ -682,9 +692,66 @@ result:  {"queued": 2, "skipped": 0}
   is saved as `name (1).ext`), `"skip"`, or `"overwrite"` (the old file goes to the Recycle Bin).
   A file already in the download queue is skipped too; `skipped` counts both.
 
+#### Dialogs
+
+Every dialog is the plugin's to open, at any time during `command.execute`, whatever the command's
+`progressDialog`. There are two kinds:
+
+- **The progress dialog**: one row per run, modal, with the only Cancel button. Open, close and
+  change it as often as the work needs (`ui.showProgress`, `ui.updateProgress`, `ui.hideProgress`).
+  Its content is always exactly what the plugin last sent: a field left out is not shown.
+- **Alerts, questions and results** (`ui.alert`, `ui.confirm`, `ui.showResult`): queued in the
+  order they arrive, from every running plugin, and shown one at a time above the progress
+  dialog; the next appears when the user closes the one on screen. Each call is a dialog of its
+  own — two calls are two dialogs, never one replacing the other.
+
+When the run ends, its progress dialog and any alert or question still waiting are closed; its
+results stay until the user closes them. Toasts (`ui.toast`) are separate and never wait.
+
+#### `ui.showProgress`
+
+Opens the progress dialog.
+
+```
+params:  {"title": "Tagging", "message": "cat.jpg", "value": 0.25, "detail": "11 / 44  0:12 elapsed"}
+result:  {}
+```
+
+| Param | Shown as | Left out |
+| --- | --- | --- |
+| `title` | The row's heading | The command's title |
+| `message` | A line above the bar | Not shown |
+| `value` | The bar's position, `0`..`1` (clamped) | An indeterminate bar, with no count |
+| `detail` | A small line under the bar, right-aligned: counts, rate, time left, elapsed — whatever the plugin writes | Not shown |
+
+- Already open → `-32005`. A command with `"progressDialog": true` starts with it open, so use
+  `ui.updateProgress` there. The plugin always knows whether it is open: only `ui.showProgress` /
+  `ui.hideProgress`, the start of a `"progressDialog": true` run and Cancel change it.
+- A field of the wrong type → `-32602`. `null` counts as left out.
+- The app works out no figures of its own. Format counts, rates and times yourself (in
+  `initialize`'s `app.locale` if you like); elapsed time is now minus `command.execute`'s
+  `startedAt`.
+
+#### `ui.hideProgress`
+
+Closes the progress dialog. `params: {}`, `result: {}`. Does nothing when it is not open, so it
+is safe in clean-up code. While it is closed the user has no Cancel, and the window is not modal:
+the user can change the items the run is working on.
+
+#### `ui.alert`
+
+Shows a message with only an OK button and waits until the user presses it (or Escape).
+
+```
+params:  {"message": "Found 44 duplicates.", "title": "Scan done", "okLabel": "Continue"}
+result:  {}
+```
+
+- `message` is required. `title` defaults to the plugin's name, `okLabel` to "OK".
+
 #### `ui.confirm`
 
-Asks the user a yes/no question in a modal dialog and waits for the answer.
+Asks the user a yes/no question and waits for the answer.
 
 ```
 params:  {"message": "Replace the tags of 44 files?", "title": "Retag",
@@ -694,9 +761,37 @@ result:  {"ok": true}
 
 - `message` is required. `title` defaults to the plugin's name, `okLabel` to "OK".
 - `danger: true` styles the OK button as destructive and focuses Cancel.
-- `ok` is `false` when the user cancels. Returning a successful result with no `message` then ends
-  the run without any toast.
-- Only one `ui.confirm` may be open at a time (a second is `-32602`).
+- `ok` is `false` when the user cancels (or presses Escape). Returning a successful result with no
+  `message` then ends the run without any toast.
+
+#### `ui.showResult`
+
+Shows a result in a dialog and answers at once, without waiting for the user to read it.
+
+```
+params:  {"message": "44 tagged\n3 failed:\n  a.jpg: ...", "title": "Tagging done", "kind": "warning"}
+result:  {}
+```
+
+- `message` is required and may be a whole report: it is shown in full, scrollable and selectable
+  (so it can be copied), and written to the log. `title` defaults to the plugin's name.
+- `kind`: `"info"` (default), `"warning"` or `"error"`; `"error"` draws the text in the error colour.
+- The dialog stays until the user closes it, **also after the run has ended**. The run carries on
+  meanwhile, and may open the progress dialog again or show further results.
+- Several results in a row are several dialogs, closed one by one: gather what belongs together
+  into one call.
+
+#### `ui.toast`
+
+Shows a toast while the run goes on, e.g. for a command with `"progressDialog": false`.
+
+```
+params:  {"message": "Uploaded 3 of 10", "kind": "info"}
+result:  {}
+```
+
+- `message` is required; only its first lines fit. `kind` as for `ui.showResult`; this version
+  draws every toast the same way.
 
 #### `ui.reveal`
 
@@ -744,7 +839,7 @@ result:  {}
 #### `ui.selection`
 
 The items selected in the app's current tab right now, in the order they are listed there. For a
-plugin with a window of its own that keeps running (`"progress": "never"`): its commands are greyed
+plugin with a window of its own that keeps running (`"progressDialog": false`): its commands are greyed
 out while it runs, so the user cannot hand it new items through the menu, but it can ask for the
 selection instead.
 
@@ -761,29 +856,23 @@ result:  {"items": [Item, ...]}
 
 ### Notifications from the plugin
 
-#### `ui.progress`
+#### `ui.updateProgress`
 
-Updates the command's progress dialog, whether it was declared with `"progress": true` or appeared
-after 3 seconds.
+Replaces what the open progress dialog shows.
 
 ```json
-{"jsonrpc":"2.0","method":"ui.progress","params":{"current":12,"total":44,"message":"cat.jpg"}}
+{"jsonrpc":"2.0","method":"ui.updateProgress","params":{"title":"Tagging","message":"cat.jpg","value":0.27,"detail":"12 / 44"}}
 ```
 
-- All fields optional. `message` goes above the bar. With `total` the bar fills up; without, it is
-  indeterminate.
-- Under the bar go the figures the command lists in `progress.show`, always in this order whatever
-  order they are listed in, e.g. `1,234/2,000 (61%) · 12/s · 10:21 elapsed, ~0:05 left`:
-  - `count`: `current/total (percent)`, or just `current` without a `total`.
-  - `rate`: items per second, rounded down — `current`'s increase over its last 10 increases,
-    divided by the time they took. So report `current` as it changes, ideally once per item.
-  - `elapsed`: time since the command started.
-  - `remaining`: `total - current` at that rate, counting down between reports. Needs a `total`.
-  - A figure that cannot be worked out yet (no `current`, or fewer than two increases) is left out.
-    A `current` lower than before restarts the rate, for a run with several phases.
-- Send as often as you like: the app coalesces updates and redraws a few times a second.
-- The dialog appears only if the command is still running after 300 ms (3 s without
-  `"progress": true`), so a quick command never flashes one. Until `command.execute` is sent it reads "Preparing…".
+- The same fields as [`ui.showProgress`](#uishowprogress), and the same rule: **send the whole
+  content every time**. A field left out is cleared, not kept from before, so the dialog never
+  shows anything the plugin did not just send. Starting a new stage is just an update with a new
+  `title` (and no `value`, for a stage with nothing to count).
+- Ignored, and logged, while the progress dialog is closed: a notification has no answer to carry
+  an error. Open it with `ui.showProgress` first.
+- Send as often as you like: the app coalesces updates and redraws a few times a second. Elapsed
+  time only moves when you send, so send now and then during a long call (a model load, a big
+  `items.fetchFile`) if the dialog shows it.
 
 Other notifications are logged and ignored.
 
@@ -798,36 +887,34 @@ Other notifications are logged and ignored.
 | `-32004` | Conflict | The name is taken and `onConflict` did not resolve it; nothing changed. `data.reason` says why: `"exists"`, or `"versioningDisabled"` (see `items.upload`). |
 | `-32010` | MEGA error | MEGA rejected or failed a change. Part of an `items.update` may already be applied. |
 | `-32001` | Permission denied | The method needs a permission `plugin.json` does not declare. `data.permission` names it. |
+| `-32005` | Invalid state | A dialog call that does not fit: `ui.showProgress` while the progress dialog is open, or any dialog request after `$/cancel`. |
 | `-32800` | Cancelled | Sent **by the plugin** to answer `command.execute` after `$/cancel`; sent **by the app** for a transfer it stopped on Cancel. |
 | `-32000` | — | What the Python helper uses for a failed command. Any non-`-32800` code works there. |
 
 ## What the user sees
 
-| Outcome | Toast (default) | `"result": "dialog"` |
-| --- | --- | --- |
-| Success with `message` | `message`, first 3 lines | The full message in a dialog with Copy and Close |
-| Success without `message` | nothing | nothing |
-| Error response | `<plugin name>: <message>`, first 3 lines | The full text in the dialog |
-| Cancelled (`-32800`, or exit after Cancel) | nothing | nothing |
-| `run.command` not found | `<name>: can't find "<command>"` | — |
-| Failed to start | `<name> couldn't be started` | — |
-| No `initialize` answer in 5 min | `<name> didn't start in time and was stopped` | — |
-| Exited before answering | `<name> stopped unexpectedly` | — |
-| Any call refused for a missing permission | an extra `<name>: permission denied (<permissions>)` | the same extra toast |
+What the plugin shows during a run is up to it ([Dialogs](#dialogs)). When the run ends, the app
+closes its progress dialog and any alert or question still waiting, leaves its results open, and
+reports the outcome as a toast:
 
-The progress dialog of a `"progress": true` command is modal: the window cannot be used until the
-command ends or is cancelled, so the user cannot change the items it is working on behind it. A
-command without `"progress": true` leaves the window usable at first, but once it has run for
-3 seconds the same dialog appears, so that a slow or stuck command can always be cancelled. It
-shows `ui.progress` the same way; declare `"progress": true` for a command that is known to take a
-while. A `ui.confirm` question always stacks above the progress dialog.
-`"progress": "never"` shows no progress dialog, however long the command runs, and leaves the
-window usable throughout. It is for a command that opens a window of its own and answers
-`command.execute` when the user closes it: without it, the progress dialog would cover the app
-for as long as that window is open. The app offers no way to cancel such a run, so its window
-must be closable, and closing it must end the command.
-With `"progress": true` and `"result": "dialog"`, the progress row turns into the result in place.
-The full result text is always written to the log.
+| Outcome | Toast |
+| --- | --- |
+| Success with `message` | `message`, first 3 lines |
+| Success without `message` | nothing |
+| Error response | `<plugin name>: <message>`, first 3 lines |
+| Cancelled (`-32800`, or exit after Cancel) | nothing |
+| `run.command` not found | `<name>: can't find "<command>"` |
+| Failed to start | `<name> couldn't be started` |
+| No `initialize` answer in 5 min | `<name> didn't start in time and was stopped` |
+| Exited before answering | `<name> stopped unexpectedly` |
+| Any call refused for a missing permission | an extra `<name>: permission denied (<permissions>)` |
+
+The progress dialog is modal: while it is open the window cannot be used, so the user cannot change
+the items a run is working on behind it, or sign out. With it closed, nothing stops them. A command
+that opens a window of its own and answers `command.execute` when the user closes it should use
+`"progressDialog": false`, or the dialog would cover the app for as long as that window is open;
+the app offers no Cancel for such a run, so the window must be closable, and closing it must end
+the command. The full text of a returned message and of every `ui.showResult` is written to the log.
 
 ## Developing a plugin
 
@@ -892,7 +979,8 @@ def tag_selected(ctx):
         return None
     for i, item in enumerate(files):
         ctx.check_cancelled()
-        ctx.progress(i, len(files), item.name)
+        ctx.update_progress(message=item.name, value=i / len(files),
+                            detail=f"{i} / {len(files)}  {ctx.elapsed_text()} elapsed")
         try:
             path = ctx.fetch_preview(item)
         except NoPreview:
@@ -929,14 +1017,20 @@ plugin.run()
 | `ctx.copy(x, to, name=, on_conflict=)` → `Item` | `items.copy`; raises `Conflict` |
 | `ctx.move_to_rubbish(x)` | `items.moveToRubbish` |
 | `ctx.download(xs, sub_path=, on_conflict=)` → `{"queued", "skipped"}` | `transfers.download`; an entry of `xs` may be an `(x, sub_path)` pair |
+| `ctx.show_progress(title=, message=, value=, detail=)` | `ui.showProgress`; raises `InvalidState` when it is already open |
+| `ctx.update_progress(title=, message=, value=, detail=)` | `ui.updateProgress`; pass everything each time |
+| `ctx.hide_progress()` | `ui.hideProgress` |
+| `ctx.alert(message, title=, ok_label=)` | `ui.alert` |
 | `ctx.confirm(message, title=, ok_label=, danger=)` → `bool` | `ui.confirm` |
+| `ctx.show_result(message, title=, kind=)` | `ui.showResult` |
+| `ctx.toast(message, kind=)` | `ui.toast` |
+| `ctx.started_at`, `ctx.elapsed()`, `ctx.elapsed_text()`, `ctx.remaining_text(done, total)`, `format_duration(seconds)` | `startedAt` in seconds, and helpers for `detail` (`m:ss`) |
 | `ctx.reveal(x)` | `ui.reveal` |
 | `ctx.selection(fields=None)` → `list[Item]` | `ui.selection` |
 | `ctx.search(query="", type=, category=, created_within=, favourites_only=, this_folder_only=)` | `ui.search` |
-| `ctx.progress(current=, total=, message=)` | `ui.progress` |
-| `ctx.cancelled`, `ctx.check_cancelled()` | `$/cancel` seen; the latter raises `Cancelled` → `-32800` |
+| `ctx.cancelled`, `ctx.check_cancelled()` | `$/cancel` seen; the latter raises `Cancelled` → `-32800`. A dialog call refused after Cancel raises `Cancelled` too |
 | `ctx.call(method, params)` | any method, raw |
-| `RpcError`, `NotFound`, `NoPreview`, `NoThumbnail`, `InvalidParams`, `MegaError`, `Conflict` (`.reason`), `PermissionDenied` (`.permission`) | error responses to a call; `.data` holds `error.data` |
+| `RpcError`, `NotFound`, `NoPreview`, `NoThumbnail`, `InvalidParams`, `MegaError`, `Conflict` (`.reason`), `PermissionDenied` (`.permission`), `InvalidState` | error responses to a call; `.data` holds `error.data` |
 | `Cancelled` from a transfer call | `-32800`: the app stopped it on Cancel; let it propagate |
 
 `x` may be a handle string or an `Item`. `print()` is redirected to stderr, so it cannot corrupt
@@ -954,7 +1048,8 @@ Planned or considered, but not available yet — don't depend on any of these:
 - A consent prompt; enabling or disabling a plugin from the settings page
 - `when` conditions on the view or the number of selected items
 - Restoring items from the Rubbish bin, or deleting them for good
-- `ui.toast`, input and choice dialogs; a `log` method
+- Input and choice dialogs; a `log` method
+- A list of running plugins to cancel from while their progress dialog is closed
 - Per-plugin settings managed by the app (`plugin.dataDir`)
 - Reading `manifestVersion` from the manifest, and checking `invocationId`
 - Supporting more than one API version at a time

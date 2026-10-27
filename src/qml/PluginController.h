@@ -1,7 +1,7 @@
 #pragma once
 #include "PluginHostApi.h"
 #include "PluginManifest.h"
-#include "PluginProgressRate.h"
+#include "PluginRun.h"
 
 #include <QHash>
 #include <QObject>
@@ -14,7 +14,6 @@
 #include <vector>
 
 class IMegaClient;
-class PluginRun;
 class QTimer;
 
 // The installed plugins (each a folder holding plugin.json under pluginsDir) and
@@ -28,17 +27,16 @@ class PluginController : public QObject
 
     // Bumped whenever a run starts or ends, so menu greying can re-evaluate.
     Q_PROPERTY(int runningRevision READ runningRevision NOTIFY runningChanged)
-    // The plugin dialog's rows, oldest first: runs of "progress": true commands that
-    // have been going for a moment, and finished runs of "result": "dialog" commands
-    // until dismissResult(). Maps of runId, pluginId, pluginName, commandTitle,
-    // startedAt (ms since epoch), preparing, current and total (-1 when unknown),
-    // message (the progress text), cancelling, forceStoppable (cancelled but still
-    // running after a grace period), and finished, outcome (as PluginRun::finished),
-    // result (the plugin's message) and finishedAt.
+    // The progress dialog's rows, oldest first: one per run whose plugin has it open.
+    // Maps of pluginId, pluginName, title (the command's title unless the plugin
+    // gave one), message, value (0..1, or -1 for an indeterminate bar), detail,
+    // cancelling, and forceStoppable (cancelled but still running after a grace period).
     Q_PROPERTY(QVariantList progressRuns READ progressRuns NOTIFY progressRunsChanged)
-    // Open ui.confirm questions, oldest first: maps of pluginId, pluginName, title,
-    // message, okLabel and danger. Answered with answerConfirm().
-    Q_PROPERTY(QVariantList confirmRequests READ confirmRequests NOTIFY confirmRequestsChanged)
+    // ui.alert / ui.confirm / ui.showResult in arrival order; only the first is shown.
+    // Maps of seq, pluginName, kind ("alert", "confirm", "result"), title, message,
+    // okLabel, danger and level (a result's "info"/"warning"/"error"). Answered or
+    // closed with answerDialog().
+    Q_PROPERTY(QVariantList dialogRequests READ dialogRequests NOTIFY dialogRequestsChanged)
 
 public:
     // tempRoot holds the files fetched for plugins, one folder per app process
@@ -60,7 +58,7 @@ public:
     }
 
     QVariantList progressRuns() const;
-    QVariantList confirmRequests() const;
+    QVariantList dialogRequests() const;
 
     // What ui.selection reads; see PluginHostApi::setSelection.
     void setSelection(PluginHostApi::Selection selection)
@@ -106,20 +104,17 @@ public:
     // Kills every run at once, without $/cancel: called on logout, after which a
     // run's handles would name nothing, or a node of the next account.
     Q_INVOKABLE void forceStopAll();
-    Q_INVOKABLE void dismissResult(int runId);
-    Q_INVOKABLE void answerConfirm(const QString& pluginId, bool ok);
+    // Takes request seq off dialogRequests; for an alert or confirm, ok is the answer.
+    Q_INVOKABLE void answerDialog(int seq, bool ok);
 
 signals:
     void runningChanged();
     void progressRunsChanged();
-    void confirmRequestsChanged();
-    // outcome and changed as PluginRun::finished. inDialog: the result is shown in
-    // progressRuns, so no toast is wanted.
-    void commandFinished(const QString& pluginName,
-                         const QString& outcome,
-                         const QString& message,
-                         bool changed,
-                         bool inDialog);
+    void dialogRequestsChanged();
+    // outcome and changed as PluginRun::finished.
+    void commandFinished(const QString& pluginName, const QString& outcome, const QString& message, bool changed);
+    // ui.toast; level is "info", "warning" or "error".
+    void toastRequested(const QString& pluginName, const QString& message, const QString& level);
     // After commandFinished, once per run that was refused any undeclared permission,
     // however many calls were refused.
     void permissionsDenied(const QString& pluginName, const QStringList& permissions);
@@ -140,48 +135,36 @@ private:
     // Splits "plugin:<pluginId>/<commandId>"; false when actionId is not one.
     static bool splitActionId(const QString& actionId, QString* pluginId, QString* commandId);
 
+    // One per run in progress, whether its dialog is open or not.
     struct ProgressState
     {
-        int runId = 0;
         QString pluginId;
         QString pluginName;
         QString commandTitle;
-        qint64 startedAt = 0;
-        bool preparing = true;
-        qint64 current = -1;
-        qint64 total = -1;
-        QString message;
+        bool open = false;
+        PluginProgressContent content;
         bool cancelling = false;
         bool forceStoppable = false;
-        bool shown = false;
-        bool finished = false;
-        QString outcome;
-        QString result;
-        qint64 finishedAt = 0;
-        // PluginCommand::progressShow; empty for a command shown only because it ran long.
-        QStringList show;
-        PluginProgressRate rate;
     };
-    // The row of pluginId's run in progress, not a finished one.
     ProgressState* findProgress(const QString& pluginId);
     // Coalesces updates: a plugin may report every item, the dialog only needs a few a second.
     void scheduleProgressUpdate();
 
-    struct ConfirmState
+    struct DialogState
     {
+        int seq = 0;
+        int runId = 0;
         QString pluginId;
         QString pluginName;
-        QString title;
-        QString message;
-        QString okLabel;
-        bool danger = false;
+        PluginDialogRequest request;
     };
-    // Drops pluginId's open question, if any.
-    void removeConfirm(const QString& pluginId);
+    // Drops runId's unanswered alerts and confirms; its results stay.
+    void removeOpenDialogs(int runId);
 
     PluginHostApi mHostApi;
     std::vector<ProgressState> mProgress;
-    std::vector<ConfirmState> mConfirms;
+    std::vector<DialogState> mDialogs;
+    int mNextDialogSeq = 1;
     QTimer* mProgressUpdateTimer;
     QString mPluginsDir;
     std::vector<PluginManifest> mPlugins;

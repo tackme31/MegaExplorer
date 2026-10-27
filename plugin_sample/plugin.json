@@ -4,40 +4,41 @@
   "name": "Sample",
   "version": "0.1.0",
   "description": "Exercises every part of the plugin API, one command each.",
-  "apiVersion": 1,
+  "apiVersion": 2,
   "run": { "command": "uv", "args": ["run", "--quiet", "main.py"] },
   "permissions": ["items.read", "items.write", "items.edit", "items.rubbish", "content.read", "content.stream", "content.download"],
   "commands": [
-    { "id": "show-selection", "title": "Show the selection" },
-    { "id": "fail", "title": "Fail with an error" },
-    { "id": "show-long-result", "title": "Show a long result", "result": "dialog" },
+    { "id": "show-selection", "title": "Show the selection", "progressDialog": false },
+    { "id": "fail", "title": "Fail with an error", "progressDialog": false },
+    { "id": "show-long-result", "title": "Show a long result (ui.showResult)", "progressDialog": false },
 
-    { "id": "inspect", "title": "Inspect (items.get / children / descendants)",
-      "progress": true, "result": "dialog" },
+    { "id": "inspect", "title": "Inspect (items.get / children / descendants)" },
 
     { "id": "fetch-previews", "title": "Fetch previews (items.fetchPreview, images and videos)",
-      "progress": true,
       "when": { "targets": "files", "extensions": ["jpg", "jpeg", "png", "gif", "webp", "mp4", "mov"] } },
     { "id": "read-file", "title": "Read a file (items.readRange / fetchFile)",
-      "progress": true, "result": "dialog", "when": { "targets": "files" } },
+      "when": { "targets": "files" } },
     { "id": "stream-url", "title": "Read through a local URL (items.streamUrl)",
-      "result": "dialog", "when": { "targets": "files" } },
+      "when": { "targets": "files" } },
 
-    { "id": "toggle-tag", "title": "Toggle the \"sample\" tag (items.update)" },
+    { "id": "toggle-tag", "title": "Toggle the \"sample\" tag (items.update)", "progressDialog": false },
 
-    { "id": "download", "title": "Download (transfers.download)", "when": { "targets": "files" } },
-    { "id": "upload-text", "title": "Upload a text file here (items.upload)" },
-    { "id": "create-folder", "title": "Create a folder here (items.createFolder)" },
+    { "id": "download", "title": "Download (transfers.download)", "progressDialog": false,
+      "when": { "targets": "files" } },
+    { "id": "upload-text", "title": "Upload a text file here (items.upload)", "progressDialog": false },
+    { "id": "create-folder", "title": "Create a folder here (items.createFolder)", "progressDialog": false },
 
-    { "id": "copy-here", "title": "Copy next to itself (items.copy)" },
-    { "id": "move-up", "title": "Move up one folder (items.move)" },
-    { "id": "move-to-rubbish", "title": "Move to the Rubbish bin (items.moveToRubbish)" },
+    { "id": "copy-here", "title": "Copy next to itself (items.copy)", "progressDialog": false },
+    { "id": "move-up", "title": "Move up one folder (items.move)", "progressDialog": false },
+    { "id": "move-to-rubbish", "title": "Move to the Rubbish bin (items.moveToRubbish)", "progressDialog": false },
 
-    { "id": "ask-first", "title": "Ask first (ui.confirm)" },
+    { "id": "ask-first", "title": "Ask first (ui.confirm)", "progressDialog": false },
     { "id": "reveal-largest", "title": "Show the largest file below (ui.reveal)",
       "when": { "targets": "folders" } },
-    { "id": "search-sample-photos", "title": "Search for photos tagged \"sample\" (ui.search)" },
-    { "id": "long-task", "title": "Long task (ui.progress, Cancel)",
-      "progress": { "show": ["count", "rate", "elapsed", "remaining"] }, "result": "dialog" }
+    { "id": "search-sample-photos", "title": "Search for photos tagged \"sample\" (ui.search)",
+      "progressDialog": false },
+    { "id": "long-task", "title": "Long task in stages (progress, ui.alert, ui.showResult, Cancel)" },
+    { "id": "toast-steps", "title": "Report with toasts, no dialog (ui.toast)", "progressDialog": false },
+    { "id": "several-results", "title": "Several results (ui.showResult twice)", "progressDialog": false }
   ]
 }

@@ -17,9 +17,11 @@ Standard library only. Copy this file next to your plugin's main.py.
 A command function receives a Context and returns a message (str) for the
 user, or None for none. Raising CommandError(message) reports a failure; any
 other exception does too, with its traceback written to the app's log.
-The message may run to many lines. Where it is shown is the command's
-"result" in plugin.json: a toast (the default, first 3 lines) or, with
-"result": "dialog", a dialog that shows all of it.
+A returned message is shown as a toast (its first lines); to show a long
+report, call ctx.show_result() before returning. Every dialog is the plugin's
+to open: show_progress / update_progress / hide_progress, alert, confirm,
+show_result and toast. A command with "progressDialog": true (the default)
+starts with the progress dialog already open, so use update_progress there.
 
 print() is safe to use: it goes to stderr, which the app writes to its log.
 """
@@ -29,6 +31,7 @@ import json
 import os
 import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 
@@ -43,14 +46,17 @@ __all__ = [
     "MegaError",
     "Conflict",
     "PermissionDenied",
+    "InvalidState",
     "Cancelled",
     "CommandError",
+    "format_duration",
 ]
 
-API_VERSION = 1
+API_VERSION = 2
 _CANCELLED = -32800
 _METHOD_NOT_FOUND = -32601
 _PERMISSION_DENIED = -32001
+_INVALID_STATE = -32005
 _NOT_FOUND = -32002
 _CONFLICT = -32004
 _INVALID_PARAMS = -32602
@@ -106,6 +112,10 @@ class PermissionDenied(RpcError):
         return self.data.get("permission")
 
 
+class InvalidState(RpcError):
+    """show_progress while the progress dialog is already open."""
+
+
 class Cancelled(Exception):
     """Raised by Context.check_cancelled() once the user pressed Cancel, and by a
     transfer (fetch_file, read_range, upload) the app stopped for that reason."""
@@ -130,6 +140,7 @@ _ERRORS = {
     _INVALID_PARAMS: InvalidParams,
     _MEGA_ERROR: MegaError,
     _PERMISSION_DENIED: PermissionDenied,
+    _INVALID_STATE: InvalidState,
 }
 
 
@@ -170,6 +181,19 @@ class Item:
 
     def __repr__(self):
         return f"Item({self.name!r}, {self.type}, {self.handle})"
+
+
+def format_duration(seconds):
+    """seconds as "m:ss", or "h:mm:ss" from an hour up."""
+    seconds = max(0, int(seconds))
+    h, rest = divmod(seconds, 3600)
+    m, s = divmod(rest, 60)
+    return f"{h}:{m:02}:{s:02}" if h else f"{m}:{s:02}"
+
+
+def _progress_params(title, message, value, detail):
+    fields = {"title": title, "message": message, "value": value, "detail": detail}
+    return {key: value for key, value in fields.items() if value is not None}
 
 
 def _handle(x):
@@ -276,7 +300,10 @@ class _Connection:
             raise RpcError(0, "the app closed the connection")
         if "error" in message:
             error = message["error"]
-            if error.get("code") == _CANCELLED:
+            # After Cancel the app refuses every dialog call with -32005.
+            if error.get("code") == _CANCELLED or (
+                error.get("code") == _INVALID_STATE and self.cancelled.is_set()
+            ):
                 raise Cancelled()
             raise _ERRORS.get(error.get("code"), RpcError)(
                 error.get("code"), error.get("message", ""), error.get("data")
@@ -295,6 +322,8 @@ class Context:
         self.site = context.get("site")
         self.items = [Item(data) for data in context.get("items", [])]
         self.plugin_dir = Path(plugin_info["dir"]) if plugin_info.get("dir") else None
+        # When the app started the run, in seconds since the epoch (like time.time()).
+        self.started_at = params.get("startedAt", time.time() * 1000) / 1000
 
     @property
     def item(self):
@@ -312,17 +341,38 @@ class Context:
         if self.cancelled:
             raise Cancelled()
 
-    def progress(self, current=None, total=None, message=None):
-        """Updates the progress dialog (needs "progress": true on the command).
-        Call it as often as you like: the app only redraws a few times a second."""
-        params = {"invocationId": self.invocation_id}
-        if current is not None:
-            params["current"] = current
-        if total is not None:
-            params["total"] = total
-        if message is not None:
-            params["message"] = message
-        self._connection.notify("ui.progress", params)
+    def show_progress(self, title=None, message=None, value=None, detail=None):
+        """Opens the progress dialog. Raises InvalidState when it is already open
+        (as it is from the start with "progressDialog": true): use update_progress.
+        value is 0..1; without it the bar is indeterminate. title defaults to the
+        command's title. Whatever is left out is not shown."""
+        self.call("ui.showProgress", _progress_params(title, message, value, detail))
+
+    def update_progress(self, title=None, message=None, value=None, detail=None):
+        """Replaces what the open progress dialog shows: pass everything each time,
+        a field left out is cleared. Ignored while the dialog is closed. Call it as
+        often as you like: the app only redraws a few times a second."""
+        self._connection.notify("ui.updateProgress", _progress_params(title, message, value, detail))
+
+    def hide_progress(self):
+        """Closes the progress dialog; nothing happens when it is not open.
+        Without it there is no Cancel button, so watch for your own way to stop."""
+        self.call("ui.hideProgress", {})
+
+    def elapsed(self):
+        """Seconds since the app started this run."""
+        return max(0.0, time.time() - self.started_at)
+
+    def elapsed_text(self):
+        """elapsed() as "m:ss" or "h:mm:ss"."""
+        return format_duration(self.elapsed())
+
+    def remaining_text(self, done, total):
+        """A rough "m:ss" left, from the average pace since the run started; "" until
+        there is anything to go on."""
+        if done <= 0 or total <= done:
+            return ""
+        return format_duration(self.elapsed() * (total - done) / done)
 
     # --- asking the user ----------------------------------------------------------
 
@@ -336,6 +386,34 @@ class Context:
         if ok_label is not None:
             params["okLabel"] = ok_label
         return bool(self.call("ui.confirm", params)["ok"])
+
+    def alert(self, message, title=None, ok_label=None):
+        """Shows a message with only an OK button and waits until it is pressed.
+        The progress dialog, if open, stays behind it."""
+        params = {"message": message}
+        if title is not None:
+            params["title"] = title
+        if ok_label is not None:
+            params["okLabel"] = ok_label
+        self.call("ui.alert", params)
+
+    def show_result(self, message, title=None, kind=None):
+        """Shows a result dialog and returns at once; the user closes it, and it stays
+        after the command ends. kind is "info" (default), "warning" or "error".
+        May be called more than once: each is its own dialog, shown in turn."""
+        params = {"message": message}
+        if title is not None:
+            params["title"] = title
+        if kind is not None:
+            params["kind"] = kind
+        self.call("ui.showResult", params)
+
+    def toast(self, message, kind=None):
+        """Shows a toast while the command keeps running. kind as for show_result."""
+        params = {"message": message}
+        if kind is not None:
+            params["kind"] = kind
+        self.call("ui.toast", params)
 
     def reveal(self, x):
         """Shows item x selected in its folder in the app's current tab."""
@@ -474,8 +552,8 @@ class Context:
     # --- file contents ------------------------------------------------------------
     # The app runs fetch_file, read_range and upload one at a time, and stops the
     # running one when the user presses Cancel: the call then raises Cancelled.
-    # Nothing is shown while they run; give a long command "progress": true and
-    # report progress yourself.
+    # Nothing is shown while they run; keep the progress dialog open around a long
+    # one so the user has Cancel.
 
     def fetch_file(self, x, offset=None, length=None):
         """Downloads file x for the plugin to work on and returns its Path.

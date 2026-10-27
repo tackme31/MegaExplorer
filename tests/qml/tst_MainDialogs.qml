@@ -1857,7 +1857,7 @@ TestCase {
         compare(s.dialog.pluginList.currentIndex, 0);
     }
 
-    // ---- PluginProgressDialog's figures line ------------------------------
+    // ---- Plugin dialogs ---------------------------------------------------
 
     Component {
         id: pluginProgressComponent
@@ -1870,25 +1870,21 @@ TestCase {
 
     function progressRun(fields) {
         return Object.assign({
-                                 "show": [],
-                                 "preparing": false,
-                                 "finished": false,
-                                 "current": 1234,
-                                 "total": 2000,
-                                 "rate": 12.9,
-                                 "rateAt": 100000,
-                                 "startedAt": 100000 - 621000,
-                                 "finishedAt": 0
+                                 "pluginId": "recipes",
+                                 "pluginName": "Recipes",
+                                 "title": "Export",
+                                 "message": "",
+                                 "value": -1,
+                                 "detail": "",
+                                 "cancelling": false,
+                                 "forceStoppable": false
                              }, fields);
     }
 
     // The close fade must not fall back to an empty frame titled "Plugins".
     function test_pluginProgress_keepsLastRunsWhileClosing() {
         const dialog = makeDialog(pluginProgressComponent, {});
-        dialog.plugins.progressRuns = [progressRun({
-                                                       "pluginName": "Recipes",
-                                                       "commandTitle": "Export"
-                                                   })];
+        dialog.plugins.progressRuns = [progressRun({})];
         compare(dialog.title, "Recipes");
         dialog.plugins.progressRuns = [];
         compare(dialog.title, "Recipes");
@@ -1897,45 +1893,66 @@ TestCase {
         compare(dialog.shownRuns.length, 1);
     }
 
-    function test_pluginProgress_showsNothingUnlessAsked() {
-        const dialog = makeDialog(pluginProgressComponent, {});
-        compare(dialog.statsText(progressRun({}), 100000), "");
+    Component {
+        id: pluginDialogComponent
+        PluginConfirmDialog {
+            plugins: QtObject {
+                property var dialogRequests: []
+                property var answers: []
+                function answerDialog(seq, ok) {
+                    answers = answers.concat([[seq, ok]]);
+                    dialogRequests = dialogRequests.filter(r => r.seq !== seq);
+                }
+            }
+        }
     }
 
-    function test_pluginProgress_putsEveryFigureInOneOrder() {
-        const dialog = makeDialog(pluginProgressComponent, {});
-        // 766 left at 12.9/s is 59.4 s from the last report, 4 s ago.
-        const all = progressRun({
-                                    "show": ["count", "rate", "elapsed", "remaining"]
-                                });
-        compare(dialog.statsText(all, 104000), "1,234/2,000 (61%) · 12/s · 10:25 elapsed, ~0:55 left");
-        compare(dialog.statsText(progressRun({
-                                                 "show": ["remaining", "rate"]
-                                             }), 100000), "12/s · ~0:59 left");
+    function pluginDialogRequest(fields) {
+        return Object.assign({
+                                 "seq": 1,
+                                 "pluginName": "Recipes",
+                                 "kind": "alert",
+                                 "title": "",
+                                 "message": "Hello",
+                                 "okLabel": "",
+                                 "danger": false,
+                                 "level": "info"
+                             }, fields);
     }
 
-    function test_pluginProgress_leavesOutWhatCannotBeToldYet() {
-        const dialog = makeDialog(pluginProgressComponent, {});
-        const show = ["count", "rate", "elapsed", "remaining"];
-        compare(dialog.statsText(progressRun({
-                                                 "show": show,
-                                                 "total": -1
-                                             }), 100000), "1,234 · 12/s · 10:21 elapsed");
-        compare(dialog.statsText(progressRun({
-                                                 "show": show,
-                                                 "rate": -1
-                                             }), 100000), "1,234/2,000 (61%) · 10:21 elapsed");
-        compare(dialog.statsText(progressRun({
-                                                 "show": show,
-                                                 "preparing": true,
-                                                 "rate": -1
-                                             }), 100000), "10:21 elapsed");
-        compare(dialog.statsText(progressRun({
-                                                 "show": show,
-                                                 "finished": true,
-                                                 "current": 2000,
-                                                 "finishedAt": 100000
-                                             }), 200000), "2,000/2,000 (100%) · 10:21 elapsed");
+    // Dialog.Ok / Cancel / Close: this file does not import QtQuick.Controls, which
+    // would have to come after the style import the components carry.
+    readonly property int buttonOk: 0x00000400
+    readonly property int buttonCancel: 0x00400000
+    readonly property int buttonClose: 0x00200000
+
+    // One request on screen at a time, each with the buttons of its kind.
+    function test_pluginDialog_showsTheQueueOneAtATime() {
+        const dialog = makeDialog(pluginDialogComponent, {});
+        dialog.plugins.dialogRequests = [pluginDialogRequest({}),
+                                         pluginDialogRequest({ "seq": 2, "kind": "confirm" }),
+                                         pluginDialogRequest({ "seq": 3, "kind": "result", "message": "Report" })];
+        tryCompare(dialog, "opened", true);
+        compare(dialog.title, "Recipes");
+        tryVerify(() => dialog.standardButton(testCase.buttonOk));
+        tryVerify(() => !dialog.standardButton(testCase.buttonCancel));
+
+        dialog.accept();
+        compare(dialog.plugins.answers, [[1, true]]);
+        compare(dialog.request.seq, 2);
+        tryCompare(dialog, "opened", true);
+        tryVerify(() => dialog.standardButton(testCase.buttonCancel));
+
+        dialog.reject();
+        compare(dialog.plugins.answers, [[1, true], [2, false]]);
+        compare(dialog.kind, "result");
+        tryCompare(dialog, "opened", true);
+        tryVerify(() => dialog.standardButton(testCase.buttonClose));
+        tryVerify(() => !dialog.standardButton(testCase.buttonOk));
+
+        dialog.reject();
+        compare(dialog.plugins.answers, [[1, true], [2, false], [3, true]]);
+        tryCompare(dialog, "visible", false);
     }
 
     // Where to put a plugin has to be reachable before there is any plugin.

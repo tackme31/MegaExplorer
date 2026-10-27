@@ -115,28 +115,34 @@ TEST(PluginManifestTest, RejectsAMissingOrBadApiVersion)
     }
 }
 
-TEST(PluginManifestTest, ReadsTheProgressFlagPerCommand)
+TEST(PluginManifestTest, ReadsTheProgressDialogFlagPerCommand)
 {
     QByteArray json = kValid;
-    json.replace(R"("title": "B" })", R"("title": "B", "progress": true })");
+    json.replace(R"("title": "B" })", R"("title": "B", "progressDialog": false })");
     const auto manifest = parsePluginManifest(json, QStringLiteral("C:/p"));
     ASSERT_TRUE(manifest.has_value());
-    EXPECT_FALSE(manifest->commands[0].progress);
-    EXPECT_TRUE(manifest->commands[1].progress);
+    EXPECT_TRUE(manifest->commands[0].progressDialog);
+    EXPECT_FALSE(manifest->commands[1].progressDialog);
 }
 
-TEST(PluginManifestTest, ReadsWhereTheResultGoes)
+TEST(PluginManifestTest, RejectsANonBooleanProgressDialog)
+{
+    for (const char* value : {R"("yes")", "1", "{}", "null"})
+    {
+        QByteArray json = kValid;
+        json.replace(R"("title": "B" })", QByteArray(R"("title": "B", "progressDialog": )") + value + " }");
+        EXPECT_TRUE(errorFor(json).contains(QStringLiteral("\"progressDialog\""))) << value;
+    }
+}
+
+// The v1 keys are unknown keys now, so a manifest still carrying them loads.
+TEST(PluginManifestTest, IgnoresTheRemovedProgressAndResultKeys)
 {
     QByteArray json = kValid;
-    json.replace(R"("title": "B" })", R"("title": "B", "result": "dialog" })");
+    json.replace(R"("title": "B" })", R"("title": "B", "progress": "never", "result": "dialog" })");
     const auto manifest = parsePluginManifest(json, QStringLiteral("C:/p"));
     ASSERT_TRUE(manifest.has_value());
-    EXPECT_FALSE(manifest->commands[0].resultInDialog);
-    EXPECT_TRUE(manifest->commands[1].resultInDialog);
-
-    QByteArray bad = kValid;
-    bad.replace(R"("title": "B" })", R"("title": "B", "result": "window" })");
-    EXPECT_TRUE(errorFor(bad).contains(QStringLiteral("result")));
+    EXPECT_TRUE(manifest->commands[1].progressDialog);
 }
 
 TEST(PluginManifestTest, RejectsBrokenJson)
@@ -252,43 +258,4 @@ TEST(PluginManifestTest, AcceptsBySelectionTargetsAndExtensions)
     EXPECT_FALSE(pluginCommandAccepts(images, {image, pdf}));
     EXPECT_FALSE(pluginCommandAccepts(images, {bare}));
     EXPECT_FALSE(pluginCommandAccepts(images, {folder}));
-}
-
-TEST(PluginManifestTest, ReadsWhichProgressFiguresToShowInDisplayOrder)
-{
-    const auto manifest = parsePluginManifest(R"({
-      "id": "x", "name": "X", "apiVersion": 1, "run": { "command": "x" },
-      "commands": [
-        { "id": "plain", "title": "P", "progress": true },
-        { "id": "none", "title": "N", "progress": { "show": [] } },
-        { "id": "bare", "title": "B", "progress": {} },
-        { "id": "some", "title": "S", "progress": { "show": ["remaining", "count", "elapsed"] } },
-        { "id": "off", "title": "O" },
-        { "id": "never", "title": "V", "progress": "never" }
-      ]
-    })", QStringLiteral("C:/p"));
-    ASSERT_TRUE(manifest.has_value());
-    const std::vector<PluginCommand>& commands = manifest->commands;
-    EXPECT_TRUE(commands[0].progress);
-    EXPECT_TRUE(commands[0].progressShow.isEmpty());
-    EXPECT_TRUE(commands[1].progress);
-    EXPECT_TRUE(commands[1].progressShow.isEmpty());
-    EXPECT_TRUE(commands[2].progress);
-    EXPECT_TRUE(commands[3].progress);
-    EXPECT_EQ(commands[3].progressShow,
-              (QStringList{QStringLiteral("count"), QStringLiteral("elapsed"), QStringLiteral("remaining")}));
-    EXPECT_FALSE(commands[4].progress);
-    EXPECT_FALSE(commands[4].progressNever);
-    EXPECT_FALSE(commands[5].progress);
-    EXPECT_TRUE(commands[5].progressNever);
-}
-
-TEST(PluginManifestTest, RejectsABadProgress)
-{
-    for (const char* progress : {R"("yes")", R"({"show": "count"})", R"({"show": ["count", "eta"]})", "1", R"("Never")"})
-    {
-        const QByteArray json = QByteArray(R"({"id": "x", "name": "X", "apiVersion": 1, "run": {"command": "x"},
-            "commands": [{"id": "a", "title": "A", "progress": )") + progress + "}]}";
-        EXPECT_TRUE(errorFor(json).contains(QStringLiteral("\"progress\""))) << progress;
-    }
 }

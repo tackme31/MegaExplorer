@@ -1,6 +1,6 @@
 # プラグイン API — ダイアログをプラグインから明示的に出す
 
-**状態（2026-10-27）: 仕様確定、未実装。** マニフェストの `progress` / `result` を廃止し、コマンドごとの
+**状態（2026-10-27）: 実装済み（`feature/plugin-explicit-dialogs`）。** マニフェストの `progress` / `result` を廃止し、コマンドごとの
 `progressDialog`（真偽値、既定 `true`）だけを残す。表示はすべてプラグインが `ui.*` で行う
 （`ui.showProgress` / `ui.hideProgress` / `ui.alert` / `ui.showResult` / `ui.toast` を追加、`ui.progress` は
 `ui.updateProgress` に改名、`ui.confirm` は存続）。進捗は `show` が開く（開いていればエラー）・`update` が
@@ -8,8 +8,9 @@
 経過時間はプラグインが書く（`command.execute` に `startedAt` を渡す）。
 **破壊的変更で、`kPluginApiVersion` を 2 に上げる。**
 同じ作業で `plugin_sample/` と `plugin_recipes/` を作り直す。`private_plugins/` の移行は後回し（対象外）。
-仕様の正は実装後の `PLUGINS.md`。この文書は決定の経緯と理由を残す。
-次の手順: 実装（§7 の順）。
+仕様の正は `PLUGINS.md`。この文書は決定の経緯と理由を残す。
+実装で決めたこと：「状態が合わない」エラーは `-32005`（キャンセル後の拒否も同じ）。`ui.toast` の `kind` と
+結果の `"warning"` は、まだ見た目に差がない。残り: `private_plugins/` の移行（§8）。
 
 ## 1. 背景
 

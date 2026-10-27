@@ -3,6 +3,7 @@
 #include "app/Logging.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QGuiApplication>
 #include <QJsonDocument>
@@ -11,6 +12,7 @@
 #include <QStyleHints>
 #include <QTimer>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -30,6 +32,48 @@ constexpr int kInvocationId = 1;
 constexpr int kCancelGraceMs = 10000;
 constexpr int kCancelledCode = -32800;
 constexpr int kInvalidParamsCode = -32602;
+// A dialog call that does not fit the dialogs' state: ui.showProgress while one is
+// open, or any dialog after $/cancel.
+constexpr int kInvalidStateCode = -32005;
+
+bool isOptionalString(const QJsonValue& value)
+{
+    return value.isUndefined() || value.isNull() || value.isString();
+}
+
+bool isLevel(const QJsonValue& value)
+{
+    return value.isUndefined() || value.isNull() || value == QStringLiteral("info") ||
+           value == QStringLiteral("warning") || value == QStringLiteral("error");
+}
+
+QString levelOf(const QJsonValue& value)
+{
+    return value.isString() ? value.toString() : QStringLiteral("info");
+}
+
+// ui.showProgress / ui.updateProgress params. A field of the wrong type is left out
+// and named in badFields.
+PluginProgressContent readProgressContent(const QJsonObject& params, QStringList* badFields)
+{
+    PluginProgressContent content;
+    const auto readString = [&](const char* key, QString* out) {
+        const QJsonValue value = params.value(QLatin1String(key));
+        if (value.isString())
+            *out = value.toString();
+        else if (!value.isUndefined() && !value.isNull())
+            *badFields << QLatin1String(key);
+    };
+    readString("title", &content.title);
+    readString("message", &content.message);
+    readString("detail", &content.detail);
+    const QJsonValue value = params.value(QStringLiteral("value"));
+    if (value.isDouble())
+        content.value = std::clamp(value.toDouble(), 0.0, 1.0);
+    else if (!value.isUndefined() && !value.isNull())
+        *badFields << QStringLiteral("value");
+    return content;
+}
 
 QString errorMessageOf(const QJsonObject& response)
 {
@@ -223,8 +267,17 @@ void PluginRun::start()
         if (mJob)
             CloseHandle(std::exchange(mJob, nullptr));
     }
+    mStartedAt = QDateTime::currentMSecsSinceEpoch();
     mProcess.start();
     mInitTimer->start();
+    const auto command = std::find_if(mManifest.commands.begin(), mManifest.commands.end(), [this](const PluginCommand& c) {
+        return c.id == mCommandId;
+    });
+    if (command != mManifest.commands.end() && command->progressDialog)
+    {
+        mProgressOpen = true;
+        emit progressChanged(true, {});
+    }
 
     QJsonObject app{{QStringLiteral("version"), QCoreApplication::applicationVersion()},
                     {QStringLiteral("locale"), QLocale().bcp47Name()}};
@@ -340,18 +393,9 @@ void PluginRun::handleMessage(const QJsonObject& message)
     const QString method = message.value(QStringLiteral("method")).toString();
     if (!message.contains(QStringLiteral("id")))
     {
-        if (method == QLatin1String("ui.progress") && mStage == Stage::Executing)
+        if (method == QLatin1String("ui.updateProgress") && mStage == Stage::Executing)
         {
-            const QJsonObject params = message.value(QStringLiteral("params")).toObject();
-            const auto count = [&params](const char* key) -> qint64 {
-                const QJsonValue value = params.value(QLatin1String(key));
-                return value.isDouble() && value.toDouble() >= 0
-                           ? static_cast<qint64>(value.toDouble())
-                           : -1;
-            };
-            emit progressReported(count("current"),
-                                  count("total"),
-                                  params.value(QStringLiteral("message")).toString());
+            handleProgressUpdate(message.value(QStringLiteral("params")).toObject());
             return;
         }
         qCInfo(lcPlugin) << mManifest.id << "ignored notification" << method;
@@ -367,9 +411,12 @@ void PluginRun::handleMessage(const QJsonObject& message)
         writeReply(id, method, {{}, kInvalidParamsCode, QStringLiteral("%1 is only allowed during command.execute").arg(method), false});
         return;
     }
-    if (method == QLatin1String("ui.confirm"))
+    static const QStringList dialogMethods{QStringLiteral("ui.showProgress"), QStringLiteral("ui.hideProgress"),
+                                           QStringLiteral("ui.alert"),        QStringLiteral("ui.confirm"),
+                                           QStringLiteral("ui.showResult"),   QStringLiteral("ui.toast")};
+    if (dialogMethods.contains(method))
     {
-        handleConfirm(id, message.value(QStringLiteral("params")).toObject());
+        handleDialogRequest(id, method, message.value(QStringLiteral("params")).toObject());
         return;
     }
     mHostApi->call(method,
@@ -406,31 +453,113 @@ void PluginRun::writeReply(const QJsonValue& id,
     mProcess.write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n');
 }
 
-void PluginRun::handleConfirm(const QJsonValue& id, const QJsonObject& params)
+void PluginRun::handleDialogRequest(const QJsonValue& id, const QString& method, const QJsonObject& params)
 {
-    const auto fail = [&](const QString& message) {
-        writeReply(id, QStringLiteral("ui.confirm"), {{}, kInvalidParamsCode, message, false});
+    const auto reply = [&](const QJsonObject& result) {
+        writeReply(id, method, {result, std::nullopt, {}, false});
     };
-    if (!mConfirmId.isUndefined())
-        return fail(QStringLiteral("Another ui.confirm is still open"));
+    const auto fail = [&](int code, const QString& message) {
+        writeReply(id, method, {{}, code, message, false});
+    };
+
+    if (method == QLatin1String("ui.hideProgress"))
+    {
+        // After Cancel the dialog stays up as "Cancelling…" until the run ends.
+        if (mProgressOpen && !mCancelRequested)
+        {
+            mProgressOpen = false;
+            emit progressChanged(false, {});
+        }
+        return reply({});
+    }
+    if (mCancelRequested)
+        return fail(kInvalidStateCode, QStringLiteral("%1 was refused: the run is being cancelled").arg(method));
+
+    if (method == QLatin1String("ui.showProgress"))
+    {
+        QStringList badFields;
+        const PluginProgressContent content = readProgressContent(params, &badFields);
+        if (!badFields.isEmpty())
+            return fail(kInvalidParamsCode,
+                        QStringLiteral("ui.showProgress takes {title?, message?, value? (a number), detail?}; bad: %1")
+                            .arg(badFields.join(QStringLiteral(", "))));
+        if (mProgressOpen)
+            return fail(kInvalidStateCode,
+                        QStringLiteral("The progress dialog is already open; use ui.updateProgress"));
+        mProgressOpen = true;
+        emit progressChanged(true, content);
+        return reply({});
+    }
+
     const QJsonValue message = params.value(QStringLiteral("message"));
     const QJsonValue title = params.value(QStringLiteral("title"));
     const QJsonValue okLabel = params.value(QStringLiteral("okLabel"));
     const QJsonValue danger = params.value(QStringLiteral("danger"));
-    const auto optionalString = [](const QJsonValue& v) { return v.isUndefined() || v.isNull() || v.isString(); };
-    if (!message.isString() || message.toString().isEmpty() || !optionalString(title) ||
-        !optionalString(okLabel) || !(danger.isUndefined() || danger.isNull() || danger.isBool()))
-        return fail(QStringLiteral("ui.confirm takes {message, title?, okLabel?, danger?}"));
-    mConfirmId = id;
-    emit confirmRequested(title.toString(), message.toString(), okLabel.toString(), danger.toBool());
+    const QJsonValue kind = params.value(QStringLiteral("kind"));
+    const bool hasMessage = message.isString() && !message.toString().isEmpty();
+
+    if (method == QLatin1String("ui.toast"))
+    {
+        if (!hasMessage || !isLevel(kind))
+            return fail(kInvalidParamsCode, QStringLiteral("ui.toast takes {message, kind?: \"info\"/\"warning\"/\"error\"}"));
+        emit toastRequested(message.toString(), levelOf(kind));
+        return reply({});
+    }
+    if (method == QLatin1String("ui.showResult"))
+    {
+        if (!hasMessage || !isOptionalString(title) || !isLevel(kind))
+            return fail(kInvalidParamsCode,
+                        QStringLiteral("ui.showResult takes {message, title?, kind?: \"info\"/\"warning\"/\"error\"}"));
+        qCInfo(lcPlugin).noquote() << mManifest.id << mCommandId << "showed a result:" << message.toString();
+        emit dialogRequested({0, QStringLiteral("result"), title.toString(), message.toString(), {}, false, levelOf(kind)});
+        return reply({});
+    }
+
+    const bool isConfirm = method == QLatin1String("ui.confirm");
+    if (!hasMessage || !isOptionalString(title) || !isOptionalString(okLabel) ||
+        (isConfirm && !(danger.isUndefined() || danger.isNull() || danger.isBool())))
+        return fail(kInvalidParamsCode,
+                    isConfirm ? QStringLiteral("ui.confirm takes {message, title?, okLabel?, danger?}")
+                              : QStringLiteral("ui.alert takes {message, title?, okLabel?}"));
+    const int token = mNextDialogToken++;
+    mOpenDialogs.emplace(token, std::make_pair(id, method));
+    emit dialogRequested({token,
+                          isConfirm ? QStringLiteral("confirm") : QStringLiteral("alert"),
+                          title.toString(),
+                          message.toString(),
+                          okLabel.toString(),
+                          isConfirm && danger.toBool(),
+                          {}});
 }
 
-void PluginRun::answerConfirm(bool ok)
+void PluginRun::handleProgressUpdate(const QJsonObject& params)
 {
-    if (mConfirmId.isUndefined())
+    if (!mProgressOpen || mCancelRequested)
+    {
+        if (!mProgressOpen)
+            qCInfo(lcPlugin) << mManifest.id << "sent ui.updateProgress with no progress dialog open; ignored";
         return;
-    const QJsonValue id = std::exchange(mConfirmId, QJsonValue(QJsonValue::Undefined));
-    writeReply(id, QStringLiteral("ui.confirm"), {QJsonObject{{QStringLiteral("ok"), ok}}, std::nullopt, {}, false});
+    }
+    QStringList badFields;
+    const PluginProgressContent content = readProgressContent(params, &badFields);
+    if (!badFields.isEmpty())
+        qCInfo(lcPlugin) << mManifest.id << "ui.updateProgress: ignored bad fields" << badFields;
+    emit progressChanged(true, content);
+}
+
+void PluginRun::answerDialog(int token, bool ok)
+{
+    const auto open = mOpenDialogs.find(token);
+    if (open == mOpenDialogs.end())
+        return;
+    const auto [id, method] = open->second;
+    mOpenDialogs.erase(open);
+    writeReply(id,
+               method,
+               {method == QLatin1String("ui.confirm") ? QJsonObject{{QStringLiteral("ok"), ok}} : QJsonObject{},
+                std::nullopt,
+                {},
+                false});
 }
 
 void PluginRun::handleResponse(const QJsonObject& message)
@@ -453,7 +582,8 @@ void PluginRun::handleResponse(const QJsonObject& message)
              QStringLiteral("command.execute"),
              {{QStringLiteral("invocationId"), kInvocationId},
               {QStringLiteral("commandId"), mCommandId},
-              {QStringLiteral("context"), mContext}});
+              {QStringLiteral("context"), mContext},
+              {QStringLiteral("startedAt"), static_cast<double>(mStartedAt)}});
         emit executionStarted();
         return;
     }
