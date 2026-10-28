@@ -871,3 +871,108 @@ TEST(FileListModelTest, FindPrefixRowReturnsMinusOneWithoutAMatch)
     EXPECT_EQ(model.findPrefixRow(QStringLiteral("x"), 0), -1);
     EXPECT_EQ(model.findPrefixRow(QString(), 0), -1);
 }
+
+namespace
+{
+
+struct ModelSignalLog
+{
+    int resets = 0;
+    std::vector<std::pair<int, int>> removed;
+    std::vector<int> changedRows;
+};
+
+void recordSignals(FileListModel& model, ModelSignalLog& log)
+{
+    QObject::connect(&model, &QAbstractItemModel::modelReset, [&log]() { ++log.resets; });
+    QObject::connect(&model,
+                     &QAbstractItemModel::rowsRemoved,
+                     [&log](const QModelIndex&, int first, int last) {
+                         log.removed.emplace_back(first, last);
+                     });
+    QObject::connect(&model,
+                     &QAbstractItemModel::dataChanged,
+                     [&log](const QModelIndex& topLeft, const QModelIndex&) {
+                         log.changedRows.push_back(topLeft.row());
+                     });
+}
+
+std::vector<quint64> handlesInRowOrder(const FileListModel& model)
+{
+    std::vector<quint64> handles;
+    for (int row = 0; row < model.rowCount(); ++row)
+        handles.push_back(model.data(model.index(row, 0), FileListModel::HandleRole).toULongLong());
+    return handles;
+}
+
+} // namespace
+
+TEST(FileListModelTest, RefreshThatOnlyDropsRowsRemovesThemWithoutReset)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(6)); // handles 0..5
+    ModelSignalLog log;
+    recordSignals(model, log);
+
+    std::vector<FileEntry> remaining{
+        makeEntry("entry1", 1), makeEntry("entry3", 3), makeEntry("entry4", 4)};
+    model.setEntries(std::move(remaining));
+
+    EXPECT_EQ(log.resets, 0);
+    // Back to front, one contiguous run each: {5}, {2}, {0}.
+    const std::vector<std::pair<int, int>> expected{{5, 5}, {2, 2}, {0, 0}};
+    EXPECT_EQ(log.removed, expected);
+    EXPECT_EQ(handlesInRowOrder(model), (std::vector<quint64>{1, 3, 4}));
+    EXPECT_EQ(model.rowCount(), 3);
+}
+
+TEST(FileListModelTest, RefreshThatDropsRowsUpdatesChangedSurvivors)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(3));
+    ModelSignalLog log;
+    recordSignals(model, log);
+
+    std::vector<FileEntry> remaining{makeEntry("entry0", 0), makeEntry("renamed", 2)};
+    model.setEntries(std::move(remaining));
+
+    EXPECT_EQ(log.resets, 0);
+    EXPECT_EQ(log.changedRows, (std::vector<int>{1}));
+    EXPECT_EQ(model.data(model.index(1, 0), FileListModel::NameRole).toString(),
+              QStringLiteral("renamed"));
+}
+
+TEST(FileListModelTest, RefreshWithNewOrReorderedRowsResets)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(3));
+    ModelSignalLog log;
+    recordSignals(model, log);
+
+    std::vector<FileEntry> added = makeEntries(3);
+    added.push_back(makeEntry("new", 10));
+    model.setEntries(std::move(added));
+    EXPECT_EQ(log.resets, 1);
+
+    std::vector<FileEntry> reordered{makeEntry("entry2", 2), makeEntry("entry0", 0)};
+    model.setEntries(std::move(reordered));
+    EXPECT_EQ(log.resets, 2);
+
+    model.setEntries({});
+    EXPECT_EQ(log.resets, 3);
+    EXPECT_TRUE(log.removed.empty());
+}
+
+TEST(FileListModelTest, DroppingRowsPrunesSelectionOfRemovedRows)
+{
+    FileListModel model;
+    model.setEntries(makeEntries(4));
+    model.selectRow(1, 0);
+    model.selectRow(2, kCtrl);
+
+    std::vector<FileEntry> remaining{makeEntry("entry0", 0), makeEntry("entry2", 2),
+                                     makeEntry("entry3", 3)};
+    model.setEntries(std::move(remaining));
+
+    EXPECT_EQ(selectedHandlesSorted(model), (std::vector<quint64>{2}));
+}

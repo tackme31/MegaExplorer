@@ -91,11 +91,68 @@ QHash<int, QByteArray> FileListModel::roleNames() const
 
 void FileListModel::setEntries(std::vector<FileEntry> entries)
 {
-    beginResetModel();
-    mEntries = std::move(entries);
-    mThumbnailPaths.assign(mEntries.size(), QString());
-    endResetModel();
-    emit countChanged(); // the only place the row count ever changes
+    // A reset makes the views rebuild every delegate and jump back to the top, so a
+    // refresh that only dropped rows (a delete, a move out) removes just those rows.
+    const std::size_t oldCount = mEntries.size();
+    std::vector<std::size_t> keptOldRows; // old row of each new row, when the new list
+    bool onlyRemoved = !entries.empty() && entries.size() <= oldCount; // is a subsequence
+    if (onlyRemoved)
+    {
+        keptOldRows.reserve(entries.size());
+        std::size_t oldRow = 0;
+        for (const FileEntry& entry : entries)
+        {
+            while (oldRow < oldCount && mEntries[oldRow].handle != entry.handle)
+                ++oldRow;
+            if (oldRow == oldCount)
+            {
+                onlyRemoved = false;
+                break;
+            }
+            keptOldRows.push_back(oldRow++);
+        }
+    }
+
+    if (!onlyRemoved)
+    {
+        beginResetModel();
+        mEntries = std::move(entries);
+        mThumbnailPaths.assign(mEntries.size(), QString());
+        endResetModel();
+    }
+    else
+    {
+        // Back to front, one contiguous run at a time, so earlier rows keep their index.
+        std::size_t next = keptOldRows.size();
+        std::size_t end = oldCount;
+        while (end > 0)
+        {
+            const std::size_t keptBelow = next > 0 ? keptOldRows[next - 1] + 1 : 0;
+            if (keptBelow < end)
+            {
+                beginRemoveRows(QModelIndex(), static_cast<int>(keptBelow), static_cast<int>(end) - 1);
+                mEntries.erase(mEntries.begin() + static_cast<std::ptrdiff_t>(keptBelow),
+                               mEntries.begin() + static_cast<std::ptrdiff_t>(end));
+                mThumbnailPaths.erase(mThumbnailPaths.begin() + static_cast<std::ptrdiff_t>(keptBelow),
+                                      mThumbnailPaths.begin() + static_cast<std::ptrdiff_t>(end));
+                endRemoveRows();
+            }
+            if (next == 0)
+                break;
+            end = keptOldRows[--next];
+        }
+
+        for (std::size_t row = 0; row < entries.size(); ++row)
+        {
+            if (mEntries[row] == entries[row])
+                continue;
+            mEntries[row] = std::move(entries[row]);
+            const int changed = static_cast<int>(row);
+            emit dataChanged(index(changed, 0), index(changed, columnCount() - 1));
+        }
+    }
+    if (!onlyRemoved || mEntries.size() != oldCount)
+        emit countChanged(); // the only place the row count ever changes
 
     // Rows the band was measured against are gone; the gesture's remaining
     // updates would address different items, so drop the session and let the

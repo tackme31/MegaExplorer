@@ -55,6 +55,8 @@ public:
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
 
+    // Removes rows in place when entries is the current list with rows dropped (same
+    // order), so a refresh after a delete keeps the scroll position; anything else resets.
     void setEntries(std::vector<FileEntry> entries);
 
     // Which screen these rows belong to, i.e. the scope axis availableActions()
