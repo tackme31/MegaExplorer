@@ -1,6 +1,6 @@
 # プラグイン API — ダイアログをプラグインから明示的に出す
 
-**状態（2026-10-27）: 実装済み（`feature/plugin-explicit-dialogs`）。** マニフェストの `progress` / `result` を廃止し、コマンドごとの
+**状態（2026-11-08）: 実装済み（`feature/plugin-explicit-dialogs`、`develop` へマージ済み）。`private_plugins/` も v2 へ移行済み。** マニフェストの `progress` / `result` を廃止し、コマンドごとの
 `progressDialog`（真偽値、既定 `true`）だけを残す。表示はすべてプラグインが `ui.*` で行う
 （`ui.showProgress` / `ui.hideProgress` / `ui.alert` / `ui.showResult` / `ui.toast` を追加、`ui.progress` は
 `ui.updateProgress` に改名、`ui.confirm` は存続）。進捗は `show` が開く（開いていればエラー）・`update` が
@@ -10,7 +10,7 @@
 同じ作業で `plugin_sample/` と `plugin_recipes/` を作り直す。`private_plugins/` の移行は後回し（対象外）。
 仕様の正は `PLUGINS.md`。この文書は決定の経緯と理由を残す。
 実装で決めたこと：「状態が合わない」エラーは `-32005`（キャンセル後の拒否も同じ）。`ui.toast` の `kind` と
-結果の `"warning"` は、まだ見た目に差がない。残り: `private_plugins/` の移行（§8）。
+結果の `"warning"` は、まだ見た目に差がない。
 
 ## 1. 背景
 
@@ -186,8 +186,7 @@ return                                                     # message を返せ�
 
 ## 8. 対象外・未決定
 
-- `private_plugins/` の移行（後で別途対応）。対象は wdtagger・dirstat・dupfinder・slideshow・
-  wdsimilar・wdtagsearch・zip_search。
+- `private_plugins/` の移行 —— 本体とは別に、`private_plugins/` リポジトリ側で済ませた（2026-11-08 時点で全プラグインが v2）。
 - 実行中プラグインの一覧とキャンセル（§5 の将来案）。
 - 細かい点で、実装時に見直してよいもの：エラーコード（キャンセル後の拒否を、§3 の「状態が合わない」と同じ
   独自コードにするか別にするか。具体的な番号も）、
