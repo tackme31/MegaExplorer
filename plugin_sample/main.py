@@ -46,8 +46,8 @@ def folder_of(ctx):
 
 # --- Basics -------------------------------------------------------------------
 # A returned string is shown as a toast (first 3 lines); None shows nothing.
-# Raising CommandError shows "<plugin>: <message>" as an error. With
-# "result": "dialog" the whole text goes to a dialog instead, errors included.
+# Raising CommandError shows "<plugin>: <message>" as an error toast. For a
+# long report, call ctx.show_result() before returning.
 # print() lands in MegaExplorer.log, prefixed [plugin:<id>].
 
 
